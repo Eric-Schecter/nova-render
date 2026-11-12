@@ -1,0 +1,10 @@
+/build/
+/vcpkg_installed/
+CMakeUserPresets.json
+.DS_Store
+
+/build-windows/
+/.idea/
+
+/build-linux/
+/build-windows-vulkan/

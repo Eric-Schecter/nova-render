@@ -1,0 +1,42 @@
+# Same CMake/Ninja/MSVC toolchain used by CLion. Run from an MSVC developer shell,
+# or supply VsDevCmd, CMake and Ninja paths explicitly.
+param(
+    [Parameter(Mandatory=$true)][string]$VcpkgRoot,
+    [string]$CMake = 'cmake',
+    [string]$Ninja = 'ninja',
+    [string]$VsDevCmd,
+    [switch]$Vulkan,
+    [string]$VulkanICD,
+    [string]$VulkanLoaderDirectory,
+    [ValidateSet('arm64','x64')][string]$Architecture = 'arm64'
+)
+$ErrorActionPreference = 'Stop'
+if ($VsDevCmd) {
+    $vsRoot = Split-Path (Split-Path (Split-Path $VsDevCmd -Parent) -Parent) -Parent
+    $hostArch = 'x64'
+    if (Test-Path "$vsRoot/VC/Tools/MSVC/*/bin/Hostarm64/arm64/cl.exe") { $hostArch = 'arm64' }
+    $environment = & cmd.exe /d /s /c "`"`"$VsDevCmd`" -arch=$Architecture -host_arch=$hostArch >nul && set`""
+    if ($LASTEXITCODE) { throw 'MSVC environment initialization failed' }
+    foreach ($line in $environment) {
+        if ($line -match '^([^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+    }
+}
+$Ninja = (Get-Command $Ninja).Source
+$CMake = (Get-Command $CMake).Source
+$env:PATH = (Split-Path $Ninja) + ';' + $env:PATH
+$root = Split-Path $PSScriptRoot -Parent
+$build = Join-Path $root $(if ($Vulkan) { 'build-windows-vulkan' } else { 'build-windows' })
+$enableVulkan = if ($Vulkan) { 'ON' } else { 'OFF' }
+& $CMake -S $root -B $build -G Ninja "-DCMAKE_BUILD_TYPE=Debug" "-DNOVA_ENABLE_VULKAN=$enableVulkan" `
+    "-DCMAKE_MAKE_PROGRAM=$Ninja" "-DVCPKG_TARGET_TRIPLET=$Architecture-windows" `
+    "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot/scripts/buildsystems/vcpkg.cmake"
+if ($LASTEXITCODE) { throw 'Configure failed' }
+& $CMake --build $build --parallel
+if ($LASTEXITCODE) { throw 'Build failed' }
+if ($VulkanLoaderDirectory) { $env:PATH = $VulkanLoaderDirectory + ';' + $env:PATH }
+if ($VulkanICD) { $env:VK_DRIVER_FILES = (Resolve-Path $VulkanICD).Path }
+$CTest = Join-Path (Split-Path $CMake) 'ctest.exe'
+& $CTest --test-dir $build --output-on-failure --output-log (Join-Path $build 'matrix.log')
+if ($LASTEXITCODE) { throw 'Platform/API matrix failed; inspect matrix.log and Testing/Temporary/LastTest.log' }

@@ -1,0 +1,29 @@
+{
+  "name": "nova-triangle",
+  "version-string": "0.1.0",
+  "builtin-baseline": "971828fe0920d00c077c7b5d34798bc45b261ec4",
+  "dependencies": [
+    "glfw3",
+    {
+      "name": "directx-dxc",
+      "host": true,
+      "platform": "windows | (linux & x64)"
+    },
+    {
+      "name": "spirv-cross",
+      "host": true,
+      "platform": "osx"
+    }
+  ],
+  "default-features": [
+    "vulkan"
+  ],
+  "features": {
+    "vulkan": {
+      "description": "Vulkan backend",
+      "dependencies": [
+        "volk"
+      ]
+    }
+  }
+}

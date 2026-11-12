@@ -1,0 +1,71 @@
+# Shader compilers are host tools. SDK paths also cover hosts without a vcpkg DXC port.
+file(GLOB _nova_sdk_bins "$ENV{HOME}/VulkanSDK/*/macOS/bin")
+list(SORT _nova_sdk_bins COMPARE NATURAL ORDER DESCENDING)
+find_program(NOVA_DXC_EXECUTABLE NAMES dxc
+    HINTS "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/directx-dxc"
+          "$ENV{VULKAN_SDK}/bin" ${_nova_sdk_bins} REQUIRED)
+set(SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(_hlsl "${PROJECT_SOURCE_DIR}/render/shaders/triangle.hlsl")
+if(APPLE)
+    find_program(NOVA_SPIRV_CROSS_EXECUTABLE NAMES spirv-cross
+        HINTS "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/spirv-cross"
+              "$ENV{VULKAN_SDK}/bin" ${_nova_sdk_bins} REQUIRED)
+    find_program(NOVA_XCRUN_EXECUTABLE xcrun REQUIRED)
+endif()
+foreach(stage vert frag)
+    if(stage STREQUAL "vert")
+        set(entry VSMain)
+        set(profile vs_6_0)
+        set(msl_entry vertexMain)
+        set(vulkan_options -fvk-invert-y)
+    else()
+        set(entry PSMain)
+        set(profile ps_6_0)
+        set(msl_entry fragmentMain)
+        set(vulkan_options)
+    endif()
+    if(NOVA_ENABLE_VULKAN)
+        set(output "${SHADER_OUTPUT_DIR}/triangle.${stage}.spv")
+        add_custom_command(OUTPUT "${output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
+                ${vulkan_options} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
+            DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${output}")
+    endif()
+    if(WIN32)
+        set(output "${SHADER_OUTPUT_DIR}/triangle.${stage}.dxil")
+        add_custom_command(OUTPUT "${output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
+            DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${output}")
+    elseif(APPLE)
+        # Metal uses D3D's Y convention: never reuse the Y-inverted Vulkan module.
+        set(spv "${SHADER_OUTPUT_DIR}/triangle.${stage}.metal.spv")
+        set(msl "${SHADER_OUTPUT_DIR}/triangle.${stage}.metal")
+        set(air "${SHADER_OUTPUT_DIR}/triangle.${stage}.air")
+        add_custom_command(OUTPUT "${spv}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
+                -T ${profile} -E ${entry} -Fo "${spv}" "${_hlsl}"
+            DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        add_custom_command(OUTPUT "${msl}"
+            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${spv}" --msl --msl-version 20100
+                --rename-entry-point ${entry} ${msl_entry} ${stage} --output "${msl}"
+            DEPENDS "${spv}" "${NOVA_SPIRV_CROSS_EXECUTABLE}" VERBATIM)
+        add_custom_command(OUTPUT "${air}"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.1 -c "${msl}" -o "${air}"
+            DEPENDS "${msl}" VERBATIM)
+        list(APPEND METAL_AIR "${air}")
+    endif()
+endforeach()
+if(APPLE)
+    set(output "${SHADER_OUTPUT_DIR}/triangle.metallib")
+    add_custom_command(OUTPUT "${output}"
+        COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metallib ${METAL_AIR} -o "${output}"
+        DEPENDS ${METAL_AIR} VERBATIM)
+    list(APPEND SHADER_OUTPUTS "${output}")
+endif()
+add_custom_target(triangle_shaders DEPENDS ${SHADER_OUTPUTS})
+message(STATUS "Shader DXC: ${NOVA_DXC_EXECUTABLE}")
