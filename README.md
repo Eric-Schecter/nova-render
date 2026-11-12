@@ -102,16 +102,20 @@ CMake 从 vcpkg host 工具目录、`VULKAN_SDK/bin`、macOS 的 `~/VulkanSDK/*/
 
 shader 路径指向构建目录，当前没有安装或分发打包。没有引入 ECS、RenderGraph 或原 nova 的复杂模块。
 
-## 当前验证状态（本机 ARM64 环境）
+## 当前验证状态（HLSL 离线构建，本机 ARM64 环境）
 
 - macOS：完整构建 12 项、关闭 Vulkan 的原生构建 11 项，全部通过。Metal API Validation 和 Vulkan Khronos Validation Layer 已启用。
-- Windows 11 ARM64：完整构建 12 项、DX12-only 构建 11 项，全部通过。默认 DX12 使用 Parallels 虚拟显卡；WARP 为显式 CPU 模式，D3D12 Debug Layer 开启。
+- Windows 11 ARM64：完整构建 9/12 项通过，DX12-only 构建 8/11 项通过。两种构建的 WARP 实际绘制、缩放和最小化恢复均通过，D3D12 Debug Layer 开启。每种构建各有 3 项普通 DX12 / Auto 测试失败：Parallels 虚拟显卡仅支持 DXBC，不支持 DXC 生成的 DXIL。程序检查 Shader Model 6.0 并明确拒绝，不静默改用 WARP。普通 GPU 路径需要支持 DXIL 的设备再验证。
 - Windows Vulkan：使用现有 CLion/JCEF 附带的 ARM64 SwiftShader ICD，功能检查通过。此环境未安装 Khronos Validation Layer，日志明确显示 `Validation: disabled`，不将其计数 0 当作 API 校验通过。
 - Ubuntu 24.04.3 ARM64：独立 X11/Openbox + Lavapipe 环境，11 项运行检查通过，Khronos Validation Layer 开启；另外验证了关闭 Vulkan 时配置阶段拒绝构建。
 
-合计 58 项检查通过，覆盖隐式/显式 Auto、可用 API、不可用/未编译 API、所有 API/WARP 组合、启动失败不回退，以及每个成功路径的 120 帧、缩放、真实最小化和恢复。未验证 x64、Wayland 桌面或 NVIDIA / AMD / Intel 实机驱动与性能。Linux 本次是隔离显示环境中的自动检查，不是登录桌面的目视验收。
+合计 58 项平台检查中 52 项通过、6 项因上述虚拟 GPU 能力不足失败，没有跳过或修改普通 DX12 的成功断言。检查覆盖隐式/显式 Auto、不可用/未编译 API、API/WARP 组合、启动失败不回退，以及成功路径的 120 帧、缩放、真实最小化和恢复。DX12 shader 资源缺失测试显式使用 WARP，将文件加载错误与 GPU 能力分开验证。
 
-汇总与详细日志在 `build/validation/`，详细日志保留所选 API、驱动名和校验层状态。
+另行通过独立构建检查：干净生成全部 macOS shader、无修改不重复编译、HLSL 语法错误阻止构建、修复后重新生成，以及四份中间/最终 SPIR-V 的 `spirv-val --target-env vulkan1.0` 校验。实际查看了 Metal 窗口，三角形方向与颜色正确。
+
+未验证 x64、Wayland 桌面或 NVIDIA / AMD / Intel 实机驱动与性能。Linux 本次是隔离显示环境中的自动检查，不是登录桌面的目视验收。
+
+本次汇总与详细日志为 `build/validation/hlsl-*`，保留所选 API、驱动名和校验层状态，旧日志不作为新构建链的依据。构建产物和本机日志均被 Git 忽略。
 
 ## Windows / CLion 验证
 
