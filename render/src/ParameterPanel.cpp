@@ -129,7 +129,10 @@ namespace render::detail
                 for (const auto& choice : choices)
                     if (choice.path == current)
                         selected = choice.name;
-                if (ImGui::BeginCombo(label, selected.c_str()))
+                ImGui::TextUnformatted(label);
+                ImGui::SetNextItemWidth(-1);
+                ImGui::PushID(label);
+                if (ImGui::BeginCombo("##choice", selected.c_str()))
                 {
                     for (size_t i = 0; i < choices.size(); ++i)
                     {
@@ -143,6 +146,7 @@ namespace render::detail
                     }
                     ImGui::EndCombo();
                 }
+                ImGui::PopID();
             };
             chooseAsset("Model", assets.config.models, assets.modelPath, assets.requestedModel);
             if (!assets.error.empty())
