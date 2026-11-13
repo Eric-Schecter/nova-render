@@ -19,6 +19,12 @@ try {
       await panel.scrollIntoViewIfNeeded()
       const open = page.getByRole('button', { name: '显示参数面板', exact: true })
       if (await open.count()) await open.click()
+      if (slug !== 'triangle') {
+        const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
+        if ((await mode.inputValue()) !== 'raster') throw Error('Web default mode changed')
+        if (!(await mode.locator('option[value="path-tracing"]').isDisabled()))
+          throw Error('Unsupported web path tracing must be disabled')
+      }
       const a = await panel.boundingBox(),
         b = await canvas.boundingBox()
       if (

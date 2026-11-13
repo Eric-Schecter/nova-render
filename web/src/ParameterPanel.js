@@ -205,6 +205,34 @@ export function attachParameterPanel(
     fieldEvents = new AbortController()
     body.replaceChildren()
     fields.clear()
+    if (current.camera) {
+      const renderer = group('Renderer'),
+        label = document.createElement('label'),
+        select = document.createElement('select')
+      label.textContent = 'Mode'
+      select.setAttribute('aria-label', '渲染模式')
+      const capabilities = adapter.getCapabilities()
+      for (const [value, text] of [
+        ['raster', 'Raster'],
+        ['path-tracing', 'Path tracing'],
+      ]) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = text
+        if (value === 'path-tracing' && !capabilities.pathTracing) {
+          option.disabled = true
+          option.title = capabilities.reason
+        }
+        select.append(option)
+      }
+      select.value = adapter.getRenderMode()
+      select.title = capabilities.reason
+      select.addEventListener('change', () => change(() => adapter.setRenderMode(select.value)), {
+        signal: fieldEvents.signal,
+      })
+      label.append(select)
+      renderer.append(label)
+    }
     if (models.length) {
       const assets = group('Model')
       assetSelect(assets, 'model', 'Model', '模型选择', models, adapter.loadModel)

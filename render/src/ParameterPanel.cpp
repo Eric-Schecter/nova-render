@@ -92,14 +92,18 @@ namespace render::detail
         return ImGui::GetIO().WantCaptureKeyboard;
     }
     void ParameterPanel::Draw(
-      bool                  model,
-      LightingMode          lighting,
-      OrbitCamera&          camera,
-      DirectionalLight&     light,
-      std::array<float, 4>& clear,
-      bool                  hasEnvironment,
-      EnvironmentSettings&  environment,
-      PanelAssets&          assets)
+      bool                        model,
+      LightingMode                lighting,
+      OrbitCamera&                camera,
+      DirectionalLight&           light,
+      std::array<float, 4>&       clear,
+      bool                        hasEnvironment,
+      EnvironmentSettings&        environment,
+      PanelAssets&                assets,
+      RenderMode                  mode,
+      const RendererCapabilities& capabilities,
+      PathTracingSettings&        path,
+      uint32_t                    samples)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -148,6 +152,44 @@ namespace render::detail
                 }
                 ImGui::PopID();
             };
+            if (model && ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::TextUnformatted("Mode");
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::BeginCombo("##RenderMode", mode == RenderMode::Raster ? "Raster" : "Path tracing"))
+                {
+                    if (ImGui::Selectable("Raster", mode == RenderMode::Raster))
+                        assets.requestedMode = RenderMode::Raster;
+                    ImGui::BeginDisabled(!capabilities.pathTracing);
+                    if (ImGui::Selectable("Path tracing", mode == RenderMode::PathTracing))
+                        assets.requestedMode = RenderMode::PathTracing;
+                    if (!capabilities.pathTracing && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                        ImGui::SetTooltip("%s", capabilities.reason.c_str());
+                    ImGui::EndDisabled();
+                    ImGui::EndCombo();
+                }
+                if (mode == RenderMode::PathTracing)
+                {
+                    int spp = int(path.samplesPerFrame), bounces = int(path.maxBounces);
+                    ImGui::TextUnformatted("Samples per frame");
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::SliderInt("##SamplesPerFrame", &spp, 1, 4))
+                        path.samplesPerFrame = uint32_t(spp);
+                    ImGui::TextUnformatted("Max bounces");
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::SliderInt("##MaxBounces", &bounces, 1, 8))
+                        path.maxBounces = uint32_t(bounces);
+                    ImGui::TextUnformatted("Render scale");
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat(
+                      "##RenderScale", &path.resolutionScale, .25f, 1, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::Text("Samples: %u", samples);
+                    if (capabilities.softwareRayTracing)
+                        ImGui::TextUnformatted("CPU ray tracing");
+                    if (ImGui::Button("Reset accumulation"))
+                        assets.requestedReset = true;
+                }
+            }
             chooseAsset("Model", assets.config.models, assets.modelPath, assets.requestedModel);
             if (!assets.error.empty())
                 ImGui::TextWrapped("%s", assets.error.c_str());
@@ -176,7 +218,7 @@ namespace render::detail
                 slider("Yaw", camera.yaw, -180, 180, "%.1f");
                 slider("Pitch", camera.pitch, -85, 85, "%.1f");
                 slider("Distance", camera.distance, 1.5f, 100, "%.2f");
-                if (lighting == LightingMode::PBR || hasEnvironment)
+                if (lighting == LightingMode::PBR || hasEnvironment || mode == RenderMode::PathTracing)
                     slider("Exposure", camera.exposure, 0.1f, 3, "%.1f");
                 if (ImGui::Button("Reset camera"))
                     camera = initialCamera;
@@ -194,7 +236,7 @@ namespace render::detail
                 ImGui::PopID();
             }
             if (
-              model && lighting == LightingMode::PBR
+              model && (lighting == LightingMode::PBR || mode == RenderMode::PathTracing)
               && ImGui::CollapsingHeader("Main light", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 constexpr float degrees = 57.2957795131f;

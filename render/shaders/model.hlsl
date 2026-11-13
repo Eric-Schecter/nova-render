@@ -29,6 +29,7 @@ struct Vertex
 [[vk::binding(7, 0)]] SamplerState             textureSampler : register(s0);
 [[vk::binding(8, 0)]] TextureCube<float4>      environmentTexture : register(t6);
 [[vk::binding(9, 0)]] TextureCube<float4>      backgroundTexture : register(t7);
+[[vk::binding(10, 0)]] Texture2D<float4>       pathTexture : register(t8);
 struct VertexOut
 {
     float4 position : SV_Position;
@@ -112,6 +113,7 @@ struct SkyOut
 {
     float4 position : SV_Position;
     float3 direction : TEXCOORD0;
+    float2 uv : TEXCOORD1;
 };
 SkyOut SkyVSMain(uint id : SV_VertexID)
 {
@@ -119,12 +121,20 @@ SkyOut SkyVSMain(uint id : SV_VertexID)
     float2 p            = positions[id];
     SkyOut output;
     output.position  = float4(p, 1, 1);
+    output.uv        = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     output.direction = cameraForward.xyz + p.x * cameraRight.w * cameraRight.xyz + p.y * cameraUp.w * cameraUp.xyz;
     return output;
 }
 float4 SkyPSMain(SkyOut input)
   : SV_Target
 {
+    if (skyParams.z > 0.5)
+    {
+        uint width, height;
+        pathTexture.GetDimensions(width, height);
+        float2 halfTexel = 0.5 / float2(width, height);
+        return float4(pathTexture.SampleLevel(textureSampler, clamp(input.uv, halfTexel, 1 - halfTexel), 0).rgb, 1);
+    }
     float3 direction = environmentDirection(normalize(input.direction));
     float3 color     = backgroundTexture.Sample(textureSampler, direction).rgb * skyParams.x;
     return float4(displayRadiance(color), 1);

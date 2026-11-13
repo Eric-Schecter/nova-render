@@ -98,6 +98,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float', viewDimension: 'cube' },
         },
+        { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       ],
     })
     const sampler = device.createSampler({
@@ -117,6 +118,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 7, resource: sampler },
           { binding: 8, resource: texture.createView({ dimension: 'cube' }) },
           { binding: 9, resource: background.createView({ dimension: 'cube' }) },
+          { binding: 10, resource: textures[0].createView() },
         ],
       })
     let bindGroup = group(cube, backgroundCube)

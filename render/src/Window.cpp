@@ -169,6 +169,34 @@ namespace render
     {
         impl_->renderer->SetLighting(mode);
     }
+    RendererCapabilities Window::GetCapabilities() const
+    {
+        return impl_->renderer->GetCapabilities();
+    }
+    void Window::SetRenderMode(RenderMode mode)
+    {
+        impl_->renderer->SetRenderMode(mode);
+    }
+    RenderMode Window::GetRenderMode() const
+    {
+        return impl_->renderer->GetRenderMode();
+    }
+    void Window::SetPathTracing(const PathTracingSettings& value)
+    {
+        impl_->renderer->SetPathTracing(value);
+    }
+    PathTracingSettings Window::GetPathTracing() const
+    {
+        return impl_->renderer->GetPathTracing();
+    }
+    void Window::ResetAccumulation()
+    {
+        impl_->renderer->ResetAccumulation();
+    }
+    uint32_t Window::GetAccumulatedSamples() const
+    {
+        return impl_->renderer->GetAccumulatedSamples();
+    }
     void Window::LoadEnvironment(const std::filesystem::path& path)
     {
         impl_->renderer->LoadEnvironment(path);

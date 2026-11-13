@@ -15,6 +15,8 @@ int main(int argc, char** argv)
         camera.yaw   = 20;
         camera.pitch = 5;
         window.SetCamera(camera);
+        window.SetPathTracing(options.path);
+        window.SetRenderMode(options.mode);
         window.EnableOrbitControls();
         render::ParameterPanelConfig panel;
         panel.models = example::ModelChoices(options.modelPath);
@@ -31,6 +33,8 @@ int main(int argc, char** argv)
                 ++frames;
         }
         window.WaitIdle();
+        if (window.GetRenderMode() == render::RenderMode::PathTracing)
+            std::cout << "Path samples: " << window.GetAccumulatedSamples() << '\n';
         std::cout << "Rendered " << frames << " frames; validation errors: " << window.ValidationErrorCount() << '\n';
         return window.ValidationErrorCount() == 0 && (!options.frameLimit || frames == options.frameLimit) ? 0 : 1;
     }

@@ -11,7 +11,8 @@ struct ModelTexture
 };
 ModelBuffer                 modelVertices, modelUniform, modelStaging;
 std::array<ModelTexture, 5> modelTextures;
-ModelTexture                modelDepth, environmentCube, backgroundCube;
+ModelTexture                modelDepth, environmentCube, backgroundCube, pathDisplay;
+uint32_t                    pathWidth = 0, pathHeight = 0;
 VkSampler                   modelSampler   = VK_NULL_HANDLE;
 VkDescriptorSetLayout       modelSetLayout = VK_NULL_HANDLE;
 VkDescriptorPool            modelPool      = VK_NULL_HANDLE;
@@ -253,8 +254,8 @@ void uploadModel()
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler.maxLod = float(std::max(env.mips.size(), BackgroundMips(env).size()) - 1);
     check(vkCreateSampler(device, &sampler, nullptr, &modelSampler), "Create model sampler");
-    std::array<VkDescriptorSetLayoutBinding, 10> bindings{};
-    for (uint32_t i = 0; i < 10; ++i)
+    std::array<VkDescriptorSetLayoutBinding, 11> bindings{};
+    for (uint32_t i = 0; i < 11; ++i)
     {
         bindings[i].binding         = i;
         bindings[i].descriptorCount = 1;
@@ -267,13 +268,13 @@ void uploadModel()
                                                : VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 10;
+    layoutInfo.bindingCount = 11;
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 7},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets       = 1;
@@ -287,9 +288,9 @@ void uploadModel()
     check(vkAllocateDescriptorSets(device, &alloc, &modelSet), "Allocate model descriptors");
     VkDescriptorBufferInfo bufferInfo[] = {
       {modelUniform.buffer, 0, sizeof(SceneUniforms)}, {modelVertices.buffer, 0, VK_WHOLE_SIZE}};
-    std::array<VkDescriptorImageInfo, 8> images{};
-    std::array<VkWriteDescriptorSet, 10> writes{};
-    for (uint32_t i = 0; i < 10; ++i)
+    std::array<VkDescriptorImageInfo, 9> images{};
+    std::array<VkWriteDescriptorSet, 11> writes{};
+    for (uint32_t i = 0; i < 11; ++i)
     {
         auto& w           = writes[i];
         w.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -306,13 +307,14 @@ void uploadModel()
             if (i == 7)
                 image.sampler = modelSampler;
             else
-                image.imageView = i == 9   ? backgroundCube.view
+                image.imageView = i == 10  ? modelTextures[0].view
+                                  : i == 9 ? backgroundCube.view
                                   : i == 8 ? environmentCube.view
                                            : modelTextures[i - 2].view;
             w.pImageInfo = &image;
         }
     }
-    vkUpdateDescriptorSets(device, 10, writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(device, 11, writes.data(), 0, nullptr);
     modelReady = true;
 }
 void LoadModel(std::shared_ptr<const ModelData> data) override
@@ -344,8 +346,86 @@ void destroyModel()
         destroyModelTexture(t);
     destroyModelTexture(environmentCube);
     destroyModelTexture(backgroundCube);
+    destroyModelTexture(pathDisplay);
+    pathWidth = pathHeight = 0;
     destroyModelBuffer(modelVertices);
     destroyModelBuffer(modelUniform);
     destroyModelBuffer(modelStaging);
     modelReady = false;
+}
+
+void UploadPathImage(const ModelImage& image)
+{
+    check(vkDeviceWaitIdle(device), "Wait path display upload");
+    const bool fresh = !pathDisplay.image || pathWidth != image.width || pathHeight != image.height;
+    if (fresh)
+    {
+        destroyModelTexture(pathDisplay);
+        modelImage(
+          pathDisplay,
+          image.width,
+          image.height,
+          VK_FORMAT_R8G8B8A8_SRGB,
+          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+          VK_IMAGE_ASPECT_COLOR_BIT);
+        pathWidth  = image.width;
+        pathHeight = image.height;
+    }
+    modelBuffer(modelStaging, image.pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, image.pixels.data());
+    check(vkResetCommandBuffer(cmd, 0), "Reset path upload");
+    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    check(vkBeginCommandBuffer(cmd, &begin), "Begin path upload");
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image                                             = pathDisplay.image;
+    barrier.subresourceRange                                  = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.oldLayout     = fresh ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcAccessMask = fresh ? 0 : VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(
+      cmd,
+      fresh ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      VK_PIPELINE_STAGE_TRANSFER_BIT,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &barrier);
+    VkBufferImageCopy copy{};
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.imageExtent      = {image.width, image.height, 1};
+    vkCmdCopyBufferToImage(cmd, modelStaging.buffer, pathDisplay.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(
+      cmd,
+      VK_PIPELINE_STAGE_TRANSFER_BIT,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &barrier);
+    check(vkEndCommandBuffer(cmd), "End path upload");
+    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers    = &cmd;
+    check(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE), "Submit path upload");
+    check(vkQueueWaitIdle(queue), "Wait path upload");
+    destroyModelBuffer(modelStaging);
+    VkDescriptorImageInfo info{VK_NULL_HANDLE, pathDisplay.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet  write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet          = modelSet;
+    write.dstBinding      = 10;
+    write.descriptorCount = 1;
+    write.descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo      = &info;
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 }

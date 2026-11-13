@@ -20,12 +20,12 @@ The probes return 77 when a required device capability is absent (CTest reports 
 - Mac MoltenVK: ray-query/acceleration-structure extensions absent; correctly skipped.
 - Windows 11 ARM64 / WARP: DXR tier 1.1, SM6.5, actual AS build, dispatch and readback passed. This is CPU software validation, not RTX hardware validation.
 - Parallels Display Adapter: no D3D12 feature-level 12.0 device, correctly skipped.
-- Ubuntu 24.04 ARM64 / Mesa 25.2.8 Lavapipe, LLVM 20.1.2: advertises ray-query support but default 128-bit software vector mode crashes during BLAS build. Vulkan validation reported no API errors. Single-thread/cache-disabled and indexed geometry attempts did not fix it. Using `LP_NATIVE_VECTOR_WIDTH=256` for the validation process passed the complete test.
+- Ubuntu 24.04 ARM64 / Mesa 25.2.8 Lavapipe, LLVM 20.1.2: advertises ray-query support but default 128-bit software vector mode crashes during BLAS build. Vulkan validation reported no API errors. Single-thread/cache-disabled and indexed geometry attempts did not fix it. Using `LP_NATIVE_VECTOR_WIDTH=256` and `MESA_SHADER_CACHE_DISABLE=true` for the validation process passed the complete test. The cache must be disabled when testing different software vector widths.
 
 For that older ARM64 **software validation driver only**:
 
 ```sh
-VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json LP_NATIVE_VECTOR_WIDTH=256 \
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json LP_NATIVE_VECTOR_WIDTH=256 MESA_SHADER_CACHE_DISABLE=true \
   ctest --test-dir build -R '^ray-query-' -V
 ```
 

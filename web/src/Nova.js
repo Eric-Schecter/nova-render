@@ -120,6 +120,24 @@ class Renderer {
       this.#parameterPanel?.refresh()
     })
   }
+  getCapabilities() {
+    this.#check()
+    return {
+      pathTracing: false,
+      softwareRayTracing: false,
+      rayTracingDevice: '',
+      reason: 'WebGPU path tracing is not implemented; this preview uses rasterization.',
+    }
+  }
+  getRenderMode() {
+    this.#check()
+    return 'raster'
+  }
+  setRenderMode(mode) {
+    this.#check()
+    if (mode === 'path-tracing') throw Error(this.getCapabilities().reason)
+    if (mode !== 'raster') throw Error('Invalid render mode')
+  }
   setEnvironment(settings) {
     this.#check()
     this.#environmentSettings = copyEnvironment(settings)
@@ -162,6 +180,9 @@ class Renderer {
     const panel = attachParameterPanel(
       this.#canvas,
       {
+        getCapabilities: () => this.getCapabilities(),
+        getRenderMode: () => this.getRenderMode(),
+        setRenderMode: (mode) => this.setRenderMode(mode),
         getAssets: () => ({ model: this.#modelURL, environment: this.#environmentURL }),
         loadModel: (url) => this.loadModel(url),
         loadEnvironment: (url) => this.loadEnvironment(url),

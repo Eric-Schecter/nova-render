@@ -1,4 +1,5 @@
 #include "../Backend.hpp"
+#include "../path/D3D12Debug.hpp"
 #include "../ShaderData.hpp"
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -62,17 +63,9 @@ namespace render::detail
             hwnd     = glfwGetWin32Window(window);
             if (!hwnd)
                 throw std::runtime_error("GLFW window has no HWND");
+            const bool debug = ConfigureD3D12DebugLayer(config.enableValidation);
             if (config.enableValidation)
-            {
-                ComPtr<ID3D12Debug> debug;
-                if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))))
-                {
-                    debug->EnableDebugLayer();
-                    std::cout << "D3D12 debug layer: enabled\n";
-                }
-                else
-                    std::cerr << "D3D12 debug layer unavailable (install Windows Graphics Tools).\n";
-            }
+                std::cout << "D3D12 debug layer: " << (debug ? "enabled" : "unavailable for this process") << '\n';
             checkHR(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "Create DXGI factory");
             ComPtr<IDXGIAdapter1> adapter;
             if (config.useWarp)
@@ -206,9 +199,12 @@ namespace render::detail
                 DrawParameterPanel();
             }
 #endif
+            const auto* path = DrawPathFrame(width, height);
+            if (path)
+                UploadPathImage(*path);
             if (model)
             {
-                const auto u = MakeSceneUniforms(
+                auto u = MakeSceneUniforms(
                   *model,
                   camera,
                   float(width) / height,
@@ -216,6 +212,7 @@ namespace render::detail
                   directionalLight,
                   environment.get(),
                   environmentSettings);
+                u.skyParams[2]     = path ? 1.0f : 0.0f;
                 void*       mapped = nullptr;
                 D3D12_RANGE read{0, 0};
                 checkHR(modelUniform->Map(0, &read, &mapped), "Map scene uniforms");
@@ -258,13 +255,13 @@ namespace render::detail
             commands->RSSetViewports(1, &viewport);
             commands->RSSetScissorRects(1, &scissor);
             commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            if (environment && environmentSettings.showBackground)
+            if ((environment && environmentSettings.showBackground) || path)
             {
                 commands->SetPipelineState(skyPipeline.Get());
                 commands->DrawInstanced(3, 1, 0, 0);
                 commands->SetPipelineState(modelPipeline.Get());
             }
-            if (!model || !model->vertices.empty())
+            if (!path && (!model || !model->vertices.empty()))
                 commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)

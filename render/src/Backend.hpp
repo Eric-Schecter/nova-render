@@ -2,7 +2,9 @@
 #include "Color.hpp"
 #include "ModelData.hpp"
 #include "ParameterPanel.hpp"
+#include "path/PathTracing.hpp"
 #include "render/Renderer.hpp"
+#include <stdexcept>
 
 namespace render::detail
 {
@@ -10,6 +12,40 @@ namespace render::detail
     {
       public:
         PanelAssets assets;
+        void        ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
+        {
+            pathAPI    = api;
+            pathConfig = config;
+        }
+        RendererCapabilities GetCapabilities() { return pathSession.Capabilities(pathAPI, pathConfig); }
+        void                 SetRenderMode(RenderMode value)
+        {
+            if (value != RenderMode::Raster && value != RenderMode::PathTracing)
+                throw std::invalid_argument("Invalid render mode");
+            if (value == RenderMode::PathTracing)
+            {
+                if (!model || model->vertices.empty())
+                    throw std::invalid_argument("Load a model before path tracing");
+                const auto caps = GetCapabilities();
+                if (!caps.pathTracing)
+                    throw std::runtime_error(caps.reason);
+            }
+            if (mode != value)
+            {
+                mode = value;
+                pathSession.Reset();
+            }
+        }
+        RenderMode GetRenderMode() const { return mode; }
+        void       SetPathTracing(const PathTracingSettings& value)
+        {
+            ValidatePathTracing(value);
+            pathSettings = value;
+            pathSession.Reset();
+        }
+        PathTracingSettings GetPathTracing() const { return pathSettings; }
+        void                ResetAccumulation() { pathSession.Reset(); }
+        uint32_t            GetAccumulatedSamples() const { return pathSession.Samples(); }
         virtual ~Backend()                                          = default;
         virtual void        Resize(uint32_t width, uint32_t height) = 0;
         virtual FrameResult DrawFrame()                             = 0;
@@ -73,6 +109,27 @@ namespace render::detail
         void                 SetCamera(const OrbitCamera& value) { camera = value; }
 
       protected:
+        RenderMode          mode = RenderMode::Raster;
+        PathTracingSettings pathSettings;
+        PathSession         pathSession;
+        GraphicsAPI         pathAPI = GraphicsAPI::Auto;
+        RendererConfig      pathConfig;
+        const ModelImage*   DrawPathFrame(uint32_t width, uint32_t height)
+        {
+            if (mode != RenderMode::PathTracing)
+                return nullptr;
+            const auto uniform = MakeSceneUniforms(
+              *model,
+              camera,
+              float(width) / height,
+              LightingMode::PBR,
+              directionalLight,
+              environment.get(),
+              environmentSettings);
+            return &pathSession.Render(
+              model, environment, uniform, pathSettings, ClearColorForTarget(true), width, height);
+        }
+
         std::array<float, 4> ClearColorForTarget(bool srgb) const
         {
             auto result = clearColor;
@@ -95,7 +152,11 @@ namespace render::detail
               clearColor,
               bool(environment),
               environmentSettings,
-              assets);
+              assets,
+              mode,
+              model && !model->vertices.empty() ? GetCapabilities() : RendererCapabilities{},
+              pathSettings,
+              pathSession.Samples());
         }
 #endif
         std::shared_ptr<const EnvironmentData> environment;

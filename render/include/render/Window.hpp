@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderMode.hpp"
 #include "Renderer.hpp"
 #include <string>
 
@@ -19,18 +20,25 @@ namespace render
       public:
         explicit Window(const WindowConfig& config = {});
         ~Window();
-        Window(const Window&)                        = delete;
-        Window&             operator=(const Window&) = delete;
-        bool                PollEvents(); // false after closing the window or pressing Escape.
-        FrameResult         DrawFrame();  // Updates framebuffer size; yields briefly if skipped.
-        void                WaitIdle();
-        void                LoadModel(const std::filesystem::path& glbPath);
-        void                LoadEnvironment(const std::filesystem::path& path);
-        void                SetEnvironment(const EnvironmentSettings& settings);
-        EnvironmentSettings GetEnvironment() const;
-        void                SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight    GetDirectionalLight() const;
-        void                SetLighting(LightingMode mode);
+        Window(const Window&)                         = delete;
+        Window&              operator=(const Window&) = delete;
+        bool                 PollEvents(); // false after closing the window or pressing Escape.
+        FrameResult          DrawFrame();  // Updates framebuffer size; yields briefly if skipped.
+        void                 WaitIdle();
+        void                 LoadModel(const std::filesystem::path& glbPath);
+        RendererCapabilities GetCapabilities() const;
+        void                 SetRenderMode(RenderMode mode);
+        RenderMode           GetRenderMode() const;
+        void                 SetPathTracing(const PathTracingSettings& settings);
+        PathTracingSettings  GetPathTracing() const;
+        void                 ResetAccumulation();
+        uint32_t             GetAccumulatedSamples() const;
+        void                 LoadEnvironment(const std::filesystem::path& path);
+        void                 SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings  GetEnvironment() const;
+        void                 SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight     GetDirectionalLight() const;
+        void                 SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
         bool                 EnableParameterPanel(const ParameterPanelConfig& config);

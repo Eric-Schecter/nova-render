@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 #include <render/Window.hpp>
 #include <stdexcept>
 #include <string>
@@ -7,12 +8,14 @@ namespace example
 {
     struct ModelOptions
     {
-        render::WindowConfig     window;
-        std::string              modelPath;
-        std::string              environmentPath;
-        render::DirectionalLight light;
-        int                      frameLimit = 0;
-        bool                     spin       = false; // Optional automatic orbit for fixed-frame validation.
+        render::WindowConfig        window;
+        std::string                 modelPath;
+        std::string                 environmentPath;
+        render::DirectionalLight    light;
+        render::RenderMode          mode = render::RenderMode::Raster;
+        render::PathTracingSettings path;
+        int                         frameLimit = 0;
+        bool                        spin       = false; // Optional automatic orbit for fixed-frame validation.
     };
 
     inline ModelOptions ParseModelOptions(
@@ -22,7 +25,8 @@ namespace example
             throw std::invalid_argument(
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
               "[--frames N] [--spin] "
-              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N]");
+              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|path] [--spp N] "
+              "[--bounces N] [--scale N]");
         ModelOptions options;
         options.modelPath = argv[1];
         if (allowEnvironment)
@@ -73,6 +77,28 @@ namespace example
             }
             else if (allowLighting && arg == "--light-intensity" && i + 1 < argc)
                 options.light.intensity = number(argv[++i]);
+            else if (arg == "--mode" && i + 1 < argc)
+            {
+                const std::string mode = argv[++i];
+                if (mode == "raster")
+                    options.mode = render::RenderMode::Raster;
+                else if (mode == "path")
+                    options.mode = render::RenderMode::PathTracing;
+                else
+                    throw std::invalid_argument("Unknown render mode");
+            }
+            else if ((arg == "--spp" || arg == "--bounces") && i + 1 < argc)
+            {
+                const float value = number(argv[++i]);
+                if (!std::isfinite(value) || value < 1 || value > 8 || std::floor(value) != value)
+                    throw std::invalid_argument("Invalid path integer");
+                if (arg == "--spp")
+                    options.path.samplesPerFrame = uint32_t(value);
+                else
+                    options.path.maxBounces = uint32_t(value);
+            }
+            else if (arg == "--scale" && i + 1 < argc)
+                options.path.resolutionScale = number(argv[++i]);
             else if (arg == "--warp")
                 options.window.renderer.useWarp = true;
             else if (arg == "--spin")

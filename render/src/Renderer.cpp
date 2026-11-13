@@ -86,9 +86,38 @@ namespace render
             throw std::runtime_error(
               std::string(GraphicsAPIName(api)) + " backend is unavailable in this build/platform");
         }
+        impl_->backend->ConfigurePathTracing(api, config);
         std::cout << "Backend: " << GraphicsAPIName(api) << '\n';
     }
     Renderer::~Renderer() = default;
+    RendererCapabilities Renderer::GetCapabilities() const
+    {
+        return impl_->backend->GetCapabilities();
+    }
+    void Renderer::SetRenderMode(RenderMode mode)
+    {
+        impl_->backend->SetRenderMode(mode);
+    }
+    RenderMode Renderer::GetRenderMode() const
+    {
+        return impl_->backend->GetRenderMode();
+    }
+    void Renderer::SetPathTracing(const PathTracingSettings& value)
+    {
+        impl_->backend->SetPathTracing(value);
+    }
+    PathTracingSettings Renderer::GetPathTracing() const
+    {
+        return impl_->backend->GetPathTracing();
+    }
+    void Renderer::ResetAccumulation()
+    {
+        impl_->backend->ResetAccumulation();
+    }
+    uint32_t Renderer::GetAccumulatedSamples() const
+    {
+        return impl_->backend->GetAccumulatedSamples();
+    }
     void Renderer::Resize(uint32_t width, uint32_t height)
     {
         impl_->backend->Resize(width, height);
@@ -96,7 +125,22 @@ namespace render
     FrameResult Renderer::DrawFrame()
     {
         auto& assets = impl_->backend->assets;
-        auto  apply  = [&](auto& request, auto load) {
+        if (assets.requestedMode)
+        {
+            const auto mode = std::exchange(assets.requestedMode, std::nullopt);
+            try
+            {
+                SetRenderMode(*mode);
+                assets.error.clear();
+            }
+            catch (const std::exception& error)
+            {
+                assets.error = error.what();
+            }
+        }
+        if (std::exchange(assets.requestedReset, false))
+            ResetAccumulation();
+        auto apply = [&](auto& request, auto load) {
             if (!request)
                 return;
             auto path = std::exchange(request, std::nullopt);

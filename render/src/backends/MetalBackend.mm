@@ -164,6 +164,9 @@ namespace render::detail
 #endif
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
+                const auto* path                    = DrawPathFrame(width, height);
+                if (path)
+                    UploadPathImage(*path);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
@@ -172,7 +175,7 @@ namespace render::detail
                 [encoder setCullMode:MTLCullModeNone];
                 if (model)
                 {
-                    const auto uniforms = MakeSceneUniforms(
+                    auto uniforms = MakeSceneUniforms(
                       *model,
                       camera,
                       float(width) / height,
@@ -180,6 +183,7 @@ namespace render::detail
                       directionalLight,
                       environment.get(),
                       environmentSettings);
+                    uniforms.skyParams[2] = path ? 1.0f : 0.0f;
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setVertexBuffer:vertices offset:0 atIndex:1];
@@ -188,7 +192,8 @@ namespace render::detail
                     [encoder setFragmentSamplerState:modelSampler atIndex:7];
                     [encoder setFragmentTexture:environmentTexture atIndex:8];
                     [encoder setFragmentTexture:backgroundTexture atIndex:9];
-                    if (environment && environmentSettings.showBackground)
+                    [encoder setFragmentTexture:path ? pathDisplay : modelTextures[0] atIndex:10];
+                    if ((environment && environmentSettings.showBackground) || path)
                     {
                         [encoder setRenderPipelineState:skyPipeline];
                         [encoder setDepthStencilState:skyDepthState];
@@ -196,7 +201,7 @@ namespace render::detail
                     }
                     [encoder setRenderPipelineState:modelPipeline];
                     [encoder setDepthStencilState:depthState];
-                    if (!model->vertices.empty())
+                    if (!path && !model->vertices.empty())
                         [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                                     vertexStart:0
                                     vertexCount:model->vertices.size()];
@@ -237,7 +242,7 @@ namespace render::detail
         RendererConfig                         settings;
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
-        id<MTLTexture>                         environmentTexture, backgroundTexture;
+        id<MTLTexture>                         environmentTexture, backgroundTexture, pathDisplay;
         id<MTLRenderPipelineState>             skyPipeline;
         id<MTLDepthStencilState>               skyDepthState;
         id<MTLBuffer>                          vertices;
@@ -246,7 +251,26 @@ namespace render::detail
         id<MTLTexture>                         depth;
         std::array<id<MTLTexture>, 5>          modelTextures{};
         id<MTLSamplerState>                    modelSampler;
-        void                                   UploadModel()
+        void                                   UploadPathImage(const ModelImage& image)
+        {
+            if (!pathDisplay || pathDisplay.width != image.width || pathDisplay.height != image.height)
+            {
+                auto desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm_sRGB
+                                                                               width:image.width
+                                                                              height:image.height
+                                                                           mipmapped:NO];
+                desc.storageMode = MTLStorageModeShared;
+                desc.usage       = MTLTextureUsageShaderRead;
+                pathDisplay      = [device newTextureWithDescriptor:desc];
+                if (!pathDisplay)
+                    throw std::runtime_error("Metal path display allocation failed");
+            }
+            [pathDisplay replaceRegion:MTLRegionMake2D(0, 0, image.width, image.height)
+                           mipmapLevel:0
+                             withBytes:image.pixels.data()
+                           bytesPerRow:image.width * 4];
+        }
+        void UploadModel()
         {
             const auto      shader = LoadShader(settings.shaderDirectory, "model.metallib");
             NSData*         data   = [NSData dataWithBytes:shader.data() length:shader.size()];
@@ -318,7 +342,7 @@ namespace render::detail
             };
             environmentTexture = uploadCube(environmentData.mips);
             backgroundTexture  = uploadCube(BackgroundMips(environmentData));
-            if (environment)
+            if (model)
             {
                 const auto      bytes   = LoadShader(settings.shaderDirectory, "skybox.metallib");
                 NSData*         skyData = [NSData dataWithBytes:bytes.data() length:bytes.size()];

@@ -452,7 +452,7 @@ namespace render::detail
                 info.renderPass       = renderPass;
                 check(
                   vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline), "Create pipeline");
-                if (environment)
+                if (model)
                 {
                     VkShaderModule skyVert = VK_NULL_HANDLE, skyFrag = VK_NULL_HANDLE;
                     try
@@ -545,9 +545,12 @@ namespace render::detail
                 DrawParameterPanel();
             }
 #endif
+            const auto* path = DrawPathFrame(extent.width, extent.height);
+            if (path)
+                UploadPathImage(*path);
             if (model)
             {
-                const auto uniform = MakeSceneUniforms(
+                auto uniform = MakeSceneUniforms(
                   *model,
                   camera,
                   float(extent.width) / extent.height,
@@ -555,7 +558,8 @@ namespace render::detail
                   directionalLight,
                   environment.get(),
                   environmentSettings);
-                void* mapped = nullptr;
+                uniform.skyParams[2] = path ? 1.0f : 0.0f;
+                void* mapped         = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));
                 vkUnmapMemory(device, modelUniform.memory);
@@ -593,13 +597,13 @@ namespace render::detail
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             if (model)
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
-            if (environment && environmentSettings.showBackground)
+            if ((environment && environmentSettings.showBackground) || path)
             {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline);
                 vkCmdDraw(cmd, 3, 1, 0, 0);
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             }
-            if (!model || !model->vertices.empty())
+            if (!path && (!model || !model->vertices.empty()))
                 vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)
