@@ -67,8 +67,8 @@ renderer.enableParameterPanel({
     { name: 'BoomBox', url: '/generated/BoomBox.glb' },
   ],
   environments: [
-    { name: 'Venice Sunset', url: '/generated/venice_sunset.nenv' },
-    { name: 'Studio Small 09', url: '/generated/studio_small_09.nenv' },
+    { name: 'Venice Sunset', url: '/generated/venice_sunset.bin' },
+    { name: 'Studio Small 09', url: '/generated/studio_small_09.bin' },
   ],
   onError: error => console.error(error),
 })

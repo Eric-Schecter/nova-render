@@ -27,7 +27,7 @@ try {
     async ({ novaURL, dataURL }) => {
       const Nova = await import(novaURL),
         loader = await import(dataURL)
-      const environment = await loader.loadEnvironmentFile('/generated/venice_sunset.nenv')
+      const environment = await loader.loadEnvironmentFile('/generated/venice_sunset.bin')
       if (
         environment.mips[0].size !== 256 ||
         environment.backgroundMips[0].size !== 512 ||
@@ -37,7 +37,7 @@ try {
       const old = await loader.loadEnvironmentFile('/legacy-environment.nenv')
       if (old.backgroundMips !== old.mips) throw Error('Legacy fallback unavailable')
       const malformed = new Uint8Array(
-        await (await fetch('/generated/venice_sunset.nenv')).arrayBuffer(),
+        await (await fetch('/generated/venice_sunset.bin')).arrayBuffer(),
       )
       new DataView(malformed.buffer).setUint32(160, 3, true)
       const blob = URL.createObjectURL(new Blob([malformed]))
@@ -86,14 +86,14 @@ try {
   const before = createHash('sha256')
     .update(await canvas.screenshot())
     .digest('hex')
-  await draw('/generated/venice_sunset.nenv', false)
+  await draw('/generated/venice_sunset.bin', false)
   const after = createHash('sha256')
     .update(await canvas.screenshot())
     .digest('hex')
   if (before !== after) throw Error('Independent background changed model lighting')
   await draw('/legacy-environment.nenv', true)
   await canvas.screenshot({ path: 'build/webgpu/hdr-background-before.png' })
-  await draw('/generated/venice_sunset.nenv', true)
+  await draw('/generated/venice_sunset.bin', true)
   await canvas.screenshot({ path: 'build/webgpu/hdr-background-after.png' })
   await page.evaluate(async () => {
     window.hdrTest.canvas.style = 'width:200px;height:150px'

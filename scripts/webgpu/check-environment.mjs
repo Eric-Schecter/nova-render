@@ -87,7 +87,7 @@ try {
       document.body.append(canvas)
       const r = await Nova.createRenderer({ canvas })
       window.environmentTestRenderer = r
-      await r.loadEnvironment('/generated/venice_sunset.nenv')
+      await r.loadEnvironment('/generated/venice_sunset.bin')
       await r.drawFrame()
       const cfg = r.getEnvironment()
       cfg.rotation = 90
@@ -147,7 +147,7 @@ try {
     await r.loadModel('/generated/DamagedHelmet.glb')
     await r.drawFrame()
     // Serialized resource changes and a concurrent redraw must remain valid.
-    await Promise.all([r.loadEnvironment('/generated/venice_sunset.nenv'), r.drawFrame()])
+    await Promise.all([r.loadEnvironment('/generated/venice_sunset.bin'), r.drawFrame()])
     r.dispose()
     document.querySelector('#environment-only').remove()
   })

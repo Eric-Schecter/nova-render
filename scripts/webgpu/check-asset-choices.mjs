@@ -47,13 +47,13 @@ try {
         await choose(models, '/generated/' + model + '.glb')
         const outputs = new Set()
         for (const name of ['kloppenheim_06', 'studio_small_09', 'venice_sunset']) {
-          await choose(maps, '/generated/' + name + '.nenv')
+          await choose(maps, '/generated/' + name + '.bin')
           outputs.add(await hash())
         }
         if (outputs.size !== 3) throw Error('Environment choices did not change GPU output')
       }
       await choose(models, '/generated/Avocado.glb')
-      await choose(maps, '/generated/studio_small_09.nenv')
+      await choose(maps, '/generated/studio_small_09.bin')
       await page
         .locator('.nova-viewport')
         .screenshot({ path: 'build/webgpu/asset-choices-desktop.png' })

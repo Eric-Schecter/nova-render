@@ -20,7 +20,7 @@ window.SetEnvironment(environment);
 ## 网页
 
 ```js
-await renderer.loadEnvironment('/generated/venice_sunset.nenv')
+await renderer.loadEnvironment('/generated/venice_sunset.bin')
 renderer.setEnvironment({ rotation: 30, intensity: 1, backgroundIntensity: 1, showBackground: true })
 await renderer.drawFrame()
 // getEnvironment() 返回副本，修改后调用 setEnvironment()。
@@ -39,9 +39,11 @@ await renderer.drawFrame()
 
 ## 资源
 
-运行时读取离线准备的 `.nenv`，包含线性 HDR 立方体、GGX 预过滤 mip 和漫反射球谐系数；镜面反射采用分离求和近似。当前不包含阴影或动态环境捕获。
+运行时读取离线准备的 `.nenv`：背景使用由 4K HDR 原图生成的独立 512×512 六面立方体和空间 mip 链，按屏幕采样尺寸过滤；照明使用原有的 256×256 GGX 预过滤立方体与漫反射球谐系数。两者均保留线性 RGBA16F HDR。镜面反射采用分离求和近似，当前不包含阴影或动态环境捕获。
 
 可选离线工具 `nova_environment_bake` 将 Radiance HDR 转为此内部格式，构建与命令见 `assets/Environment/README.md`。工具复用现有 stb / GLM，默认不构建；运行机器无需安装 HDR 解码器、DXC 或预处理工具。分发示例需同时携带 GLB 和 `.nenv`。
+
+新版资源约 20 MiB/套，背景与照明分开控制分辨率；仍兼容旧版 `NOVENV01` 资源。公开加载接口不变。
 
 完整调用见[第四个例子](../examples/environment)，环境资源来源见页脚的资源声明。
 

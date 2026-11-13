@@ -58,7 +58,7 @@ onMounted(async () => {
       withBase('/generated/'),
       { yaw: 20, pitch: 5, distance: 3.6, exposure: 1 },
       {
-        environmentURL: withBase('/generated/venice_sunset.nenv'),
+        environmentURL: withBase('/generated/venice_sunset.bin'),
         onError(error) {
           if (!disposed) message.value = error.message
         },
