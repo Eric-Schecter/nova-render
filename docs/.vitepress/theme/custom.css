@@ -8,3 +8,12 @@
     padding-left: calc(var(--vp-sidebar-width) + 32px);
   }
 }
+
+/* Use one compact gap below pagination at every screen width. */
+.Layout .VPContent .VPDoc {
+  padding-bottom: 32px;
+}
+
+.Layout .VPDoc .content {
+  padding-bottom: 0;
+}
