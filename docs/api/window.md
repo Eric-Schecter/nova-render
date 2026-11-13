@@ -23,6 +23,8 @@ explicit Window(const WindowConfig& config = {});
 bool PollEvents();
 FrameResult DrawFrame();
 void WaitIdle();
+void LoadModel(const std::filesystem::path& glbPath);
+void SetCamera(const OrbitCamera& camera);
 GraphicsAPI GetAPI() const;
 uint32_t ValidationErrorCount() const;
 ```
@@ -34,3 +36,5 @@ uint32_t ValidationErrorCount() const;
 仅在主线程使用，不可复制或移动。当前只允许一个 Window，不与外部管理的 GLFW 生命周期混用。构造会检查配置；窗口或渲染初始化失败抛异常并清理资源。退出前调用 `WaitIdle()` 获取可能延迟报告的 GPU 错误；析构按 Renderer → 窗口 → 事件系统顺序释放。
 
 完整代码见[编写示例](../guide/integration)。底层 Renderer 仍适合需要自行管理窗口的集成。
+
+模型加载和相机配置见[模型与相机](./model)。

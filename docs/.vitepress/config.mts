@@ -22,11 +22,13 @@ export default defineConfig({
       ] },
       { text: '例子', items: [
         { text: '01 · 三角形', link: '/examples/triangle' },
+        { text: '02 · Damaged Helmet', link: '/examples/damaged-helmet' },
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },
         { text: 'Window', link: '/api/window' },
         { text: 'Nova Web', link: '/api/web' },
+        { text: '模型与相机', link: '/api/model' },
         { text: '类型与配置', link: '/api/types' },
         { text: '后端查询与选择', link: '/api/selection' },
         { text: 'Renderer', link: '/api/renderer' },

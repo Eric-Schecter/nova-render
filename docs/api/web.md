@@ -24,6 +24,8 @@ try {
 
 ## 方法
 
+模型模式新增 `loadModel(url)` 和 `setCamera(camera)`，见[模型与相机](./model)。
+
 - `createRenderer({canvas})`：创建 WebGPU 适配器、设备和画布上下文，失败时 Promise 拒绝。
 - `setShader(shader)`：加载 `{source, vert, frag}` 预编译包；仅传 `{source}` 时请求本地 HLSL 编译服务。入口固定为 `VSMain` / `PSMain`。
 - `setClearColor([r,g,b,a])`：设置背景，分量在 0～1 之间。
@@ -31,4 +33,4 @@ try {
 - `waitIdle()`：等待提交的 GPU 工作。
 - `dispose()`：释放设备和画布，允许重复调用；释放后不能继续绘制。
 
-异步方法需要 `await`，同一实例上的操作须串行执行。当前仅支持固定三角形，不是通用网格 API。编译、管线和设备丢失错误会向调用方报告。
+异步方法需要 `await`，同一实例上的操作须串行执行。支持三角形和静态单材质 GLB，不是通用场景 API。编译、管线和设备丢失错误会向调用方报告。

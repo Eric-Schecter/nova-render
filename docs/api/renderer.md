@@ -27,9 +27,11 @@ uint32_t ValidationErrorCount() const;
 ```
 
 - `Resize`：首次绘制前和尺寸变化后传入 framebuffer 像素尺寸。任一维为零时暂停，资源重建在绘制时执行。
-- `DrawFrame`：绘制内置三角形；返回 `Rendered` 或 `Skipped`。不处理窗口事件，失败可抛异常。
+- `DrawFrame`：绘制内置三角形或已加载模型；返回 `Rendered` 或 `Skipped`。不处理窗口事件，失败可抛异常。
 - `WaitIdle`：等待已提交工作完成，退出前调用；执行错误可能在此报告。
 - `GetAPI`：返回实际选择的具体后端。
 - `ValidationErrorCount`：读取后端累计错误数。建议等待 GPU 后读取；零计数不代表画面一定正确或校验层已开启。
 
 完整用法见[编写示例](../guide/integration)。
+
+模型模式通过 `LoadModel(path)` 和 `SetCamera(camera)` 设置，详见[模型与相机](./model)。

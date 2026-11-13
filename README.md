@@ -199,3 +199,21 @@ cmake --build build/consumer
 推荐示例入口为 `render/Window.hpp`：`WindowConfig` 配置窗口，`Window::PollEvents()` / `DrawFrame()` 驱动主循环，窗口系统和尺寸同步由库内部管理。原 `Renderer(GLFWwindow*, ...)` 保留为底层接口，原三角形验证用例继续使用它检查窗口边界行为。
 
 网页预览默认展示并执行 `web/examples/triangle.js`：通过 `web/src/Nova.js` 的 `createRenderer / setShader / setClearColor / drawFrame / dispose` 调用，无需直接使用 WebGPU。JavaScript 源码只读展示，背景设置实时生效；HLSL 标签保留本地编辑能力。
+
+
+## Damaged Helmet 模型例子
+
+```sh
+cmake --build build --target nova_helmet
+./build/nova_helmet assets/DamagedHelmet/DamagedHelmet.glb --api metal --frames 60
+# macOS / Linux Vulkan: --api vulkan
+# Windows DX12: --api dx12 (CPU validation: --warp)
+```
+
+接口：`Window::LoadModel(path)`、`SetCamera(OrbitCamera)`；网页对应 `loadModel(url)`、`setCamera(camera)`。两端均从 `render/shaders/model.hlsl` 生成材质，不维护额外 WGSL / MSL 源码。支持静态、单材质、不透明、内嵌资源的核心 GLB；使用基础颜色、法线、金属度/粗糙度、AO、自发光及解析式摄影棚光照，尚无 HDR IBL、阴影或动画。
+
+网页例子：`/examples/damaged-helmet`，源码位于 `web/examples/helmet.js`；`node scripts/webgpu/check-model.mjs` 检查实际绘制及相机交互。原生数据、Metal、Vulkan 模型检查已加入 CTest。
+
+TinyGLTF / GLM / stb / JSON 依赖均封装为库内部实现，不暴露到公共头文件。TinyGLTF 使用 vcpkg overlay 固定官方 v2.9.7 提交和文件哈希，以规避上游 release 归档元数据变化导致的旧哈希失败。使用安装包时无需重新安装这些头文件依赖。
+
+模型 GLB 原样保存在 `assets/DamagedHelmet/`，来源、哈希和模型许可见该目录 README / UPSTREAM。模型资源与库代码许可分开，网页生成资源不提交 Git。
