@@ -9,7 +9,7 @@ export async function createRenderer({ canvas }) {
   return new Renderer(canvas, device, context)
 }
 class Renderer {
-  #canvas; #device; #context; #pipeline; #disposed = false; #lost; #clear = [0.025, 0.035, 0.055, 1]
+  #canvas; #device; #context; #pipeline; #configured = false; #disposed = false; #lost; #clear = [0.025, 0.035, 0.055, 1]
   constructor(canvas, device, context) {
     this.#canvas = canvas; this.#device = device; this.#context = context
     device.lost.then(info => { this.#lost = info.message || 'GPU device lost' })
@@ -52,9 +52,14 @@ class Renderer {
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'
     const ratio = window.devicePixelRatio || 1
-    this.#canvas.width = Math.min(this.#device.limits.maxTextureDimension2D, Math.max(1, Math.round(rect.width * ratio)))
-    this.#canvas.height = Math.min(this.#device.limits.maxTextureDimension2D, Math.max(1, Math.round(rect.height * ratio)))
-    this.#context.configure({device:this.#device,format:navigator.gpu.getPreferredCanvasFormat(),alphaMode:'opaque'})
+    const width = Math.min(this.#device.limits.maxTextureDimension2D, Math.max(1, Math.round(rect.width * ratio)))
+    const height = Math.min(this.#device.limits.maxTextureDimension2D, Math.max(1, Math.round(rect.height * ratio)))
+    if (this.#canvas.width !== width) this.#canvas.width = width
+    if (this.#canvas.height !== height) this.#canvas.height = height
+    if (!this.#configured) {
+      this.#context.configure({device:this.#device,format:navigator.gpu.getPreferredCanvasFormat(),alphaMode:'opaque'})
+      this.#configured = true
+    }
     this.#device.pushErrorScope('validation')
     let failure
     try {
