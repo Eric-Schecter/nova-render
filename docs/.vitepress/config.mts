@@ -22,6 +22,7 @@ export default defineConfig({
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },
+        { text: 'Window', link: '/api/window' },
         { text: '类型与配置', link: '/api/types' },
         { text: '后端查询与选择', link: '/api/selection' },
         { text: 'Renderer', link: '/api/renderer' },

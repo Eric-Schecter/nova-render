@@ -2,6 +2,7 @@
 
 公共头文件为 `render/Renderer.hpp`，所有接口位于 `render` 命名空间。当前版本是绘制固定三角形的最小渲染模块，尚无网格、材质、纹理或场景提交接口。
 
+- [Window](./window)：推荐的窗口与渲染入口，隐藏 GLFW 调用。
 - [类型与配置](./types)：`GraphicsAPI`、`RendererConfig`、`FrameResult`。
 - [后端查询与选择](./selection)：`GraphicsAPIName`、`IsGraphicsAPIAvailable`、`ResolveGraphicsAPI`。
 - [Renderer](./renderer)：初始化、尺寸变化、绘制、等待与错误计数。

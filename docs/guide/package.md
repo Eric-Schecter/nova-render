@@ -22,11 +22,10 @@ cmake_minimum_required(VERSION 3.24)
 project(MyExample LANGUAGES CXX)
 find_package(Nova 0.1 CONFIG REQUIRED)
 add_executable(my_example main.cpp)
-target_link_libraries(my_example PRIVATE Nova::Render glfw)
-target_compile_definitions(my_example PRIVATE GLFW_INCLUDE_NONE)
+target_link_libraries(my_example PRIVATE Nova::Render)
 ```
 
-配置时传入 `-DCMAKE_PREFIX_PATH=/absolute/path/to/nova-install`。当前 API 接收 `GLFWwindow*`，所以创建窗口的应用仍需链接 GLFW，安装包默认已包含它。
+配置时传入 `-DCMAKE_PREFIX_PATH=/absolute/path/to/nova-install`。推荐使用 `render::Window` 管理窗口，应用无需包含或直接链接 GLFW。底层 `Renderer` 仍接受外部 `GLFWwindow*`，供需要自行管理窗口的集成使用。
 
 可直接构建独立示例：
 

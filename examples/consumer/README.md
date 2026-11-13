@@ -1,6 +1,6 @@
 # Installed Nova consumer
 
-This is a standalone CMake project. It uses only Nova's installation prefix, without the renderer source tree, vcpkg toolchain, shader compiler or external shader files.
+This is a standalone CMake project using `render::Window` and linking only `Nova::Render`; application code does not call GLFW. It uses only Nova's installation prefix, without the renderer source tree, vcpkg toolchain, shader compiler or external shader files.
 
 ```sh
 cmake -S examples/consumer -B build/consumer \

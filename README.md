@@ -190,8 +190,10 @@ cmake -S examples/consumer -B build/consumer -DCMAKE_PREFIX_PATH=/absolute/path/
 cmake --build build/consumer
 ```
 
-应用使用 `find_package(Nova 0.1 CONFIG REQUIRED)` 并链接 `Nova::Render`，创建窗口时另链接 `glfw`。默认安装包含必要的 vcpkg GLFW / volk 开发文件；可用 `NOVA_BUNDLE_DEPENDENCIES=OFF` 改由使用方管理。使用安装包不需要 shader 编译器或 Node.js。
+应用使用 `find_package(Nova 0.1 CONFIG REQUIRED)` 并链接 `Nova::Render`，推荐用 `render::Window` 创建窗口，应用不需要直接使用 GLFW。默认安装包含必要的 vcpkg GLFW / volk 开发文件；可用 `NOVA_BUNDLE_DEPENDENCIES=OFF` 改由使用方管理。使用安装包不需要 shader 编译器或 Node.js。
 
 默认使用内置 shader，不必携带 shader 文件。显式 `--shader-dir` 仍可覆盖，路径错误会直接失败。静态 triplet 可减少动态库依赖；动态 triplet 仍需部署对应动态库。显卡驱动、平台图形组件和窗口系统仍是运行要求。包须匹配平台、架构和编译器 ABI。
 
 独立示例见 `examples/consumer/`，网站说明见“作为依赖使用”。新安装流程已在 macOS ARM64 验证；Windows / Linux 包尚未验证。
+
+推荐示例入口为 `render/Window.hpp`：`WindowConfig` 配置窗口，`Window::PollEvents()` / `DrawFrame()` 驱动主循环，窗口系统和尺寸同步由库内部管理。原 `Renderer(GLFWwindow*, ...)` 保留为底层接口，原三角形验证用例继续使用它检查窗口边界行为。
