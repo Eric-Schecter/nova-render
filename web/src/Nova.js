@@ -56,7 +56,7 @@ class Renderer {
     } catch (e) { failure = e }
     const error = await device.popErrorScope()
     if (failure || error) throw failure || Error(error.message)
-    this.#check(); this.#pipeline = pipeline
+    this.#check(); await this.waitIdle(); this.#model?.dispose(); this.#model=undefined; this.#pipeline = pipeline
   }
   setClearColor(color) {
     this.#check()

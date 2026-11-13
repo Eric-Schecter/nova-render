@@ -142,7 +142,7 @@ private:
     id<MTLRenderPipelineState> modelPipeline;
     id<MTLDepthStencilState> depthState;
     id<MTLTexture> depth;
-    std::array<id<MTLTexture>,5> modelTextures;
+    std::array<id<MTLTexture>,5> modelTextures{};
     id<MTLSamplerState> modelSampler;
     void UploadModel() {
         const auto shader = LoadShader(settings.shaderDirectory, "model.metallib");

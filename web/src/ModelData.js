@@ -14,7 +14,7 @@ export async function loadGLB(url){
   if(bytes.byteLength<20||dv.getUint32(0,true)!==0x46546c67||dv.getUint32(4,true)!==2||dv.getUint32(8,true)!==bytes.byteLength)throw Error('Expected glTF 2.0 GLB')
   let json,bin
   for(let offset=12;offset<bytes.byteLength;){if(offset+8>bytes.byteLength)throw Error('Truncated GLB');const size=dv.getUint32(offset,true),type=dv.getUint32(offset+4,true);offset+=8;if(offset+size>bytes.byteLength)throw Error('Invalid GLB chunk');if(type===0x4e4f534a)json=JSON.parse(new TextDecoder().decode(new Uint8Array(bytes,offset,size)));if(type===0x004e4942)bin=bytes.slice(offset,offset+size);offset+=size}
-  if(!json||!bin||json.extensionsRequired?.length||json.skins?.length||json.buffers.length!==1||json.buffers[0].uri)throw Error('Only static core GLB with embedded data is supported')
+  if(!json||!bin||json.extensionsRequired?.length||json.extensionsUsed?.length||json.skins?.length||json.animations?.length||json.buffers.length!==1||json.buffers[0].uri)throw Error('Only static core GLB with embedded data is supported')
   const raw=new DataView(bin)
   function element(index,i,type,components){
     const a=json.accessors[index],v=json.bufferViews[a.bufferView]
@@ -32,6 +32,7 @@ export async function loadGLB(url){
       if((p.mode??4)!==4||p.indices===undefined||p.targets)throw Error('Only indexed static triangle primitives are supported')
       if(materialIndex<0)materialIndex=p.material
       if(p.material===undefined||p.material!==materialIndex)throw Error('Initial model loader requires one material')
+      if(![5121,5123,5125].includes(json.accessors[p.indices].componentType))throw Error('Invalid index format')
       const count=json.accessors[p.indices].count;if(count%3||vertices.length/12+count>10000000)throw Error('Invalid or oversized mesh')
       for(let i=0;i<count;i++){
         const index=element(p.indices,i,'SCALAR',1)[0],pos=element(p.attributes.POSITION,index,'VEC3',3),normal=element(p.attributes.NORMAL,index,'VEC3',3),uv=element(p.attributes.TEXCOORD_0,index,'VEC2',2)

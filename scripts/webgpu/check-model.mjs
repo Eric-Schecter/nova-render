@@ -7,7 +7,6 @@ try {
   const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto('http://127.0.0.1:5173/examples/damaged-helmet')
   await page.getByRole('status').filter({hasText:'模型已加载'}).waitFor({timeout:45000})
-  const canvas=page.getByRole('img',{name:'Damaged Helmet 模型预览'})
   const target=page.locator('canvas')
   const before=await target.screenshot()
   await page.getByRole('slider',{name:'水平角',exact:true}).fill('65')

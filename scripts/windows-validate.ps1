@@ -15,8 +15,16 @@ if ($VsDevCmd) {
     $vsRoot = Split-Path (Split-Path (Split-Path $VsDevCmd -Parent) -Parent) -Parent
     $hostArch = 'x64'
     if (Test-Path "$vsRoot/VC/Tools/MSVC/*/bin/Hostarm64/arm64/cl.exe") { $hostArch = 'arm64' }
-    $environment = & cmd.exe /d /s /c "`"`"$VsDevCmd`" -arch=$Architecture -host_arch=$hostArch >nul && set`""
-    if ($LASTEXITCODE) { throw 'MSVC environment initialization failed' }
+    # A batch file avoids PowerShell 5.1 / cmd nested-quote differences for Program Files.
+    $environmentScript = Join-Path ([IO.Path]::GetTempPath()) ('nova-msvc-' + [guid]::NewGuid().ToString('N') + '.cmd')
+    try {
+        @('@echo off', "call `"$VsDevCmd`" -arch=$Architecture -host_arch=$hostArch >nul", 'if errorlevel 1 exit /b 1', 'set') |
+            Set-Content -Path $environmentScript -Encoding Default
+        $environment = & cmd.exe /d /c $environmentScript
+        if ($LASTEXITCODE) { throw 'MSVC environment initialization failed' }
+    } finally {
+        Remove-Item -LiteralPath $environmentScript -ErrorAction SilentlyContinue
+    }
     foreach ($line in $environment) {
         if ($line -match '^([^=]+)=(.*)$') {
             [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')

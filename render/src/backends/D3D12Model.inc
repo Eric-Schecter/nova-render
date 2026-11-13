@@ -41,7 +41,7 @@
         D3D12_ROOT_PARAMETER params[3]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_CBV;params[0].Descriptor.ShaderRegister=0;params[0].ShaderVisibility=D3D12_SHADER_VISIBILITY_ALL;
         params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_SRV;params[1].Descriptor.ShaderRegister=0;params[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_VERTEX;
         params[2].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[2].DescriptorTable.NumDescriptorRanges=1;params[2].DescriptorTable.pDescriptorRanges=&range;params[2].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
-        D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_MIP_LINEAR;sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_WRAP;sampler.ComparisonFunc=D3D12_COMPARISON_FUNC_ALWAYS;sampler.MaxLOD=D3D12_FLOAT32_MAX;sampler.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
+        D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_MIP_LINEAR;sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_WRAP;sampler.MaxAnisotropy=1;sampler.ComparisonFunc=D3D12_COMPARISON_FUNC_ALWAYS;sampler.MaxLOD=D3D12_FLOAT32_MAX;sampler.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
         D3D12_ROOT_SIGNATURE_DESC rootDesc{};rootDesc.NumParameters=3;rootDesc.pParameters=params;rootDesc.NumStaticSamplers=1;rootDesc.pStaticSamplers=&sampler;
         ComPtr<ID3DBlob> signature,messages;checkHR(D3D12SerializeRootSignature(&rootDesc,D3D_ROOT_SIGNATURE_VERSION_1,&signature,&messages),"Serialize model root");
         checkHR(device->CreateRootSignature(0,signature->GetBufferPointer(),signature->GetBufferSize(),IID_PPV_ARGS(&modelRoot)),"Create model root");
@@ -50,6 +50,8 @@
         info.RasterizerState.FillMode=D3D12_FILL_MODE_SOLID;info.RasterizerState.CullMode=D3D12_CULL_MODE_NONE;info.RasterizerState.DepthClipEnable=TRUE;
         auto& blend=info.BlendState.RenderTarget[0];blend.SrcBlend=D3D12_BLEND_ONE;blend.DestBlend=D3D12_BLEND_ZERO;blend.BlendOp=D3D12_BLEND_OP_ADD;blend.SrcBlendAlpha=D3D12_BLEND_ONE;blend.DestBlendAlpha=D3D12_BLEND_ZERO;blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;blend.LogicOp=D3D12_LOGIC_OP_NOOP;blend.RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_ALL;
         info.DepthStencilState.DepthEnable=TRUE;info.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ALL;info.DepthStencilState.DepthFunc=D3D12_COMPARISON_FUNC_LESS;info.DepthStencilState.StencilEnable=FALSE;
+        info.DepthStencilState.StencilReadMask=D3D12_DEFAULT_STENCIL_READ_MASK;info.DepthStencilState.StencilWriteMask=D3D12_DEFAULT_STENCIL_WRITE_MASK;
+        info.DepthStencilState.FrontFace={D3D12_STENCIL_OP_KEEP,D3D12_STENCIL_OP_KEEP,D3D12_STENCIL_OP_KEEP,D3D12_COMPARISON_FUNC_ALWAYS};info.DepthStencilState.BackFace=info.DepthStencilState.FrontFace;
         info.SampleMask=UINT_MAX;info.SampleDesc.Count=1;info.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;info.NumRenderTargets=1;info.RTVFormats[0]=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;info.DSVFormat=DXGI_FORMAT_D32_FLOAT;
         checkHR(device->CreateGraphicsPipelineState(&info,IID_PPV_ARGS(&modelPipeline)),"Create model pipeline");gpuModel=model.get();
     }

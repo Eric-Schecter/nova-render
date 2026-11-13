@@ -40,7 +40,7 @@ glm::vec2 vec2(const tinygltf::Model& m,int a,size_t i){glm::vec2 v;std::memcpy(
 std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path) {
     tinygltf::Model gltf; tinygltf::TinyGLTF loader; std::string errors,warnings;
     if(!loader.LoadBinaryFromFile(&gltf,&errors,&warnings,path.string())) throw std::runtime_error("Load GLB: "+path.string()+": "+errors);
-    if(!gltf.extensionsRequired.empty() || !gltf.skins.empty()) throw std::runtime_error("Only static core glTF GLB is supported");
+    if(!gltf.extensionsRequired.empty() || !gltf.extensionsUsed.empty() || !gltf.skins.empty() || !gltf.animations.empty()) throw std::runtime_error("Only static core glTF GLB is supported");
     auto result=std::make_shared<ModelData>();
     int materialIndex=-1; glm::vec3 minimum(std::numeric_limits<float>::max()),maximum(-std::numeric_limits<float>::max());
     std::vector<bool> active(gltf.nodes.size(),false);
@@ -69,6 +69,7 @@ std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path) {
                 const glm::vec3 pos=glm::vec3(matrix*glm::vec4(vec3(gltf,position,v),1));
                 const glm::vec3 n=glm::normalize(normals*vec3(gltf,normal,v));const glm::vec2 t=vec2(gltf,uv,v);
                 for(int k=0;k<3;++k)if(!std::isfinite(pos[k])||!std::isfinite(n[k]))throw std::runtime_error("Non-finite model data");
+                if(!std::isfinite(t.x)||!std::isfinite(t.y))throw std::runtime_error("Non-finite texture coordinates");
                 minimum=glm::min(minimum,pos);maximum=glm::max(maximum,pos);
                 result->vertices.push_back({{pos.x,pos.y,pos.z,1},{n.x,n.y,n.z,0},{t.x,t.y,0,0}});
             }
@@ -87,6 +88,7 @@ std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path) {
     for(int k=0;k<4;++k)result->baseColor[k]=static_cast<float>(pbr.baseColorFactor[k]);
     result->material={static_cast<float>(pbr.metallicFactor),static_cast<float>(pbr.roughnessFactor),static_cast<float>(mat.normalTexture.scale),static_cast<float>(mat.occlusionTexture.strength)};
     for(int k=0;k<3;++k)result->emissive[k]=static_cast<float>(mat.emissiveFactor[k]);
+    if(pbr.baseColorTexture.texCoord || mat.normalTexture.texCoord || pbr.metallicRoughnessTexture.texCoord || mat.occlusionTexture.texCoord || mat.emissiveTexture.texCoord)throw std::runtime_error("Only TEXCOORD_0 is supported");
     const int textures[]={pbr.baseColorTexture.index,mat.normalTexture.index,pbr.metallicRoughnessTexture.index,mat.occlusionTexture.index,mat.emissiveTexture.index};
     const std::array<std::array<unsigned char,4>,5> fallback={{{255,255,255,255},{128,128,255,255},{255,255,255,255},{255,255,255,255},{0,0,0,255}}};
     for(int i=0;i<5;++i){auto& dst=result->images[i];dst.pixels.assign(fallback[i].begin(),fallback[i].end());if(textures[i]<0)continue;
