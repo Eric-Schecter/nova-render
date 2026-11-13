@@ -173,7 +173,7 @@ npm run docs:preview
 
 ### HLSL / WebGPU 交互预览
 
-运行 `npm run docs:dev` 后打开 `/guide/playground`：编辑 HLSL 并点击运行，由本机 DXC 和 Naga WASI 转为 WGSL，再通过 WebGPU 绘制。DXC 可用 `NOVA_DXC_EXECUTABLE` 指定；macOS 自动查找 Vulkan SDK。
+运行 `npm run docs:dev` 后打开 `/examples/triangle`：编辑 HLSL 并点击运行，由本机 DXC 和 Naga WASI 转为 WGSL，再通过 WebGPU 绘制。DXC 可用 `NOVA_DXC_EXECUTABLE` 指定；macOS 自动查找 Vulkan SDK。
 
 `npm run docs:build` 自动生成静态示例资源。静态网站能展示默认三角形，但不提供即时 HLSL 编译。`npm run check:webgpu` 在运行中的本地预览上执行 Chrome GPU 像素读回检查；`node scripts/webgpu/check-ui.mjs` 检查编辑、错误和重置流程，需要本机 Chrome。
 

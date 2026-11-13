@@ -11,6 +11,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: '指南', link: '/guide/quick-start' },
+      { text: '例子', link: '/examples/' },
       { text: 'API', link: '/api/' },
     ],
     sidebar: [
@@ -18,7 +19,10 @@ export default defineConfig({
         { text: '快速开始', link: '/guide/quick-start' },
         { text: '编写示例', link: '/guide/integration' },
         { text: '作为依赖使用', link: '/guide/package' },
-        { text: '在线三角形示例', link: '/guide/playground' },
+      ] },
+      { text: '例子', items: [
+        { text: '例子总览', link: '/examples/' },
+        { text: '01 · 三角形', link: '/examples/triangle' },
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },
