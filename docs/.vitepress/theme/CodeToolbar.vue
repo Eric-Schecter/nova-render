@@ -7,7 +7,7 @@ const emit = defineEmits(['update:expanded'])
   <div class="code-toolbar">
     <slot />
     <button type="button" :aria-expanded="expanded" @click="emit('update:expanded', !expanded)">
-      {{ expanded ? '收起代码' : '展开代码' }}
+      {{ expanded ? '全部收起' : '全部展开' }}
     </button>
   </div>
 </template>

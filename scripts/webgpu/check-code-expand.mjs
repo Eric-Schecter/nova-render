@@ -24,12 +24,12 @@ try {
         if (width === 1400) {
           const tabs = await page.getByRole('tablist').boundingBox()
           const button = await page
-            .getByRole('button', { name: '展开代码', exact: true })
+            .getByRole('button', { name: '全部展开', exact: true })
             .boundingBox()
           if (Math.abs(tabs.y - button.y) > 8) throw Error('Expand button is on a separate row')
         }
-        await page.getByRole('button', { name: '展开代码', exact: true }).click()
-        const collapse = page.getByRole('button', { name: '收起代码', exact: true })
+        await page.getByRole('button', { name: '全部展开', exact: true }).click()
+        const collapse = page.getByRole('button', { name: '全部收起', exact: true })
         if ((await collapse.getAttribute('aria-expanded')) !== 'true')
           throw Error('Expansion state missing')
         const dimensions = await editor.evaluate((element) => ({
@@ -52,9 +52,9 @@ try {
       if ((await canvas.getAttribute('data-expand-identity')) !== 'original')
         throw Error('Expansion recreated preview')
       await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
-      await page.getByRole('button', { name: '展开代码', exact: true }).click()
+      await page.getByRole('button', { name: '全部展开', exact: true }).click()
       if (await canvas.isVisible()) throw Error('Code expansion changed preview visibility')
-      await page.getByRole('button', { name: '收起代码', exact: true }).click()
+      await page.getByRole('button', { name: '全部收起', exact: true }).click()
       await page.getByRole('button', { name: '显示预览', exact: true }).click()
       if ((await page.evaluate(() => document.documentElement.scrollWidth)) > width)
         throw Error('Horizontal overflow')
