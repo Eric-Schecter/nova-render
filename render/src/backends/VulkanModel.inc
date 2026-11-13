@@ -63,9 +63,12 @@
     }
     void LoadModel(std::shared_ptr<const ModelData> data) override {WaitIdle();destroySwapchain();destroyModel();model=std::move(data);resized=true;}
     void destroyModel() {
-        if(modelPool)vkDestroyDescriptorPool(device,modelPool,nullptr);modelPool=VK_NULL_HANDLE;
-        if(modelSetLayout)vkDestroyDescriptorSetLayout(device,modelSetLayout,nullptr);modelSetLayout=VK_NULL_HANDLE;
-        if(modelSampler)vkDestroySampler(device,modelSampler,nullptr);modelSampler=VK_NULL_HANDLE;
+        if(modelPool) { vkDestroyDescriptorPool(device,modelPool,nullptr); }
+        modelPool=VK_NULL_HANDLE;
+        if(modelSetLayout) { vkDestroyDescriptorSetLayout(device,modelSetLayout,nullptr); }
+        modelSetLayout=VK_NULL_HANDLE;
+        if(modelSampler) { vkDestroySampler(device,modelSampler,nullptr); }
+        modelSampler=VK_NULL_HANDLE;
         for(auto& t:modelTextures)destroyModelTexture(t);
         destroyModelBuffer(modelVertices);destroyModelBuffer(modelUniform);destroyModelBuffer(modelStaging);modelReady=false;
     }

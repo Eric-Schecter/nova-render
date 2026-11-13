@@ -45,3 +45,5 @@ await renderer.drawFrame()
 唯一维护的材质源码是 `render/shaders/model.hlsl`。原生端构建生成 DXIL / SPIR-V / metallib，网页端经 DXC + Naga 生成 WGSL；网页输出额外编码 sRGB。缺少贴图时使用内置默认纹理，缺少模型或不支持的格式会报错。
 
 模型版权声明保留在 `assets/DamagedHelmet/`；资源许可与库代码分开。部署示例需携带 GLB，模型资源不内置进渲染库。
+
+已验证：macOS Metal / Vulkan、Ubuntu Lavapipe，以及 Windows RTX 4060 的 DX12 / Vulkan 与 WARP。网页已检查实际画面及相机交互。Windows 渲染测试需要交互桌面会话，SSH 本身仅用于构建与调度。

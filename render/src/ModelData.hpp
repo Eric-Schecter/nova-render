@@ -23,6 +23,8 @@ struct SceneUniforms {
     float material[4];
     float emissive[4];
 };
+static_assert(sizeof(ModelVertex) == 48, "HLSL vertex storage layout must match");
+static_assert(sizeof(SceneUniforms) == 128, "HLSL scene uniform layout must match");
 std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path);
 void ValidateCamera(const OrbitCamera& camera);
 SceneUniforms MakeSceneUniforms(const ModelData& data, const OrbitCamera& camera, float aspect);

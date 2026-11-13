@@ -1,6 +1,6 @@
 # Nova Triangle
 
-最小 C++17 桌面渲染示例：同一份窗口和验证流程，通过 `render` 模块选择 Vulkan、DX12 或 Metal，绘制同一个彩色三角形。
+C++17 桌面渲染示例：通过 `render` 模块选择 Vulkan、DX12 或 Metal，以三角形和 Damaged Helmet 验证统一接口及 HLSL 材质。
 
 ## 平台与选择
 
@@ -217,3 +217,5 @@ cmake --build build --target nova_helmet
 TinyGLTF / GLM / stb / JSON 依赖均封装为库内部实现，不暴露到公共头文件。TinyGLTF 使用 vcpkg overlay 固定官方 v2.9.7 提交和文件哈希，以规避上游 release 归档元数据变化导致的旧哈希失败。使用安装包时无需重新安装这些头文件依赖。
 
 模型 GLB 原样保存在 `assets/DamagedHelmet/`，来源、哈希和模型许可见该目录 README / UPSTREAM。模型资源与库代码许可分开，网页生成资源不提交 Git。
+
+模型阶段验证（2026-11-13）：macOS ARM64 15 项检查通过（Metal / MoltenVK），Ubuntu ARM64 13 项通过（Lavapipe、Khronos 校验层）。Windows x64 RTX 4060 真机通过 15 项检查，并单独完成 DX12 模型 60 帧验证；D3D12 Debug Layer 与 Vulkan Khronos 层启用。Windows 图形检查在已登录桌面会话执行，SSH 服务会话不能创建 DX12 交换链。网页端已检查真实模型绘制、相机改变 GPU 输出、源码一致性、折叠、页面销毁，以及无需编译服务的静态预览。本机日志在 `build/validation/helmet-*`，不提交 Git。

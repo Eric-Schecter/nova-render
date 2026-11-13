@@ -51,7 +51,7 @@ std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path) {
         if(node.matrix.size()==16){for(int i=0;i<16;++i)glm::value_ptr(local)[i]=static_cast<float>(node.matrix[i]);}
         else {
             if(node.translation.size()==3)local=glm::translate(local,glm::vec3(node.translation[0],node.translation[1],node.translation[2]));
-            if(node.rotation.size()==4)local*=glm::mat4_cast(glm::quat(node.rotation[3],node.rotation[0],node.rotation[1],node.rotation[2]));
+            if(node.rotation.size()==4)local*=glm::mat4_cast(glm::quat(static_cast<float>(node.rotation[3]),static_cast<float>(node.rotation[0]),static_cast<float>(node.rotation[1]),static_cast<float>(node.rotation[2])));
             if(node.scale.size()==3)local=glm::scale(local,glm::vec3(node.scale[0],node.scale[1],node.scale[2]));
         }
         const auto matrix=parent*local;const auto normals=glm::transpose(glm::inverse(glm::mat3(matrix)));
