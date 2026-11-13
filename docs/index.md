@@ -22,4 +22,4 @@ features:
 
 当前版本是最小固定三角形渲染器，适合学习、验证后端和逐步完善接口。它尚未提供通用场景、网格或材质 API。
 
-文档以当前公共头文件 `render/Renderer.hpp` 为准。先阅读[接入指南](./guide/integration)，或查看[已验证范围](./guide/validation)。
+文档以当前公共头文件 `render/Renderer.hpp` 为准。先阅读[接入指南](./guide/integration)，或查看 [API 参考](./api/)。

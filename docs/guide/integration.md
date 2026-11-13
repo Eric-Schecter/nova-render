@@ -1,21 +1,25 @@
-# 接入 Renderer
+# 编写示例
 
-## CMake
+当前 Renderer 绘制内置三角形。新例子可以练习窗口、后端选择和主循环，暂不能提交自定义网格或场景。
 
-当前在同一个源码树中使用 `nova_render` target，尚未提供 `find_package(Nova)` 或安装导出包。
+## 1. 创建文件
+
+在仓库中新增 `examples/basic/main.cpp`，填入下面的主循环。
+
+## 2. 注册构建目标
+
+在根 `CMakeLists.txt` 的 `nova_render` 和 `triangle_shaders` 定义之后添加：
 
 ```cmake
-add_executable(my_demo main.cpp)
-target_link_libraries(my_demo PRIVATE nova_render glfw)
-add_dependencies(my_demo triangle_shaders)
-target_compile_definitions(my_demo PRIVATE
+add_executable(nova_basic examples/basic/main.cpp)
+target_link_libraries(nova_basic PRIVATE nova_render glfw)
+add_dependencies(nova_basic triangle_shaders)
+target_compile_definitions(nova_basic PRIVATE
     GLFW_INCLUDE_NONE
     APP_SHADER_DIR="${SHADER_OUTPUT_DIR}")
 ```
 
-该片段放在当前项目中定义 `nova_render` 和 `triangle_shaders` 之后。GLFW 也是示例直接调用的窗口库。
-
-## 最小主循环
+## 3. 编写主循环
 
 下面示例通过 RAII 保证异常时也按正确顺序销毁窗口。它绘制模块内置的三角形，并不提交自定义场景。
 
@@ -65,3 +69,23 @@ int main() {
 也可通过 framebuffer size callback 更新尺寸。窗口逻辑尺寸和像素尺寸在 Retina / 高 DPI 环境中可能不同。主循环须持续处理 GLFW 事件；Renderer 不拥有事件循环。
 
 完整的 CLI 和缩放、最小化恢复验证用例位于 `examples/triangle/main.cpp`。
+
+## 4. 构建与运行
+
+使用已配置好的构建目录：
+
+```sh
+cmake -S . -B build
+cmake --build build --target nova_basic
+./build/nova_basic
+```
+
+Windows 使用相应目录，例如 `cmake --build build-windows-vulkan --target nova_basic`，然后运行该目录下的 `nova_basic.exe`。多配置生成器的可执行文件可能在 `Debug/` 等配置子目录中。
+
+这个例子默认按平台选择后端。需要指定后端时，在创建 Renderer 前设置：
+
+```cpp
+config.api = render::GraphicsAPI::Vulkan;
+```
+
+先保证基础例子运行，再增加自己的窗口交互。当前库没有安装导出包，以上写法适用于本仓库内的示例。

@@ -1,12 +1,8 @@
 # 快速开始
 
-## 构建条件
+## 编译
 
-需要 CMake 3.24+、C++17 编译器、vcpkg 和平台构建工具。manifest 固定依赖基线；GLFW 管理窗口，volk 用于可选 Vulkan 后端。shader 在构建时从 HLSL 生成，参见 [shader 构建](./shaders)。
-
-macOS 使用 Xcode 与 Metal Toolchain；Windows 使用 MSVC Build Tools 和 Windows SDK；Linux 需要 GLFW 所需的 X11/Wayland 开发包，以及 Vulkan Loader 和 ICD。
-
-## 配置与编译
+准备 CMake 3.24+、C++17 编译器和 vcpkg。macOS 需要 Xcode / Metal Toolchain 及 Vulkan SDK 的 DXC；Windows 需要 MSVC Build Tools 和 Windows SDK；Linux 需要窗口开发包及 Vulkan 环境。详细环境说明见仓库 README。
 
 在仓库根目录执行：
 
@@ -16,19 +12,11 @@ cmake --preset debug
 cmake --build --preset debug
 ```
 
-Windows PowerShell / MSVC 开发环境：
+Windows 在 MSVC 开发环境中使用 `windows-msvc` preset，当前默认 ARM64；x64 需选择 x64 工具链并设置 `VCPKG_TARGET_TRIPLET=x64-windows`。
 
-```powershell
-$env:VCPKG_ROOT = 'C:\path\to\vcpkg'
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc
-```
+macOS / Windows 可设置 `NOVA_ENABLE_VULKAN=OFF` 只构建原生后端。Linux 必须启用 Vulkan。
 
-当前 Windows preset 默认 ARM64。x64 机器需使用对应 MSVC 环境并覆盖 `-DVCPKG_TARGET_TRIPLET=x64-windows`；不要把 ARM64 配置直接当作 x64 编译环境。
-
-macOS / Windows 可在配置时设置 `-DNOVA_ENABLE_VULKAN=OFF` 仅构建原生后端，Linux 不允许关闭 Vulkan。原生构建仍需要 shader 工具。
-
-## 运行
+## 运行三角形
 
 ```sh
 # macOS
@@ -42,8 +30,8 @@ macOS / Windows 可在配置时设置 `-DNOVA_ENABLE_VULKAN=OFF` 仅构建原生
 .\build-windows-vulkan\nova_triangle.exe --api dx12
 ```
 
-DX12 设备须支持 Shader Model 6.0 / DXIL。用 `--api dx12 --warp` 可显式验证 CPU 软件渲染路径。
+常用参数：`--api auto|metal|dx12|vulkan`、`--frames 120`、`--resize-test`、`--shader-dir PATH`。Windows 可用 `--warp` 测试 CPU 渲染，真实 DX12 设备须支持 Shader Model 6.0 / DXIL。
 
-程序使用构建时配置的 shader 绝对目录，当前未提供安装或分发打包；移动可执行文件后可用 `--shader-dir PATH` 指定资源。
+shader 仅维护 `render/shaders/triangle.hlsl`，构建时生成对应后端二进制。当前没有分发打包，程序默认从构建目录加载资源。
 
-下一步：[接入 Renderer](./integration)。
+接下来：[编写自己的示例](./integration)。

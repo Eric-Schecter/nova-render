@@ -10,15 +10,11 @@ export default defineConfig({
     nav: [
       { text: '指南', link: '/guide/quick-start' },
       { text: 'API', link: '/api/' },
-      { text: '验证状态', link: '/guide/validation' },
     ],
     sidebar: [
       { text: '使用指南', items: [
         { text: '快速开始', link: '/guide/quick-start' },
-        { text: '接入 Renderer', link: '/guide/integration' },
-        { text: '后端与校验', link: '/guide/backends' },
-        { text: 'HLSL 与离线构建', link: '/guide/shaders' },
-        { text: '示例与验证状态', link: '/guide/validation' },
+        { text: '编写示例', link: '/guide/integration' },
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },
