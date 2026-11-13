@@ -28,11 +28,15 @@ namespace render
         void             SetDirectionalLight(const DirectionalLight& light);
         DirectionalLight GetDirectionalLight() const;
         void             SetLighting(LightingMode mode);
-        void             SetCamera(const OrbitCamera& camera);
-        OrbitCamera      GetCamera() const;
-        void             EnableOrbitControls(bool enabled = true);
-        GraphicsAPI      GetAPI() const;
-        uint32_t         ValidationErrorCount() const;
+        // Returns false if UI was disabled at build time. Disabled by default.
+        bool                 EnableParameterPanel(bool enabled = true);
+        void                 SetClearColor(const std::array<float, 4>& color);
+        std::array<float, 4> GetClearColor() const;
+        void                 SetCamera(const OrbitCamera& camera);
+        OrbitCamera          GetCamera() const;
+        void                 EnableOrbitControls(bool enabled = true);
+        GraphicsAPI          GetAPI() const;
+        uint32_t             ValidationErrorCount() const;
 
       private:
         struct Impl;

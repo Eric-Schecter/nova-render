@@ -17,6 +17,8 @@ try {
       const panel = page.getByRole('region', { name: '参数面板', exact: true }),
         canvas = page.locator('canvas')
       await panel.scrollIntoViewIfNeeded()
+      const open = page.getByRole('button', { name: '显示参数面板', exact: true })
+      if (await open.count()) await open.click()
       const a = await panel.boundingBox(),
         b = await canvas.boundingBox()
       if (

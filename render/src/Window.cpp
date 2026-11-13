@@ -49,6 +49,7 @@ namespace render
         }
         ~Impl()
         {
+            renderer.reset();
             if (window)
             {
                 glfwSetMouseButtonCallback(window.get(), nullptr);
@@ -66,7 +67,9 @@ namespace render
             if (!window)
                 throw std::runtime_error("Window creation failed");
             glfwSetKeyCallback(window.get(), [](GLFWwindow* w, int key, int, int action, int) {
-                if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+                if (
+                  key == GLFW_KEY_ESCAPE && action == GLFW_PRESS
+                  && !static_cast<Impl*>(glfwGetWindowUserPointer(w))->renderer->UIWantsKeyboard())
                     glfwSetWindowShouldClose(w, GLFW_TRUE);
             });
             renderer = std::make_unique<Renderer>(window.get(), config.renderer);
@@ -75,7 +78,7 @@ namespace render
                 auto* self = static_cast<Impl*>(glfwGetWindowUserPointer(w));
                 if (button != GLFW_MOUSE_BUTTON_LEFT)
                     return;
-                self->dragging = self->orbitEnabled && action == GLFW_PRESS;
+                self->dragging = self->orbitEnabled && !self->renderer->UIWantsMouse() && action == GLFW_PRESS;
                 if (self->dragging)
                     glfwGetCursorPos(w, &self->lastX, &self->lastY);
             });
@@ -90,7 +93,7 @@ namespace render
             });
             glfwSetScrollCallback(window.get(), [](GLFWwindow* w, double, double y) {
                 auto* self = static_cast<Impl*>(glfwGetWindowUserPointer(w));
-                if (self->orbitEnabled)
+                if (self->orbitEnabled && !self->renderer->UIWantsMouse())
                     self->UpdateCamera([&](OrbitCamera c) { return detail::ZoomOrbit(c, -y * 100.0); });
             });
             glfwSetWindowFocusCallback(window.get(), [](GLFWwindow* w, int focused) {
@@ -149,6 +152,18 @@ namespace render
     DirectionalLight Window::GetDirectionalLight() const
     {
         return impl_->renderer->GetDirectionalLight();
+    }
+    bool Window::EnableParameterPanel(bool enabled)
+    {
+        return impl_->renderer->EnableParameterPanel(enabled);
+    }
+    void Window::SetClearColor(const std::array<float, 4>& color)
+    {
+        impl_->renderer->SetClearColor(color);
+    }
+    std::array<float, 4> Window::GetClearColor() const
+    {
+        return impl_->renderer->GetClearColor();
     }
     void Window::SetLighting(LightingMode mode)
     {

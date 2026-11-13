@@ -15,6 +15,7 @@ int main(int argc, char** argv)
         camera.pitch = 5;
         window.SetCamera(camera);
         window.EnableOrbitControls();
+        window.EnableParameterPanel();
         int frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
         {

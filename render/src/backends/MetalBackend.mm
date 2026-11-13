@@ -3,6 +3,9 @@
 #define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#ifdef NOVA_HAS_UI
+#include <imgui_impl_metal.h>
+#endif
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <iostream>
@@ -26,6 +29,13 @@ namespace render::detail
             {
                 if (lastCommand)
                     [lastCommand waitUntilCompleted];
+#ifdef NOVA_HAS_UI
+                if (uiRenderer)
+                {
+                    parameterPanel->Activate();
+                    ImGui_ImplMetal_Shutdown();
+                }
+#endif
                 if (view && layer && view.layer == layer)
                 {
                     view.layer      = previousLayer;
@@ -137,6 +147,23 @@ namespace render::detail
                     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
                     pass.depthAttachment.clearDepth  = 1.0;
                 }
+#ifdef NOVA_HAS_UI
+                if (panelEnabled)
+                {
+                    parameterPanel->Activate();
+                    if (!uiRenderer)
+                    {
+                        if (!ImGui_ImplMetal_Init(device))
+                            throw std::runtime_error("Initialize Metal UI failed");
+                        uiRenderer = true;
+                    }
+                    parameterPanel->SetSRGBOutput(true);
+                    ImGui_ImplMetal_NewFrame(pass);
+                    DrawParameterPanel();
+                }
+#endif
+                const auto clear                    = ClearColorForTarget(true);
+                pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
@@ -158,6 +185,10 @@ namespace render::detail
                 }
                 else
                     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+#ifdef NOVA_HAS_UI
+                if (panelEnabled)
+                    ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), command, encoder);
+#endif
                 [encoder endEncoding];
                 [command presentDrawable:drawable];
                 [command commit];
@@ -182,6 +213,9 @@ namespace render::detail
         uint32_t ValidationErrorCount() const override { return errors; }
 
       private:
+#ifdef NOVA_HAS_UI
+        bool uiRenderer = false;
+#endif
         RendererConfig                settings;
         const ModelData*              gpuModel = nullptr;
         id<MTLBuffer>                 vertices;

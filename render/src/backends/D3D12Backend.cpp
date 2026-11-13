@@ -9,6 +9,9 @@
 #include <climits>
 #include <cstring>
 #include <d3d12.h>
+#ifdef NOVA_HAS_UI
+#include <imgui_impl_dx12.h>
+#endif
 #include <d3d12sdklayers.h>
 #include <dxgi1_6.h>
 #include <fstream>
@@ -42,6 +45,13 @@ namespace render::detail
                     std::cerr << e.what() << '\n';
                 }
             }
+#ifdef NOVA_HAS_UI
+            if (uiRenderer)
+            {
+                parameterPanel->Activate();
+                ImGui_ImplDX12_Shutdown();
+            }
+#endif
             if (event)
                 CloseHandle(event);
         }
@@ -152,6 +162,48 @@ namespace render::detail
                 Recreate();
             if (model && !modelDepth)
                 ModelDepth();
+#ifdef NOVA_HAS_UI
+            if (panelEnabled)
+            {
+                parameterPanel->Activate();
+                if (uiRenderer && uiHasDepth != bool(model))
+                {
+                    ImGui_ImplDX12_Shutdown();
+                    uiRenderer = false;
+                }
+                if (!uiRenderer)
+                {
+                    D3D12_DESCRIPTOR_HEAP_DESC desc{};
+                    desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+                    desc.NumDescriptors = 1;
+                    desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+                    checkHR(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&uiHeap)), "Create UI heap");
+                    ImGui_ImplDX12_InitInfo info{};
+                    info.Device            = device.Get();
+                    info.CommandQueue      = queue.Get();
+                    info.NumFramesInFlight = 1;
+                    info.RTVFormat         = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    info.DSVFormat         = model ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
+                    info.SrvDescriptorHeap = uiHeap.Get();
+                    // ImGui 1.91.9 uses one SRV for its font atlas. No user textures in this panel.
+                    info.SrvDescriptorAllocFn = [](
+                                                  ImGui_ImplDX12_InitInfo*     i,
+                                                  D3D12_CPU_DESCRIPTOR_HANDLE* cpu,
+                                                  D3D12_GPU_DESCRIPTOR_HANDLE* gpu) {
+                        *cpu = i->SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+                        *gpu = i->SrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+                    };
+                    info.SrvDescriptorFreeFn =
+                      [](ImGui_ImplDX12_InitInfo*, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE) {};
+                    if (!ImGui_ImplDX12_Init(&info))
+                        throw std::runtime_error("Initialize DX12 UI failed");
+                    uiRenderer = true;
+                    uiHasDepth = bool(model);
+                }
+                ImGui_ImplDX12_NewFrame();
+                DrawParameterPanel();
+            }
+#endif
             if (model)
             {
                 const auto  u = MakeSceneUniforms(*model, camera, float(width) / height, lighting, directionalLight);
@@ -174,8 +226,7 @@ namespace render::detail
             commands->ResourceBarrier(1, &barrier);
             auto rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
             rtv.ptr += static_cast<SIZE_T>(index) * rtvStride;
-            const float clear[]{0.025f, 0.035f, 0.055f, 1.0f};
-            commands->ClearRenderTargetView(rtv, clear, 0, nullptr);
+            commands->ClearRenderTargetView(rtv, clearColor.data(), 0, nullptr);
             D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
             if (model)
             {
@@ -198,6 +249,14 @@ namespace render::detail
             commands->RSSetScissorRects(1, &scissor);
             commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
+#ifdef NOVA_HAS_UI
+            if (panelEnabled)
+            {
+                ID3D12DescriptorHeap* heaps[]{uiHeap.Get()};
+                commands->SetDescriptorHeaps(1, heaps);
+                ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commands.Get());
+            }
+#endif
             barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PRESENT;
             commands->ResourceBarrier(1, &barrier);
@@ -224,6 +283,10 @@ namespace render::detail
         uint32_t ValidationErrorCount() const override { return errors; }
 
       private:
+#ifdef NOVA_HAS_UI
+        bool                         uiRenderer = false, uiHasDepth = false;
+        ComPtr<ID3D12DescriptorHeap> uiHeap;
+#endif
         static constexpr UINT             BufferCount = 2;
         HWND                              hwnd        = nullptr;
         HANDLE                            event       = nullptr;

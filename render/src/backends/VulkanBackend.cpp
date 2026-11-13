@@ -3,6 +3,9 @@
 // Volk must precede GLFW so that its Vulkan surface declarations are enabled.
 #include <volk.h>
 
+#ifdef NOVA_HAS_UI
+#include <imgui_impl_vulkan.h>
+#endif
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstdlib>
@@ -60,9 +63,12 @@ namespace render::detail
             height  = newHeight;
             resized = true;
         }
-        FrameResult                DrawFrame() override { return draw(); }
-        void                       WaitIdle() override { check(vkDeviceWaitIdle(device), "Wait idle"); }
-        uint32_t                   ValidationErrorCount() const override { return validationErrors; }
+        FrameResult DrawFrame() override { return draw(); }
+        void        WaitIdle() override { check(vkDeviceWaitIdle(device), "Wait idle"); }
+        uint32_t    ValidationErrorCount() const override { return validationErrors; }
+#ifdef NOVA_HAS_UI
+        bool uiRenderer = false;
+#endif
         GLFWwindow*                window = nullptr;
         RendererConfig             config;
         uint32_t                   width = 0, height = 0;
@@ -481,6 +487,34 @@ namespace render::detail
                 createSwapchain();
             }
             check(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "Wait frame");
+#ifdef NOVA_HAS_UI
+            if (panelEnabled)
+            {
+                parameterPanel->Activate();
+                if (!uiRenderer)
+                {
+                    ImGui_ImplVulkan_InitInfo info{};
+                    info.ApiVersion         = VK_API_VERSION_1_0;
+                    info.Instance           = instance;
+                    info.PhysicalDevice     = physical;
+                    info.Device             = device;
+                    info.QueueFamily        = queueFamily;
+                    info.Queue              = queue;
+                    info.RenderPass         = renderPass;
+                    info.MinImageCount      = 2;
+                    info.ImageCount         = static_cast<uint32_t>(views.size());
+                    info.MSAASamples        = VK_SAMPLE_COUNT_1_BIT;
+                    info.DescriptorPoolSize = 32;
+                    info.CheckVkResultFn    = [](VkResult result) { check(result, "ImGui Vulkan"); };
+                    if (!ImGui_ImplVulkan_Init(&info))
+                        throw std::runtime_error("Initialize Vulkan UI failed");
+                    uiRenderer = true;
+                }
+                parameterPanel->SetSRGBOutput(format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB);
+                ImGui_ImplVulkan_NewFrame();
+                DrawParameterPanel();
+            }
+#endif
             if (model)
             {
                 const auto uniform =
@@ -504,7 +538,9 @@ namespace render::detail
             VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
             check(vkBeginCommandBuffer(cmd, &begin), "Begin commands");
             VkClearValue clear{};
-            clear.color = {{0.025f, 0.035f, 0.055f, 1.0f}};
+            const auto   background =
+              ClearColorForTarget(format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB);
+            std::copy(background.begin(), background.end(), clear.color.float32);
             VkClearValue clearValues[2]{clear, {}};
             clearValues[1].depthStencil = {1.0f, 0};
             VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -522,6 +558,10 @@ namespace render::detail
             if (model)
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
             vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
+#ifdef NOVA_HAS_UI
+            if (panelEnabled)
+                ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+#endif
             vkCmdEndRenderPass(cmd);
             check(vkEndCommandBuffer(cmd), "End commands");
             VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -549,6 +589,14 @@ namespace render::detail
         }
         void destroySwapchain()
         {
+#ifdef NOVA_HAS_UI
+            if (uiRenderer)
+            {
+                parameterPanel->Activate();
+                ImGui_ImplVulkan_Shutdown();
+                uiRenderer = false;
+            }
+#endif
             for (auto fb : framebuffers)
                 if (fb)
                     vkDestroyFramebuffer(device, fb, nullptr);

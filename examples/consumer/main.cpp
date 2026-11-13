@@ -21,7 +21,8 @@ int main(int argc, char** argv)
                 throw std::runtime_error("Usage: nova_consumer [vulkan|metal|dx12]");
         }
         render::Window window(config);
-        int            frames = 0;
+        window.EnableParameterPanel();
+        int frames = 0;
         while (frames < 120 && window.PollEvents())
         {
             if (window.DrawFrame() == render::FrameResult::Rendered)

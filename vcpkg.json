@@ -26,6 +26,42 @@
       "dependencies": [
         "volk"
       ]
+    },
+    "ui": {
+      "description": "Optional parameter UI",
+      "dependencies": [
+        {
+          "name": "imgui",
+          "features": [
+            "glfw-binding"
+          ]
+        },
+        {
+          "name": "imgui",
+          "features": [
+            "metal-binding"
+          ],
+          "platform": "osx"
+        },
+        {
+          "name": "imgui",
+          "features": [
+            "dx12-binding"
+          ],
+          "platform": "windows"
+        }
+      ]
+    },
+    "ui-vulkan": {
+      "description": "ImGui Vulkan binding with volk",
+      "dependencies": [
+        {
+          "name": "imgui",
+          "features": [
+            "vulkan-binding"
+          ]
+        }
+      ]
     }
   },
   "vcpkg-configuration": {

@@ -99,6 +99,7 @@ int main(int argc, char** argv)
         glfwSetFramebufferSizeCallback(window.get(), [](GLFWwindow* w, int width, int height) {
             static_cast<render::Renderer*>(glfwGetWindowUserPointer(w))->Resize(width, height);
         });
+        renderer.EnableParameterPanel();
         int  frames      = 0;
         bool firstResize = false, secondResize = false, suspendTest = false;
         while (!glfwWindowShouldClose(window.get()))

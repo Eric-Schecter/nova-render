@@ -8,7 +8,7 @@ const styles = `
 .nova-panel button,.nova-panel select,.nova-panel input{font:inherit;color:inherit}
 .nova-panel button{cursor:pointer;background:#29364e;border:1px solid #465776;border-radius:4px;padding:4px 8px}
 .nova-panel button:focus-visible,.nova-panel select:focus-visible,.nova-panel input:focus-visible{outline:2px solid #86a6ff;outline-offset:2px}
-.nova-panel .nova-panel-toggle{display:block;width:100%;border:0;border-radius:0;padding:8px 10px;background:#25324b;text-align:left;font-weight:600}
+.nova-panel .nova-panel-toggle{position:sticky;top:0;z-index:1;display:block;width:100%;border:0;border-radius:0;padding:8px 10px;background:#25324b;text-align:left;font-weight:600}
 .nova-panel-body{padding:10px}.nova-panel-body[hidden]{display:none}
 .nova-panel fieldset{min-width:0;padding:8px 0;margin:0;border:0;border-bottom:1px solid #354056}
 .nova-panel fieldset:last-child{border-bottom:0}.nova-panel legend{padding:0;font-weight:600;color:#b9ccff}
@@ -232,7 +232,7 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
       )
     }
   }
-  setCollapsed(false)
+  setCollapsed(canvas.getBoundingClientRect().width < 520)
   refresh()
   return {
     refresh,

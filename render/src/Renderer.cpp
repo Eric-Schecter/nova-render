@@ -1,4 +1,5 @@
 #include "Backend.hpp"
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -55,12 +56,14 @@ namespace render
     }
     struct Renderer::Impl
     {
+        GLFWwindow*                      window = nullptr;
         GraphicsAPI                      api;
         std::unique_ptr<detail::Backend> backend;
     };
     Renderer::Renderer(GLFWwindow* window, const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
     {
+        impl_->window  = window;
         const auto api = ResolveGraphicsAPI(config);
         if (!window)
             throw std::invalid_argument("Renderer requires a GLFW window");
@@ -110,6 +113,29 @@ namespace render
     DirectionalLight Renderer::GetDirectionalLight() const
     {
         return impl_->backend->GetDirectionalLight();
+    }
+    bool Renderer::EnableParameterPanel(bool enabled)
+    {
+        return impl_->backend->EnableParameterPanel(impl_->window, enabled);
+    }
+    bool Renderer::UIWantsMouse() const
+    {
+        return impl_->backend->UIWantsMouse();
+    }
+    bool Renderer::UIWantsKeyboard() const
+    {
+        return impl_->backend->UIWantsKeyboard();
+    }
+    void Renderer::SetClearColor(const std::array<float, 4>& color)
+    {
+        for (float v : color)
+            if (!std::isfinite(v) || v < 0 || v > 1)
+                throw std::invalid_argument("Clear color must be RGBA in [0,1]");
+        impl_->backend->SetClearColor(color);
+    }
+    std::array<float, 4> Renderer::GetClearColor() const
+    {
+        return impl_->backend->GetClearColor();
     }
     void Renderer::SetLighting(LightingMode mode)
     {
