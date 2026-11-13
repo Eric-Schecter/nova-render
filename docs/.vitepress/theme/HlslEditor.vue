@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, nextTick, useId, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, nextTick, watch } from 'vue'
 import { useData } from 'vitepress'
 import { createHighlighterCore } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
@@ -14,13 +14,9 @@ const props = defineProps({
   expanded: Boolean,
   language: { type: String, default: 'hlsl' },
 })
-const emit = defineEmits(['update:modelValue', 'update:expanded'])
+const emit = defineEmits(['update:modelValue'])
 const { isDark } = useData()
-const editorId = useId()
 const input = ref(null)
-const expandedHeight = computed(
-  () => `${Math.max(180, (props.modelValue.split('\n').length + 1) * 20 + 24)}px`,
-)
 watch(
   () => props.expanded,
   async (expanded) => {
@@ -80,23 +76,11 @@ function tab(event) {
 
 <template>
   <div class="code-view">
-    <div class="code-actions">
-      <button
-        type="button"
-        :aria-expanded="expanded"
-        :aria-controls="editorId"
-        @click="emit('update:expanded', !expanded)"
-      >
-        {{ expanded ? '收起代码' : '展开代码' }}
-      </button>
-    </div>
-    <div
-      :id="editorId"
-      class="hlsl-editor"
-      :class="{ highlighted: loaded, expanded }"
-      :style="expanded ? { height: expandedHeight } : undefined"
-    >
-      <div ref="layer" class="code-layer" aria-hidden="true" v-html="html" />
+    <div class="hlsl-editor" :class="{ highlighted: loaded, expanded }">
+      <div ref="layer" class="code-layer" aria-hidden="true">
+        <div v-if="loaded" v-html="html" />
+        <pre v-else>{{ modelValue + '\n' }}</pre>
+      </div>
       <textarea
         ref="input"
         :value="modelValue"
@@ -108,7 +92,7 @@ function tab(event) {
               ? 'C++ 示例源码'
               : 'JavaScript 示例源码'
         "
-        wrap="off"
+        :wrap="expanded ? 'soft' : 'off'"
         spellcheck="false"
         autocapitalize="off"
         autocomplete="off"
@@ -125,24 +109,25 @@ function tab(event) {
 .code-view {
   min-width: 0;
 }
-.code-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-}
-.code-actions button {
-  padding: 4px 12px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
-  color: var(--vp-c-brand-1);
-  font-size: 12px;
-}
-.code-actions button:focus-visible {
-  outline: 2px solid var(--vp-c-brand-1);
-  outline-offset: 2px;
-}
+/* In expanded mode the visible code determines height, including wrapped lines. */
 .hlsl-editor.expanded {
+  height: auto;
   resize: none;
+}
+.expanded .code-layer {
+  position: relative;
+  height: auto;
+  min-height: 180px;
+  overflow: visible;
+}
+.expanded .code-layer :deep(pre),
+.expanded .code-layer :deep(code),
+.expanded textarea {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+}
+.expanded textarea {
+  overflow: hidden;
 }
 .hlsl-editor {
   position: relative;

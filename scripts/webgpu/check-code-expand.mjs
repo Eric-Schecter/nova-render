@@ -21,6 +21,13 @@ try {
         await page.getByRole('tab', { name: tab, exact: true }).click()
         const editor = page.getByRole('textbox')
         const source = await editor.inputValue()
+        if (width === 1400) {
+          const tabs = await page.getByRole('tablist').boundingBox()
+          const button = await page
+            .getByRole('button', { name: '展开代码', exact: true })
+            .boundingBox()
+          if (Math.abs(tabs.y - button.y) > 8) throw Error('Expand button is on a separate row')
+        }
         await page.getByRole('button', { name: '展开代码', exact: true }).click()
         const collapse = page.getByRole('button', { name: '收起代码', exact: true })
         if ((await collapse.getAttribute('aria-expanded')) !== 'true')

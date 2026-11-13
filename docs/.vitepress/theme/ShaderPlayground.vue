@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import CodeToolbar from './CodeToolbar.vue'
 import { showTriangle } from '../../../web/examples/triangle.js'
 import exampleCode from '../../../web/examples/triangle.js?raw'
 import cppCode from '../../../examples/consumer/main.cpp?raw'
@@ -109,29 +110,31 @@ onBeforeUnmount(() => {
     <pre v-if="message" role="status" aria-live="polite">{{ message }}</pre>
     <div class="panes">
       <div class="source-pane">
-        <div role="tablist" aria-label="示例代码">
-          <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
-          ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
-            JavaScript 示例</button
-          ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
-            HLSL shader
-          </button>
-        </div>
+        <CodeToolbar v-model:expanded="codeExpanded">
+          <div role="tablist" aria-label="示例代码">
+            <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
+            ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
+              JavaScript 示例</button
+            ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
+              HLSL shader
+            </button>
+          </div>
+        </CodeToolbar>
         <HlslEditor
-          v-model:expanded="codeExpanded"
+          :expanded="codeExpanded"
           v-if="tab === 'example'"
           :model-value="exampleCode"
           language="javascript"
           readonly
         />
         <HlslEditor
-          v-model:expanded="codeExpanded"
+          :expanded="codeExpanded"
           v-else-if="tab === 'cpp'"
           :model-value="cppCode"
           language="cpp"
           readonly
         />
-        <HlslEditor v-model:expanded="codeExpanded" v-else v-model="source" :readonly="!local" />
+        <HlslEditor :expanded="codeExpanded" v-else v-model="source" :readonly="!local" />
       </div>
       <div
         id="nova-triangle-preview"

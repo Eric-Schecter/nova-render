@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import CodeToolbar from './CodeToolbar.vue'
 import { showHelmet } from '../../../web/examples/helmet.js'
 import { showLighting } from '../../../web/examples/lighting.js'
 import lightingJS from '../../../web/examples/lighting.js?raw'
@@ -146,29 +147,31 @@ onBeforeUnmount(() => {
     </div>
     <pre v-if="message" role="status" aria-live="polite">{{ message }}</pre>
     <div class="source">
-      <div role="tablist" aria-label="模型示例代码">
-        <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
-        ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
-          JavaScript 示例</button
-        ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
-          HLSL shader
-        </button>
-      </div>
+      <CodeToolbar v-model:expanded="codeExpanded">
+        <div role="tablist" aria-label="模型示例代码">
+          <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
+          ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
+            JavaScript 示例</button
+          ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
+            HLSL shader
+          </button>
+        </div>
+      </CodeToolbar>
       <HlslEditor
-        v-model:expanded="codeExpanded"
+        :expanded="codeExpanded"
         v-if="tab === 'cpp'"
         :model-value="cppSource"
         language="cpp"
         readonly
       />
       <HlslEditor
-        v-model:expanded="codeExpanded"
+        :expanded="codeExpanded"
         v-else-if="tab === 'example'"
         :model-value="jsSource"
         language="javascript"
         readonly
       />
-      <HlslEditor v-model:expanded="codeExpanded" v-else :model-value="hlslSource" readonly />
+      <HlslEditor :expanded="codeExpanded" v-else :model-value="hlslSource" readonly />
     </div>
     <div class="camera">
       <label
