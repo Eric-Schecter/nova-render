@@ -6,6 +6,8 @@
 
 `Renderer` 管理 GPU 资源，应用管理 GLFW 窗口和事件。所有调用在窗口主线程执行；当前只支持同时存在一个 Renderer，不支持复制或移动。
 
+`SetLighting(LightingMode::Unlit / PBR)` 选择模型渲染模式，默认 Unlit。详见[模型与相机](./model)。
+
 ## 创建与销毁
 
 ```cpp

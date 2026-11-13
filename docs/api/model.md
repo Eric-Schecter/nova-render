@@ -1,6 +1,6 @@
 # 模型与相机
 
-C++ 与网页使用同一组概念：加载模型、设置相机、绘制。底层 GLB 解析、纹理上传、深度缓冲和图形 API 均封装在内部。
+C++ 与网页使用同一组概念：加载模型、设置相机、绘制。默认只显示基础颜色贴图 × 材质基础颜色因子，不受光照、遮蔽、自发光或曝光影响。底层 GLB 解析、纹理上传、深度缓冲和图形 API 均封装在内部。
 
 ## C++
 
@@ -38,6 +38,22 @@ renderer.enableOrbitControls()
 
 网页模型 shader 来自构建时生成的 `model.json`；运行时不需要 DXC、Rust 或编译服务。网页滑块和 C++ `OrbitCamera` 的角度均为度，默认值为 `yaw=0`、`pitch=0`、`distance=3.6`、`exposure=1`。俯仰限制 ±85°、距离 1.5～100、曝光大于 0 且不超过 16。模型按包围盒居中并将最长边归一化到 2，相机环绕此中心。
 
+## 光照
+
+[模型例子](../examples/damaged-helmet) 使用默认的无光照模式；[光照例子](../examples/lighting) 显式开启 PBR。
+
+```cpp
+window.SetLighting(render::LightingMode::PBR); // Renderer 同样提供
+// 恢复基础颜色：window.SetLighting(render::LightingMode::Unlit);
+```
+
+```js
+renderer.setLighting('pbr') // 恢复基础颜色：'unlit'
+await renderer.drawFrame()
+```
+
+原生光照例子：`./build/nova_lighting assets/DamagedHelmet/DamagedHelmet.glb --api metal`。模式只影响模型，保留相机与鼠标操作；无效模式会报错。PBR 使用内置固定灯光和解析式环境，当前没有可配置灯光对象。曝光仅在 PBR 模式生效。
+
 ## 鼠标操作
 
 启用后，左键拖动旋转、滚轮缩放。C++ 使用 `Window::EnableOrbitControls()`，传 `false` 可关闭；事件由 `PollEvents()` 处理，继续通过主循环绘制。`GetCamera()` 返回当前相机副本。
@@ -50,10 +66,12 @@ renderer.enableOrbitControls()
 
 支持内嵌资源的静态、单材质、不透明、索引三角形 GLB，要求 POSITION、NORMAL、TEXCOORD_0；首个例子为 Damaged Helmet。尚不支持蒙皮、动画、morph、透明材质、压缩扩展或通用多材质场景。内部将索引展开为统一顶点流。
 
-材质包含基础颜色、法线、金属度/粗糙度、遮蔽与自发光贴图，采用 GGX 直接光照和解析式摄影棚环境近似；目前没有 HDR 环境贴图、预计算 IBL 或阴影。不是完整 glTF 一致性实现。
+PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光贴图，采用 GGX 直接光照和解析式摄影棚环境近似；目前没有 HDR 环境贴图、预计算 IBL 或阴影。不是完整 glTF 一致性实现。
 
 唯一维护的材质源码是 `render/shaders/model.hlsl`。原生端构建生成 DXIL / SPIR-V / metallib，网页端经 DXC + Naga 生成 WGSL；网页输出额外编码 sRGB。缺少贴图时使用内置默认纹理，缺少模型或不支持的格式会报错。
 
 模型版权声明保留在 `assets/DamagedHelmet/`；资源许可与库代码分开。部署示例需携带 GLB，模型资源不内置进渲染库。
 
-已验证：macOS Metal / Vulkan、Ubuntu Lavapipe，以及 Windows RTX 4060 的 DX12 / Vulkan 与 WARP。网页已检查实际画面及相机交互。Windows 渲染测试需要交互桌面会话，SSH 本身仅用于构建与调度。
+此前 PBR 版本已验证：macOS Metal / Vulkan、Ubuntu Lavapipe，以及 Windows RTX 4060 的 DX12 / Vulkan 与 WARP。网页已检查实际画面及相机交互。Windows 渲染测试需要交互桌面会话，SSH 本身仅用于构建与调度。
+
+本次基础颜色/光照拆分已验证 macOS Metal / Vulkan（17 项检查）与 Chrome WebGPU；网页还比较了曝光无关性及两种模式的实际像素。此次未重新运行 Windows / Linux。

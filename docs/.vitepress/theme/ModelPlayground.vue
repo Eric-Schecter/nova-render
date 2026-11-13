@@ -3,9 +3,16 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
 import { showHelmet } from '../../../web/examples/helmet.js'
-import jsSource from '../../../web/examples/helmet.js?raw'
-import cppSource from '../../../examples/helmet/main.cpp?raw'
+import { showLighting } from '../../../web/examples/lighting.js'
+import lightingJS from '../../../web/examples/lighting.js?raw'
+import lightingCPP from '../../../examples/lighting/main.cpp?raw'
+import helmetJS from '../../../web/examples/helmet.js?raw'
+import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
+const props=defineProps({lighting:Boolean})
+const jsSource=props.lighting?lightingJS:helmetJS
+const cppSource=props.lighting?lightingCPP:helmetCPP
+const showExample=props.lighting?showLighting:showHelmet
 const tab=ref('example'),canvas=ref(null),message=ref('加载 Damaged Helmet…'),ready=ref(false),visible=ref(true)
 const yaw=ref(20),pitch=ref(5),distance=ref(3.6),exposure=ref(1)
 let renderer,disposed=false,drawing=false,pending=false,observer
@@ -21,7 +28,7 @@ function reset(){yaw.value=20;pitch.value=5;distance.value=3.6;exposure.value=1;
 async function toggle(){if(visible.value){visible.value=false;return}await draw();if(!disposed)visible.value=true}
 onMounted(async()=>{
   try {
-    const next=await showHelmet(canvas.value,withBase('/generated/DamagedHelmet.glb'),withBase('/generated/'),camera(),{
+    const next=await showExample(canvas.value,withBase('/generated/DamagedHelmet.glb'),withBase('/generated/'),camera(),{
       onChange(value){
         if(disposed)return
         yaw.value=value.yaw;pitch.value=value.pitch;distance.value=value.distance;exposure.value=value.exposure
@@ -29,7 +36,7 @@ onMounted(async()=>{
       onError(error){if(!disposed)message.value=error.message},
     })
     if(disposed){next.dispose();return}
-    renderer=next;ready.value=true;message.value='模型已加载 · 15,452 个三角形 · HLSL PBR'
+    renderer=next;ready.value=true;message.value='模型已加载 · 15,452 个三角形 · '+(props.lighting?'PBR 光照':'基础颜色')
     observer=new ResizeObserver(()=>draw());observer.observe(canvas.value)
   }catch(e){if(!disposed)message.value=e.message}
 })
@@ -38,7 +45,7 @@ onBeforeUnmount(()=>{disposed=true;observer?.disconnect();renderer?.dispose()})
 
 <template>
 <div class="model-example">
-  <div class="toolbar"><strong>Damaged Helmet</strong><div><button :disabled="!ready" @click="reset">重置相机</button><button :disabled="!ready" :aria-expanded="visible" aria-controls="helmet-preview" @click="toggle">{{visible?'隐藏预览':'显示预览'}}</button></div></div>
+  <div class="toolbar"><strong>{{lighting?'PBR 光照':'Damaged Helmet'}}</strong><div><button :disabled="!ready" @click="reset">重置相机</button><button :disabled="!ready" :aria-expanded="visible" aria-controls="helmet-preview" @click="toggle">{{visible?'隐藏预览':'显示预览'}}</button></div></div>
   <pre role="status" aria-live="polite">{{message}}</pre>
   <div class="source"><div role="tablist" aria-label="模型示例代码"><button role="tab" :aria-selected="tab==='cpp'" @click="tab='cpp'">C++ 示例</button><button role="tab" :aria-selected="tab==='example'" @click="tab='example'">JavaScript 示例</button><button role="tab" :aria-selected="tab==='shader'" @click="tab='shader'">HLSL shader</button></div>
     <HlslEditor v-if="tab==='cpp'" :model-value="cppSource" language="cpp" readonly />
@@ -49,7 +56,7 @@ onBeforeUnmount(()=>{disposed=true;observer?.disconnect();renderer?.dispose()})
     <label>水平角 {{Number(yaw).toFixed(1)}}°<input v-model="yaw" aria-label="水平角" type="range" min="-180" max="180" step="0.1" :disabled="!ready" @input="draw" /></label>
     <label>俯仰角 {{Number(pitch).toFixed(1)}}°<input v-model="pitch" aria-label="俯仰角" type="range" min="-85" max="85" step="0.1" :disabled="!ready" @input="draw" /></label>
     <label>距离 {{Number(distance).toFixed(2)}}<input v-model="distance" aria-label="距离" type="range" min="1.5" max="100" step="0.01" :disabled="!ready" @input="draw" /></label>
-    <label>曝光 {{exposure}}<input v-model="exposure" aria-label="曝光" type="range" min="0.1" max="3" step="0.1" :disabled="!ready" @input="draw" /></label>
+    <label v-if="lighting">曝光 {{exposure}}<input v-model="exposure" aria-label="曝光" type="range" min="0.1" max="3" step="0.1" :disabled="!ready" @input="draw" /></label>
   </div>
   <div id="helmet-preview" class="preview" :class="{collapsed:!visible}" :aria-hidden="!visible" :inert="!visible"><span class="hint">拖动旋转 · 滚轮缩放</span><canvas ref="canvas" width="800" height="650" aria-label="Damaged Helmet 模型预览" /></div>
   <p v-if="tab==='cpp'">C++ 示例在本地编译运行；网页预览执行 JavaScript 示例，同样使用封装的模型和相机 API。</p>

@@ -221,3 +221,7 @@ TinyGLTF / GLM / stb / JSON 依赖均封装为库内部实现，不暴露到公�
 模型阶段验证（2026-11-13）：macOS ARM64 15 项检查通过（Metal / MoltenVK），Ubuntu ARM64 13 项通过（Lavapipe、Khronos 校验层）。Windows x64 RTX 4060 真机通过 15 项检查，并单独完成 DX12 模型 60 帧验证；D3D12 Debug Layer 与 Vulkan Khronos 层启用。Windows 图形检查在已登录桌面会话执行，SSH 服务会话不能创建 DX12 交换链。网页端已检查真实模型绘制、相机改变 GPU 输出、源码一致性、折叠、页面销毁，以及无需编译服务的静态预览。本机日志在 `build/validation/helmet-*`，不提交 Git。
 
 Damaged Helmet 默认启用左键拖动旋转、滚轮缩放。网页入口为 `renderer.enableOrbitControls({ onChange, onError })`，自动合并重绘并同步相机；`disableOrbitControls()` / `dispose()` 清理监听器和待执行帧。C++ 使用 `Window::EnableOrbitControls()`，通过 `PollEvents()` 更新相机。两端可用 `GetCamera()` / `getCamera()` 读取副本，俯仰和距离均限制在有效范围。`node scripts/webgpu/check-orbit.mjs` 验证真实鼠标输入、GPU 输出、缩放边界、滑块同步及销毁清理。
+
+### 模型与光照示例
+
+`nova_helmet` 默认仅显示基础颜色贴图；`nova_lighting` 通过 `SetLighting(LightingMode::PBR)` 开启摄影棚光照。网页对应 `/examples/damaged-helmet` 和 `/examples/lighting`，使用 `setLighting('pbr')`。两种模式共享 HLSL 和鼠标操作封装，曝光仅影响 PBR。

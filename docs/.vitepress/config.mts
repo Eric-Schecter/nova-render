@@ -23,6 +23,7 @@ export default defineConfig({
       { text: '例子', items: [
         { text: '01 · 三角形', link: '/examples/triangle' },
         { text: '02 · Damaged Helmet', link: '/examples/damaged-helmet' },
+        { text: '03 · 光照', link: '/examples/lighting' },
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },

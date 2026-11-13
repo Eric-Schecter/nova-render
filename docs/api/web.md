@@ -2,6 +2,8 @@
 
 浏览器适配层位于 `web/src/Nova.js`，当前为项目内模块，尚未发布 npm 包。与桌面接口共享生命周期概念，调用方式遵循 JavaScript 异步习惯。
 
+`setLighting('unlit' / 'pbr')` 选择模型渲染模式，默认 `unlit`；调用后使用 `drawFrame()` 重绘。详见[模型与相机](./model)。
+
 ## 使用
 
 ```js

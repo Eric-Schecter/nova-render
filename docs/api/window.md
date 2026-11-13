@@ -2,6 +2,8 @@
 
 推荐示例入口，头文件 `render/Window.hpp`。通过 PImpl 隐藏窗口依赖，内部拥有窗口、事件系统和 Renderer。
 
+`SetLighting(LightingMode::Unlit / PBR)` 选择基础颜色或内置 PBR 光照，默认 Unlit。详见[模型与相机](./model)。
+
 ## 配置
 
 ```cpp
