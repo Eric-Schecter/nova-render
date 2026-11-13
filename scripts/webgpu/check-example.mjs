@@ -15,8 +15,14 @@ try {
   if (!(await code.evaluate((e) => e.readOnly))) throw Error('Source view should be read-only')
   const before = await page.locator('canvas').screenshot()
   await page.getByRole('combobox').selectOption('light')
-  await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
-  const after = await page.locator('canvas').screenshot()
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="背景色"]').value === 'light',
+  )
+  let after
+  for (let i = 0; i < 10; i++) {
+    after = await page.locator('canvas').screenshot()
+    if (!before.equals(after)) break
+  }
   if (before.equals(after)) throw Error('Background did not change')
   await page.setViewportSize({ width: 1450, height: 950 })
   await page.getByRole('button', { name: '运行', exact: true }).click()

@@ -7,6 +7,7 @@ export async function showTriangle(canvas, shader, background = [0.025, 0.035, 0
     await renderer.setShader(shader)
     renderer.setClearColor(background)
     await renderer.drawFrame()
+    renderer.enableParameterPanel()
     return renderer
   } catch (error) {
     renderer.dispose()

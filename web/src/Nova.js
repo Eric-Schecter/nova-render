@@ -1,3 +1,4 @@
+import { attachParameterPanel } from './ParameterPanel.js'
 import { defaultDirectionalLight, copyDirectionalLight } from './Lighting.js'
 import { attachOrbitControls } from './OrbitControls.js'
 import { createModelView } from './ModelView.js'
@@ -24,6 +25,7 @@ class Renderer {
   #disposed = false
   #lost
   #clear = [0.025, 0.035, 0.055, 1]
+  #parameterPanel
   #orbitControls
   #renderTail = Promise.resolve()
   #lighting = 'unlit'
@@ -70,11 +72,13 @@ class Renderer {
     await this.waitIdle()
     this.#model?.dispose()
     this.#model = next
+    this.#parameterPanel?.refresh()
     return { triangles: next.triangles }
   }
   setDirectionalLight(light) {
     this.#check()
     this.#directionalLight = copyDirectionalLight(light)
+    this.#parameterPanel?.refresh()
   }
   getDirectionalLight() {
     this.#check()
@@ -85,16 +89,52 @@ class Renderer {
     if (mode !== 'unlit' && mode !== 'pbr')
       throw Error('Invalid lighting mode: expected unlit or pbr')
     this.#lighting = mode
+    this.#parameterPanel?.refresh()
   }
   setCamera(camera) {
     this.#check()
     const value = { ...this.#camera, ...camera }
     validateCamera(value)
     this.#camera = value
+    this.#parameterPanel?.refresh()
   }
   getCamera() {
     this.#check()
     return { ...this.#camera }
+  }
+  enableParameterPanel(options = {}) {
+    this.#check()
+    this.disableParameterPanel()
+    const panel = attachParameterPanel(
+      this.#canvas,
+      {
+        getCamera: () => this.getCamera(),
+        setCamera: (value) => this.setCamera(value),
+        getLight: () => this.getDirectionalLight(),
+        setLight: (value) => this.setDirectionalLight(value),
+        getClear: () => this.getClearColor(),
+        setClear: (value) => this.setClearColor(value),
+        getMode: () => ({
+          camera: !!this.#model,
+          lighting: !!this.#model && this.#lighting === 'pbr',
+        }),
+        drawFrame: () => this.drawFrame(),
+      },
+      options,
+    )
+    this.#parameterPanel = panel
+    return () => {
+      panel.dispose()
+      if (this.#parameterPanel === panel) this.#parameterPanel = undefined
+    }
+  }
+  disableParameterPanel() {
+    this.#parameterPanel?.dispose()
+    this.#parameterPanel = undefined
+  }
+  getClearColor() {
+    this.#check()
+    return [...this.#clear]
   }
   enableOrbitControls(options = {}) {
     this.#check()
@@ -162,6 +202,7 @@ class Renderer {
     this.#model?.dispose()
     this.#model = undefined
     this.#pipeline = pipeline
+    this.#parameterPanel?.refresh()
   }
   setClearColor(color) {
     this.#check()
@@ -172,6 +213,7 @@ class Renderer {
     )
       throw Error('背景色需要 4 个 0～1 的数值')
     this.#clear = [...color]
+    this.#parameterPanel?.refresh()
   }
   drawFrame() {
     this.#check()
@@ -248,6 +290,7 @@ class Renderer {
   }
   dispose() {
     if (this.#disposed) return
+    this.disableParameterPanel()
     this.disableOrbitControls()
     this.#disposed = true
     this.#model?.dispose()

@@ -18,7 +18,7 @@ try {
   await p.getByRole('button', { name: '隐藏预览', exact: true }).click()
   if (await canvas.isVisible()) throw Error('Canvas visible')
   if (await p.getByRole('status').count()) throw Error('Success status should be absent')
-  await p.getByRole('combobox').selectOption('light')
+  await p.getByRole('button', { name: '运行', exact: true }).click()
   await p.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
   await p.getByRole('button', { name: '显示预览', exact: true }).click()
   await canvas.waitFor({ state: 'visible' })

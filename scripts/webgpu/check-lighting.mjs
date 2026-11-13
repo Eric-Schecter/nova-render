@@ -58,8 +58,10 @@ try {
         () => Number(document.querySelector('[aria-label="光源强度"]').value) === 3.5,
       )
       await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
-      await page.getByRole('slider', { name: '光源强度', exact: true }).fill('10')
+      if (await page.getByRole('region', { name: '参数面板', exact: true }).isVisible())
+        throw Error('Panel should hide with preview')
       await page.getByRole('button', { name: '显示预览', exact: true }).click()
+      await page.getByRole('slider', { name: '光源强度', exact: true }).fill('10')
       await page.getByRole('button', { name: '重置光源', exact: true }).click()
       await page.setViewportSize({ width: 390, height: 844 })
       if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)

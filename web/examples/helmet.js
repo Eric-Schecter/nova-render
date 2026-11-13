@@ -13,6 +13,7 @@ export async function showHelmet(
     renderer.setCamera(camera)
     await renderer.drawFrame()
     renderer.enableOrbitControls({ onChange, onError })
+    renderer.enableParameterPanel({ onError })
     return renderer
   } catch (error) {
     renderer.dispose()

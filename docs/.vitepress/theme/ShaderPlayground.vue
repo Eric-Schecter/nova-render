@@ -11,7 +11,6 @@ const source = ref(''),
   ready = ref(false),
   canvas = ref(null)
 const tab = ref('example'),
-  background = ref('dark'),
   previewVisible = ref(true)
 const local = import.meta.env.DEV
 let renderer,
@@ -26,12 +25,11 @@ async function run(reset = false) {
   try {
     if (reset) {
       source.value = initial.source
-      background.value = 'dark'
     }
+    const color = !reset && renderer ? renderer.getClearColor() : [0.025, 0.035, 0.055, 1]
     renderer?.dispose()
     renderer = undefined
     const shader = source.value === initial.source ? initial : { source: source.value }
-    const color = background.value === 'light' ? [0.8, 0.85, 0.95, 1] : [0.025, 0.035, 0.055, 1]
     const next = await showTriangle(canvas.value, shader, color)
     if (disposed) {
       next.dispose()
@@ -86,13 +84,7 @@ onBeforeUnmount(() => {
     <div class="toolbar">
       <strong>Nova 三角形示例</strong>
       <div class="actions">
-        <label
-          >背景色
-          <select v-model="background" :disabled="busy" @change="run(false)">
-            <option value="dark">深色</option>
-            <option value="light">浅色</option>
-          </select></label
-        ><button :disabled="busy || !initial" @click="run(false)">
+        <button :disabled="busy || !initial" @click="run(false)">
           {{ busy ? '执行中…' : '运行' }}</button
         ><button :disabled="busy || !initial" @click="run(true)">重置</button
         ><button
