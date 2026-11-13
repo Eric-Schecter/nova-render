@@ -14,9 +14,16 @@ namespace render::detail
         ~ParameterPanel();
         void Activate() const;
         void SetSRGBOutput(bool enabled);
-        void CaptureDefaults(const OrbitCamera& camera, const DirectionalLight& light);
+        void CaptureDefaults(
+          const OrbitCamera& camera, const DirectionalLight& light, const EnvironmentSettings& environment);
         void Draw(
-          bool model, LightingMode lighting, OrbitCamera& camera, DirectionalLight& light, std::array<float, 4>& clear);
+          bool                  model,
+          LightingMode          lighting,
+          OrbitCamera&          camera,
+          DirectionalLight&     light,
+          std::array<float, 4>& clear,
+          bool                  hasEnvironment,
+          EnvironmentSettings&  environment);
         bool WantsMouse() const;
         bool WantsKeyboard() const;
 
@@ -26,6 +33,7 @@ namespace render::detail
         bool                               initialized = false;
         OrbitCamera                        initialCamera;
         DirectionalLight                   initialLight;
+        EnvironmentSettings                initialEnvironment;
         std::array<ImVec4, ImGuiCol_COUNT> displayColors;
         ImVec2                             position{}, size{};
     };

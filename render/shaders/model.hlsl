@@ -13,6 +13,12 @@ struct Vertex
     float4   emissiveFactor;      // rgb: emissive factor, w: PBR enabled
     float4   lightDirection;      // xyz: normalized surface-to-light direction
     float4   lightColorIntensity; // rgb: linear color, w: intensity
+    float4   cameraRight;
+    float4   cameraUp;
+    float4   cameraForward;     // w: environment loaded
+    float4   environmentParams; // sin/cos rotation, IBL intensity, highest mip
+    float4   skyParams;         // background intensity and visibility
+    float4   irradiance[9];
 };
 [[vk::binding(1, 0)]] StructuredBuffer<Vertex> vertices : register(t0);
 [[vk::binding(2, 0)]] Texture2D<float4>        baseTexture : register(t1);
@@ -21,6 +27,7 @@ struct Vertex
 [[vk::binding(5, 0)]] Texture2D<float4>        occlusionTexture : register(t4);
 [[vk::binding(6, 0)]] Texture2D<float4>        emissiveTexture : register(t5);
 [[vk::binding(7, 0)]] SamplerState             textureSampler : register(s0);
+[[vk::binding(8, 0)]] TextureCube<float4>      environmentTexture : register(t6);
 struct VertexOut
 {
     float4 position : SV_Position;
@@ -63,6 +70,64 @@ float3 studio(float3 r, float roughness)
     sky += float3(1.4, 1.8, 2.5) * pow(saturate(dot(r, normalize(float3(1, 0.4, -1)))), exponent);
     return sky;
 }
+float3 environmentDirection(float3 direction)
+{
+    float sine = environmentParams.x, cosine = environmentParams.y;
+    return float3(cosine * direction.x + sine * direction.z, direction.y, -sine * direction.x + cosine * direction.z);
+}
+float3 diffuseEnvironment(float3 n)
+{
+    n              = environmentDirection(n);
+    float basis[9] = {
+      0.282095,
+      0.488603 * n.y,
+      0.488603 * n.z,
+      0.488603 * n.x,
+      1.092548 * n.x * n.y,
+      1.092548 * n.y * n.z,
+      0.315392 * (3 * n.z * n.z - 1),
+      1.092548 * n.x * n.z,
+      0.546274 * (n.x * n.x - n.y * n.y)};
+    float3 result = 0;
+    [unroll] for (int i = 0; i < 9; ++i) result += irradiance[i].rgb * basis[i];
+    return max(result, 0);
+}
+// Analytical approximation to the split-sum BRDF integral (GGX prefilter is baked offline).
+float2 environmentBRDF(float roughness, float nv)
+{
+    float4 r    = roughness * float4(-1, -0.0275, -0.572, 0.022) + float4(1, 0.0425, 1.04, -0.04);
+    float  a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    return float2(-1.04, 1.04) * a004 + r.zw;
+}
+float3 displayRadiance(float3 color)
+{
+    color = 1 - exp(-max(color, 0) * eyeExposure.w);
+#ifdef NOVA_WEB_OUTPUT
+    color = pow(color, 1.0 / 2.2);
+#endif
+    return color;
+}
+struct SkyOut
+{
+    float4 position : SV_Position;
+    float3 direction : TEXCOORD0;
+};
+SkyOut SkyVSMain(uint id : SV_VertexID)
+{
+    float2 positions[3] = {float2(-1, -1), float2(-1, 3), float2(3, -1)};
+    float2 p            = positions[id];
+    SkyOut output;
+    output.position  = float4(p, 1, 1);
+    output.direction = cameraForward.xyz + p.x * cameraRight.w * cameraRight.xyz + p.y * cameraUp.w * cameraUp.xyz;
+    return output;
+}
+float4 SkyPSMain(SkyOut input)
+  : SV_Target
+{
+    float3 direction = environmentDirection(normalize(input.direction));
+    float3 color     = environmentTexture.SampleLevel(textureSampler, direction, 0).rgb * skyParams.x;
+    return float4(displayRadiance(color), 1);
+}
 float4 PSMain(VertexOut input)
   : SV_Target
 {
@@ -90,13 +155,22 @@ float4 PSMain(VertexOut input)
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, input.uv).r, materialFactor.w);
     float3 color =
       directLight(n, v, lightDirection.xyz, base, metallic, roughness, lightColorIntensity.rgb * lightColorIntensity.w);
-    color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
-    float3 f = fresnel(dot(n, v), lerp(float3(0.04, 0.04, 0.04), base, metallic));
-    color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
+    float3 f  = fresnel(saturate(dot(n, v)), f0);
+    if (cameraForward.w > 0.5)
+    {
+        float3 reflected = environmentDirection(reflect(-v, n));
+        float3 prefiltered =
+          environmentTexture.SampleLevel(textureSampler, reflected, roughness * environmentParams.w).rgb;
+        float2 brdf    = environmentBRDF(roughness, saturate(dot(n, v)));
+        float3 ambient = (1 - f) * (1 - metallic) * base * diffuseEnvironment(n) + prefiltered * (f0 * brdf.x + brdf.y);
+        color += ambient * environmentParams.z * ao;
+    }
+    else
+    {
+        color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
+        color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
+    }
     color += pow(max(emissiveTexture.Sample(textureSampler, input.uv).rgb, 0), 2.2) * emissiveFactor.rgb;
-    color = 1 - exp(-max(color, 0) * eyeExposure.w);
-#ifdef NOVA_WEB_OUTPUT
-    color = pow(color, 1.0 / 2.2);
-#endif
-    return float4(color, 1);
+    return float4(displayRadiance(color), 1);
 }

@@ -143,6 +143,19 @@ namespace render
             throw std::invalid_argument("Invalid lighting mode");
         impl_->backend->SetLighting(mode);
     }
+    void Renderer::LoadEnvironment(const std::filesystem::path& path)
+    {
+        impl_->backend->LoadEnvironment(detail::LoadEnvironmentFile(path));
+    }
+    void Renderer::SetEnvironment(const EnvironmentSettings& settings)
+    {
+        detail::ValidateEnvironment(settings);
+        impl_->backend->SetEnvironment(settings);
+    }
+    EnvironmentSettings Renderer::GetEnvironment() const
+    {
+        return impl_->backend->GetEnvironment();
+    }
     void Renderer::SetCamera(const OrbitCamera& camera)
     {
         detail::ValidateCamera(camera);

@@ -218,12 +218,26 @@ namespace render::detail
         if (!std::isfinite(light.intensity) || light.intensity < 0 || light.intensity > 100)
             throw std::invalid_argument("Light intensity must be in [0,100]");
     }
+    std::shared_ptr<const ModelData> EmptyModelData()
+    {
+        static const auto empty = [] {
+            auto                                              data   = std::make_shared<ModelData>();
+            const std::array<std::array<unsigned char, 4>, 5> colors = {
+              {{255, 255, 255, 255}, {128, 128, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255}, {0, 0, 0, 255}}};
+            for (size_t i = 0; i < 5; ++i)
+                data->images[i].pixels.assign(colors[i].begin(), colors[i].end());
+            return data;
+        }();
+        return empty;
+    }
     SceneUniforms MakeSceneUniforms(
-      const ModelData&        data,
-      const OrbitCamera&      camera,
-      float                   aspect,
-      LightingMode            lighting,
-      const DirectionalLight& light)
+      const ModelData&           data,
+      const OrbitCamera&         camera,
+      float                      aspect,
+      LightingMode               lighting,
+      const DirectionalLight&    light,
+      const EnvironmentData*     environment,
+      const EnvironmentSettings& settings)
     {
         const float     yaw = glm::radians(camera.yaw), pitch = glm::radians(camera.pitch);
         const glm::vec3 eye(
@@ -249,7 +263,27 @@ namespace render::detail
             result.lightColorIntensity[k] = light.color[k];
         }
         result.lightColorIntensity[3] = light.intensity;
-        result.emissive[3]            = lighting == LightingMode::PBR ? 1.0f : 0.0f;
+        const glm::vec3 forward = glm::normalize(-eye), right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0))),
+                        up = glm::cross(right, forward);
+        for (int k = 0; k < 3; ++k)
+        {
+            result.cameraRight[k]   = right[k];
+            result.cameraUp[k]      = up[k];
+            result.cameraForward[k] = forward[k];
+        }
+        result.cameraRight[3]       = std::tan(glm::radians(22.5f)) * aspect;
+        result.cameraUp[3]          = std::tan(glm::radians(22.5f));
+        result.cameraForward[3]     = environment ? 1.0f : 0.0f;
+        result.environmentParams[0] = std::sin(glm::radians(settings.rotation));
+        result.environmentParams[1] = std::cos(glm::radians(settings.rotation));
+        result.environmentParams[2] = settings.intensity;
+        result.environmentParams[3] = environment ? float(environment->mips.size() - 1) : 0;
+        result.skyParams[0]         = settings.backgroundIntensity;
+        result.skyParams[1]         = settings.showBackground ? 1.0f : 0.0f;
+        if (environment)
+            for (int k = 0; k < 9; ++k)
+                std::copy(environment->irradiance[k].begin(), environment->irradiance[k].end(), result.irradiance[k]);
+        result.emissive[3] = lighting == LightingMode::PBR ? 1.0f : 0.0f;
         return result;
     }
 } // namespace render::detail

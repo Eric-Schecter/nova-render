@@ -9,19 +9,27 @@ namespace example
     {
         render::WindowConfig     window;
         std::string              modelPath;
+        std::string              environmentPath;
         render::DirectionalLight light;
         int                      frameLimit = 0;
         bool                     spin       = false; // Optional automatic orbit for fixed-frame validation.
     };
 
-    inline ModelOptions ParseModelOptions(int argc, char** argv, const char* title, bool allowLighting = false)
+    inline ModelOptions ParseModelOptions(
+      int argc, char** argv, const char* title, bool allowLighting = false, bool allowEnvironment = false)
     {
-        if (argc < 2)
+        if (argc < (allowEnvironment ? 3 : 2))
             throw std::invalid_argument(
-              "Usage: example model.glb [--api metal|vulkan|dx12] [--warp] [--frames N] [--spin] "
+              "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
+              "[--frames N] [--spin] "
               "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N]");
         ModelOptions options;
-        options.modelPath     = argv[1];
+        options.modelPath = argv[1];
+        if (allowEnvironment)
+        {
+            options.environmentPath = argv[2];
+            options.light.intensity = 0;
+        }
         options.window.title  = title;
         options.window.width  = 960;
         options.window.height = 720;
@@ -34,7 +42,7 @@ namespace example
             return n;
         };
 
-        for (int i = 2; i < argc; ++i)
+        for (int i = allowEnvironment ? 3 : 2; i < argc; ++i)
         {
             const std::string arg = argv[i];
             if (arg == "--api" && i + 1 < argc)

@@ -1,8 +1,9 @@
+import { defaultEnvironment, copyEnvironment, loadEnvironmentFile } from './EnvironmentData.js'
 import { attachParameterPanel } from './ParameterPanel.js'
 import { defaultDirectionalLight, copyDirectionalLight } from './Lighting.js'
 import { attachOrbitControls } from './OrbitControls.js'
 import { createModelView } from './ModelView.js'
-import { validateCamera } from './ModelData.js'
+import { validateCamera, emptyModelData } from './ModelData.js'
 // Browser adapter. Native C++ backends and the web adapter share concepts, not binaries.
 export async function createRenderer({ canvas, shaderDirectory = '/generated/' }) {
   if (!navigator.gpu) throw Error('此浏览器未启用 WebGPU，请使用支持的浏览器及 HTTPS / localhost。')
@@ -30,6 +31,8 @@ class Renderer {
   #renderTail = Promise.resolve()
   #lighting = 'unlit'
   #directionalLight = defaultDirectionalLight()
+  #environment
+  #environmentSettings = defaultEnvironment()
   #model
   #shaderDirectory
   #camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 }
@@ -46,34 +49,81 @@ class Renderer {
     if (this.#disposed) throw Error('Renderer 已释放')
     if (this.#lost) throw Error(this.#lost)
   }
-  async loadModel(url) {
+  #enqueue(action) {
     this.#check()
-    this.#device.pushErrorScope('validation')
-    let next, failure
-    try {
-      next = await createModelView(
-        this.#device,
-        this.#context,
-        url,
-        this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
-      )
-    } catch (e) {
-      failure = e
-    }
-    const error = await this.#device.popErrorScope()
-    if (failure || error) {
-      next?.dispose()
-      throw failure || Error(error.message)
-    }
-    if (this.#disposed) {
-      next.dispose()
-      throw Error('Renderer 已释放')
-    }
-    await this.waitIdle()
-    this.#model?.dispose()
-    this.#model = next
+    const operation = this.#renderTail.then(action)
+    this.#renderTail = operation.catch(() => {})
+    return operation
+  }
+  loadModel(url) {
+    return this.#enqueue(async () => {
+      this.#check()
+      this.#device.pushErrorScope('validation')
+      let next, failure
+      try {
+        next = await createModelView(
+          this.#device,
+          this.#context,
+          url,
+          this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
+        )
+        if (this.#environment)
+          await next.loadEnvironment(
+            this.#environment,
+            this.#shaderDirectory.replace(/\/?$/, '/') + 'skybox.json',
+          )
+        await this.#device.queue.onSubmittedWorkDone()
+      } catch (error) {
+        failure = error
+      }
+      const error = await this.#device.popErrorScope()
+      if (failure || error || this.#disposed) {
+        next?.dispose()
+        throw failure || Error(error?.message || 'Renderer 已释放')
+      }
+      this.#model?.dispose()
+      this.#model = next
+      this.#parameterPanel?.refresh()
+      return { triangles: next.triangles }
+    })
+  }
+  loadEnvironment(url) {
+    return this.#enqueue(async () => {
+      this.#check()
+      const environment = await loadEnvironmentFile(url)
+      this.#check()
+      let candidate = this.#model
+      try {
+        if (!candidate)
+          candidate = await createModelView(
+            this.#device,
+            this.#context,
+            null,
+            this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
+            emptyModelData(),
+          )
+        await candidate.loadEnvironment(
+          environment,
+          this.#shaderDirectory.replace(/\/?$/, '/') + 'skybox.json',
+        )
+        this.#check()
+      } catch (error) {
+        if (candidate !== this.#model) candidate?.dispose()
+        throw error
+      }
+      this.#model = candidate
+      this.#environment = environment
+      this.#parameterPanel?.refresh()
+    })
+  }
+  setEnvironment(settings) {
+    this.#check()
+    this.#environmentSettings = copyEnvironment(settings)
     this.#parameterPanel?.refresh()
-    return { triangles: next.triangles }
+  }
+  getEnvironment() {
+    this.#check()
+    return { ...this.#environmentSettings }
   }
   setDirectionalLight(light) {
     this.#check()
@@ -114,8 +164,11 @@ class Renderer {
         setLight: (value) => this.setDirectionalLight(value),
         getClear: () => this.getClearColor(),
         setClear: (value) => this.setClearColor(value),
+        getEnvironment: () => this.getEnvironment(),
+        setEnvironment: (value) => this.setEnvironment(value),
         getMode: () => ({
           camera: !!this.#model,
+          environment: !!this.#environment,
           lighting: !!this.#model && this.#lighting === 'pbr',
         }),
         drawFrame: () => this.drawFrame(),
@@ -201,6 +254,7 @@ class Renderer {
     await this.waitIdle()
     this.#model?.dispose()
     this.#model = undefined
+    this.#environment = undefined
     this.#pipeline = pipeline
     this.#parameterPanel?.refresh()
   }
@@ -256,6 +310,7 @@ class Renderer {
           height,
           this.#lighting,
           this.#directionalLight,
+          this.#environmentSettings,
         )
       } else {
         const encoder = this.#device.createCommandEncoder()

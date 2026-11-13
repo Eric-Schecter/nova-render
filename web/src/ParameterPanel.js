@@ -17,6 +17,8 @@ const styles = `
 .nova-panel .nova-panel-value{font-variant-numeric:tabular-nums;color:#b4c4de}
 .nova-panel input[type=range]{display:block;width:100%;margin:2px 0;accent-color:#819eff}
 .nova-panel select{width:100%;background:#25324b;padding:4px;border:1px solid #465776;border-radius:4px}
+.nova-panel .nova-panel-check{flex-direction:row;align-items:center;gap:6px}
+.nova-panel select:disabled{opacity:.5}
 .nova-panel .nova-panel-rgb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 `
 const degrees = (value) => (value * 180) / Math.PI
@@ -27,12 +29,13 @@ const angles = (direction) => ({
 export function attachParameterPanel(canvas, adapter, { onError } = {}) {
   if (!canvas.parentNode) throw Error('Parameter panel requires an attached canvas')
   if (onError != null && typeof onError !== 'function') throw Error('onError must be a function')
-  if (!document.getElementById('nova-panel-style')) {
-    const style = document.createElement('style')
+  let style = document.getElementById('nova-panel-style')
+  if (!style) {
+    style = document.createElement('style')
     style.id = 'nova-panel-style'
-    style.textContent = styles
     document.head.append(style)
   }
+  if (style.textContent !== styles) style.textContent = styles
   const wrapper = document.createElement('div')
   wrapper.className = 'nova-viewport'
   if (canvas.style.width && canvas.style.width !== '100%') {
@@ -53,11 +56,13 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
   wrapper.append(panel)
   const events = new AbortController(),
     initialCamera = adapter.getCamera(),
-    initialLight = adapter.getLight()
+    initialLight = adapter.getLight(),
+    initialEnvironment = adapter.getEnvironment()
   let disposed = false,
     frame = 0,
     mode = '',
     collapsed = false
+  let fieldEvents = new AbortController()
   const fields = new Map()
   const report = (error) => {
     if (!disposed) {
@@ -110,7 +115,7 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
     Object.assign(input, { type: 'range', min, max, step })
     input.setAttribute('aria-label', label)
     input.addEventListener('input', () => change(() => update(Number(input.value))), {
-      signal: events.signal,
+      signal: fieldEvents.signal,
     })
     row.append(heading, input)
     parent.append(row)
@@ -119,9 +124,14 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
   function reset(parent, label, action) {
     const button = document.createElement('button')
     button.type = 'button'
-    button.textContent = label === '重置相机' ? 'Reset camera' : 'Reset light'
+    button.textContent =
+      label === '重置相机'
+        ? 'Reset camera'
+        : label === '重置环境'
+          ? 'Reset environment'
+          : 'Reset light'
     button.setAttribute('aria-label', label)
-    button.addEventListener('click', () => change(action), { signal: events.signal })
+    button.addEventListener('click', () => change(action), { signal: fieldEvents.signal })
     parent.append(button)
   }
   function direction(key, value) {
@@ -135,6 +145,8 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
     })
   }
   function build(current) {
+    fieldEvents.abort()
+    fieldEvents = new AbortController()
     body.replaceChildren()
     fields.clear()
     const scene = group('Scene'),
@@ -154,7 +166,7 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
     select.addEventListener(
       'change',
       () => change(() => adapter.setClear(select.value === 'light' ? light : dark)),
-      { signal: events.signal },
+      { signal: fieldEvents.signal },
     )
     label.append(select)
     scene.append(label)
@@ -169,11 +181,45 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
         slider(camera, key, caption, aria, min, max, step, (value) =>
           adapter.setCamera({ ...adapter.getCamera(), [key]: value }),
         )
-      if (current.lighting)
+      if (current.lighting || current.environment)
         slider(camera, 'exposure', 'Exposure', '曝光', 0.1, 3, 0.1, (value) =>
           adapter.setCamera({ ...adapter.getCamera(), exposure: value }),
         )
       reset(camera, '重置相机', () => adapter.setCamera(initialCamera))
+    }
+    if (current.environment) {
+      const environment = group('Environment'),
+        checkboxRow = document.createElement('label'),
+        checkbox = document.createElement('input')
+      checkboxRow.className = 'nova-panel-check'
+      checkbox.type = 'checkbox'
+      checkbox.setAttribute('aria-label', '显示天空盒')
+      checkboxRow.append(checkbox, 'Skybox')
+      environment.append(checkboxRow)
+      checkbox.addEventListener(
+        'change',
+        () =>
+          change(() =>
+            adapter.setEnvironment({
+              ...adapter.getEnvironment(),
+              showBackground: checkbox.checked,
+            }),
+          ),
+        { signal: fieldEvents.signal },
+      )
+      fields.set('showBackground', { input: checkbox })
+      for (const [key, caption, aria, min, max, step] of [
+        ['rotation', 'Rotation', '环境旋转', -180, 180, 0.1],
+        ['environmentIntensity', 'Intensity', '环境强度', 0, 16, 0.01],
+        ['backgroundIntensity', 'Sky brightness', '天空盒强度', 0, 16, 0.01],
+      ])
+        slider(environment, key, caption, aria, min, max, step, (value) =>
+          adapter.setEnvironment({
+            ...adapter.getEnvironment(),
+            [key === 'environmentIntensity' ? 'intensity' : key]: value,
+          }),
+        )
+      reset(environment, '重置环境', () => adapter.setEnvironment(initialEnvironment))
     }
     if (current.lighting) {
       const lamp = group('Main light')
@@ -213,7 +259,11 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
     const camera = adapter.getCamera(),
       light = adapter.getLight(),
       lightAngles = angles(light.direction)
+    const environment = adapter.getEnvironment()
     const values = {
+      rotation: environment.rotation,
+      environmentIntensity: environment.intensity,
+      backgroundIntensity: environment.backgroundIntensity,
       ...camera,
       ...lightAngles,
       R: light.color[0],
@@ -222,7 +272,13 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
       intensity: light.intensity,
     }
     for (const [key, field] of fields) {
+      if (key === 'showBackground') {
+        field.input.checked = environment.showBackground
+        continue
+      }
       if (key === 'background') {
+        field.input.disabled = current.environment && environment.showBackground
+        field.input.title = field.input.disabled ? 'Used when skybox is hidden' : ''
         field.input.value = adapter.getClear()[0] > 0.5 ? 'light' : 'dark'
         continue
       }
@@ -240,6 +296,7 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
       if (disposed) return
       disposed = true
       events.abort()
+      fieldEvents.abort()
       if (frame) cancelAnimationFrame(frame)
       wrapper.before(canvas)
       wrapper.remove()

@@ -14,13 +14,20 @@ namespace render::detail
         virtual FrameResult DrawFrame()                             = 0;
         virtual void        WaitIdle()                              = 0;
         virtual void        LoadModel(std::shared_ptr<const ModelData> data) { model = std::move(data); }
+        virtual void        LoadEnvironment(std::shared_ptr<const EnvironmentData> data)
+        {
+            environment = std::move(data);
+            LoadModel(model ? model : EmptyModelData());
+        }
+        void                SetEnvironment(const EnvironmentSettings& value) { environmentSettings = value; }
+        EnvironmentSettings GetEnvironment() const { return environmentSettings; }
         bool                EnableParameterPanel(GLFWwindow* window, bool enabled)
         {
 #ifdef NOVA_HAS_UI
             if (enabled && !parameterPanel)
                 parameterPanel = std::make_unique<ParameterPanel>(window);
             if (enabled)
-                parameterPanel->CaptureDefaults(camera, directionalLight);
+                parameterPanel->CaptureDefaults(camera, directionalLight, environmentSettings);
             if (parameterPanel)
             {
                 parameterPanel->Activate();
@@ -77,12 +84,18 @@ namespace render::detail
 #ifdef NOVA_HAS_UI
         std::unique_ptr<ParameterPanel> parameterPanel;
         bool                            panelEnabled = false;
-        void DrawParameterPanel() { parameterPanel->Draw(bool(model), lighting, camera, directionalLight, clearColor); }
+        void                            DrawParameterPanel()
+        {
+            parameterPanel->Draw(
+              bool(model), lighting, camera, directionalLight, clearColor, bool(environment), environmentSettings);
+        }
 #endif
-        std::shared_ptr<const ModelData> model;
-        OrbitCamera                      camera;
-        DirectionalLight                 directionalLight;
-        LightingMode                     lighting = LightingMode::Unlit;
+        std::shared_ptr<const EnvironmentData> environment;
+        EnvironmentSettings                    environmentSettings;
+        std::shared_ptr<const ModelData>       model;
+        OrbitCamera                            camera;
+        DirectionalLight                       directionalLight;
+        LightingMode                           lighting = LightingMode::Unlit;
 
       public:
         virtual uint32_t ValidationErrorCount() const = 0;

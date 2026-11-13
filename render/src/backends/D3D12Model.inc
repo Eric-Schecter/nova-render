@@ -1,11 +1,14 @@
-RendererConfig                        settings;
-const ModelData*                      gpuModel = nullptr;
-ComPtr<ID3D12Resource>                modelVertices, modelUniform, modelDepth;
-std::array<ComPtr<ID3D12Resource>, 5> modelTextures, modelUploads;
-ComPtr<ID3D12DescriptorHeap>          modelHeap, modelDepthHeap;
-ComPtr<ID3D12RootSignature>           modelRoot;
-ComPtr<ID3D12PipelineState>           modelPipeline;
-ComPtr<ID3D12Resource>                uploadBuffer(UINT64 bytes, const void* source = nullptr)
+RendererConfig                         settings;
+std::shared_ptr<const ModelData>       gpuModel;
+std::shared_ptr<const EnvironmentData> gpuEnvironment;
+ComPtr<ID3D12Resource>                 environmentCube, environmentUpload;
+ComPtr<ID3D12PipelineState>            skyPipeline;
+ComPtr<ID3D12Resource>                 modelVertices, modelUniform, modelDepth;
+std::array<ComPtr<ID3D12Resource>, 5>  modelTextures, modelUploads;
+ComPtr<ID3D12DescriptorHeap>           modelHeap, modelDepthHeap;
+ComPtr<ID3D12RootSignature>            modelRoot;
+ComPtr<ID3D12PipelineState>            modelPipeline;
+ComPtr<ID3D12Resource>                 uploadBuffer(UINT64 bytes, const void* source = nullptr)
 {
     ComPtr<ID3D12Resource> result;
     D3D12_HEAP_PROPERTIES  heap{};
@@ -32,13 +35,82 @@ ComPtr<ID3D12Resource>                uploadBuffer(UINT64 bytes, const void* sou
     }
     return result;
 }
+void UploadEnvironmentCube(D3D12_CPU_DESCRIPTOR_HANDLE handle)
+{
+    const auto&         data   = environment ? *environment : FallbackEnvironment();
+    const UINT          levels = static_cast<UINT>(data.mips.size()), count = levels * 6;
+    D3D12_RESOURCE_DESC desc{};
+    desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width            = data.mips[0].size;
+    desc.Height           = data.mips[0].size;
+    desc.DepthOrArraySize = 6;
+    desc.MipLevels        = static_cast<UINT16>(levels);
+    desc.Format           = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    desc.SampleDesc.Count = 1;
+    D3D12_HEAP_PROPERTIES heap{};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    checkHR(
+      device->CreateCommittedResource(
+        &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&environmentCube)),
+      "Create HDR environment cube");
+    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> layouts(count);
+    std::vector<UINT>                               rows(count);
+    std::vector<UINT64>                             rowSizes(count);
+    UINT64                                          total = 0;
+    device->GetCopyableFootprints(&desc, 0, count, 0, layouts.data(), rows.data(), rowSizes.data(), &total);
+    environmentUpload  = uploadBuffer(total);
+    void*       mapped = nullptr;
+    D3D12_RANGE read{0, 0};
+    checkHR(environmentUpload->Map(0, &read, &mapped), "Map environment upload");
+    for (UINT face = 0; face < 6; ++face)
+        for (UINT level = 0; level < levels; ++level)
+        {
+            const UINT  index = level + face * levels;
+            const auto& mip   = data.mips[level];
+            const auto* source =
+              reinterpret_cast<const unsigned char*>(mip.pixels.data() + size_t(face) * mip.size * mip.size * 4);
+            for (UINT row = 0; row < mip.size; ++row)
+                std::memcpy(
+                  static_cast<unsigned char*>(mapped) + layouts[index].Offset
+                    + size_t(row) * layouts[index].Footprint.RowPitch,
+                  source + size_t(row) * mip.size * 8,
+                  mip.size * 8);
+        }
+    environmentUpload->Unmap(0, nullptr);
+    for (UINT index = 0; index < count; ++index)
+    {
+        D3D12_TEXTURE_COPY_LOCATION source{}, target{};
+        source.pResource        = environmentUpload.Get();
+        source.Type             = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        source.PlacedFootprint  = layouts[index];
+        target.pResource        = environmentCube.Get();
+        target.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        target.SubresourceIndex = index;
+        commands->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
+    }
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource   = environmentCube.Get();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    commands->ResourceBarrier(1, &barrier);
+    D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+    view.Format                  = desc.Format;
+    view.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURECUBE;
+    view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    view.TextureCube.MipLevels   = levels;
+    device->CreateShaderResourceView(environmentCube.Get(), &view, handle);
+}
 void UploadModel()
 {
-    modelVertices = uploadBuffer(model->vertices.size() * sizeof(ModelVertex), model->vertices.data());
-    modelUniform  = uploadBuffer(256);
+    modelVertices = uploadBuffer(
+      std::max(sizeof(ModelVertex), model->vertices.size() * sizeof(ModelVertex)),
+      model->vertices.empty() ? nullptr : model->vertices.data());
+    modelUniform = uploadBuffer(512);
     D3D12_DESCRIPTOR_HEAP_DESC heap{};
     heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    heap.NumDescriptors = 5;
+    heap.NumDescriptors = 6;
     heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     checkHR(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&modelHeap)), "Create model texture heap");
     checkHR(allocator->Reset(), "Reset model allocator");
@@ -104,15 +176,17 @@ void UploadModel()
         device->CreateShaderResourceView(modelTextures[i].Get(), &view, handle);
         handle.ptr += stride;
     }
+    UploadEnvironmentCube(handle);
     checkHR(commands->Close(), "End model upload");
     ID3D12CommandList* lists[] = {commands.Get()};
     queue->ExecuteCommandLists(1, lists);
     WaitIdle();
+    environmentUpload.Reset();
     for (auto& upload : modelUploads)
         upload.Reset();
     D3D12_DESCRIPTOR_RANGE range{};
     range.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    range.NumDescriptors     = 5;
+    range.NumDescriptors     = 6;
     range.BaseShaderRegister = 1;
     D3D12_ROOT_PARAMETER params[3]{};
     params[0].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -179,7 +253,18 @@ void UploadModel()
     info.RTVFormats[0]              = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     info.DSVFormat                  = DXGI_FORMAT_D32_FLOAT;
     checkHR(device->CreateGraphicsPipelineState(&info, IID_PPV_ARGS(&modelPipeline)), "Create model pipeline");
-    gpuModel = model.get();
+    if (environment)
+    {
+        const auto skyVert                    = LoadShader(settings.shaderDirectory, "skybox.vert.dxil"),
+                   skyFrag                    = LoadShader(settings.shaderDirectory, "skybox.frag.dxil");
+        info.VS                               = {skyVert.data(), skyVert.size()};
+        info.PS                               = {skyFrag.data(), skyFrag.size()};
+        info.DepthStencilState.DepthEnable    = FALSE;
+        info.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        checkHR(device->CreateGraphicsPipelineState(&info, IID_PPV_ARGS(&skyPipeline)), "Create skybox pipeline");
+    }
+    gpuEnvironment = environment;
+    gpuModel       = model;
 }
 void ModelDepth()
 {

@@ -2,7 +2,7 @@
 #include <array>
 namespace render
 {
-    // Models show base color by default; PBR enables the built-in studio lighting.
+    // Models show base color by default; PBR enables studio lighting or a loaded HDR environment.
     enum class LightingMode
     {
         Unlit,
@@ -30,6 +30,6 @@ namespace render
         float yaw      = 0.0f;
         float pitch    = 0.0f;
         float distance = 3.6f;
-        float exposure = 1.0f; // PBR only; Unlit displays base color unchanged.
+        float exposure = 1.0f; // PBR/skybox exposure; unlit model base color stays unchanged.
     };
 } // namespace render

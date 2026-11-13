@@ -114,7 +114,7 @@ namespace render::detail
                     resized             = false;
                     std::cout << "Metal drawable: " << width << 'x' << height << '\n';
                 }
-                if (model && gpuModel != model.get())
+                if (model && (gpuModel != model || gpuEnvironment != environment))
                     UploadModel();
                 if (model && (!depth || depth.width != width || depth.height != height))
                 {
@@ -172,16 +172,33 @@ namespace render::detail
                 [encoder setCullMode:MTLCullModeNone];
                 if (model)
                 {
-                    const auto uniforms =
-                      MakeSceneUniforms(*model, camera, float(width) / height, lighting, directionalLight);
+                    const auto uniforms = MakeSceneUniforms(
+                      *model,
+                      camera,
+                      float(width) / height,
+                      lighting,
+                      directionalLight,
+                      environment.get(),
+                      environmentSettings);
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setVertexBuffer:vertices offset:0 atIndex:1];
                     for (NSUInteger i = 0; i < 5; ++i)
                         [encoder setFragmentTexture:modelTextures[i] atIndex:2 + i];
                     [encoder setFragmentSamplerState:modelSampler atIndex:7];
+                    [encoder setFragmentTexture:environmentTexture atIndex:8];
+                    if (environment && environmentSettings.showBackground)
+                    {
+                        [encoder setRenderPipelineState:skyPipeline];
+                        [encoder setDepthStencilState:skyDepthState];
+                        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+                    }
+                    [encoder setRenderPipelineState:modelPipeline];
                     [encoder setDepthStencilState:depthState];
-                    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:model->vertices.size()];
+                    if (!model->vertices.empty())
+                        [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                                    vertexStart:0
+                                    vertexCount:model->vertices.size()];
                 }
                 else
                     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
@@ -216,15 +233,19 @@ namespace render::detail
 #ifdef NOVA_HAS_UI
         bool uiRenderer = false;
 #endif
-        RendererConfig                settings;
-        const ModelData*              gpuModel = nullptr;
-        id<MTLBuffer>                 vertices;
-        id<MTLRenderPipelineState>    modelPipeline;
-        id<MTLDepthStencilState>      depthState;
-        id<MTLTexture>                depth;
-        std::array<id<MTLTexture>, 5> modelTextures{};
-        id<MTLSamplerState>           modelSampler;
-        void                          UploadModel()
+        RendererConfig                         settings;
+        std::shared_ptr<const ModelData>       gpuModel;
+        std::shared_ptr<const EnvironmentData> gpuEnvironment;
+        id<MTLTexture>                         environmentTexture;
+        id<MTLRenderPipelineState>             skyPipeline;
+        id<MTLDepthStencilState>               skyDepthState;
+        id<MTLBuffer>                          vertices;
+        id<MTLRenderPipelineState>             modelPipeline;
+        id<MTLDepthStencilState>               depthState;
+        id<MTLTexture>                         depth;
+        std::array<id<MTLTexture>, 5>          modelTextures{};
+        id<MTLSamplerState>                    modelSampler;
+        void                                   UploadModel()
         {
             const auto      shader = LoadShader(settings.shaderDirectory, "model.metallib");
             NSData*         data   = [NSData dataWithBytes:shader.data() length:shader.size()];
@@ -244,9 +265,12 @@ namespace render::detail
             modelPipeline                        = [device newRenderPipelineStateWithDescriptor:desc error:&error];
             if (!modelPipeline)
                 throw metalError("Create model pipeline", error);
-            vertices = [device newBufferWithBytes:model->vertices.data()
-                                           length:model->vertices.size() * sizeof(ModelVertex)
-                                          options:MTLResourceStorageModeShared];
+            if (model->vertices.empty())
+                vertices = [device newBufferWithLength:sizeof(ModelVertex) options:MTLResourceStorageModeShared];
+            else
+                vertices = [device newBufferWithBytes:model->vertices.data()
+                                               length:model->vertices.size() * sizeof(ModelVertex)
+                                              options:MTLResourceStorageModeShared];
             if (!vertices)
                 throw std::runtime_error("Create model vertex buffer failed");
             for (size_t i = 0; i < 5; ++i)
@@ -267,9 +291,55 @@ namespace render::detail
                                       withBytes:image.pixels.data()
                                     bytesPerRow:image.width * 4];
             }
+            const auto&           environmentData = environment ? *environment : FallbackEnvironment();
+            MTLTextureDescriptor* cube =
+              [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                                                    size:environmentData.mips[0].size
+                                                               mipmapped:environmentData.mips.size() > 1];
+            cube.storageMode   = MTLStorageModeShared;
+            cube.usage         = MTLTextureUsageShaderRead;
+            environmentTexture = [device newTextureWithDescriptor:cube];
+            if (!environmentTexture)
+                throw std::runtime_error("Create HDR environment cube failed");
+            for (size_t level = 0; level < environmentData.mips.size(); ++level)
+            {
+                const auto& mip = environmentData.mips[level];
+                for (NSUInteger face = 0; face < 6; ++face)
+                    [environmentTexture replaceRegion:MTLRegionMake2D(0, 0, mip.size, mip.size)
+                                          mipmapLevel:level
+                                                slice:face
+                                            withBytes:mip.pixels.data() + size_t(face) * mip.size * mip.size * 4
+                                          bytesPerRow:mip.size * 8
+                                        bytesPerImage:size_t(mip.size) * mip.size * 8];
+            }
+            if (environment)
+            {
+                const auto      bytes   = LoadShader(settings.shaderDirectory, "skybox.metallib");
+                NSData*         skyData = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+                dispatch_data_t skyBlob = dispatch_data_create(
+                  skyData.bytes, skyData.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                    (void)skyData;
+                  });
+                id<MTLLibrary> skyLibrary = [device newLibraryWithData:skyBlob error:&error];
+                if (!skyLibrary)
+                    throw metalError("Load skybox.metallib", error);
+                desc.vertexFunction   = [skyLibrary newFunctionWithName:@"vertexMain"];
+                desc.fragmentFunction = [skyLibrary newFunctionWithName:@"fragmentMain"];
+                skyPipeline           = [device newRenderPipelineStateWithDescriptor:desc error:&error];
+                if (!skyPipeline)
+                    throw metalError("Create skybox pipeline", error);
+                MTLDepthStencilDescriptor* skyDepth = [MTLDepthStencilDescriptor new];
+                skyDepth.depthCompareFunction       = MTLCompareFunctionAlways;
+                skyDepth.depthWriteEnabled          = NO;
+                skyDepthState                       = [device newDepthStencilStateWithDescriptor:skyDepth];
+                if (!skyDepthState)
+                    throw std::runtime_error("Create skybox depth state failed");
+            }
             MTLSamplerDescriptor* sampler        = [MTLSamplerDescriptor new];
             sampler.minFilter                    = MTLSamplerMinMagFilterLinear;
             sampler.magFilter                    = MTLSamplerMinMagFilterLinear;
+            sampler.mipFilter                    = MTLSamplerMipFilterLinear;
+            sampler.lodMaxClamp                  = float(environmentData.mips.size() - 1);
             sampler.sAddressMode                 = MTLSamplerAddressModeRepeat;
             sampler.tAddressMode                 = MTLSamplerAddressModeRepeat;
             modelSampler                         = [device newSamplerStateWithDescriptor:sampler];
@@ -279,7 +349,8 @@ namespace render::detail
             depthState                           = [device newDepthStencilStateWithDescriptor:depthDesc];
             if (!modelSampler || !depthState)
                 throw std::runtime_error("Create model sampler/depth state failed");
-            gpuModel = model.get();
+            gpuModel       = model;
+            gpuEnvironment = environment;
         }
         id<MTLDevice>              device;
         id<MTLCommandQueue>        queue;

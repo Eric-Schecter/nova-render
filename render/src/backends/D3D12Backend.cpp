@@ -6,6 +6,7 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#include <algorithm>
 #include <climits>
 #include <cstring>
 #include <d3d12.h>
@@ -156,7 +157,7 @@ namespace render::detail
             if (!width || !height)
                 return FrameResult::Skipped;
             WaitIdle();
-            if (model && gpuModel != model.get())
+            if (model && (gpuModel != model || gpuEnvironment != environment))
                 UploadModel();
             if (!swapchain || resized)
                 Recreate();
@@ -182,7 +183,7 @@ namespace render::detail
                     info.Device            = device.Get();
                     info.CommandQueue      = queue.Get();
                     info.NumFramesInFlight = 1;
-                    info.RTVFormat         = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    info.RTVFormat         = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
                     info.DSVFormat         = model ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
                     info.SrvDescriptorHeap = uiHeap.Get();
                     // ImGui 1.91.9 uses one SRV for its font atlas. No user textures in this panel.
@@ -200,13 +201,21 @@ namespace render::detail
                     uiRenderer = true;
                     uiHasDepth = bool(model);
                 }
+                parameterPanel->SetSRGBOutput(true);
                 ImGui_ImplDX12_NewFrame();
                 DrawParameterPanel();
             }
 #endif
             if (model)
             {
-                const auto  u = MakeSceneUniforms(*model, camera, float(width) / height, lighting, directionalLight);
+                const auto u = MakeSceneUniforms(
+                  *model,
+                  camera,
+                  float(width) / height,
+                  lighting,
+                  directionalLight,
+                  environment.get(),
+                  environmentSettings);
                 void*       mapped = nullptr;
                 D3D12_RANGE read{0, 0};
                 checkHR(modelUniform->Map(0, &read, &mapped), "Map scene uniforms");
@@ -226,7 +235,8 @@ namespace render::detail
             commands->ResourceBarrier(1, &barrier);
             auto rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
             rtv.ptr += static_cast<SIZE_T>(index) * rtvStride;
-            commands->ClearRenderTargetView(rtv, clearColor.data(), 0, nullptr);
+            const auto clear = ClearColorForTarget(true);
+            commands->ClearRenderTargetView(rtv, clear.data(), 0, nullptr);
             D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
             if (model)
             {
@@ -248,7 +258,14 @@ namespace render::detail
             commands->RSSetViewports(1, &viewport);
             commands->RSSetScissorRects(1, &scissor);
             commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
+            if (environment && environmentSettings.showBackground)
+            {
+                commands->SetPipelineState(skyPipeline.Get());
+                commands->DrawInstanced(3, 1, 0, 0);
+                commands->SetPipelineState(modelPipeline.Get());
+            }
+            if (!model || !model->vertices.empty())
+                commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)
             {

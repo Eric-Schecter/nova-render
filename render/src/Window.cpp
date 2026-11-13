@@ -169,6 +169,18 @@ namespace render
     {
         impl_->renderer->SetLighting(mode);
     }
+    void Window::LoadEnvironment(const std::filesystem::path& path)
+    {
+        impl_->renderer->LoadEnvironment(path);
+    }
+    void Window::SetEnvironment(const EnvironmentSettings& settings)
+    {
+        impl_->renderer->SetEnvironment(settings);
+    }
+    EnvironmentSettings Window::GetEnvironment() const
+    {
+        return impl_->renderer->GetEnvironment();
+    }
     void Window::SetCamera(const OrbitCamera& camera)
     {
         impl_->renderer->SetCamera(camera);

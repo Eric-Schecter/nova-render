@@ -1,23 +1,53 @@
 import { loadGLB, sceneUniforms } from './ModelData.js'
-export async function createModelView(device, context, url, shaderURL) {
-  const data = await loadGLB(url),
+import { fallbackEnvironment } from './EnvironmentData.js'
+function cubeTexture(device, data) {
+  const texture = device.createTexture({
+    size: [data.mips[0].size, data.mips[0].size, 6],
+    mipLevelCount: data.mips.length,
+    format: 'rgba16float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  try {
+    data.mips.forEach((mip, level) => {
+      const faceBytes = mip.size * mip.size * 8
+      for (let face = 0; face < 6; face++)
+        device.queue.writeTexture(
+          { texture, mipLevel: level, origin: [0, 0, face] },
+          mip.pixels.subarray(face * faceBytes, (face + 1) * faceBytes),
+          { bytesPerRow: mip.size * 8 },
+          [mip.size, mip.size, 1],
+        )
+    })
+    return texture
+  } catch (error) {
+    texture.destroy()
+    throw error
+  }
+}
+export async function createModelView(device, context, url, shaderURL, suppliedData) {
+  const data = suppliedData || (await loadGLB(url)),
     resources = []
+  let depth,
+    cube,
+    disposed = false,
+    environment = null,
+    skyPipeline
   try {
     const response = await fetch(shaderURL)
     if (!response.ok) throw Error('Missing model shader package: ' + shaderURL)
     const shader = await response.json()
     const makeBuffer = (bytes, usage) => {
       const buffer = device.createBuffer({
-        size: bytes.byteLength,
+        size: Math.max(48, bytes.byteLength),
         usage: usage | GPUBufferUsage.COPY_DST,
       })
       resources.push(buffer)
-      device.queue.writeBuffer(buffer, 0, bytes)
+      if (bytes.byteLength) device.queue.writeBuffer(buffer, 0, bytes)
       return buffer
     }
-    const vertices = makeBuffer(data.vertices, GPUBufferUsage.STORAGE)
-    const uniform = makeBuffer(new Float32Array(40), GPUBufferUsage.UNIFORM)
-    const textures = []
+    const vertices = makeBuffer(data.vertices, GPUBufferUsage.STORAGE),
+      uniform = makeBuffer(new Float32Array(96), GPUBufferUsage.UNIFORM),
+      textures = []
     for (const image of data.images) {
       const texture = device.createTexture({
         size: [image.width, image.height],
@@ -41,12 +71,13 @@ export async function createModelView(device, context, url, shaderURL) {
           image.height,
         ])
     }
+    cube = cubeTexture(device, fallbackEnvironment)
     const layout = device.createBindGroupLayout({
       entries: [
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: { type: 'uniform', minBindingSize: 160 },
+          buffer: { type: 'uniform', minBindingSize: 384 },
         },
         { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         ...textures.map((_, i) => ({
@@ -55,46 +86,90 @@ export async function createModelView(device, context, url, shaderURL) {
           texture: { sampleType: 'float' },
         })),
         { binding: 7, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        {
+          binding: 8,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float', viewDimension: 'cube' },
+        },
       ],
     })
     const sampler = device.createSampler({
       minFilter: 'linear',
       magFilter: 'linear',
+      mipmapFilter: 'linear',
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     })
-    const bindGroup = device.createBindGroup({
-      layout,
-      entries: [
-        { binding: 0, resource: { buffer: uniform } },
-        { binding: 1, resource: { buffer: vertices } },
-        ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
-        { binding: 7, resource: sampler },
-      ],
-    })
-    const vertex = device.createShaderModule({ code: shader.vert }),
-      fragment = device.createShaderModule({ code: shader.frag })
-    for (const module of [vertex, fragment]) {
-      const info = await module.getCompilationInfo()
-      const errors = info.messages.filter((m) => m.type === 'error')
-      if (errors.length) throw Error(errors.map((e) => e.message).join('\n'))
+    const group = (texture) =>
+      device.createBindGroup({
+        layout,
+        entries: [
+          { binding: 0, resource: { buffer: uniform } },
+          { binding: 1, resource: { buffer: vertices } },
+          ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
+          { binding: 7, resource: sampler },
+          { binding: 8, resource: texture.createView({ dimension: 'cube' }) },
+        ],
+      })
+    let bindGroup = group(cube)
+    async function pipelineFor(shader, sky = false) {
+      const vertex = device.createShaderModule({ code: shader.vert }),
+        fragment = device.createShaderModule({ code: shader.frag })
+      for (const module of [vertex, fragment]) {
+        const info = await module.getCompilationInfo()
+        const errors = info.messages.filter((m) => m.type === 'error')
+        if (errors.length) throw Error(errors.map((e) => e.message).join('\n'))
+      }
+      return device.createRenderPipelineAsync({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        vertex: { module: vertex, entryPoint: sky ? 'SkyVSMain' : 'VSMain' },
+        fragment: {
+          module: fragment,
+          entryPoint: sky ? 'SkyPSMain' : 'PSMain',
+          targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
+        },
+        primitive: { topology: 'triangle-list', cullMode: 'none' },
+        depthStencil: {
+          format: 'depth32float',
+          depthWriteEnabled: !sky,
+          depthCompare: sky ? 'always' : 'less',
+        },
+      })
     }
-    const pipeline = await device.createRenderPipelineAsync({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-      vertex: { module: vertex, entryPoint: 'VSMain' },
-      fragment: {
-        module: fragment,
-        entryPoint: 'PSMain',
-        targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
-      },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' },
-    })
-    let depth,
-      disposed = false
+    const pipeline = await pipelineFor(shader)
     return {
       triangles: data.vertices.length / 36,
-      draw(camera, clear, width, height, lighting, light) {
+      async loadEnvironment(next, skyURL) {
+        if (disposed) throw Error('Model has been disposed')
+        device.pushErrorScope('validation')
+        let nextCube,
+          nextGroup,
+          nextPipeline = skyPipeline,
+          failure
+        try {
+          if (!nextPipeline) {
+            const response = await fetch(skyURL)
+            if (!response.ok) throw Error('Missing skybox shader package: ' + skyURL)
+            nextPipeline = await pipelineFor(await response.json(), true)
+          }
+          nextCube = cubeTexture(device, next)
+          nextGroup = group(nextCube)
+          await device.queue.onSubmittedWorkDone()
+        } catch (error) {
+          failure = error
+        }
+        const error = await device.popErrorScope()
+        if (failure || error || disposed) {
+          nextCube?.destroy()
+          throw failure || Error(error?.message || 'Model has been disposed')
+        }
+        cube.destroy()
+        cube = nextCube
+        bindGroup = nextGroup
+        skyPipeline = nextPipeline
+        environment = next
+      },
+      draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')
         if (!depth || depth.width !== width || depth.height !== height) {
           depth?.destroy()
@@ -107,28 +182,34 @@ export async function createModelView(device, context, url, shaderURL) {
         device.queue.writeBuffer(
           uniform,
           0,
-          sceneUniforms(data, camera, width / height, lighting, light),
+          sceneUniforms(data, camera, width / height, lighting, light, environment, settings),
         )
-        const encoder = device.createCommandEncoder()
-        const pass = encoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: context.getCurrentTexture().createView(),
-              clearValue: clear,
-              loadOp: 'clear',
-              storeOp: 'store',
+        const encoder = device.createCommandEncoder(),
+          pass = encoder.beginRenderPass({
+            colorAttachments: [
+              {
+                view: context.getCurrentTexture().createView(),
+                clearValue: clear,
+                loadOp: 'clear',
+                storeOp: 'store',
+              },
+            ],
+            depthStencilAttachment: {
+              view: depth.createView(),
+              depthClearValue: 1,
+              depthLoadOp: 'clear',
+              depthStoreOp: 'discard',
             },
-          ],
-          depthStencilAttachment: {
-            view: depth.createView(),
-            depthClearValue: 1,
-            depthLoadOp: 'clear',
-            depthStoreOp: 'discard',
-          },
-        })
-        pass.setPipeline(pipeline)
+          })
         pass.setBindGroup(0, bindGroup)
-        pass.draw(data.vertices.length / 12)
+        if (environment && settings.showBackground) {
+          pass.setPipeline(skyPipeline)
+          pass.draw(3)
+        }
+        if (data.vertices.length) {
+          pass.setPipeline(pipeline)
+          pass.draw(data.vertices.length / 12)
+        }
         pass.end()
         device.queue.submit([encoder.finish()])
       },
@@ -136,12 +217,14 @@ export async function createModelView(device, context, url, shaderURL) {
         if (disposed) return
         disposed = true
         depth?.destroy()
-        for (const r of resources) r.destroy()
+        cube?.destroy()
+        for (const resource of resources) resource.destroy()
       },
     }
-  } catch (e) {
-    for (const r of resources) r.destroy()
-    throw e
+  } catch (error) {
+    cube?.destroy()
+    for (const resource of resources) resource.destroy()
+    throw error
   } finally {
     for (const image of data.images) image.bitmap?.close()
   }

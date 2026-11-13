@@ -11,7 +11,7 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   for (const width of [1400, 390]) {
     await page.setViewportSize({ width, height: 1000 })
-    for (const slug of ['triangle', 'damaged-helmet', 'lighting']) {
+    for (const slug of ['triangle', 'damaged-helmet', 'lighting', 'environment']) {
       await page.goto('http://127.0.0.1:5173/examples/' + slug)
       await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
       const panel = page.getByRole('region', { name: '参数面板', exact: true }),

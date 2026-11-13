@@ -50,13 +50,16 @@ namespace render
 
         // Supply framebuffer pixels before the first frame and after size changes.
         // Zero dimensions suspend rendering. Rebuilds happen inside DrawFrame().
-        void             Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
-        FrameResult      DrawFrame();
-        void             WaitIdle();
-        void             LoadModel(const std::filesystem::path& glbPath);
-        void             SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight GetDirectionalLight() const;
-        void             SetLighting(LightingMode mode);
+        void                Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
+        FrameResult         DrawFrame();
+        void                WaitIdle();
+        void                LoadModel(const std::filesystem::path& glbPath);
+        void                LoadEnvironment(const std::filesystem::path& path);
+        void                SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings GetEnvironment() const;
+        void                SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight    GetDirectionalLight() const;
+        void                SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
         void                 SetClearColor(const std::array<float, 4>& color);

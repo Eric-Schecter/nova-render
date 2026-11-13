@@ -87,13 +87,14 @@ namespace render::detail
         std::vector<VkImageView>   views;
         std::vector<VkFramebuffer> framebuffers;
         std::vector<VkSemaphore>   finished;
-        VkRenderPass               renderPass = VK_NULL_HANDLE;
-        VkPipelineLayout           layout     = VK_NULL_HANDLE;
-        VkPipeline                 pipeline   = VK_NULL_HANDLE;
-        VkCommandPool              pool       = VK_NULL_HANDLE;
-        VkCommandBuffer            cmd        = VK_NULL_HANDLE;
-        VkSemaphore                acquired   = VK_NULL_HANDLE;
-        VkFence                    fence      = VK_NULL_HANDLE;
+        VkRenderPass               renderPass  = VK_NULL_HANDLE;
+        VkPipelineLayout           layout      = VK_NULL_HANDLE;
+        VkPipeline                 pipeline    = VK_NULL_HANDLE;
+        VkPipeline                 skyPipeline = VK_NULL_HANDLE;
+        VkCommandPool              pool        = VK_NULL_HANDLE;
+        VkCommandBuffer            cmd         = VK_NULL_HANDLE;
+        VkSemaphore                acquired    = VK_NULL_HANDLE;
+        VkFence                    fence       = VK_NULL_HANDLE;
 
 #include "VulkanModel.inc"
 
@@ -451,6 +452,35 @@ namespace render::detail
                 info.renderPass       = renderPass;
                 check(
                   vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline), "Create pipeline");
+                if (environment)
+                {
+                    VkShaderModule skyVert = VK_NULL_HANDLE, skyFrag = VK_NULL_HANDLE;
+                    try
+                    {
+                        skyVert                     = shader("skybox.vert.spv");
+                        skyFrag                     = shader("skybox.frag.spv");
+                        stages[0].module            = skyVert;
+                        stages[0].pName             = "SkyVSMain";
+                        stages[1].module            = skyFrag;
+                        stages[1].pName             = "SkyPSMain";
+                        depthState.depthTestEnable  = VK_FALSE;
+                        depthState.depthWriteEnable = VK_FALSE;
+                        info.pDepthStencilState     = &depthState;
+                        check(
+                          vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &skyPipeline),
+                          "Create skybox pipeline");
+                    }
+                    catch (...)
+                    {
+                        if (skyVert)
+                            vkDestroyShaderModule(device, skyVert, nullptr);
+                        if (skyFrag)
+                            vkDestroyShaderModule(device, skyFrag, nullptr);
+                        throw;
+                    }
+                    vkDestroyShaderModule(device, skyVert, nullptr);
+                    vkDestroyShaderModule(device, skyFrag, nullptr);
+                }
             }
             catch (...)
             {
@@ -517,8 +547,14 @@ namespace render::detail
 #endif
             if (model)
             {
-                const auto uniform =
-                  MakeSceneUniforms(*model, camera, float(extent.width) / extent.height, lighting, directionalLight);
+                const auto uniform = MakeSceneUniforms(
+                  *model,
+                  camera,
+                  float(extent.width) / extent.height,
+                  lighting,
+                  directionalLight,
+                  environment.get(),
+                  environmentSettings);
                 void* mapped = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));
@@ -557,7 +593,14 @@ namespace render::detail
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             if (model)
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
-            vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
+            if (environment && environmentSettings.showBackground)
+            {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline);
+                vkCmdDraw(cmd, 3, 1, 0, 0);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            }
+            if (!model || !model->vertices.empty())
+                vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)
                 ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
@@ -602,6 +645,9 @@ namespace render::detail
                     vkDestroyFramebuffer(device, fb, nullptr);
             framebuffers.clear();
             destroyModelTexture(modelDepth);
+            if (skyPipeline)
+                vkDestroyPipeline(device, skyPipeline, nullptr);
+            skyPipeline = VK_NULL_HANDLE;
             if (pipeline)
                 vkDestroyPipeline(device, pipeline, nullptr);
             pipeline = VK_NULL_HANDLE;

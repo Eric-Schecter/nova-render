@@ -55,10 +55,12 @@ namespace render::detail
     {
         ImGui::SetCurrentContext(context);
     }
-    void ParameterPanel::CaptureDefaults(const OrbitCamera& camera, const DirectionalLight& light)
+    void ParameterPanel::CaptureDefaults(
+      const OrbitCamera& camera, const DirectionalLight& light, const EnvironmentSettings& environment)
     {
-        initialCamera = camera;
-        initialLight  = light;
+        initialCamera      = camera;
+        initialLight       = light;
+        initialEnvironment = environment;
     }
     void ParameterPanel::SetSRGBOutput(bool enabled)
     {
@@ -90,7 +92,13 @@ namespace render::detail
         return ImGui::GetIO().WantCaptureKeyboard;
     }
     void ParameterPanel::Draw(
-      bool model, LightingMode lighting, OrbitCamera& camera, DirectionalLight& light, std::array<float, 4>& clear)
+      bool                  model,
+      LightingMode          lighting,
+      OrbitCamera&          camera,
+      DirectionalLight&     light,
+      std::array<float, 4>& clear,
+      bool                  hasEnvironment,
+      EnvironmentSettings&  environment)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -114,9 +122,11 @@ namespace render::detail
                 int background = clear[0] > 0.5f ? 1 : 0;
                 ImGui::TextUnformatted("Background");
                 ImGui::SetNextItemWidth(-1);
+                ImGui::BeginDisabled(hasEnvironment && environment.showBackground);
                 if (ImGui::Combo("##Background", &background, "Dark\0Light\0"))
                     clear = background ? std::array<float, 4>{0.8f, 0.85f, 0.95f, 1}
                                        : std::array<float, 4>{0.025f, 0.035f, 0.055f, 1};
+                ImGui::EndDisabled();
             }
             auto slider = [](const char* label, float& value, float min, float max, const char* format) {
                 ImGui::TextUnformatted(label);
@@ -132,10 +142,21 @@ namespace render::detail
                 slider("Yaw", camera.yaw, -180, 180, "%.1f");
                 slider("Pitch", camera.pitch, -85, 85, "%.1f");
                 slider("Distance", camera.distance, 1.5f, 100, "%.2f");
-                if (lighting == LightingMode::PBR)
+                if (lighting == LightingMode::PBR || hasEnvironment)
                     slider("Exposure", camera.exposure, 0.1f, 3, "%.1f");
                 if (ImGui::Button("Reset camera"))
                     camera = initialCamera;
+            }
+            if (hasEnvironment && ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::Checkbox("Skybox", &environment.showBackground);
+                ImGui::PushID("Environment");
+                slider("Rotation", environment.rotation, -180, 180, "%.1f");
+                slider("Intensity", environment.intensity, 0, 16, "%.2f");
+                slider("Sky brightness", environment.backgroundIntensity, 0, 16, "%.2f");
+                if (ImGui::Button("Reset environment"))
+                    environment = initialEnvironment;
+                ImGui::PopID();
             }
             if (
               model && lighting == LightingMode::PBR

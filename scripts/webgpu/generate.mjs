@@ -12,3 +12,14 @@ await writeFile(
   await readFile('assets/DamagedHelmet/DamagedHelmet.glb'),
 )
 console.log('Model HLSL and GLB generated for WebGPU')
+
+const sky = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), {
+  model: true,
+  sky: true,
+})
+await writeFile('docs/public/generated/skybox.json', JSON.stringify(sky))
+await writeFile(
+  'docs/public/generated/venice_sunset.nenv',
+  await readFile('assets/Environment/venice_sunset.nenv'),
+)
+console.log('Skybox HLSL and prefiltered HDR environment generated')

@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 const exec = promisify(execFile)
-export async function compile(source, { model = false } = {}) {
+export async function compile(source, { model = false, sky = false } = {}) {
   if (typeof source !== 'string' || Buffer.byteLength(source) > 65536)
     throw Error('HLSL 限制为 64 KiB')
   if (/^\s*#\s*include/m.test(source)) throw Error('在线示例不支持 #include')
@@ -23,8 +23,8 @@ export async function compile(source, { model = false } = {}) {
     await writeFile(hlsl, source)
     const result = { source }
     for (const [stage, entry, profile] of [
-      ['vert', 'VSMain', 'vs_6_0'],
-      ['frag', 'PSMain', 'ps_6_0'],
+      ['vert', sky ? 'SkyVSMain' : 'VSMain', 'vs_6_0'],
+      ['frag', sky ? 'SkyPSMain' : 'PSMain', 'ps_6_0'],
     ]) {
       const spv = join(dir, stage + '.spv'),
         wgsl = join(dir, stage + '.wgsl')

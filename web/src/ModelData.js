@@ -1,3 +1,4 @@
+import { defaultEnvironment } from './EnvironmentData.js'
 import { defaultDirectionalLight } from './Lighting.js'
 const identity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 export function multiply(a, b) {
@@ -237,6 +238,8 @@ export function sceneUniforms(
   aspect,
   lighting = 'unlit',
   light = defaultDirectionalLight(),
+  environment = null,
+  settings = defaultEnvironment(),
 ) {
   const yaw = (camera.yaw * Math.PI) / 180,
     pitch = (camera.pitch * Math.PI) / 180,
@@ -300,5 +303,37 @@ export function sceneUniforms(
     0,
     ...light.color,
     light.intensity,
+    ...s,
+    aspect / t,
+    ...u,
+    1 / t,
+    ...f,
+    environment ? 1 : 0,
+    Math.sin((settings.rotation * Math.PI) / 180),
+    Math.cos((settings.rotation * Math.PI) / 180),
+    settings.intensity,
+    environment ? environment.mips.length - 1 : 0,
+    settings.backgroundIntensity,
+    settings.showBackground ? 1 : 0,
+    0,
+    0,
+    ...(environment?.irradiance || new Float32Array(36)),
   ])
+}
+
+export function emptyModelData() {
+  const colors = [
+    [255, 255, 255, 255],
+    [128, 128, 255, 255],
+    [255, 255, 255, 255],
+    [255, 255, 255, 255],
+    [0, 0, 0, 255],
+  ]
+  return {
+    vertices: new Float32Array(0),
+    images: colors.map((color) => ({ width: 1, height: 1, pixels: new Uint8Array(color) })),
+    baseColor: [1, 1, 1, 1],
+    material: [1, 1, 1, 1],
+    emissive: [0, 0, 0, 0],
+  }
 }

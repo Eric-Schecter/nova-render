@@ -3,16 +3,19 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
 import { showHelmet } from '../../../web/examples/helmet.js'
+import { showEnvironment } from '../../../web/examples/environment.js'
+import environmentJS from '../../../web/examples/environment.js?raw'
+import environmentCPP from '../../../examples/environment/main.cpp?raw'
 import { showLighting } from '../../../web/examples/lighting.js'
 import lightingJS from '../../../web/examples/lighting.js?raw'
 import lightingCPP from '../../../examples/lighting/main.cpp?raw'
 import helmetJS from '../../../web/examples/helmet.js?raw'
 import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
-const props = defineProps({ lighting: Boolean })
-const jsSource = props.lighting ? lightingJS : helmetJS
-const cppSource = props.lighting ? lightingCPP : helmetCPP
-const showExample = props.lighting ? showLighting : showHelmet
+const props = defineProps({ lighting: Boolean, environment: Boolean })
+const jsSource = props.environment ? environmentJS : props.lighting ? lightingJS : helmetJS
+const cppSource = props.environment ? environmentCPP : props.lighting ? lightingCPP : helmetCPP
+const showExample = props.environment ? showEnvironment : props.lighting ? showLighting : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('加载 Damaged Helmet…'),
@@ -55,6 +58,7 @@ onMounted(async () => {
       withBase('/generated/'),
       { yaw: 20, pitch: 5, distance: 3.6, exposure: 1 },
       {
+        environmentURL: withBase('/generated/venice_sunset.nenv'),
         onError(error) {
           if (!disposed) message.value = error.message
         },
@@ -83,7 +87,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
-      <strong>{{ lighting ? 'PBR 光照' : '模型加载' }}</strong>
+      <strong>{{ environment ? '天空盒与环境光' : lighting ? 'PBR 光照' : '模型加载' }}</strong>
       <div>
         <button
           :disabled="!ready"

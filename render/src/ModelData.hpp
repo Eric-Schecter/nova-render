@@ -1,4 +1,5 @@
 #pragma once
+#include "EnvironmentData.hpp"
 #include "render/Model.hpp"
 #include <array>
 #include <cstdint>
@@ -36,16 +37,25 @@ namespace render::detail
         float emissive[4]; // rgb: emissive factor, w: PBR enabled
         float lightDirection[4];
         float lightColorIntensity[4];
+        float cameraRight[4];
+        float cameraUp[4];
+        float cameraForward[4];     // w: an environment is loaded
+        float environmentParams[4]; // sin/cos rotation, intensity, highest mip
+        float skyParams[4];         // background intensity, visibility
+        float irradiance[9][4];
     };
     static_assert(sizeof(ModelVertex) == 48, "HLSL vertex storage layout must match");
-    static_assert(sizeof(SceneUniforms) == 160, "HLSL scene uniform layout must match");
+    static_assert(sizeof(SceneUniforms) == 384, "HLSL scene uniform layout must match");
     std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path);
+    std::shared_ptr<const ModelData> EmptyModelData();
     void                             ValidateDirectionalLight(const DirectionalLight& light);
     void                             ValidateCamera(const OrbitCamera& camera);
     SceneUniforms                    MakeSceneUniforms(
-                         const ModelData&        data,
-                         const OrbitCamera&      camera,
-                         float                   aspect,
-                         LightingMode            lighting = LightingMode::Unlit,
-                         const DirectionalLight& light    = {});
+                         const ModelData&           data,
+                         const OrbitCamera&         camera,
+                         float                      aspect,
+                         LightingMode               lighting    = LightingMode::Unlit,
+                         const DirectionalLight&    light       = {},
+                         const EnvironmentData*     environment = nullptr,
+                         const EnvironmentSettings& settings    = {});
 } // namespace render::detail
