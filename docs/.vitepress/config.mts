@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitepress'
+import shaderCompiler from '../../scripts/webgpu/plugin.mjs'
 
 export default defineConfig({
+  vite: { plugins: [shaderCompiler()], server: { port: 5173, strictPort: true } },
   lang: 'zh-CN',
   title: 'Nova Render',
   description: 'C++17 最小渲染模块接口文档：Vulkan、D3D12、Metal 与统一 HLSL。',
@@ -15,6 +17,7 @@ export default defineConfig({
       { text: '使用指南', items: [
         { text: '快速开始', link: '/guide/quick-start' },
         { text: '编写示例', link: '/guide/integration' },
+        { text: 'HLSL 即时演示', link: '/guide/playground' },
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },
