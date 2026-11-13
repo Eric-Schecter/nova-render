@@ -17,8 +17,13 @@ namespace render::detail
     {
         std::array<std::array<float, 4>, 9> irradiance{};
         std::vector<EnvironmentMip>         mips;
+        std::vector<EnvironmentMip>         backgroundMips;
     };
-    std::shared_ptr<const EnvironmentData> LoadEnvironmentFile(const std::filesystem::path& path);
-    const EnvironmentData&                 FallbackEnvironment();
-    void                                   ValidateEnvironment(const EnvironmentSettings& settings);
+    std::shared_ptr<const EnvironmentData>    LoadEnvironmentFile(const std::filesystem::path& path);
+    const EnvironmentData&                    FallbackEnvironment();
+    inline const std::vector<EnvironmentMip>& BackgroundMips(const EnvironmentData& data)
+    {
+        return data.backgroundMips.empty() ? data.mips : data.backgroundMips;
+    }
+    void ValidateEnvironment(const EnvironmentSettings& settings);
 } // namespace render::detail

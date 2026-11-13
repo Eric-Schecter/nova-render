@@ -187,6 +187,7 @@ namespace render::detail
                         [encoder setFragmentTexture:modelTextures[i] atIndex:2 + i];
                     [encoder setFragmentSamplerState:modelSampler atIndex:7];
                     [encoder setFragmentTexture:environmentTexture atIndex:8];
+                    [encoder setFragmentTexture:backgroundTexture atIndex:9];
                     if (environment && environmentSettings.showBackground)
                     {
                         [encoder setRenderPipelineState:skyPipeline];
@@ -236,7 +237,7 @@ namespace render::detail
         RendererConfig                         settings;
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
-        id<MTLTexture>                         environmentTexture;
+        id<MTLTexture>                         environmentTexture, backgroundTexture;
         id<MTLRenderPipelineState>             skyPipeline;
         id<MTLDepthStencilState>               skyDepthState;
         id<MTLBuffer>                          vertices;
@@ -291,27 +292,32 @@ namespace render::detail
                                       withBytes:image.pixels.data()
                                     bytesPerRow:image.width * 4];
             }
-            const auto&           environmentData = environment ? *environment : FallbackEnvironment();
-            MTLTextureDescriptor* cube =
-              [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
-                                                                    size:environmentData.mips[0].size
-                                                               mipmapped:environmentData.mips.size() > 1];
-            cube.storageMode   = MTLStorageModeShared;
-            cube.usage         = MTLTextureUsageShaderRead;
-            environmentTexture = [device newTextureWithDescriptor:cube];
-            if (!environmentTexture)
-                throw std::runtime_error("Create HDR environment cube failed");
-            for (size_t level = 0; level < environmentData.mips.size(); ++level)
-            {
-                const auto& mip = environmentData.mips[level];
-                for (NSUInteger face = 0; face < 6; ++face)
-                    [environmentTexture replaceRegion:MTLRegionMake2D(0, 0, mip.size, mip.size)
-                                          mipmapLevel:level
-                                                slice:face
-                                            withBytes:mip.pixels.data() + size_t(face) * mip.size * mip.size * 4
-                                          bytesPerRow:mip.size * 8
-                                        bytesPerImage:size_t(mip.size) * mip.size * 8];
-            }
+            const auto& environmentData = environment ? *environment : FallbackEnvironment();
+            auto        uploadCube      = [&](const std::vector<EnvironmentMip>& mips) -> id<MTLTexture> {
+                MTLTextureDescriptor* cube =
+                  [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                                                        size:mips[0].size
+                                                                   mipmapped:mips.size() > 1];
+                cube.storageMode       = MTLStorageModeShared;
+                cube.usage             = MTLTextureUsageShaderRead;
+                id<MTLTexture> texture = [device newTextureWithDescriptor:cube];
+                if (!texture)
+                    throw std::runtime_error("Create HDR environment cube failed");
+                for (size_t level = 0; level < mips.size(); ++level)
+                {
+                    const auto& mip = mips[level];
+                    for (NSUInteger face = 0; face < 6; ++face)
+                        [texture replaceRegion:MTLRegionMake2D(0, 0, mip.size, mip.size)
+                                   mipmapLevel:level
+                                         slice:face
+                                     withBytes:mip.pixels.data() + size_t(face) * mip.size * mip.size * 4
+                                   bytesPerRow:mip.size * 8
+                                 bytesPerImage:size_t(mip.size) * mip.size * 8];
+                }
+                return texture;
+            };
+            environmentTexture = uploadCube(environmentData.mips);
+            backgroundTexture  = uploadCube(BackgroundMips(environmentData));
             if (environment)
             {
                 const auto      bytes   = LoadShader(settings.shaderDirectory, "skybox.metallib");
@@ -335,11 +341,12 @@ namespace render::detail
                 if (!skyDepthState)
                     throw std::runtime_error("Create skybox depth state failed");
             }
-            MTLSamplerDescriptor* sampler        = [MTLSamplerDescriptor new];
-            sampler.minFilter                    = MTLSamplerMinMagFilterLinear;
-            sampler.magFilter                    = MTLSamplerMinMagFilterLinear;
-            sampler.mipFilter                    = MTLSamplerMipFilterLinear;
-            sampler.lodMaxClamp                  = float(environmentData.mips.size() - 1);
+            MTLSamplerDescriptor* sampler = [MTLSamplerDescriptor new];
+            sampler.minFilter             = MTLSamplerMinMagFilterLinear;
+            sampler.magFilter             = MTLSamplerMinMagFilterLinear;
+            sampler.mipFilter             = MTLSamplerMipFilterLinear;
+            sampler.lodMaxClamp =
+              float(std::max(environmentData.mips.size(), BackgroundMips(environmentData).size()) - 1);
             sampler.sAddressMode                 = MTLSamplerAddressModeRepeat;
             sampler.tAddressMode                 = MTLSamplerAddressModeRepeat;
             modelSampler                         = [device newSamplerStateWithDescriptor:sampler];

@@ -28,6 +28,7 @@ struct Vertex
 [[vk::binding(6, 0)]] Texture2D<float4>        emissiveTexture : register(t5);
 [[vk::binding(7, 0)]] SamplerState             textureSampler : register(s0);
 [[vk::binding(8, 0)]] TextureCube<float4>      environmentTexture : register(t6);
+[[vk::binding(9, 0)]] TextureCube<float4>      backgroundTexture : register(t7);
 struct VertexOut
 {
     float4 position : SV_Position;
@@ -125,7 +126,7 @@ float4 SkyPSMain(SkyOut input)
   : SV_Target
 {
     float3 direction = environmentDirection(normalize(input.direction));
-    float3 color     = environmentTexture.SampleLevel(textureSampler, direction, 0).rgb * skyParams.x;
+    float3 color     = backgroundTexture.Sample(textureSampler, direction).rgb * skyParams.x;
     return float4(displayRadiance(color), 1);
 }
 float4 PSMain(VertexOut input)

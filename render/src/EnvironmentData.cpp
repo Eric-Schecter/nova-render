@@ -39,26 +39,29 @@ namespace render::detail
         };
         char magic[8];
         file.read(magic, 8);
-        if (std::memcmp(magic, "NOVENV01", 8))
-            throw std::runtime_error("Expected Nova .nenv environment (NOVENV01)");
+        const bool separateBackground = std::memcmp(magic, "NOVENV02", 8) == 0;
+        if (!separateBackground && std::memcmp(magic, "NOVENV01", 8))
+            throw std::runtime_error("Expected Nova .nenv environment (NOVENV01/02)");
         const auto face = u32(), levels = u32();
-        if (!face || face > 1024 || (face & (face - 1)))
-            throw std::runtime_error("Invalid environment face size");
-        uint32_t expectedLevels = 1;
-        for (uint32_t n = face; n > 1; n /= 2)
-            ++expectedLevels;
-        if (levels != expectedLevels)
-            throw std::runtime_error("Environment must contain a complete mip chain");
-        size_t expected = 160;
-        for (uint32_t n = face;; n /= 2)
-        {
-            expected += size_t(n) * n * 6 * 8;
-            if (n == 1)
-                break;
-        }
-        if (size != expected)
-            throw std::runtime_error("Environment payload size mismatch");
-        auto result = std::make_shared<EnvironmentData>();
+        auto       payloadSize = [](uint32_t faceSize, uint32_t levelCount) {
+            if (!faceSize || faceSize > 1024 || (faceSize & (faceSize - 1)))
+                throw std::runtime_error("Invalid environment face size");
+            uint32_t expectedLevels = 1;
+            for (uint32_t n = faceSize; n > 1; n /= 2)
+                ++expectedLevels;
+            if (levelCount != expectedLevels)
+                throw std::runtime_error("Environment must contain a complete mip chain");
+            size_t bytes = 0;
+            for (uint32_t n = faceSize;; n /= 2)
+            {
+                bytes += size_t(n) * n * 6 * 8;
+                if (n == 1)
+                    break;
+            }
+            return bytes;
+        };
+        size_t expected = (separateBackground ? 168 : 160) + payloadSize(face, levels);
+        auto   result   = std::make_shared<EnvironmentData>();
         for (auto& coefficient : result->irradiance)
             for (float& value : coefficient)
             {
@@ -67,21 +70,35 @@ namespace render::detail
                 if (!std::isfinite(value))
                     throw std::runtime_error("Non-finite environment irradiance");
             }
-        for (uint32_t level = 0, n = face; level < levels; ++level, n = std::max(1u, n / 2))
+        uint32_t skyFace = 0, skyLevels = 0;
+        if (separateBackground)
         {
-            EnvironmentMip mip;
-            mip.size = n;
-            mip.pixels.resize(size_t(n) * n * 6 * 4);
-            for (auto& value : mip.pixels)
-            {
-                unsigned char bytes[2];
-                file.read(reinterpret_cast<char*>(bytes), 2);
-                value = uint16_t(bytes[0]) | (uint16_t(bytes[1]) << 8);
-                if ((value & 0x7c00) == 0x7c00)
-                    throw std::runtime_error("Non-finite environment texel");
-            }
-            result->mips.push_back(std::move(mip));
+            skyFace   = u32();
+            skyLevels = u32();
+            expected += payloadSize(skyFace, skyLevels);
         }
+        if (size != expected)
+            throw std::runtime_error("Environment payload size mismatch");
+        auto readMips = [&](uint32_t firstSize, uint32_t count, std::vector<EnvironmentMip>& mips) {
+            for (uint32_t level = 0, n = firstSize; level < count; ++level, n = std::max(1u, n / 2))
+            {
+                EnvironmentMip mip;
+                mip.size = n;
+                mip.pixels.resize(size_t(n) * n * 6 * 4);
+                for (auto& value : mip.pixels)
+                {
+                    unsigned char bytes[2]{};
+                    file.read(reinterpret_cast<char*>(bytes), 2);
+                    value = uint16_t(bytes[0]) | (uint16_t(bytes[1]) << 8);
+                    if ((value & 0x7c00) == 0x7c00)
+                        throw std::runtime_error("Non-finite environment texel");
+                }
+                mips.push_back(std::move(mip));
+            }
+        };
+        readMips(face, levels, result->mips);
+        if (separateBackground)
+            readMips(skyFace, skyLevels, result->backgroundMips);
         if (!file)
             throw std::runtime_error("Cannot read environment: " + path.string());
         return result;

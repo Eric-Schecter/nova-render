@@ -99,12 +99,19 @@ int main(int argc, char** argv)
 {
     try
     {
-        if (argc < 3 || argc > 5)
+        if (argc < 3 || argc > 7)
             throw std::runtime_error(
-              "Usage: nova_environment_bake input.hdr output.nenv [face-size=256] [samples=512]");
+              "Usage: nova_environment_bake input.hdr output.nenv [face-size=256] [samples=512] [background.hdr=input] "
+              "[background-face=512]");
         const int face = argc > 3 ? std::stoi(argv[3]) : 256, samples = argc > 4 ? std::stoi(argv[4]) : 512;
         if (face < 16 || face > 1024 || (face & (face - 1)) || samples < 64 || samples > 4096)
             throw std::runtime_error("Face must be power-of-two 16..1024, samples 64..4096");
+        const int skyFace = argc > 6 ? std::stoi(argv[6]) : 512;
+        if (skyFace < 16 || skyFace > 1024 || (skyFace & (skyFace - 1)))
+            throw std::runtime_error("Background face must be power-of-two 16..1024");
+        int skyLevels = 1;
+        for (int n = skyFace; n > 1; n /= 2)
+            ++skyLevels;
         HDR image;
         int channels = 0;
         if (
@@ -117,6 +124,18 @@ int main(int argc, char** argv)
         for (size_t i = 0; i < size_t(image.width) * image.height * 3; ++i)
             if (!std::isfinite(image.pixels.get()[i]) || image.pixels.get()[i] < 0)
                 throw std::runtime_error("Invalid HDR radiance");
+        HDR         background;
+        const char* backgroundPath = argc > 5 ? argv[5] : argv[1];
+        if (
+          !stbi_info(backgroundPath, &background.width, &background.height, &channels) || background.width > 8192
+          || background.height > 4096 || background.width < 2 || background.height < 2)
+            throw std::runtime_error("Invalid background HDR dimensions");
+        background.pixels.reset(stbi_loadf(backgroundPath, &background.width, &background.height, &channels, 3));
+        if (!background.pixels)
+            throw std::runtime_error("Cannot decode background HDR");
+        for (size_t i = 0; i < size_t(background.width) * background.height * 3; ++i)
+            if (!std::isfinite(background.pixels.get()[i]) || background.pixels.get()[i] < 0)
+                throw std::runtime_error("Invalid background HDR radiance");
         int levels = 1;
         for (int n = face; n > 1; n /= 2)
             ++levels;
@@ -139,7 +158,7 @@ int main(int argc, char** argv)
         std::ofstream output(argv[2], std::ios::binary);
         if (!output)
             throw std::runtime_error("Cannot write environment");
-        output.write("NOVENV01", 8);
+        output.write("NOVENV02", 8);
         write32(output, face);
         write32(output, levels);
         for (int i = 0; i < 9; ++i)
@@ -151,6 +170,8 @@ int main(int argc, char** argv)
             writeFloat(output, float(c.z));
             writeFloat(output, 0);
         }
+        write32(output, skyFace);
+        write32(output, skyLevels);
         for (int level = 0, size = face; level < levels; ++level, size = std::max(1, size / 2))
         {
             const float      roughness = float(level) / (levels - 1), alpha = roughness * roughness;
@@ -196,6 +217,37 @@ int main(int argc, char** argv)
                         }
                     }
             std::cout << "Prefiltered mip " << level << ": " << size << " x " << size << " x 6\n";
+        }
+        // Display background: spatial antialiasing, never GGX roughness filtering.
+        std::vector<Vec> previous;
+        for (int level = 0, size = skyFace; level < skyLevels; ++level, size = std::max(1, size / 2))
+        {
+            std::vector<Vec> pixels(size_t(size) * size * 6);
+            for (int f = 0; f < 6; ++f)
+                for (int y = 0; y < size; ++y)
+                    for (int x = 0; x < size; ++x)
+                    {
+                        Vec color{};
+                        for (int sy = 0; sy < 2; ++sy)
+                            for (int sx = 0; sx < 2; ++sx)
+                            {
+                                if (!level)
+                                    color += background.sample(faceDirection(
+                                      f, 2 * (x + (sx + 0.5f) / 2) / size - 1, 2 * (y + (sy + 0.5f) / 2) / size - 1));
+                                else
+                                    color += previous[(size_t(f) * size * 2 + y * 2 + sy) * size * 2 + x * 2 + sx];
+                            }
+                        color *= 0.25f;
+                        pixels[(size_t(f) * size + y) * size + x] = color;
+                        for (float value : {color.x, color.y, color.z, 1.0f})
+                        {
+                            const auto bits = half(value);
+                            output.put(static_cast<char>(bits));
+                            output.put(static_cast<char>(bits >> 8));
+                        }
+                    }
+            previous = std::move(pixels);
+            std::cout << "Background mip " << level << ": " << size << " x " << size << " x 6\n";
         }
         if (!output)
             throw std::runtime_error("Writing environment failed");

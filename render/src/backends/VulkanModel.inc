@@ -11,7 +11,7 @@ struct ModelTexture
 };
 ModelBuffer                 modelVertices, modelUniform, modelStaging;
 std::array<ModelTexture, 5> modelTextures;
-ModelTexture                modelDepth, environmentCube;
+ModelTexture                modelDepth, environmentCube, backgroundCube;
 VkSampler                   modelSampler   = VK_NULL_HANDLE;
 VkDescriptorSetLayout       modelSetLayout = VK_NULL_HANDLE;
 VkDescriptorPool            modelPool      = VK_NULL_HANDLE;
@@ -104,14 +104,13 @@ void modelImage(
     view.subresourceRange = {aspect, 0, levels, 0, layers};
     check(vkCreateImageView(device, &view, nullptr, &t.view), "Create model image view");
 }
-void uploadEnvironmentCube()
+void uploadEnvironmentCube(ModelTexture& cube, const std::vector<EnvironmentMip>& mips)
 {
-    const auto&                    data = environment ? *environment : FallbackEnvironment();
     std::vector<uint16_t>          pixels;
     std::vector<VkBufferImageCopy> regions;
-    for (uint32_t level = 0; level < data.mips.size(); ++level)
+    for (uint32_t level = 0; level < mips.size(); ++level)
     {
-        const auto& mip = data.mips[level];
+        const auto& mip = mips[level];
         for (uint32_t face = 0; face < 6; ++face)
         {
             VkBufferImageCopy copy{};
@@ -125,13 +124,13 @@ void uploadEnvironmentCube()
     }
     modelBuffer(modelStaging, pixels.size() * 2, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, pixels.data());
     modelImage(
-      environmentCube,
-      data.mips[0].size,
-      data.mips[0].size,
+      cube,
+      mips[0].size,
+      mips[0].size,
       VK_FORMAT_R16G16B16A16_SFLOAT,
       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       VK_IMAGE_ASPECT_COLOR_BIT,
-      static_cast<uint32_t>(data.mips.size()),
+      static_cast<uint32_t>(mips.size()),
       6,
       true);
     check(vkResetCommandBuffer(cmd, 0), "Reset environment upload");
@@ -141,15 +140,15 @@ void uploadEnvironmentCube()
     barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image                                             = environmentCube.image;
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, static_cast<uint32_t>(data.mips.size()), 0, 6};
+    barrier.image                                             = cube.image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, static_cast<uint32_t>(mips.size()), 0, 6};
     barrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
     vkCmdPipelineBarrier(
       cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     vkCmdCopyBufferToImage(
       cmd,
       modelStaging.buffer,
-      environmentCube.image,
+      cube.image,
       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
       static_cast<uint32_t>(regions.size()),
       regions.data());
@@ -245,15 +244,17 @@ void uploadModel()
         check(vkQueueWaitIdle(queue), "Wait texture upload");
         destroyModelBuffer(modelStaging);
     }
-    uploadEnvironmentCube();
+    const auto& env = environment ? *environment : FallbackEnvironment();
+    uploadEnvironmentCube(environmentCube, env.mips);
+    uploadEnvironmentCube(backgroundCube, BackgroundMips(env));
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
     sampler.mipmapMode                    = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler.maxLod = float((environment ? environment->mips.size() : 1) - 1);
+    sampler.maxLod = float(std::max(env.mips.size(), BackgroundMips(env).size()) - 1);
     check(vkCreateSampler(device, &sampler, nullptr, &modelSampler), "Create model sampler");
-    std::array<VkDescriptorSetLayoutBinding, 9> bindings{};
-    for (uint32_t i = 0; i < 9; ++i)
+    std::array<VkDescriptorSetLayoutBinding, 10> bindings{};
+    for (uint32_t i = 0; i < 10; ++i)
     {
         bindings[i].binding         = i;
         bindings[i].descriptorCount = 1;
@@ -266,13 +267,13 @@ void uploadModel()
                                                : VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 9;
+    layoutInfo.bindingCount = 10;
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 6},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 7},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets       = 1;
@@ -286,9 +287,9 @@ void uploadModel()
     check(vkAllocateDescriptorSets(device, &alloc, &modelSet), "Allocate model descriptors");
     VkDescriptorBufferInfo bufferInfo[] = {
       {modelUniform.buffer, 0, sizeof(SceneUniforms)}, {modelVertices.buffer, 0, VK_WHOLE_SIZE}};
-    std::array<VkDescriptorImageInfo, 7> images{};
-    std::array<VkWriteDescriptorSet, 9>  writes{};
-    for (uint32_t i = 0; i < 9; ++i)
+    std::array<VkDescriptorImageInfo, 8> images{};
+    std::array<VkWriteDescriptorSet, 10> writes{};
+    for (uint32_t i = 0; i < 10; ++i)
     {
         auto& w           = writes[i];
         w.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -305,11 +306,13 @@ void uploadModel()
             if (i == 7)
                 image.sampler = modelSampler;
             else
-                image.imageView = i == 8 ? environmentCube.view : modelTextures[i - 2].view;
+                image.imageView = i == 9   ? backgroundCube.view
+                                  : i == 8 ? environmentCube.view
+                                           : modelTextures[i - 2].view;
             w.pImageInfo = &image;
         }
     }
-    vkUpdateDescriptorSets(device, 9, writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(device, 10, writes.data(), 0, nullptr);
     modelReady = true;
 }
 void LoadModel(std::shared_ptr<const ModelData> data) override
@@ -340,6 +343,7 @@ void destroyModel()
     for (auto& t : modelTextures)
         destroyModelTexture(t);
     destroyModelTexture(environmentCube);
+    destroyModelTexture(backgroundCube);
     destroyModelBuffer(modelVertices);
     destroyModelBuffer(modelUniform);
     destroyModelBuffer(modelStaging);

@@ -29,6 +29,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     resources = []
   let depth,
     cube,
+    backgroundCube,
     disposed = false,
     environment = null,
     skyPipeline
@@ -72,6 +73,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ])
     }
     cube = cubeTexture(device, fallbackEnvironment)
+    backgroundCube = cubeTexture(device, fallbackEnvironment)
     const layout = device.createBindGroupLayout({
       entries: [
         {
@@ -91,6 +93,11 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float', viewDimension: 'cube' },
         },
+        {
+          binding: 9,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float', viewDimension: 'cube' },
+        },
       ],
     })
     const sampler = device.createSampler({
@@ -100,7 +107,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     })
-    const group = (texture) =>
+    const group = (texture, background) =>
       device.createBindGroup({
         layout,
         entries: [
@@ -109,9 +116,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
           { binding: 7, resource: sampler },
           { binding: 8, resource: texture.createView({ dimension: 'cube' }) },
+          { binding: 9, resource: background.createView({ dimension: 'cube' }) },
         ],
       })
-    let bindGroup = group(cube)
+    let bindGroup = group(cube, backgroundCube)
     async function pipelineFor(shader, sky = false) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
@@ -143,6 +151,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (disposed) throw Error('Model has been disposed')
         device.pushErrorScope('validation')
         let nextCube,
+          nextBackgroundCube,
           nextGroup,
           nextPipeline = skyPipeline,
           failure
@@ -153,7 +162,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             nextPipeline = await pipelineFor(await response.json(), true)
           }
           nextCube = cubeTexture(device, next)
-          nextGroup = group(nextCube)
+          nextBackgroundCube = cubeTexture(device, { mips: next.backgroundMips || next.mips })
+          nextGroup = group(nextCube, nextBackgroundCube)
           await device.queue.onSubmittedWorkDone()
         } catch (error) {
           failure = error
@@ -161,9 +171,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         const error = await device.popErrorScope()
         if (failure || error || disposed) {
           nextCube?.destroy()
+          nextBackgroundCube?.destroy()
           throw failure || Error(error?.message || 'Model has been disposed')
         }
         cube.destroy()
+        backgroundCube.destroy()
+        backgroundCube = nextBackgroundCube
         cube = nextCube
         bindGroup = nextGroup
         skyPipeline = nextPipeline
@@ -218,11 +231,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         disposed = true
         depth?.destroy()
         cube?.destroy()
+        backgroundCube?.destroy()
         for (const resource of resources) resource.destroy()
       },
     }
   } catch (error) {
     cube?.destroy()
+    backgroundCube?.destroy()
     for (const resource of resources) resource.destroy()
     throw error
   } finally {
