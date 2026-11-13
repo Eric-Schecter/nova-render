@@ -11,6 +11,7 @@ render::OrbitCamera camera;
 camera.yaw = 20;
 camera.pitch = 5;
 window.SetCamera(camera);
+window.EnableOrbitControls();
 while (window.PollEvents()) window.DrawFrame();
 window.WaitIdle();
 ```
@@ -31,10 +32,19 @@ const renderer = await Nova.createRenderer({ canvas, shaderDirectory: '/generate
 await renderer.loadModel('/generated/DamagedHelmet.glb')
 renderer.setCamera({ yaw: 20, pitch: 5, distance: 3.6, exposure: 1 })
 await renderer.drawFrame()
+renderer.enableOrbitControls()
 // 页面退出时 renderer.dispose()
 ```
 
 网页模型 shader 来自构建时生成的 `model.json`；运行时不需要 DXC、Rust 或编译服务。网页滑块和 C++ `OrbitCamera` 的角度均为度，默认值为 `yaw=0`、`pitch=0`、`distance=3.6`、`exposure=1`。俯仰限制 ±85°、距离 1.5～100、曝光大于 0 且不超过 16。模型按包围盒居中并将最长边归一化到 2，相机环绕此中心。
+
+## 鼠标操作
+
+启用后，左键拖动旋转、滚轮缩放。C++ 使用 `Window::EnableOrbitControls()`，传 `false` 可关闭；事件由 `PollEvents()` 处理，继续通过主循环绘制。`GetCamera()` 返回当前相机副本。
+
+网页使用 `renderer.enableOrbitControls({ onChange, onError })`，内部处理指针捕获、滚轮单位、边界和自动重绘。`onChange(camera)` 用于同步滑块，`onError(error)` 用于显示异常；可选 `rotateSpeed`（默认 0.35 度/像素）、`zoomSpeed`（默认 0.001）均须为正有限数。`disableOrbitControls()` 或返回的清理函数可关闭操作，`dispose()` 自动清理事件和待执行帧。重复启用不会叠加监听器。
+
+滚轮仅在画布上接管，画布外正常滚动页面。网页 `getCamera()` 返回副本；程序调用 `setCamera()` 后仍需 `drawFrame()`。鼠标交互自动安排绘制，与其他 `drawFrame()` 调用在内部串行执行。
 
 ## 本阶段范围
 

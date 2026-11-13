@@ -25,6 +25,8 @@ FrameResult DrawFrame();
 void WaitIdle();
 void LoadModel(const std::filesystem::path& glbPath);
 void SetCamera(const OrbitCamera& camera);
+OrbitCamera GetCamera() const;
+void EnableOrbitControls(bool enabled = true);
 GraphicsAPI GetAPI() const;
 uint32_t ValidationErrorCount() const;
 ```

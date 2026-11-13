@@ -22,6 +22,9 @@ GLFW 须先初始化，窗口用 `GLFW_NO_API` 创建。销毁顺序是 Renderer
 void Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
 FrameResult DrawFrame();
 void WaitIdle();
+void LoadModel(const std::filesystem::path& glbPath);
+void SetCamera(const OrbitCamera& camera);
+OrbitCamera GetCamera() const;
 GraphicsAPI GetAPI() const;
 uint32_t ValidationErrorCount() const;
 ```

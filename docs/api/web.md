@@ -26,6 +26,8 @@ try {
 
 模型模式新增 `loadModel(url)` 和 `setCamera(camera)`，见[模型与相机](./model)。
 
+相机交互用 `enableOrbitControls()` 启用拖动旋转和滚轮缩放，`disableOrbitControls()` 关闭；`getCamera()` 读取当前相机副本。控件自动重绘，事件随 `dispose()` 清理。
+
 - `createRenderer({canvas})`：创建 WebGPU 适配器、设备和画布上下文，失败时 Promise 拒绝。
 - `setShader(shader)`：加载 `{source, vert, frag}` 预编译包；仅传 `{source}` 时请求本地 HLSL 编译服务。入口固定为 `VSMain` / `PSMain`。
 - `setClearColor([r,g,b,a])`：设置背景，分量在 0～1 之间。
