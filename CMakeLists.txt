@@ -111,6 +111,7 @@ if(NOVA_BUILD_TOOLS)
 endif()
 
 include(CTest)
+include(cmake/RayProbes.cmake)
 if(BUILD_TESTING AND NOVA_BUILD_EXAMPLES)
     add_executable(nova_asset_choices_test tests/asset_choices.cpp)
     target_link_libraries(nova_asset_choices_test PRIVATE Nova::Render)
