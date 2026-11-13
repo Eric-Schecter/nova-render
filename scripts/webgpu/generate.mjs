@@ -31,3 +31,11 @@ for (const name of ['venice_sunset', 'kloppenheim_06', 'studio_small_09']) {
   )
   await rm(`docs/public/generated/${name}.nenv`, { force: true })
 }
+
+const path = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
+  compute: true,
+})
+await writeFile('docs/public/generated/pathtrace.json', JSON.stringify(path))
+const present = await compile(await readFile('render/shaders/pathpresent.hlsl', 'utf8'))
+await writeFile('docs/public/generated/pathpresent.json', JSON.stringify(present))
+console.log('BVH path tracing HLSL → WGSL generated')

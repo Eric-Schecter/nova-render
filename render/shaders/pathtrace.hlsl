@@ -4,15 +4,27 @@ struct Vertex
     float4 normal;
     float4 uv;
 };
+#ifdef NOVA_WEB_BVH
+struct BVHNode
+{
+    float3 minimum;
+    uint   escape;
+    float3 maximum;
+    uint   first;
+    uint4  metadata;
+};
+[[vk::binding(0, 0)]] StructuredBuffer<BVHNode> nodes : register(t0);
+#else
 [[vk::binding(0, 0)]] RaytracingAccelerationStructure scene : register(t0);
-[[vk::binding(1, 0)]] StructuredBuffer<float4>        parameters : register(t1);
-[[vk::binding(2, 0)]] StructuredBuffer<Vertex>        vertices : register(t2);
-[[vk::binding(3, 0)]] StructuredBuffer<uint>          texels : register(t3);
-[[vk::binding(4, 0)]] StructuredBuffer<uint2>         skyTexels : register(t4);
-[[vk::binding(5, 0)]] RWStructuredBuffer<float4>      accumulation : register(u0);
-[[vk::binding(6, 0)]] RWStructuredBuffer<uint>        outputImage : register(u1);
-static const float                                    PI = 3.14159265;
-uint                                                  randomBits(inout uint state)
+#endif
+[[vk::binding(1, 0)]] StructuredBuffer<float4>   parameters : register(t1);
+[[vk::binding(2, 0)]] StructuredBuffer<Vertex>   vertices : register(t2);
+[[vk::binding(3, 0)]] StructuredBuffer<uint>     texels : register(t3);
+[[vk::binding(4, 0)]] StructuredBuffer<uint2>    skyTexels : register(t4);
+[[vk::binding(5, 0)]] RWStructuredBuffer<float4> accumulation : register(u0);
+[[vk::binding(6, 0)]] RWStructuredBuffer<uint>   outputImage : register(u1);
+static const float                               PI = 3.14159265;
+uint                                             randomBits(inout uint state)
 {
     state     = state * 747796405u + 2891336453u;
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -93,6 +105,68 @@ struct Hit
 };
 bool trace(float3 origin, float3 direction, out Hit hit)
 {
+#ifdef NOVA_WEB_BVH
+    hit.distance  = 10000;
+    hit.primitive = 0;
+    hit.bary      = 0;
+    bool found    = false;
+    uint index    = 0;
+    uint count    = asuint(parameters[25]).z;
+    while (index < count)
+    {
+        BVHNode node = nodes[index];
+        // Parallel slabs need an explicit branch: 0 * infinity would be NaN.
+        float nearT = .0005, farT = hit.distance;
+        bool  intersects = true;
+        for (uint axis = 0; axis < 3; ++axis)
+        {
+            if (abs(direction[axis]) < 1e-20)
+                intersects = intersects && origin[axis] >= node.minimum[axis] && origin[axis] <= node.maximum[axis];
+            else
+            {
+                float a = (node.minimum[axis] - origin[axis]) / direction[axis];
+                float b = (node.maximum[axis] - origin[axis]) / direction[axis];
+                nearT   = max(nearT, min(a, b));
+                farT    = min(farT, max(a, b));
+            }
+        }
+        if (!intersects || nearT > farT)
+        {
+            index = node.escape;
+            continue;
+        }
+        if (node.metadata.x == 0)
+        {
+            ++index;
+            continue;
+        }
+        for (uint i = 0; i < node.metadata.x; ++i)
+        {
+            uint   primitive = node.first + i;
+            float3 a         = vertices[primitive * 3].position.xyz;
+            float3 e1        = vertices[primitive * 3 + 1].position.xyz - a;
+            float3 e2        = vertices[primitive * 3 + 2].position.xyz - a;
+            float3 p         = cross(direction, e2);
+            float  det       = dot(e1, p);
+            if (abs(det) < 1e-10)
+                continue;
+            float3 t        = origin - a;
+            float  u        = dot(t, p) / det;
+            float3 q        = cross(t, e1);
+            float  v        = dot(direction, q) / det;
+            float  distance = dot(e2, q) / det;
+            if (u >= 0 && v >= 0 && u + v <= 1 && distance >= .0005 && distance < hit.distance)
+            {
+                hit.distance  = distance;
+                hit.primitive = primitive;
+                hit.bary      = float2(u, v);
+                found         = true;
+            }
+        }
+        index = node.escape;
+    }
+    return found;
+#else
     RayDesc ray;
     ray.Origin    = origin;
     ray.Direction = direction;
@@ -108,6 +182,7 @@ bool trace(float3 origin, float3 direction, out Hit hit)
     hit.primitive = found ? query.CommittedPrimitiveIndex() : 0;
     hit.bary      = found ? query.CommittedTriangleBarycentrics() : float2(0, 0);
     return found;
+#endif
 }
 float3 fresnel(float cosine, float3 f0)
 {

@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 const exec = promisify(execFile)
-export async function compile(source, { model = false, sky = false } = {}) {
+export async function compile(source, { model = false, sky = false, compute = false } = {}) {
   if (typeof source !== 'string' || Buffer.byteLength(source) > 65536)
     throw Error('HLSL 限制为 64 KiB')
   if (/^\s*#\s*include/m.test(source)) throw Error('在线示例不支持 #include')
@@ -22,10 +22,12 @@ export async function compile(source, { model = false, sky = false } = {}) {
     const hlsl = join(dir, 'triangle.hlsl')
     await writeFile(hlsl, source)
     const result = { source }
-    for (const [stage, entry, profile] of [
-      ['vert', sky ? 'SkyVSMain' : 'VSMain', 'vs_6_0'],
-      ['frag', sky ? 'SkyPSMain' : 'PSMain', 'ps_6_0'],
-    ]) {
+    for (const [stage, entry, profile] of compute
+      ? [['compute', 'CSMain', 'cs_6_0']]
+      : [
+          ['vert', sky ? 'SkyVSMain' : 'VSMain', 'vs_6_0'],
+          ['frag', sky ? 'SkyPSMain' : 'PSMain', 'ps_6_0'],
+        ]) {
       const spv = join(dir, stage + '.spv'),
         wgsl = join(dir, stage + '.wgsl')
       await exec(
@@ -34,6 +36,7 @@ export async function compile(source, { model = false, sky = false } = {}) {
           '-spirv',
           '-fspv-target-env=vulkan1.0',
           ...(model ? ['-DNOVA_WEB_OUTPUT=1'] : []),
+          ...(compute ? ['-DNOVA_WEB_BVH=1'] : []),
           '-T',
           profile,
           '-E',
