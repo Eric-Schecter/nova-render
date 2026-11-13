@@ -42,3 +42,5 @@ uint32_t ValidationErrorCount() const;
 完整用法见[编写示例](../guide/integration)。
 
 模型模式通过 `LoadModel(path)` 和 `SetCamera(camera)` 设置，详见[模型与相机](./model)。
+
+`EnableParameterPanel(bool enabled = true)` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。

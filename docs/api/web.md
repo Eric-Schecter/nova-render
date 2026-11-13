@@ -40,3 +40,5 @@ try {
 - `dispose()`：释放设备和画布，允许重复调用；释放后不能继续绘制。
 
 异步方法需要 `await`，同一实例上的操作须串行执行。支持三角形和静态单材质 GLB，不是通用场景 API。编译、管线和设备丢失错误会向调用方报告。
+
+`enableParameterPanel()` / `disableParameterPanel()` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。

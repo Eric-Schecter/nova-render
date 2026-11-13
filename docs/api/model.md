@@ -84,3 +84,5 @@ PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光
 本次基础颜色/光照拆分已验证 macOS Metal / Vulkan（17 项检查）与 Chrome WebGPU；网页还比较了曝光无关性及两种模式的实际像素。此次未重新运行 Windows / Linux。
 
 示例命令行由 `examples/common/ModelOptions.hpp` 统一解析；未指定 API 时由 Nova 按平台选择。`--spin` 仅用于自动绕模型旋转验证，默认关闭；`--frames N` 在绘制 N 帧后退出，常规交互使用鼠标操作。
+
+示例通过[参数面板](./ui)在渲染区域内调整相机与光照，外部页面只保留代码和预览操作。

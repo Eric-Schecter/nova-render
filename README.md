@@ -231,3 +231,9 @@ Damaged Helmet 默认启用左键拖动旋转、滚轮缩放。网页入口为 `
 ### 代码格式
 
 C++ / Objective-C++ / HLSL 使用项目根目录的 `.clang-format`（沿用 Nova 项目配置：4 空格、120 列、独立行花括号）。网页源码使用固定版本 Prettier：`npm run format:web`，检查使用 `npm run check:format:web`。
+
+### 预览内参数 UI
+
+模型与光照示例调用 `Window::EnableParameterPanel()`，在窗口内通过 ImGui 修改背景、相机与光照；网页对应 `renderer.enableParameterPanel()`，使用 HTML/CSS 浮层，无 WASM。两端参数与分组一致，UI 输入与模型操作隔离。`NOVA_ENABLE_UI=OFF` 可关闭原生 UI 构建；默认开启，vcpkg 管理依赖。详见 `docs/api/ui.md`。
+
+本次 UI 验证：macOS 19 项、Ubuntu Lavapipe 15 项全部通过；原生实际鼠标操作和窗口缩放正常，网页桌面/手机面板与输入隔离通过。独立安装包的 Metal/Vulkan 示例均运行 120 帧且验证错误为 0，禁用 UI 构建通过。Windows SSH 连接超时，DX12 UI 尚未实机验证。

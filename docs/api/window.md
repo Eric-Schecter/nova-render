@@ -44,3 +44,5 @@ uint32_t ValidationErrorCount() const;
 完整代码见[编写示例](../guide/integration)。底层 Renderer 仍适合需要自行管理窗口的集成。
 
 模型加载和相机配置见[模型与相机](./model)。
+
+`EnableParameterPanel(bool enabled = true)` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。

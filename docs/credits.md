@@ -10,3 +10,7 @@
 上游版本从早期 glTF 2.0 草案导入 Blender 后重新导出，以兼容正式规范。Nova 使用的 GLB 文件未作修改；展示时在渲染器内部居中并归一化模型尺寸。
 
 模型许可与 Nova 代码许可独立。仓库中的 `assets/DamagedHelmet/UPSTREAM.md` 保留上游原始署名与许可信息，`assets/DamagedHelmet/README.md` 记录来源和文件校验值。分发模型时请一并保留这些声明。
+
+## Dear ImGui
+
+原生可选参数 UI 使用 [Dear ImGui](https://github.com/ocornut/imgui)，© Omar Cornut and Dear ImGui contributors，采用 [MIT License](https://github.com/ocornut/imgui/blob/master/LICENSE.txt)。完整许可随安装包保存在 `share/imgui/copyright`。网页 UI 使用 Nova 的 HTML/CSS 实现。

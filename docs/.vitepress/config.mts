@@ -38,6 +38,7 @@ export default defineConfig({
           { text: 'Window', link: '/api/window' },
           { text: 'Nova Web', link: '/api/web' },
           { text: '模型与相机', link: '/api/model' },
+          { text: '参数面板', link: '/api/ui' },
           { text: '类型与配置', link: '/api/types' },
           { text: '后端查询与选择', link: '/api/selection' },
           { text: 'Renderer', link: '/api/renderer' },
