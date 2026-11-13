@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, nextTick, useId, watch } from 'vue'
 import { useData } from 'vitepress'
 import { createHighlighterCore } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
@@ -11,10 +11,25 @@ import dark from 'shiki/themes/github-dark.mjs'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   readonly: Boolean,
+  expanded: Boolean,
   language: { type: String, default: 'hlsl' },
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'update:expanded'])
 const { isDark } = useData()
+const editorId = useId()
+const input = ref(null)
+const expandedHeight = computed(
+  () => `${Math.max(180, (props.modelValue.split('\n').length + 1) * 20 + 24)}px`,
+)
+watch(
+  () => props.expanded,
+  async (expanded) => {
+    if (!expanded) return
+    await nextTick()
+    if (input.value) input.value.scrollTop = 0
+    if (layer.value) layer.value.scrollTop = 0
+  },
+)
 const layer = ref(null),
   loaded = ref(false)
 let highlighter,
@@ -64,31 +79,71 @@ function tab(event) {
 </script>
 
 <template>
-  <div class="hlsl-editor" :class="{ highlighted: loaded }">
-    <div ref="layer" class="code-layer" aria-hidden="true" v-html="html" />
-    <textarea
-      :value="modelValue"
-      :readonly="readonly"
-      :aria-label="
-        language === 'hlsl'
-          ? 'HLSL shader 编辑器'
-          : language === 'cpp'
-            ? 'C++ 示例源码'
-            : 'JavaScript 示例源码'
-      "
-      wrap="off"
-      spellcheck="false"
-      autocapitalize="off"
-      autocomplete="off"
-      autocorrect="off"
-      @input="emit('update:modelValue', $event.target.value)"
-      @scroll="sync"
-      @keydown.tab="tab"
-    />
+  <div class="code-view">
+    <div class="code-actions">
+      <button
+        type="button"
+        :aria-expanded="expanded"
+        :aria-controls="editorId"
+        @click="emit('update:expanded', !expanded)"
+      >
+        {{ expanded ? '收起代码' : '展开代码' }}
+      </button>
+    </div>
+    <div
+      :id="editorId"
+      class="hlsl-editor"
+      :class="{ highlighted: loaded, expanded }"
+      :style="expanded ? { height: expandedHeight } : undefined"
+    >
+      <div ref="layer" class="code-layer" aria-hidden="true" v-html="html" />
+      <textarea
+        ref="input"
+        :value="modelValue"
+        :readonly="readonly"
+        :aria-label="
+          language === 'hlsl'
+            ? 'HLSL shader 编辑器'
+            : language === 'cpp'
+              ? 'C++ 示例源码'
+              : 'JavaScript 示例源码'
+        "
+        wrap="off"
+        spellcheck="false"
+        autocapitalize="off"
+        autocomplete="off"
+        autocorrect="off"
+        @input="emit('update:modelValue', $event.target.value)"
+        @scroll="sync"
+        @keydown.tab="tab"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
+.code-view {
+  min-width: 0;
+}
+.code-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.code-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-brand-1);
+  font-size: 12px;
+}
+.code-actions button:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+.hlsl-editor.expanded {
+  resize: none;
+}
 .hlsl-editor {
   position: relative;
   height: 380px;

@@ -10,6 +10,7 @@ const source = ref(''),
   busy = ref(false),
   ready = ref(false),
   canvas = ref(null)
+const codeExpanded = ref(false)
 const tab = ref('example'),
   background = ref('dark'),
   previewVisible = ref(true)
@@ -117,13 +118,20 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <HlslEditor
+          v-model:expanded="codeExpanded"
           v-if="tab === 'example'"
           :model-value="exampleCode"
           language="javascript"
           readonly
         />
-        <HlslEditor v-else-if="tab === 'cpp'" :model-value="cppCode" language="cpp" readonly />
-        <HlslEditor v-else v-model="source" :readonly="!local" />
+        <HlslEditor
+          v-model:expanded="codeExpanded"
+          v-else-if="tab === 'cpp'"
+          :model-value="cppCode"
+          language="cpp"
+          readonly
+        />
+        <HlslEditor v-model:expanded="codeExpanded" v-else v-model="source" :readonly="!local" />
       </div>
       <div
         id="nova-triangle-preview"

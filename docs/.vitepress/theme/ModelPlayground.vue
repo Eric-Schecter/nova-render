@@ -13,6 +13,7 @@ const props = defineProps({ lighting: Boolean })
 const jsSource = props.lighting ? lightingJS : helmetJS
 const cppSource = props.lighting ? lightingCPP : helmetCPP
 const showExample = props.lighting ? showLighting : showHelmet
+const codeExpanded = ref(false)
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('加载 Damaged Helmet…'),
@@ -153,14 +154,21 @@ onBeforeUnmount(() => {
           HLSL shader
         </button>
       </div>
-      <HlslEditor v-if="tab === 'cpp'" :model-value="cppSource" language="cpp" readonly />
       <HlslEditor
+        v-model:expanded="codeExpanded"
+        v-if="tab === 'cpp'"
+        :model-value="cppSource"
+        language="cpp"
+        readonly
+      />
+      <HlslEditor
+        v-model:expanded="codeExpanded"
         v-else-if="tab === 'example'"
         :model-value="jsSource"
         language="javascript"
         readonly
       />
-      <HlslEditor v-else :model-value="hlslSource" readonly />
+      <HlslEditor v-model:expanded="codeExpanded" v-else :model-value="hlslSource" readonly />
     </div>
     <div class="camera">
       <label
