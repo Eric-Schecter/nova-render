@@ -69,6 +69,9 @@ onMounted(async () => {
       return
     }
     renderer = next
+    canvas.value.addEventListener('nova-error', (event) => {
+      if (!disposed) message.value = event.detail.message
+    })
     ready.value = true
     message.value = ''
     observer = new ResizeObserver(() => draw())

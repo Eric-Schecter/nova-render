@@ -1,3 +1,4 @@
+import { defaultPathTracing, validatePathTracing } from './PathView.js'
 import { defaultEnvironment, copyEnvironment, loadEnvironmentFile } from './EnvironmentData.js'
 import { attachParameterPanel } from './ParameterPanel.js'
 import { defaultDirectionalLight, copyDirectionalLight } from './Lighting.js'
@@ -22,6 +23,10 @@ class Renderer {
   #device
   #context
   #pipeline
+  #renderMode = 'raster'
+  #pathSettings = defaultPathTracing()
+  #pathFrame = 0
+  #pathError
   #configured = false
   #disposed = false
   #lost
@@ -123,20 +128,77 @@ class Renderer {
   getCapabilities() {
     this.#check()
     return {
-      pathTracing: false,
-      softwareRayTracing: false,
-      rayTracingDevice: '',
-      reason: 'WebGPU path tracing is not implemented; this preview uses rasterization.',
+      pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 7,
+      softwareRayTracing: true,
+      rayTracingDevice: 'WebGPU compute BVH',
+      reason:
+        this.#device.limits.maxStorageBuffersPerShaderStage >= 7
+          ? ''
+          : 'At least seven storage buffers are required.',
     }
   }
   getRenderMode() {
     this.#check()
-    return 'raster'
+    return this.#renderMode
   }
   setRenderMode(mode) {
     this.#check()
-    if (mode === 'path-tracing') throw Error(this.getCapabilities().reason)
-    if (mode !== 'raster') throw Error('Invalid render mode')
+    if (mode !== 'raster' && mode !== 'path-tracing') throw Error('Invalid render mode')
+    if (mode === 'path-tracing') {
+      if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
+      if (!this.#model?.triangles) throw Error('Path tracing requires a loaded model')
+    }
+    if (mode === this.#renderMode) return
+    this.#renderMode = mode
+    this.resetAccumulation()
+    if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
+    this.#pathFrame = 0
+    this.#parameterPanel?.refresh()
+  }
+  setPathTracing(settings) {
+    this.#check()
+    validatePathTracing(settings)
+    this.#pathSettings = { ...settings }
+    this.resetAccumulation()
+    this.#parameterPanel?.refresh()
+  }
+  getPathTracing() {
+    this.#check()
+    return { ...this.#pathSettings }
+  }
+  resetAccumulation() {
+    this.#check()
+    this.#model?.resetAccumulation()
+    this.#pathError = undefined
+  }
+  getAccumulatedSamples() {
+    this.#check()
+    return this.#model?.accumulatedSamples || 0
+  }
+  // Only one scheduled frame, requested after the previous GPU submission finishes.
+  #continuePathTracing() {
+    if (this.#disposed || this.#pathError || this.#renderMode !== 'path-tracing' || this.#pathFrame)
+      return
+    this.#pathFrame = requestAnimationFrame(() => {
+      this.#pathFrame = 0
+      if (this.#disposed || this.#renderMode !== 'path-tracing') return
+      const rect = this.#canvas.getBoundingClientRect()
+      if (
+        document.hidden ||
+        this.#canvas.closest('[aria-hidden="true"], [inert]') ||
+        !rect.width ||
+        !rect.height ||
+        rect.bottom < 0 ||
+        rect.top > innerHeight
+      ) {
+        this.#continuePathTracing()
+        return
+      }
+      this.drawFrame().catch((error) => {
+        this.#pathError = error
+        this.#canvas.dispatchEvent(new CustomEvent('nova-error', { detail: error }))
+      })
+    })
   }
   setEnvironment(settings) {
     this.#check()
@@ -183,6 +245,10 @@ class Renderer {
         getCapabilities: () => this.getCapabilities(),
         getRenderMode: () => this.getRenderMode(),
         setRenderMode: (mode) => this.setRenderMode(mode),
+        getPathTracing: () => this.getPathTracing(),
+        setPathTracing: (settings) => this.setPathTracing(settings),
+        getAccumulatedSamples: () => this.getAccumulatedSamples(),
+        resetAccumulation: () => this.resetAccumulation(),
         getAssets: () => ({ model: this.#modelURL, environment: this.#environmentURL }),
         loadModel: (url) => this.loadModel(url),
         loadEnvironment: (url) => this.loadEnvironment(url),
@@ -197,7 +263,9 @@ class Renderer {
         getMode: () => ({
           camera: !!this.#model,
           environment: !!this.#environment,
-          lighting: !!this.#model && this.#lighting === 'pbr',
+          lighting:
+            !!this.#model && (this.#lighting === 'pbr' || this.#renderMode === 'path-tracing'),
+          pathTracing: this.#renderMode === 'path-tracing',
         }),
         drawFrame: () => this.drawFrame(),
       },
@@ -286,6 +354,9 @@ class Renderer {
     this.#environmentURL = undefined
     this.#modelURL = undefined
     this.#pipeline = pipeline
+    this.#renderMode = 'raster'
+    if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
+    this.#pathFrame = 0
     this.#parameterPanel?.refresh()
   }
   setClearColor(color) {
@@ -333,15 +404,27 @@ class Renderer {
     let failure
     try {
       if (this.#model) {
-        this.#model.draw(
-          this.#camera,
-          this.#clear,
-          width,
-          height,
-          this.#lighting,
-          this.#directionalLight,
-          this.#environmentSettings,
-        )
+        if (this.#renderMode === 'path-tracing')
+          await this.#model.drawPath(
+            this.#camera,
+            this.#clear,
+            width,
+            height,
+            this.#lighting,
+            this.#directionalLight,
+            this.#environmentSettings,
+            this.#pathSettings,
+          )
+        else
+          this.#model.draw(
+            this.#camera,
+            this.#clear,
+            width,
+            height,
+            this.#lighting,
+            this.#directionalLight,
+            this.#environmentSettings,
+          )
       } else {
         const encoder = this.#device.createCommandEncoder()
         const pass = encoder.beginRenderPass({
@@ -365,6 +448,9 @@ class Renderer {
     }
     const error = await this.#device.popErrorScope()
     if (failure || error) throw failure || Error(error.message)
+    this.#pathError = undefined
+    this.#parameterPanel?.refresh()
+    this.#continuePathTracing()
     return 'rendered'
   }
   async waitIdle() {
@@ -378,6 +464,8 @@ class Renderer {
     this.disableParameterPanel()
     this.disableOrbitControls()
     this.#disposed = true
+    if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
+    this.#pathFrame = 0
     this.#model?.dispose()
     this.#context.unconfigure()
     this.#device.destroy()

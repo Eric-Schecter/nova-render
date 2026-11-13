@@ -146,11 +146,13 @@ export function attachParameterPanel(
     const button = document.createElement('button')
     button.type = 'button'
     button.textContent =
-      label === '重置相机'
-        ? 'Reset camera'
-        : label === '重置环境'
-          ? 'Reset environment'
-          : 'Reset light'
+      label === '重置累计'
+        ? 'Reset accumulation'
+        : label === '重置相机'
+          ? 'Reset camera'
+          : label === '重置环境'
+            ? 'Reset environment'
+            : 'Reset light'
     button.setAttribute('aria-label', label)
     button.addEventListener('click', () => change(action), { signal: fieldEvents.signal })
     parent.append(button)
@@ -232,6 +234,25 @@ export function attachParameterPanel(
       })
       label.append(select)
       renderer.append(label)
+      fields.set('renderMode', { input: select })
+      if (current.pathTracing) {
+        for (const [key, caption, aria, min, max, step] of [
+          ['samplesPerFrame', 'Samples per frame', '每帧采样', 1, 4, 1],
+          ['maxBounces', 'Max bounces', '反弹次数', 1, 8, 1],
+          ['resolutionScale', 'Render scale', '渲染比例', 0.25, 1, 0.05],
+        ])
+          slider(renderer, key, caption, aria, min, max, step, (value) =>
+            adapter.setPathTracing({ ...adapter.getPathTracing(), [key]: value }),
+          )
+        const samples = document.createElement('div')
+        samples.setAttribute('aria-label', '累计采样')
+        renderer.append(samples)
+        fields.set('samples', { output: samples })
+        const method = document.createElement('div')
+        method.textContent = 'WebGPU compute BVH'
+        renderer.append(method)
+        reset(renderer, '重置累计', () => adapter.resetAccumulation())
+      }
     }
     if (models.length) {
       const assets = group('Model')
@@ -361,6 +382,7 @@ export function attachParameterPanel(
       environmentIntensity: environment.intensity,
       backgroundIntensity: environment.backgroundIntensity,
       ...camera,
+      ...adapter.getPathTracing(),
       ...lightAngles,
       R: light.color[0],
       G: light.color[1],
@@ -369,6 +391,14 @@ export function attachParameterPanel(
     }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (key === 'renderMode') {
+        field.input.value = adapter.getRenderMode()
+        continue
+      }
+      if (key === 'samples') {
+        field.output.textContent = 'Samples: ' + adapter.getAccumulatedSamples()
+        continue
+      }
       if (field.asset) {
         const current = assets[key]
         if (current && ![...field.input.options].some((option) => option.value === current)) {
@@ -394,7 +424,11 @@ export function attachParameterPanel(
       }
       field.input.value = values[key]
       field.output.textContent = Number(values[key]).toFixed(
-        key === 'distance' || ['R', 'G', 'B'].includes(key) ? 2 : 1,
+        key === 'distance' || key === 'resolutionScale' || ['R', 'G', 'B'].includes(key)
+          ? 2
+          : ['samplesPerFrame', 'maxBounces'].includes(key)
+            ? 0
+            : 1,
       )
     }
   }

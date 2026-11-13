@@ -1,3 +1,4 @@
+import { createPathView } from './PathView.js'
 import { loadGLB, sceneUniforms } from './ModelData.js'
 import { fallbackEnvironment } from './EnvironmentData.js'
 function cubeTexture(device, data) {
@@ -32,7 +33,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     backgroundCube,
     disposed = false,
     environment = null,
-    skyPipeline
+    skyPipeline,
+    pathView
   try {
     const response = await fetch(shaderURL)
     if (!response.ok) throw Error('Missing model shader package: ' + shaderURL)
@@ -149,6 +151,40 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     const pipeline = await pipelineFor(shader)
     return {
       triangles: data.vertices.length / 36,
+      get accumulatedSamples() {
+        return pathView?.samples || 0
+      },
+      resetAccumulation() {
+        pathView?.reset()
+      },
+      async drawPath(camera, clear, width, height, lighting, light, settings, path) {
+        if (disposed) throw Error('Model has been disposed')
+        if (!data.vertices.length) throw Error('Path tracing requires a loaded model')
+        if (!pathView) {
+          const next = await createPathView(
+            device,
+            data,
+            shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1),
+          )
+          if (disposed) {
+            next.dispose()
+            throw Error('Model has been disposed')
+          }
+          pathView = next
+        }
+        pathView.draw(
+          context,
+          camera,
+          clear,
+          width,
+          height,
+          lighting,
+          light,
+          environment,
+          settings,
+          path,
+        )
+      },
       async loadEnvironment(next, skyURL) {
         if (disposed) throw Error('Model has been disposed')
         device.pushErrorScope('validation')
@@ -231,6 +267,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       dispose() {
         if (disposed) return
         disposed = true
+        pathView?.dispose()
+        for (const image of data.images) image.bitmap?.close()
         depth?.destroy()
         cube?.destroy()
         backgroundCube?.destroy()
@@ -241,8 +279,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     cube?.destroy()
     backgroundCube?.destroy()
     for (const resource of resources) resource.destroy()
-    throw error
-  } finally {
     for (const image of data.images) image.bitmap?.close()
+    throw error
   }
 }
