@@ -9,11 +9,6 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: false,
   themeConfig: {
-    nav: [
-      { text: '指南', link: '/guide/quick-start' },
-      { text: '例子', link: '/examples/triangle' },
-      { text: 'API', link: '/api/' },
-    ],
     sidebar: [
       {
         text: '使用指南',
