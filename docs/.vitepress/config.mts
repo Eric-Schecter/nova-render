@@ -67,7 +67,6 @@ export default defineConfig({
     sidebarMenuLabel: '目录',
     returnToTopLabel: '返回顶部',
     footer: {
-      message: '最小固定三角形渲染器 · 接口以当前源码为准',
       copyright: '<a href="/credits">资源声明</a>',
     },
   },
