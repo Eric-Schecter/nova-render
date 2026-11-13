@@ -276,9 +276,6 @@ onBeforeUnmount(() => {
       <span class="hint">拖动旋转 · 滚轮缩放</span
       ><canvas ref="canvas" width="800" height="650" aria-label="Damaged Helmet 模型预览" />
     </div>
-    <p v-if="tab === 'cpp'">
-      C++ 示例在本地编译运行；网页预览执行 JavaScript 示例，同样使用封装的模型和相机 API。
-    </p>
   </div>
 </template>
 

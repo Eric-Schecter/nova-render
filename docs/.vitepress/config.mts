@@ -7,12 +7,13 @@ export default defineConfig({
   title: 'Nova Render',
   description: 'C++17 最小渲染模块接口文档：Vulkan、D3D12、Metal 与统一 HLSL。',
   cleanUrls: true,
-  lastUpdated: true,
+  lastUpdated: false,
   themeConfig: {
     nav: [
       { text: '指南', link: '/guide/quick-start' },
       { text: '例子', link: '/examples/triangle' },
       { text: 'API', link: '/api/' },
+      { text: '资源声明', link: '/credits' },
     ],
     sidebar: [
       {
@@ -63,7 +64,6 @@ export default defineConfig({
     },
     outline: { level: [2, 3], label: '本页内容' },
     docFooter: { prev: '上一页', next: '下一页' },
-    lastUpdated: { text: '最后更新' },
     darkModeSwitchLabel: '切换主题',
     sidebarMenuLabel: '目录',
     returnToTopLabel: '返回顶部',

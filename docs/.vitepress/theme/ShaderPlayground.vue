@@ -138,14 +138,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p v-if="tab === 'cpp'">
-      C++ 源码来自 examples/consumer/main.cpp，需在本地编译运行；下方仍为 JavaScript / WebGPU 预览。
-    </p>
-    <p v-else>
-      上方 JavaScript 是下方实际执行的示例源码。可切换背景色体验 setClearColor；HLSL
-      标签支持本地编辑。
-    </p>
-    <p v-if="!local">静态网站使用预编译 shader；修改 HLSL 需要本地开发服务。</p>
   </div>
 </template>
 
