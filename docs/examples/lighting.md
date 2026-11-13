@@ -1,7 +1,7 @@
 # 光照
 
-在模型示例上显式开启 PBR：法线、金属度/粗糙度、遮蔽、自发光和解析式摄影棚光照。拖动旋转，滚轮缩放；曝光控制画面亮度。
+在模型示例上显式开启 PBR：法线、金属度/粗糙度、遮蔽、自发光和解析式摄影棚光照。拖动旋转，滚轮缩放；可调节主光方向、线性 RGB 颜色、强度及曝光。
 
 <ClientOnly><ModelPlayground lighting /></ClientOnly>
 
-使用与 [Damaged Helmet](./damaged-helmet) 相同的模型资源与许可。[模型与接口说明](../api/model)。
+使用与 [模型加载](./damaged-helmet) 相同的模型资源与许可。[模型与接口说明](../api/model)。

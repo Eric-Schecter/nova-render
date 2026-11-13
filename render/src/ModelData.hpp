@@ -22,10 +22,13 @@ struct SceneUniforms {
     float baseColor[4];
     float material[4];
     float emissive[4]; // rgb: emissive factor, w: PBR enabled
+    float lightDirection[4];
+    float lightColorIntensity[4];
 };
 static_assert(sizeof(ModelVertex) == 48, "HLSL vertex storage layout must match");
-static_assert(sizeof(SceneUniforms) == 128, "HLSL scene uniform layout must match");
+static_assert(sizeof(SceneUniforms) == 160, "HLSL scene uniform layout must match");
 std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path);
+void ValidateDirectionalLight(const DirectionalLight& light);
 void ValidateCamera(const OrbitCamera& camera);
-SceneUniforms MakeSceneUniforms(const ModelData& data, const OrbitCamera& camera, float aspect, LightingMode lighting = LightingMode::Unlit);
+SceneUniforms MakeSceneUniforms(const ModelData& data, const OrbitCamera& camera, float aspect, LightingMode lighting = LightingMode::Unlit, const DirectionalLight& light = {});
 }

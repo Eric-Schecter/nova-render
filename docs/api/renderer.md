@@ -8,6 +8,8 @@
 
 `SetLighting(LightingMode::Unlit / PBR)` 选择模型渲染模式，默认 Unlit。详见[模型与相机](./model)。
 
+`SetDirectionalLight(light)` / `GetDirectionalLight()` 设置和读取主方向光（方向、线性 RGB、强度）。
+
 ## 创建与销毁
 
 ```cpp

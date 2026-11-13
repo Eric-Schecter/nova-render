@@ -316,7 +316,7 @@ struct VulkanBackend final : Backend {
         }
         check(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "Wait frame");
         if(model) {
-            const auto uniform=MakeSceneUniforms(*model,camera,float(extent.width)/extent.height,lighting);
+            const auto uniform=MakeSceneUniforms(*model,camera,float(extent.width)/extent.height,lighting,directionalLight);
             void* mapped=nullptr;check(vkMapMemory(device,modelUniform.memory,0,sizeof(uniform),0,&mapped),"Map scene uniforms");
             std::memcpy(mapped,&uniform,sizeof(uniform));vkUnmapMemory(device,modelUniform.memory);
         }

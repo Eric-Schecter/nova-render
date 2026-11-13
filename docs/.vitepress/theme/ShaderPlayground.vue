@@ -11,7 +11,7 @@ const local=import.meta.env.DEV
 let renderer, initial, disposed=false, switchingPreview=false
 async function run(reset=false) {
   if(busy.value||switchingPreview||!initial)return
-  busy.value=true;message.value='执行 Nova 示例…'
+  busy.value=true;ready.value=false;message.value='执行 Nova 示例…'
   try {
     if(reset){source.value=initial.source;background.value='dark'}
     renderer?.dispose();renderer=undefined
@@ -19,7 +19,7 @@ async function run(reset=false) {
     const color=background.value==='light' ? [0.8,0.85,0.95,1] : [0.025,0.035,0.055,1]
     const next=await showTriangle(canvas.value,shader,color)
     if(disposed){next.dispose();return}
-    renderer=next;ready.value=true;message.value='绘制成功 · 已执行 triangle.js 的 Nova API 调用'
+    renderer=next;ready.value=true;message.value=''
   }catch(e){message.value=e.message}finally{busy.value=false}
 }
 async function togglePreview() {
@@ -44,9 +44,9 @@ onBeforeUnmount(()=>{disposed=true;renderer?.dispose()})
 </script>
 
 <template>
-  <div class="playground">
+  <div class="playground" :data-ready="ready&&!busy">
     <div class="toolbar"><strong>Nova 三角形示例</strong><div class="actions"><label>背景色 <select v-model="background" :disabled="busy" @change="run(false)"><option value="dark">深色</option><option value="light">浅色</option></select></label><button :disabled="busy||!initial" @click="run(false)">{{ busy ? '执行中…' : '运行' }}</button><button :disabled="busy||!initial" @click="run(true)">重置</button><button :disabled="busy" :aria-expanded="previewVisible" aria-controls="nova-triangle-preview" @click="togglePreview">{{ previewVisible ? '隐藏预览' : '显示预览' }}</button></div></div>
-    <pre role="status" aria-live="polite">{{message}}</pre>
+    <pre v-if="message" role="status" aria-live="polite">{{message}}</pre>
     <div class="panes"><div class="source-pane">
       <div role="tablist" aria-label="示例代码"><button role="tab" :aria-selected="tab==='cpp'" @click="tab='cpp'">C++ 示例</button><button role="tab" :aria-selected="tab==='example'" @click="tab='example'">JavaScript 示例</button><button role="tab" :aria-selected="tab==='shader'" @click="tab='shader'">HLSL shader</button></div>
       <HlslEditor v-if="tab==='example'" :model-value="exampleCode" language="javascript" readonly />

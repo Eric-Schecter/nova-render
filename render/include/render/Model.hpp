@@ -1,7 +1,15 @@
 #pragma once
+#include <array>
 namespace render {
 // Models show base color by default; PBR enables the built-in studio lighting.
 enum class LightingMode { Unlit, PBR };
+// World-space vector from surface toward light; normalized internally.
+// Linear RGB [0,1], intensity [0,100]. Only affects PBR's main direct light.
+struct DirectionalLight {
+    std::array<float,3> direction{-1.0f, 1.6f, 2.0f};
+    std::array<float,3> color{1.0f, 3.2f/3.5f, 0.8f};
+    float intensity = 3.5f;
+};
 // Orbit about the normalized model center. Angles are degrees, distance > 0.
 struct OrbitCamera {
     float yaw = 0.0f;

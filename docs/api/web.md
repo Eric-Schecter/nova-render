@@ -4,6 +4,8 @@
 
 `setLighting('unlit' / 'pbr')` 选择模型渲染模式，默认 `unlit`；调用后使用 `drawFrame()` 重绘。详见[模型与相机](./model)。
 
+`setDirectionalLight(light)` / `getDirectionalLight()` 设置和读取主方向光，字段为 `direction`、`color`、`intensity`。
+
 ## 使用
 
 ```js

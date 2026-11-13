@@ -5,6 +5,8 @@ struct Vertex { float4 position; float4 normal; float4 uv; };
     float4 baseColorFactor;
     float4 materialFactor;
     float4 emissiveFactor; // rgb: emissive factor, w: PBR enabled
+    float4 lightDirection; // xyz: normalized surface-to-light direction
+    float4 lightColorIntensity; // rgb: linear color, w: intensity
 };
 [[vk::binding(1, 0)]] StructuredBuffer<Vertex> vertices : register(t0);
 [[vk::binding(2, 0)]] Texture2D<float4> baseTexture : register(t1);
@@ -27,7 +29,7 @@ VertexOut VSMain(uint id : SV_VertexID) {
 }
 float3 fresnel(float cosine,float3 f0) {return f0+(1-f0)*pow(1-saturate(cosine),5);}
 float3 directLight(float3 n,float3 v,float3 l,float3 base,float metallic,float roughness,float3 radiance) {
-    float3 h=normalize(v+l);float nv=max(dot(n,v),0.001),nl=saturate(dot(n,l)),nh=saturate(dot(n,h));
+    float3 halfVector=v+l;float3 h=halfVector*rsqrt(max(dot(halfVector,halfVector),1e-8));float nv=max(dot(n,v),0.001),nl=saturate(dot(n,l)),nh=saturate(dot(n,h));
     float a=roughness*roughness,a2=a*a;float d=a2/(3.14159265*pow(nh*nh*(a2-1)+1,2)+0.0001);
     float k=pow(roughness+1,2)/8;float g=(nv/(nv*(1-k)+k))*(nl/(nl*(1-k)+k));
     float3 f=fresnel(dot(v,h),lerp(float3(0.04,0.04,0.04),base,metallic));
@@ -63,7 +65,7 @@ float4 PSMain(VertexOut input) : SV_Target {
     float4 mr=materialTexture.Sample(textureSampler,input.uv);
     float metallic=saturate(mr.b*materialFactor.x),roughness=clamp(mr.g*materialFactor.y,0.06,1);
     float ao=lerp(1,occlusionTexture.Sample(textureSampler,input.uv).r,materialFactor.w);
-    float3 color=directLight(n,v,normalize(float3(-1,1.6,2)),base,metallic,roughness,float3(3.5,3.2,2.8));
+    float3 color=directLight(n,v,lightDirection.xyz,base,metallic,roughness,lightColorIntensity.rgb*lightColorIntensity.w);
     color+=directLight(n,v,normalize(float3(1,0.7,-1)),base,metallic,roughness,float3(1,1.6,2.7));
     float3 f=fresnel(dot(n,v),lerp(float3(0.04,0.04,0.04),base,metallic));
     color+=(base*(1-metallic)*studio(n,1)*0.4+studio(reflect(-v,n),roughness)*f)*ao;

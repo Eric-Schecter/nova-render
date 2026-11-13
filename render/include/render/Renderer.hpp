@@ -41,6 +41,8 @@ public:
     FrameResult DrawFrame();
     void WaitIdle();
     void LoadModel(const std::filesystem::path& glbPath);
+    void SetDirectionalLight(const DirectionalLight& light);
+    DirectionalLight GetDirectionalLight() const;
     void SetLighting(LightingMode mode);
     void SetCamera(const OrbitCamera& camera);
     OrbitCamera GetCamera() const;

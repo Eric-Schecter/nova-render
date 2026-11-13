@@ -4,6 +4,8 @@
 
 `SetLighting(LightingMode::Unlit / PBR)` 选择基础颜色或内置 PBR 光照，默认 Unlit。详见[模型与相机](./model)。
 
+`SetDirectionalLight(light)` / `GetDirectionalLight()` 设置和读取主方向光（方向、线性 RGB、强度）。
+
 ## 配置
 
 ```cpp

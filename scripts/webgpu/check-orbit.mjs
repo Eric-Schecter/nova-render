@@ -7,7 +7,7 @@ try {
   const page = await browser.newPage({viewport:{width:1400,height:1000}})
   const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto('http://127.0.0.1:5173/examples/damaged-helmet')
-  await page.getByRole('status').filter({hasText:'模型已加载'}).waitFor({timeout:45000})
+  await page.locator('[data-ready="true"]').waitFor({timeout:45000})
   const canvas=page.locator('canvas'),yaw=page.getByRole('slider',{name:'水平角',exact:true}),distance=page.getByRole('slider',{name:'距离',exact:true})
   await canvas.scrollIntoViewIfNeeded()
   const before=await canvas.screenshot(),box=await canvas.boundingBox()
@@ -38,7 +38,7 @@ try {
   await page.screenshot({path:'build/webgpu/helmet-orbit.png',fullPage:true})
   // Unmount while events are pending; controller must stop rendering after disposal.
   await page.goto('http://127.0.0.1:5173/examples/triangle')
-  await page.getByRole('status').filter({hasText:'绘制成功'}).waitFor()
+  await page.locator('[data-ready="true"]').waitFor({timeout:45000})
   const cleanup=await page.evaluate(async moduleURL=>{
     const {createRenderer}=await import(moduleURL)
     const c=document.createElement('canvas');c.style.cursor='crosshair';c.style.touchAction='pan-y';document.body.append(c)

@@ -1,3 +1,4 @@
+import { defaultDirectionalLight } from './Lighting.js'
 const identity=()=>[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]
 export function multiply(a,b){const out=Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)out[c*4+r]+=a[k*4+r]*b[c*4+k];return out}
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
@@ -69,12 +70,12 @@ export async function loadGLB(url){
   }catch(e){for(const image of images)image.bitmap?.close();throw e}
 }
 export function validateCamera(c){if(![c.yaw,c.pitch,c.distance,c.exposure].every(Number.isFinite)||Math.abs(c.pitch)>85||c.distance<1.5||c.distance>100||c.exposure<=0||c.exposure>16)throw Error('Invalid orbit camera (pitch +/-85, distance 1.5..100, exposure 0..16)')}
-export function sceneUniforms(data,camera,aspect,lighting='unlit'){
+export function sceneUniforms(data,camera,aspect,lighting='unlit',light=defaultDirectionalLight()){
   const yaw=camera.yaw*Math.PI/180,pitch=camera.pitch*Math.PI/180,d=camera.distance
   const eye=[d*Math.cos(pitch)*Math.sin(yaw),d*Math.sin(pitch),d*Math.cos(pitch)*Math.cos(yaw)]
   const f=normalize(eye.map(x=>-x)),s=normalize(cross(f,[0,1,0])),u=cross(s,f)
   const view=[s[0],u[0],-f[0],0,s[1],u[1],-f[1],0,s[2],u[2],-f[2],0,-dot(s,eye),-dot(u,eye),dot(f,eye),1]
   const t=1/Math.tan(Math.PI/8),near=0.01,far=200
   const projection=[t/aspect,0,0,0,0,t,0,0,0,0,far/(near-far),-1,0,0,near*far/(near-far),0]
-  return new Float32Array([...multiply(projection,view),...eye,camera.exposure,...data.baseColor,...data.material,...data.emissive.slice(0,3),lighting==='pbr'?1:0])
+  return new Float32Array([...multiply(projection,view),...eye,camera.exposure,...data.baseColor,...data.material,...data.emissive.slice(0,3),lighting==='pbr'?1:0,...light.direction.map(v=>v/Math.hypot(...light.direction)),0,...light.color,light.intensity])
 }

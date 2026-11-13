@@ -225,3 +225,5 @@ Damaged Helmet 默认启用左键拖动旋转、滚轮缩放。网页入口为 `
 ### 模型与光照示例
 
 `nova_helmet` 默认仅显示基础颜色贴图；`nova_lighting` 通过 `SetLighting(LightingMode::PBR)` 开启摄影棚光照。网页对应 `/examples/damaged-helmet` 和 `/examples/lighting`，使用 `setLighting('pbr')`。两种模式共享 HLSL 和鼠标操作封装，曝光仅影响 PBR。
+
+光照例子可通过统一 `DirectionalLight` API 调整主光方向、线性 RGB 与强度；网页提供对应滑块。模型/光照例子的命令行解析集中于 `examples/common/ModelOptions.hpp`，`--spin` 为可选自动旋转验证模式。

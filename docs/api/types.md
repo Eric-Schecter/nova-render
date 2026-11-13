@@ -35,3 +35,7 @@ enum class FrameResult { Rendered, Skipped };
 `Rendered` 表示提交并安排呈现；`Skipped` 表示本次没有提交可计数的渲染帧。跳帧后继续处理窗口事件。
 
 模型模式还使用 `model.vert.spv` / `model.frag.spv`、`model.vert.dxil` / `model.frag.dxil` 或 `model.metallib`，均默认内置。显式指定外部目录时需提供用到的全部 shader。
+
+## DirectionalLight
+
+主方向光配置：`direction` 为表面指向光源的世界坐标向量，`color` 为线性 RGB，`intensity` 为强度倍率。C++ 与网页字段、默认值和范围一致。详见[模型与光照](./model#光照)。

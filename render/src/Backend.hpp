@@ -11,11 +11,14 @@ public:
     virtual void WaitIdle() = 0;
     virtual void LoadModel(std::shared_ptr<const ModelData> data) { model = std::move(data); }
     OrbitCamera GetCamera() const { return camera; }
+    void SetDirectionalLight(const DirectionalLight& value) { directionalLight = value; }
+    DirectionalLight GetDirectionalLight() const { return directionalLight; }
     void SetLighting(LightingMode value) { lighting = value; }
     void SetCamera(const OrbitCamera& value) { camera = value; }
 protected:
     std::shared_ptr<const ModelData> model;
     OrbitCamera camera;
+    DirectionalLight directionalLight;
     LightingMode lighting = LightingMode::Unlit;
 public:
     virtual uint32_t ValidationErrorCount() const = 0;

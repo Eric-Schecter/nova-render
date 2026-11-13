@@ -6,7 +6,7 @@ export async function createModelView(device,context,url,shaderURL){
     const shader=await response.json()
     const makeBuffer=(bytes,usage)=>{const buffer=device.createBuffer({size:bytes.byteLength,usage:usage|GPUBufferUsage.COPY_DST});resources.push(buffer);device.queue.writeBuffer(buffer,0,bytes);return buffer}
     const vertices=makeBuffer(data.vertices,GPUBufferUsage.STORAGE)
-    const uniform=makeBuffer(new Float32Array(32),GPUBufferUsage.UNIFORM)
+    const uniform=makeBuffer(new Float32Array(40),GPUBufferUsage.UNIFORM)
     const textures=[]
     for(const image of data.images){
       const texture=device.createTexture({size:[image.width,image.height],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});resources.push(texture);textures.push(texture)
@@ -14,7 +14,7 @@ export async function createModelView(device,context,url,shaderURL){
       else device.queue.writeTexture({texture},image.pixels,{bytesPerRow:image.width*4},[image.width,image.height])
     }
     const layout=device.createBindGroupLayout({entries:[
-      {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'uniform',minBindingSize:128}},
+      {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'uniform',minBindingSize:160}},
       {binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:'read-only-storage'}},
       ...textures.map((_,i)=>({binding:i+2,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:'float'}})),
       {binding:7,visibility:GPUShaderStage.FRAGMENT,sampler:{type:'filtering'}},
@@ -27,10 +27,10 @@ export async function createModelView(device,context,url,shaderURL){
     let depth,disposed=false
     return {
       triangles:data.vertices.length/36,
-      draw(camera,clear,width,height,lighting){
+      draw(camera,clear,width,height,lighting,light){
         if(disposed)throw Error('Model has been disposed')
         if(!depth||depth.width!==width||depth.height!==height){depth?.destroy();depth=device.createTexture({size:[width,height],format:'depth32float',usage:GPUTextureUsage.RENDER_ATTACHMENT})}
-        device.queue.writeBuffer(uniform,0,sceneUniforms(data,camera,width/height,lighting))
+        device.queue.writeBuffer(uniform,0,sceneUniforms(data,camera,width/height,lighting,light))
         const encoder=device.createCommandEncoder();const pass=encoder.beginRenderPass({colorAttachments:[{view:context.getCurrentTexture().createView(),clearValue:clear,loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}})
         pass.setPipeline(pipeline);pass.setBindGroup(0,bindGroup);pass.draw(data.vertices.length/12);pass.end();device.queue.submit([encoder.finish()])
       },

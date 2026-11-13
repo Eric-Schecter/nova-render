@@ -1,3 +1,4 @@
+import { defaultDirectionalLight, copyDirectionalLight } from './Lighting.js'
 import { attachOrbitControls } from './OrbitControls.js'
 import { createModelView } from './ModelView.js'
 import { validateCamera } from './ModelData.js'
@@ -15,6 +16,7 @@ class Renderer {
   #canvas; #device; #context; #pipeline; #configured = false; #disposed = false; #lost; #clear = [0.025, 0.035, 0.055, 1]
   #orbitControls; #renderTail = Promise.resolve()
   #lighting = 'unlit'
+  #directionalLight = defaultDirectionalLight()
   #model; #shaderDirectory; #camera = {yaw:0,pitch:0,distance:3.6,exposure:1}
   constructor(canvas, device, context, shaderDirectory) {
     this.#shaderDirectory=shaderDirectory;
@@ -34,6 +36,8 @@ class Renderer {
     await this.waitIdle();this.#model?.dispose();this.#model=next
     return {triangles:next.triangles}
   }
+  setDirectionalLight(light) { this.#check(); this.#directionalLight = copyDirectionalLight(light) }
+  getDirectionalLight() { this.#check(); return copyDirectionalLight(this.#directionalLight) }
   setLighting(mode) {
     this.#check()
     if (mode !== 'unlit' && mode !== 'pbr') throw Error('Invalid lighting mode: expected unlit or pbr')
@@ -106,7 +110,7 @@ class Renderer {
     let failure
     try {
       if(this.#model) {
-        this.#model.draw(this.#camera,this.#clear,width,height,this.#lighting)
+        this.#model.draw(this.#camera,this.#clear,width,height,this.#lighting,this.#directionalLight)
       } else {
       const encoder = this.#device.createCommandEncoder()
       const pass = encoder.beginRenderPass({colorAttachments:[{view:this.#context.getCurrentTexture().createView(),clearValue:this.#clear,loadOp:'clear',storeOp:'store'}]})

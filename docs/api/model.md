@@ -44,15 +44,22 @@ renderer.enableOrbitControls()
 
 ```cpp
 window.SetLighting(render::LightingMode::PBR); // Renderer 同样提供
-// 恢复基础颜色：window.SetLighting(render::LightingMode::Unlit);
+render::DirectionalLight light;
+light.direction = {-1, 1.6f, 2}; // 表面指向光源，世界坐标
+light.color = {1, 0.9f, 0.8f};  // 线性 RGB
+light.intensity = 3.5f;
+window.SetDirectionalLight(light); // Renderer 同样提供
+// GetDirectionalLight() 返回副本；SetLighting(Unlit) 恢复基础颜色
 ```
 
 ```js
 renderer.setLighting('pbr') // 恢复基础颜色：'unlit'
+renderer.setDirectionalLight({ direction: [-1, 1.6, 2], color: [1, 0.9, 0.8], intensity: 3.5 })
+// getDirectionalLight() 返回深拷贝，修改后需 setDirectionalLight(light)
 await renderer.drawFrame()
 ```
 
-原生光照例子：`./build/nova_lighting assets/DamagedHelmet/DamagedHelmet.glb --api metal`。模式只影响模型，保留相机与鼠标操作；无效模式会报错。PBR 使用内置固定灯光和解析式环境，当前没有可配置灯光对象。曝光仅在 PBR 模式生效。
+原生光照例子：`./build/nova_lighting assets/DamagedHelmet/DamagedHelmet.glb --api metal`。命令行可加 `--light-direction X Y Z --light-color R G B --light-intensity N`。模式只影响模型，保留相机与鼠标操作；无效模式会报错。主方向光可在绘制前随时更新。方向必须为有限、非零向量（长度至少 1e-6），内部自动归一化；颜色为 0～1 的线性 RGB，强度为 0～100 的倍率，默认方向 `[-1,1.6,2]`、颜色 `[1,3.2/3.5,0.8]`、强度 `3.5`。设置无效参数会报错并保留原配置。强度 0 关闭主光，但固定辅助光、解析式环境反射和自发光仍保留；无光照模式忽略这些参数。曝光仅在 PBR 模式生效。
 
 ## 鼠标操作
 
@@ -75,3 +82,5 @@ PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光
 此前 PBR 版本已验证：macOS Metal / Vulkan、Ubuntu Lavapipe，以及 Windows RTX 4060 的 DX12 / Vulkan 与 WARP。网页已检查实际画面及相机交互。Windows 渲染测试需要交互桌面会话，SSH 本身仅用于构建与调度。
 
 本次基础颜色/光照拆分已验证 macOS Metal / Vulkan（17 项检查）与 Chrome WebGPU；网页还比较了曝光无关性及两种模式的实际像素。此次未重新运行 Windows / Linux。
+
+示例命令行由 `examples/common/ModelOptions.hpp` 统一解析；未指定 API 时由 Nova 按平台选择。`--spin` 仅用于自动绕模型旋转验证，默认关闭；`--frames N` 在绘制 N 帧后退出，常规交互使用鼠标操作。

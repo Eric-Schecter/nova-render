@@ -101,7 +101,7 @@ public:
         if (model && gpuModel != model.get()) UploadModel();
         if (!swapchain || resized) Recreate();
         if(model && !modelDepth)ModelDepth();
-        if(model){const auto u=MakeSceneUniforms(*model,camera,float(width)/height,lighting);void* mapped=nullptr;D3D12_RANGE read{0,0};checkHR(modelUniform->Map(0,&read,&mapped),"Map scene uniforms");std::memcpy(mapped,&u,sizeof(u));modelUniform->Unmap(0,nullptr);}
+        if(model){const auto u=MakeSceneUniforms(*model,camera,float(width)/height,lighting,directionalLight);void* mapped=nullptr;D3D12_RANGE read{0,0};checkHR(modelUniform->Map(0,&read,&mapped),"Map scene uniforms");std::memcpy(mapped,&u,sizeof(u));modelUniform->Unmap(0,nullptr);}
         const UINT index = swapchain->GetCurrentBackBufferIndex();
         checkHR(allocator->Reset(), "Reset allocator");
         checkHR(commands->Reset(allocator.Get(), model ? modelPipeline.Get() : pipeline.Get()), "Reset command list");

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 int main(int argc,char** argv){
     try{
@@ -16,6 +17,20 @@ int main(int argc,char** argv){
         if(std::memcmp(first.viewProjection,second.viewProjection,64)==0)throw std::runtime_error("Camera did not move");
         const auto lit=render::detail::MakeSceneUniforms(*model,camera,1.3f,render::LightingMode::PBR);
         if(first.emissive[3]!=0 || lit.emissive[3]!=1)throw std::runtime_error("Lighting mode uniform mismatch");
+        render::DirectionalLight light;light.direction={0,3,4};light.color={0.2f,0.6f,0.9f};light.intensity=8;
+        render::detail::ValidateDirectionalLight(light);
+        const auto custom=render::detail::MakeSceneUniforms(*model,camera,1.3f,render::LightingMode::PBR,light);
+        if(std::abs(custom.lightDirection[1]-0.6f)>1e-6f || std::abs(custom.lightDirection[2]-0.8f)>1e-6f || custom.lightColorIntensity[0]!=0.2f || custom.lightColorIntensity[3]!=8)
+            throw std::runtime_error("Light direction/color/intensity upload mismatch");
+        auto rejectLight=[](const render::DirectionalLight& bad){bool rejected=false;try{render::detail::ValidateDirectionalLight(bad);}catch(const std::invalid_argument&){rejected=true;}if(!rejected)throw std::runtime_error("Invalid directional light accepted");};
+        auto bad=light;bad.direction={0,0,0};rejectLight(bad);
+        bad=light;bad.direction[0]=std::numeric_limits<float>::infinity();rejectLight(bad);
+        bad=light;bad.color[1]=-0.1f;rejectLight(bad);
+        bad=light;bad.color[2]=1.1f;rejectLight(bad);
+        bad=light;bad.intensity=-1;rejectLight(bad);
+        bad=light;bad.intensity=101;rejectLight(bad);
+        bad=light;bad.intensity=std::numeric_limits<float>::quiet_NaN();rejectLight(bad);
+        light.intensity=0;render::detail::ValidateDirectionalLight(light);
         const auto dragged=render::detail::DragOrbit(camera,100,1000);
         if(dragged.yaw==camera.yaw || dragged.pitch!=85)throw std::runtime_error("Orbit drag/clamp failed");
         auto zoom=render::detail::ZoomOrbit(camera,-1000);
