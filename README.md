@@ -269,3 +269,11 @@ cmake --build build --target nova_environment
 网页生成资源以 `.bin` 提供，使用标准二进制 MIME，避免本地静态服务器将 HDR 数据当作文本实时压缩；格式内容仍是 Nova 环境资源。`node scripts/webgpu/check-hdr-background.mjs` 检查同视角画面、照明像素不变、旧格式和错误头部。构建后在端口 4187 启动静态预览，运行 `node scripts/webgpu/check-hdr-static.mjs` 检查静态切换与响应类型。
 
 背景升级验证（2026-11-13）：Mac 26 项、Ubuntu Lavapipe 19 项、Windows DX12 WARP 12 项通过；Chrome 检查三套环境切换、背景与照明独立、实际前后画面、缩小过滤和静态预览。安装包独立运行及无 UI 构建通过。本机日志在 `build/validation/hdr-*`；本轮没有验证 Windows 真机 GPU。
+
+### 原生路径追踪
+
+三个模型例子支持在预览面板 **Renderer → Mode** 切换光栅与渐进路径追踪，并设置每帧采样、反弹次数、内部渲染比例和重置累计。相机、模型、环境与光照变化自动重新累计。公开 API 和命令行示例见 [渲染模式](docs/api/render-mode.md)。继续只维护 HLSL，使用 DXC → DXIL / SPIR-V → SPIRV-Cross → Metal 的构建链，无新增第三方依赖。
+
+本阶段验证（2026-11-13）：Apple M4 Metal 实际 GPU 通过光线命中与像素、渐进收敛、模式切换和九种资源组合；Mac 回归 30 项通过、2 项因 MoltenVK 无光追能力跳过。Ubuntu ARM64 Lavapipe 的 ray-query、path-trace、render-modes 三项通过；Windows ARM64 WARP 回归 15 项通过、虚拟显卡硬件 DXR 探测跳过。Windows RTX 真机尚未验证，软件测试不能代表硬件性能。探测工具和旧版 ARM Mesa 的进程级环境配置见 `tools/ray_probe/README.md`。
+
+当前实现无降噪、透明和动画支持，计算结果通过 CPU 回读再上传显示，属于可运行的功能版本。网页本阶段仍为光栅，能力查询明确返回不支持路径追踪。可用 `NOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。安装包独立调用 Metal 光追、无 UI 构建及关闭光追构建均已通过；本机验证记录在 `build/validation/path-*`。

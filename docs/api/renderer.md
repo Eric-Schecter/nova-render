@@ -51,3 +51,5 @@ uint32_t ValidationErrorCount() const;
 天空盒和 HDR 环境光见[天空盒与环境光](./environment)。
 
 `EnableParameterPanel(const ParameterPanelConfig&)` 可配置模型与环境选择列表，见[参数面板](./ui#模型与环境选择)。
+
+光栅与渐进路径追踪的模式、采样和能力查询接口见[渲染模式](./render-mode)。
