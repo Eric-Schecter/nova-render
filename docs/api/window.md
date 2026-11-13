@@ -51,3 +51,5 @@ uint32_t ValidationErrorCount() const;
 `EnableParameterPanel(bool enabled = true)` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。
 
 天空盒和 HDR 环境光见[天空盒与环境光](./environment)。
+
+`EnableParameterPanel(const ParameterPanelConfig&)` 可配置模型与环境选择列表，见[参数面板](./ui#模型与环境选择)。

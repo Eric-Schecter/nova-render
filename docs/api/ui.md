@@ -40,3 +40,38 @@ renderer.enableParameterPanel({ onError: error => console.error(error) })
 背景可通过 `SetClearColor({r,g,b,a})` / `setClearColor([r,g,b,a])` 设置，`GetClearColor()` / `getClearColor()` 返回副本。RGBA 为 0～1 的有限数，RGB 使用显示用 sRGB 值；光源颜色仍为线性 RGB。
 
 当前已验证 macOS Metal / Vulkan、Ubuntu Lavapipe 和 Chrome WebGPU，包含输入隔离、显隐与生命周期。本轮也通过 Windows 虚拟机 DX12 WARP 的桌面会话检查；本轮未验证 Windows 真机 GPU。
+
+## 模型与环境选择
+
+三个模型例子均可选择 Damaged Helmet、Avocado、BoomBox；天空盒例子还提供三套 HDR 环境。切换保留相机、曝光、灯光和环境参数。
+
+```cpp
+render::ParameterPanelConfig panel;
+panel.models = {
+    {"Avocado", "assets/Avocado/Avocado.glb"},
+    {"BoomBox", "assets/BoomBox/BoomBox.glb"}
+};
+panel.environments = {
+    {"Venice Sunset", "assets/Environment/venice_sunset.nenv"},
+    {"Studio Small 09", "assets/Environment/studio_small_09.nenv"}
+};
+window.EnableParameterPanel(panel); // Renderer 同样支持
+```
+
+`AssetChoice` 包含显示名 `name` 和资源路径 `path`，由应用提供。启用面板不会加载列表第一项，初始资源仍用 `LoadModel` / `LoadEnvironment` 设置。UI 请求在下一帧开始前执行；加载失败保留原资源并在面板显示错误。省略列表时隐藏对应选择器。
+
+```js
+renderer.enableParameterPanel({
+  models: [
+    { name: 'Avocado', url: '/generated/Avocado.glb' },
+    { name: 'BoomBox', url: '/generated/BoomBox.glb' },
+  ],
+  environments: [
+    { name: 'Venice Sunset', url: '/generated/venice_sunset.nenv' },
+    { name: 'Studio Small 09', url: '/generated/studio_small_09.nenv' },
+  ],
+  onError: error => console.error(error),
+})
+```
+
+网页按需异步加载，期间禁用选择器并保留原画面；失败时恢复原选择，通过 `onError` 报告。`dispose()` 清理资源与事件。

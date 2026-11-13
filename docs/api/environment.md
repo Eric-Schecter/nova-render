@@ -44,3 +44,5 @@ await renderer.drawFrame()
 可选离线工具 `nova_environment_bake` 将 Radiance HDR 转为此内部格式，构建与命令见 `assets/Environment/README.md`。工具复用现有 stb / GLM，默认不构建；运行机器无需安装 HDR 解码器、DXC 或预处理工具。分发示例需同时携带 GLB 和 `.nenv`。
 
 完整调用见[第四个例子](../examples/environment)，环境资源来源见页脚的资源声明。
+
+第四例可切换 Venice Sunset、Kloppenheim 06 与 Studio Small 09。自定义资源列表见[参数面板](./ui#模型与环境选择)。

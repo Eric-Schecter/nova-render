@@ -18,3 +18,11 @@
 ## Venice Sunset
 
 第四个例子的 HDR 环境来自 [Poly Haven · Venice Sunset](https://polyhaven.com/a/venice_sunset)，作者 Greg Zaal，采用 [CC0](https://polyhaven.com/license)。原始 HDR 未修改；Nova 离线生成用于背景与照明的预过滤立方体和漫反射系数。来源、校验值及重建命令保存在 `assets/Environment/README.md`。
+
+## Avocado 与 BoomBox
+
+来自 Khronos glTF Sample Assets 的 [Avocado](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Avocado) 与 [BoomBox](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoomBox)，© 2017 Microsoft，采用 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode)。原始 GLB 未修改；上游署名与校验值保存在 `assets/Avocado/` 和 `assets/BoomBox/`。
+
+## 其他 HDR 环境
+
+[Studio Small 09](https://polyhaven.com/a/studio_small_09)（Sergej Majboroda）与 [Kloppenheim 06](https://polyhaven.com/a/kloppenheim_06)（Greg Zaal）来自 Poly Haven，采用 [CC0](https://polyhaven.com/license)。原始 HDR 未修改；Nova 生成预过滤资源，记录见 `assets/Environment/README.md`。

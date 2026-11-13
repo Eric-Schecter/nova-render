@@ -253,3 +253,11 @@ cmake --build build --target nova_environment
 网页检查：`node scripts/webgpu/check-environment.mjs`；原生 CTest 包含环境数据、绘制和资源重载检查。
 
 环境阶段验证（2026-11-13）：macOS Metal / MoltenVK 24 项、Ubuntu Lavapipe 18 项、Windows ARM64 虚拟机 DX12 WARP 11 项通过；Windows 图形测试在已登录桌面执行，开启 D3D12 Debug Layer。WARP 验证不代表本轮已验证 Windows 真机 GPU。Chrome WebGPU 检查实际像素、四例面板、资源重载和静态站点；另验证安装包独立构建第四例及 `NOVA_ENABLE_UI=OFF`。本机日志在 `build/validation/environment-*`。
+
+### 可切换的示例资源
+
+三个模型例子均可选择 Damaged Helmet、Avocado、BoomBox；第四例另提供 Venice Sunset、Kloppenheim 06、Studio Small 09 三套环境。切换保留相机与灯光参数，资源按需加载。新增资源不引入依赖，声明集中在文档页脚入口和资源目录。
+
+原生使用 `EnableParameterPanel(ParameterPanelConfig)`，网页使用 `enableParameterPanel({models, environments})`；应用提供显示名与资源地址，加载与替换封装在 Nova 内。详见 `docs/api/ui.md`。验证命令：`ctest --test-dir build --output-on-failure`、`node scripts/webgpu/check-asset-choices.mjs`。
+
+资源切换验证（2026-11-13）：Mac Metal / MoltenVK 26 项、Ubuntu Lavapipe 19 项、Windows DX12 WARP 12 项通过；包含九种模型与环境组合。另以 Ubuntu 实际键鼠检查两个下拉框，以 Chrome 检查三个模型页面、像素变化、失败恢复、窄屏和静态站点，并验证安装包独立调用及无 UI 构建。Windows 本轮仅验证 WARP，未验证真机 GPU。本机日志与截图在 `build/validation/asset-choices-*`。
