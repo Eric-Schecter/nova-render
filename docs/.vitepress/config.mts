@@ -29,6 +29,7 @@ export default defineConfig({
           { text: '01 · 三角形', link: '/examples/triangle' },
           { text: '02 · 模型加载', link: '/examples/damaged-helmet' },
           { text: '03 · 光照', link: '/examples/lighting' },
+          { text: '04 · 天空盒与环境光', link: '/examples/environment' },
         ],
       },
       {
@@ -38,6 +39,7 @@ export default defineConfig({
           { text: 'Window', link: '/api/window' },
           { text: 'Nova Web', link: '/api/web' },
           { text: '模型与相机', link: '/api/model' },
+          { text: '天空盒与环境光', link: '/api/environment' },
           { text: '参数面板', link: '/api/ui' },
           { text: '类型与配置', link: '/api/types' },
           { text: '后端查询与选择', link: '/api/selection' },

@@ -33,10 +33,10 @@ renderer.enableParameterPanel({ onError: error => console.error(error) })
 
 - Scene：深色 / 浅色背景，所有例子都有。
 - Camera：水平角 ±180°、俯仰角 ±85°、距离 1.5～100、重置到启用时的相机。
-- PBR 增加曝光 0.1～3，以及主光方位 ±180°、仰角 ±90°、线性 RGB 0～1、强度 0～100、重置到启用时的光源。
+- PBR 或已加载环境时提供曝光 0.1～3；PBR 提供主光方位 ±180°、仰角 ±90°、线性 RGB 0～1、强度 0～100、重置到启用时的光源。
 
-内置 Window / 环绕控件会隔离 UI 输入，操作面板不会触发模型旋转或缩放；面板外仍可拖动与滚轮缩放。网页面板随预览一起隐藏。曝光和灯光只出现在光照例子中，无光照模型保留基础颜色显示。
+内置 Window / 环绕控件会隔离 UI 输入，操作面板不会触发模型旋转或缩放；面板外仍可拖动与滚轮缩放。网页面板随预览一起隐藏。无光照模型保留基础颜色显示；加载环境后，Environment 分组提供天空盒显隐、旋转 ±180°、环境强度与天空亮度 0～16、重置。天空盒显示时，背景预设暂时禁用。
 
 背景可通过 `SetClearColor({r,g,b,a})` / `setClearColor([r,g,b,a])` 设置，`GetClearColor()` / `getClearColor()` 返回副本。RGBA 为 0～1 的有限数，RGB 使用显示用 sRGB 值；光源颜色仍为线性 RGB。
 
-当前已验证 macOS Metal / Vulkan、Ubuntu Lavapipe 和 Chrome WebGPU，包含输入隔离、显隐与生命周期。DX12 UI 接入已实现，尚待 Windows 实机验证。
+当前已验证 macOS Metal / Vulkan、Ubuntu Lavapipe 和 Chrome WebGPU，包含输入隔离、显隐与生命周期。本轮也通过 Windows 虚拟机 DX12 WARP 的桌面会话检查；本轮未验证 Windows 真机 GPU。

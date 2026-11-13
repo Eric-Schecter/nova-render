@@ -28,6 +28,9 @@ bool PollEvents();
 FrameResult DrawFrame();
 void WaitIdle();
 void LoadModel(const std::filesystem::path& glbPath);
+void LoadEnvironment(const std::filesystem::path& environmentPath);
+void SetEnvironment(const EnvironmentSettings& settings);
+EnvironmentSettings GetEnvironment() const;
 void SetCamera(const OrbitCamera& camera);
 OrbitCamera GetCamera() const;
 void EnableOrbitControls(bool enabled = true);
@@ -46,3 +49,5 @@ uint32_t ValidationErrorCount() const;
 模型加载和相机配置见[模型与相机](./model)。
 
 `EnableParameterPanel(bool enabled = true)` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。
+
+天空盒和 HDR 环境光见[天空盒与环境光](./environment)。

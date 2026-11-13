@@ -27,6 +27,9 @@ void Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
 FrameResult DrawFrame();
 void WaitIdle();
 void LoadModel(const std::filesystem::path& glbPath);
+void LoadEnvironment(const std::filesystem::path& environmentPath);
+void SetEnvironment(const EnvironmentSettings& settings);
+EnvironmentSettings GetEnvironment() const;
 void SetCamera(const OrbitCamera& camera);
 OrbitCamera GetCamera() const;
 GraphicsAPI GetAPI() const;
@@ -44,3 +47,5 @@ uint32_t ValidationErrorCount() const;
 模型模式通过 `LoadModel(path)` 和 `SetCamera(camera)` 设置，详见[模型与相机](./model)。
 
 `EnableParameterPanel(bool enabled = true)` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。
+
+天空盒和 HDR 环境光见[天空盒与环境光](./environment)。

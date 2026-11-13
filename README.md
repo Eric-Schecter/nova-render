@@ -237,3 +237,19 @@ C++ / Objective-C++ / HLSL 使用项目根目录的 `.clang-format`（沿用 Nov
 模型与光照示例调用 `Window::EnableParameterPanel()`，在窗口内通过 ImGui 修改背景、相机与光照；网页对应 `renderer.enableParameterPanel()`，使用 HTML/CSS 浮层，无 WASM。两端参数与分组一致，UI 输入与模型操作隔离。`NOVA_ENABLE_UI=OFF` 可关闭原生 UI 构建；默认开启，vcpkg 管理依赖。详见 `docs/api/ui.md`。
 
 本次 UI 验证：macOS 19 项、Ubuntu Lavapipe 15 项全部通过；原生实际鼠标操作和窗口缩放正常，网页桌面/手机面板与输入隔离通过。独立安装包的 Metal/Vulkan 示例均运行 120 帧且验证错误为 0，禁用 UI 构建通过。Windows SSH 连接超时，DX12 UI 尚未实机验证。
+
+### 天空盒与环境光
+
+第四个例子：原生 `nova_environment`，网页 `/examples/environment`。加载同一份 HDR 预处理资源，提供天空盒、漫反射环境光和 GGX 预过滤反射；参数面板调整旋转、环境强度、天空亮度与显隐，保留鼠标环绕与缩放。
+
+```sh
+cmake --build build --target nova_environment
+./build/nova_environment assets/DamagedHelmet/DamagedHelmet.glb assets/Environment/venice_sunset.nenv --api metal
+# Linux 使用 --api vulkan；Windows 使用 --api dx12，CPU 验证可加 --warp。
+```
+
+公共接口与资源准备见 `docs/api/environment.md`。资源来自 Poly Haven，来源与 CC0 许可见 `assets/Environment/README.md`。运行时不需要新的外部依赖；可选离线工具复用现有 stb / GLM。安装库后也可独立构建 `examples/environment`，资源路径由调用者传入。
+
+网页检查：`node scripts/webgpu/check-environment.mjs`；原生 CTest 包含环境数据、绘制和资源重载检查。
+
+环境阶段验证（2026-11-13）：macOS Metal / MoltenVK 24 项、Ubuntu Lavapipe 18 项、Windows ARM64 虚拟机 DX12 WARP 11 项通过；Windows 图形测试在已登录桌面执行，开启 D3D12 Debug Layer。WARP 验证不代表本轮已验证 Windows 真机 GPU。Chrome WebGPU 检查实际像素、四例面板、资源重载和静态站点；另验证安装包独立构建第四例及 `NOVA_ENABLE_UI=OFF`。本机日志在 `build/validation/environment-*`。

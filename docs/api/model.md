@@ -59,7 +59,7 @@ renderer.setDirectionalLight({ direction: [-1, 1.6, 2], color: [1, 0.9, 0.8], in
 await renderer.drawFrame()
 ```
 
-原生光照例子：`./build/nova_lighting assets/DamagedHelmet/DamagedHelmet.glb --api metal`。命令行可加 `--light-direction X Y Z --light-color R G B --light-intensity N`。模式只影响模型，保留相机与鼠标操作；无效模式会报错。主方向光可在绘制前随时更新。方向必须为有限、非零向量（长度至少 1e-6），内部自动归一化；颜色为 0～1 的线性 RGB，强度为 0～100 的倍率，默认方向 `[-1,1.6,2]`、颜色 `[1,3.2/3.5,0.8]`、强度 `3.5`。设置无效参数会报错并保留原配置。强度 0 关闭主光，但固定辅助光、解析式环境反射和自发光仍保留；无光照模式忽略这些参数。曝光仅在 PBR 模式生效。
+原生光照例子：`./build/nova_lighting assets/DamagedHelmet/DamagedHelmet.glb --api metal`。命令行可加 `--light-direction X Y Z --light-color R G B --light-intensity N`。模式只影响模型，保留相机与鼠标操作；无效模式会报错。主方向光可在绘制前随时更新。方向必须为有限、非零向量（长度至少 1e-6），内部自动归一化；颜色为 0～1 的线性 RGB，强度为 0～100 的倍率，默认方向 `[-1,1.6,2]`、颜色 `[1,3.2/3.5,0.8]`、强度 `3.5`。设置无效参数会报错并保留原配置。强度 0 关闭主光，但固定辅助光、解析式环境反射和自发光仍保留；无光照模式忽略这些参数。曝光影响 PBR 模型和天空盒，无光照模型的基础颜色保持不变。
 
 ## 鼠标操作
 
@@ -73,7 +73,7 @@ await renderer.drawFrame()
 
 支持内嵌资源的静态、单材质、不透明、索引三角形 GLB，要求 POSITION、NORMAL、TEXCOORD_0；首个例子为 Damaged Helmet。尚不支持蒙皮、动画、morph、透明材质、压缩扩展或通用多材质场景。内部将索引展开为统一顶点流。
 
-PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光贴图，采用 GGX 直接光照和解析式摄影棚环境近似；目前没有 HDR 环境贴图、预计算 IBL 或阴影。不是完整 glTF 一致性实现。
+PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光贴图，采用 GGX 直接光照和解析式摄影棚环境近似；加载[环境资源](./environment)后使用 HDR 环境光与预过滤反射；尚无阴影。不是完整 glTF 一致性实现。
 
 唯一维护的材质源码是 `render/shaders/model.hlsl`。原生端构建生成 DXIL / SPIR-V / metallib，网页端经 DXC + Naga 生成 WGSL；网页输出额外编码 sRGB。缺少贴图时使用内置默认纹理，缺少模型或不支持的格式会报错。
 
