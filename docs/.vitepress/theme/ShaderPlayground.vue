@@ -4,6 +4,7 @@ import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
 import { showTriangle } from '../../../web/examples/triangle.js'
 import exampleCode from '../../../web/examples/triangle.js?raw'
+import cppCode from '../../../examples/consumer/main.cpp?raw'
 const source=ref(''), message=ref('初始化 Nova Web…'), busy=ref(false), ready=ref(false), canvas=ref(null)
 const tab=ref('example'), background=ref('dark'), previewVisible=ref(true)
 const local=import.meta.env.DEV
@@ -47,11 +48,13 @@ onBeforeUnmount(()=>{disposed=true;renderer?.dispose()})
     <div class="toolbar"><strong>Nova 三角形示例</strong><div class="actions"><label>背景色 <select v-model="background" :disabled="busy" @change="run(false)"><option value="dark">深色</option><option value="light">浅色</option></select></label><button :disabled="busy||!initial" @click="run(false)">{{ busy ? '执行中…' : '运行' }}</button><button :disabled="busy||!initial" @click="run(true)">重置</button><button :disabled="busy" :aria-expanded="previewVisible" aria-controls="nova-triangle-preview" @click="togglePreview">{{ previewVisible ? '隐藏预览' : '显示预览' }}</button></div></div>
     <pre role="status" aria-live="polite">{{message}}</pre>
     <div class="panes"><div class="source-pane">
-      <div role="tablist" aria-label="示例代码"><button role="tab" :aria-selected="tab==='example'" @click="tab='example'">JavaScript 示例</button><button role="tab" :aria-selected="tab==='shader'" @click="tab='shader'">HLSL shader</button></div>
+      <div role="tablist" aria-label="示例代码"><button role="tab" :aria-selected="tab==='cpp'" @click="tab='cpp'">C++ 示例</button><button role="tab" :aria-selected="tab==='example'" @click="tab='example'">JavaScript 示例</button><button role="tab" :aria-selected="tab==='shader'" @click="tab='shader'">HLSL shader</button></div>
       <HlslEditor v-if="tab==='example'" :model-value="exampleCode" language="javascript" readonly />
+      <HlslEditor v-else-if="tab==='cpp'" :model-value="cppCode" language="cpp" readonly />
       <HlslEditor v-else v-model="source" :readonly="!local" />
     </div><div id="nova-triangle-preview" class="preview-shell" :class="{collapsed:!previewVisible}" :aria-hidden="!previewVisible" :inert="!previewVisible"><div class="output"><span>运行结果</span><canvas ref="canvas" width="640" height="480" aria-label="WebGPU 三角形预览" /></div></div></div>
-    <p>上方 JavaScript 是下方实际执行的示例源码。可切换背景色体验 setClearColor；HLSL 标签支持本地编辑。</p>
+    <p v-if="tab==='cpp'">C++ 源码来自 examples/consumer/main.cpp，需在本地编译运行；下方仍为 JavaScript / WebGPU 预览。</p>
+    <p v-else>上方 JavaScript 是下方实际执行的示例源码。可切换背景色体验 setClearColor；HLSL 标签支持本地编辑。</p>
     <p v-if="!local">静态网站使用预编译 shader；修改 HLSL 需要本地开发服务。</p>
   </div>
 </template>
