@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, nextTick, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useData } from 'vitepress'
 import { createHighlighterCore } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
@@ -11,21 +11,10 @@ import dark from 'shiki/themes/github-dark.mjs'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   readonly: Boolean,
-  expanded: Boolean,
   language: { type: String, default: 'hlsl' },
 })
 const emit = defineEmits(['update:modelValue'])
 const { isDark } = useData()
-const input = ref(null)
-watch(
-  () => props.expanded,
-  async (expanded) => {
-    if (!expanded) return
-    await nextTick()
-    if (input.value) input.value.scrollTop = 0
-    if (layer.value) layer.value.scrollTop = 0
-  },
-)
 const layer = ref(null),
   loaded = ref(false)
 let highlighter,
@@ -76,13 +65,12 @@ function tab(event) {
 
 <template>
   <div class="code-view">
-    <div class="hlsl-editor" :class="{ highlighted: loaded, expanded }">
+    <div class="hlsl-editor" :class="{ highlighted: loaded }">
       <div ref="layer" class="code-layer" aria-hidden="true">
         <div v-if="loaded" v-html="html" />
         <pre v-else>{{ modelValue + '\n' }}</pre>
       </div>
       <textarea
-        ref="input"
         :value="modelValue"
         :readonly="readonly"
         :aria-label="
@@ -92,7 +80,7 @@ function tab(event) {
               ? 'C++ 示例源码'
               : 'JavaScript 示例源码'
         "
-        :wrap="expanded ? 'soft' : 'off'"
+        wrap="off"
         spellcheck="false"
         autocapitalize="off"
         autocomplete="off"
@@ -108,26 +96,6 @@ function tab(event) {
 <style scoped>
 .code-view {
   min-width: 0;
-}
-/* In expanded mode the visible code determines height, including wrapped lines. */
-.hlsl-editor.expanded {
-  height: auto;
-  resize: none;
-}
-.expanded .code-layer {
-  position: relative;
-  height: auto;
-  min-height: 180px;
-  overflow: visible;
-}
-.expanded .code-layer :deep(pre),
-.expanded .code-layer :deep(code),
-.expanded textarea {
-  white-space: pre-wrap !important;
-  overflow-wrap: anywhere;
-}
-.expanded textarea {
-  overflow: hidden;
 }
 .hlsl-editor {
   position: relative;
