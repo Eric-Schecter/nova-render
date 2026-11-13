@@ -3,8 +3,10 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <string>
 int main(int argc, char** argv)
 {
     try
