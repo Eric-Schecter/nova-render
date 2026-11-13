@@ -24,7 +24,7 @@ add_custom_command(OUTPUT "${embedded_shader_cpp}"
     COMMAND ${CMAKE_COMMAND} "-DINPUTS=${SHADER_OUTPUTS}" "-DOUTPUT=${embedded_shader_cpp}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     DEPENDS ${SHADER_OUTPUTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake" VERBATIM)
-add_library(nova_render STATIC render/src/Renderer.cpp render/src/ShaderData.cpp "${embedded_shader_cpp}")
+add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ShaderData.cpp "${embedded_shader_cpp}")
 add_library(Nova::Render ALIAS nova_render)
 set_target_properties(nova_render PROPERTIES EXPORT_NAME Render)
 target_compile_features(nova_render PUBLIC cxx_std_17)
