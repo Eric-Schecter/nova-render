@@ -21,6 +21,8 @@ public:
     bool PollEvents(); // false after closing the window or pressing Escape.
     FrameResult DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
     void WaitIdle();
+    void LoadModel(const std::filesystem::path& glbPath);
+    void SetCamera(const OrbitCamera& camera);
     GraphicsAPI GetAPI() const;
     uint32_t ValidationErrorCount() const;
 private:

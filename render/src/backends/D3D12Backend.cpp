@@ -12,6 +12,7 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 #include <climits>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -31,6 +32,7 @@ public:
         if (event) CloseHandle(event);
     }
     void Initialize(GLFWwindow* window, const RendererConfig& config) {
+        settings = config;
         hwnd = glfwGetWin32Window(window);
         if (!hwnd) throw std::runtime_error("GLFW window has no HWND");
         if (config.enableValidation) {
@@ -96,10 +98,13 @@ public:
     FrameResult DrawFrame() override {
         if (!width || !height) return FrameResult::Skipped;
         WaitIdle();
+        if (model && gpuModel != model.get()) UploadModel();
         if (!swapchain || resized) Recreate();
+        if(model && !modelDepth)ModelDepth();
+        if(model){const auto u=MakeSceneUniforms(*model,camera,float(width)/height);void* mapped=nullptr;D3D12_RANGE read{0,0};checkHR(modelUniform->Map(0,&read,&mapped),"Map scene uniforms");std::memcpy(mapped,&u,sizeof(u));modelUniform->Unmap(0,nullptr);}
         const UINT index = swapchain->GetCurrentBackBufferIndex();
         checkHR(allocator->Reset(), "Reset allocator");
-        checkHR(commands->Reset(allocator.Get(), pipeline.Get()), "Reset command list");
+        checkHR(commands->Reset(allocator.Get(), model ? modelPipeline.Get() : pipeline.Get()), "Reset command list");
         D3D12_RESOURCE_BARRIER barrier{};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier.Transition.pResource = targets[index].Get();
@@ -111,13 +116,21 @@ public:
         rtv.ptr += static_cast<SIZE_T>(index) * rtvStride;
         const float clear[]{0.025f, 0.035f, 0.055f, 1.0f};
         commands->ClearRenderTargetView(rtv, clear, 0, nullptr);
-        commands->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-        commands->SetGraphicsRootSignature(root.Get());
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
+        if(model){dsv=modelDepthHeap->GetCPUDescriptorHandleForHeapStart();commands->ClearDepthStencilView(dsv,D3D12_CLEAR_FLAG_DEPTH,1,0,0,nullptr);}
+        commands->OMSetRenderTargets(1, &rtv, FALSE, model ? &dsv : nullptr);
+        commands->SetGraphicsRootSignature(model ? modelRoot.Get() : root.Get());
+        if(model){
+            ID3D12DescriptorHeap* heaps[]={modelHeap.Get()};commands->SetDescriptorHeaps(1,heaps);
+            commands->SetGraphicsRootConstantBufferView(0,modelUniform->GetGPUVirtualAddress());
+            commands->SetGraphicsRootShaderResourceView(1,modelVertices->GetGPUVirtualAddress());
+            commands->SetGraphicsRootDescriptorTable(2,modelHeap->GetGPUDescriptorHandleForHeapStart());
+        }
         D3D12_VIEWPORT viewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};
         D3D12_RECT scissor{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
         commands->RSSetViewports(1, &viewport); commands->RSSetScissorRects(1, &scissor);
         commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        commands->DrawInstanced(3, 1, 0, 0);
+        commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
         commands->ResourceBarrier(1, &barrier);
@@ -161,6 +174,8 @@ private:
     ComPtr<ID3D12RootSignature> root;
     ComPtr<ID3D12PipelineState> pipeline;
 
+    #include "D3D12Model.inc"
+
     void CollectMessages() {
         if (!infoQueue) return;
         const auto count = infoQueue->GetNumStoredMessagesAllowedByRetrievalFilter();
@@ -203,6 +218,7 @@ private:
             device->CreateRenderTargetView(targets[i].Get(), &view, rtv);
             rtv.ptr += rtvStride;
         }
+        modelDepth.Reset();
         resized = false;
         std::cout << "D3D12 swapchain: " << width << 'x' << height << '\n';
     }

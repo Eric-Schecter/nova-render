@@ -75,6 +75,8 @@ struct VulkanBackend final : Backend {
     VkSemaphore acquired = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
 
+    #include "VulkanModel.inc"
+
     void initInstance() {
         check(volkInitialize(), "Load Vulkan (install a Vulkan driver or SDK/MoltenVK)");
         uint32_t count = 0;
@@ -214,11 +216,13 @@ struct VulkanBackend final : Backend {
             VkSemaphoreCreateInfo sem{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
             check(vkCreateSemaphore(device, &sem, nullptr, &finished[i]), "Create present semaphore");
         }
+        if(model) modelImage(modelDepth,extent.width,extent.height,VK_FORMAT_D32_SFLOAT,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,VK_IMAGE_ASPECT_DEPTH_BIT);
         createPipeline();
         framebuffers.resize(count, VK_NULL_HANDLE);
         for (uint32_t i = 0; i < count; ++i) {
             VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-            fb.renderPass = renderPass; fb.attachmentCount = 1; fb.pAttachments = &views[i];
+            VkImageView attachments[]={views[i],modelDepth.view};
+            fb.renderPass = renderPass; fb.attachmentCount = model ? 2 : 1; fb.pAttachments = attachments;
             fb.width = extent.width; fb.height = extent.height; fb.layers = 1;
             check(vkCreateFramebuffer(device, &fb, nullptr, &framebuffers[i]), "Create framebuffer");
         }
@@ -243,21 +247,30 @@ struct VulkanBackend final : Backend {
         attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        VkAttachmentDescription attachments[2]{attachment,{}};
+        attachments[1].format=VK_FORMAT_D32_SFLOAT;attachments[1].samples=VK_SAMPLE_COUNT_1_BIT;
+        attachments[1].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;attachments[1].storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[1].stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE;attachments[1].stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[1].initialLayout=VK_IMAGE_LAYOUT_UNDEFINED;attachments[1].finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentReference depthRef{1,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
         VkSubpassDescription subpass{}; subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &color;
+        if(model)subpass.pDepthStencilAttachment=&depthRef;
         VkSubpassDependency dep{}; dep.srcSubpass = VK_SUBPASS_EXTERNAL; dep.dstSubpass = 0;
         dep.srcStageMask = dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        if(model){dep.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;dep.dstStageMask=dep.srcStageMask;dep.srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;dep.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;}
         VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        rp.attachmentCount = 1; rp.pAttachments = &attachment; rp.subpassCount = 1; rp.pSubpasses = &subpass;
+        rp.attachmentCount = model ? 2 : 1; rp.pAttachments = attachments; rp.subpassCount = 1; rp.pSubpasses = &subpass;
         rp.dependencyCount = 1; rp.pDependencies = &dep;
         check(vkCreateRenderPass(device, &rp, nullptr, &renderPass), "Create render pass");
         VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        if(model){pl.setLayoutCount=1;pl.pSetLayouts=&modelSetLayout;}
         check(vkCreatePipelineLayout(device, &pl, nullptr, &layout), "Create pipeline layout");
         VkShaderModule vert = VK_NULL_HANDLE, frag = VK_NULL_HANDLE;
         try {
-            vert = shader("triangle.vert.spv"); frag = shader("triangle.frag.spv");
+            vert = shader(model ? "model.vert.spv" : "triangle.vert.spv"); frag = shader(model ? "model.frag.spv" : "triangle.frag.spv");
             VkPipelineShaderStageCreateInfo stages[2]{};
             for (auto& stage : stages) { stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;  }
             stages[0].pName = "VSMain"; stages[1].pName = "PSMain";
@@ -278,9 +291,12 @@ struct VulkanBackend final : Backend {
             VkDynamicState states[]{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
             VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
             dynamic.dynamicStateCount = 2; dynamic.pDynamicStates = states;
+            VkPipelineDepthStencilStateCreateInfo depthState{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+            depthState.depthTestEnable=depthState.depthWriteEnable=VK_TRUE;depthState.depthCompareOp=VK_COMPARE_OP_LESS;
             VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
             info.stageCount = 2; info.pStages = stages; info.pVertexInputState = &vertex; info.pInputAssemblyState = &assembly;
             info.pViewportState = &viewport; info.pRasterizationState = &raster; info.pMultisampleState = &ms;
+            if(model)info.pDepthStencilState=&depthState;
             info.pColorBlendState = &blending; info.pDynamicState = &dynamic; info.layout = layout; info.renderPass = renderPass;
             check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline), "Create pipeline");
         } catch (...) {
@@ -292,12 +308,18 @@ struct VulkanBackend final : Backend {
     }
     FrameResult draw() {
         if (!width || !height) return FrameResult::Skipped;
+        if(model && !modelReady){try{uploadModel();}catch(...){WaitIdle();destroyModel();throw;}}
         if (resized || !swapchain) {
             check(vkDeviceWaitIdle(device), "Wait before resize");
             destroySwapchain();
             createSwapchain();
         }
         check(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "Wait frame");
+        if(model) {
+            const auto uniform=MakeSceneUniforms(*model,camera,float(extent.width)/extent.height);
+            void* mapped=nullptr;check(vkMapMemory(device,modelUniform.memory,0,sizeof(uniform),0,&mapped),"Map scene uniforms");
+            std::memcpy(mapped,&uniform,sizeof(uniform));vkUnmapMemory(device,modelUniform.memory);
+        }
         uint32_t image = 0;
         auto result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &image);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) { resized = true; return FrameResult::Skipped; }
@@ -307,15 +329,17 @@ struct VulkanBackend final : Backend {
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         check(vkBeginCommandBuffer(cmd, &begin), "Begin commands");
         VkClearValue clear{}; clear.color = {{0.025f, 0.035f, 0.055f, 1.0f}};
+        VkClearValue clearValues[2]{clear,{}};clearValues[1].depthStencil={1.0f,0};
         VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         pass.renderPass = renderPass; pass.framebuffer = framebuffers[image]; pass.renderArea.extent = extent;
-        pass.clearValueCount = 1; pass.pClearValues = &clear;
+        pass.clearValueCount = model ? 2 : 1; pass.pClearValues = clearValues;
         vkCmdBeginRenderPass(cmd, &pass, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         VkViewport viewport{0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height), 0, 1};
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport); vkCmdSetScissor(cmd, 0, 1, &scissor);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        if(model)vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,layout,0,1,&modelSet,0,nullptr);
+        vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
         vkCmdEndRenderPass(cmd);
         check(vkEndCommandBuffer(cmd), "End commands");
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -337,6 +361,7 @@ struct VulkanBackend final : Backend {
     void destroySwapchain() {
         for (auto fb : framebuffers) if (fb) vkDestroyFramebuffer(device, fb, nullptr);
         framebuffers.clear();
+        destroyModelTexture(modelDepth);
         if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
         pipeline = VK_NULL_HANDLE;
         if (layout) vkDestroyPipelineLayout(device, layout, nullptr);
@@ -354,6 +379,7 @@ struct VulkanBackend final : Backend {
         if (device) {
             vkDeviceWaitIdle(device);
             destroySwapchain();
+            destroyModel();
             if (fence) vkDestroyFence(device, fence, nullptr);
             if (acquired) vkDestroySemaphore(device, acquired, nullptr);
             if (pool) vkDestroyCommandPool(device, pool, nullptr);

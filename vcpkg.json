@@ -13,7 +13,9 @@
       "name": "spirv-cross",
       "host": true,
       "platform": "osx"
-    }
+    },
+    "tinygltf",
+    "glm"
   ],
   "default-features": [
     "vulkan"
@@ -25,5 +27,10 @@
         "volk"
       ]
     }
+  },
+  "vcpkg-configuration": {
+    "overlay-ports": [
+      "./ports"
+    ]
   }
 }

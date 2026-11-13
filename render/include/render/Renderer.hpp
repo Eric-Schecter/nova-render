@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "Model.hpp"
 #include <filesystem>
 #include <memory>
 
@@ -39,6 +40,8 @@ public:
     void Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
     FrameResult DrawFrame();
     void WaitIdle();
+    void LoadModel(const std::filesystem::path& glbPath);
+    void SetCamera(const OrbitCamera& camera);
     GraphicsAPI GetAPI() const;
     uint32_t ValidationErrorCount() const;
 

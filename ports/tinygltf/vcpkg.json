@@ -1,0 +1,10 @@
+{
+  "name": "tinygltf",
+  "version": "2.9.7",
+  "description": "Pinned official TinyGLTF headers; avoids mutable GitHub release archive metadata",
+  "homepage": "https://github.com/syoyo/tinygltf",
+  "dependencies": [
+    "nlohmann-json",
+    "stb"
+  ]
+}

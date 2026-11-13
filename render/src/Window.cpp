@@ -47,6 +47,8 @@ FrameResult Window::DrawFrame() {
     if (result == FrameResult::Skipped) glfwWaitEventsTimeout(0.01);
     return result;
 }
+void Window::LoadModel(const std::filesystem::path& path) { impl_->renderer->LoadModel(path); }
+void Window::SetCamera(const OrbitCamera& camera) { impl_->renderer->SetCamera(camera); }
 void Window::WaitIdle() { impl_->renderer->WaitIdle(); }
 GraphicsAPI Window::GetAPI() const { return impl_->renderer->GetAPI(); }
 uint32_t Window::ValidationErrorCount() const { return impl_->renderer->ValidationErrorCount(); }

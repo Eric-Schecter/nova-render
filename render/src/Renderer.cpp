@@ -80,6 +80,8 @@ Renderer::Renderer(GLFWwindow* window, const RendererConfig& config)
 Renderer::~Renderer() = default;
 void Renderer::Resize(uint32_t width, uint32_t height) { impl_->backend->Resize(width, height); }
 FrameResult Renderer::DrawFrame() { return impl_->backend->DrawFrame(); }
+void Renderer::LoadModel(const std::filesystem::path& path) { auto data = detail::LoadGLB(path); impl_->backend->LoadModel(std::move(data)); }
+void Renderer::SetCamera(const OrbitCamera& camera) { detail::ValidateCamera(camera); impl_->backend->SetCamera(camera); }
 void Renderer::WaitIdle() { impl_->backend->WaitIdle(); }
 GraphicsAPI Renderer::GetAPI() const { return impl_->api; }
 uint32_t Renderer::ValidationErrorCount() const { return impl_->backend->ValidationErrorCount(); }
