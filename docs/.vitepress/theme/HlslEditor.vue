@@ -4,17 +4,18 @@ import { useData } from 'vitepress'
 import { createHighlighterCore } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
 import hlsl from 'shiki/langs/hlsl.mjs'
+import javascript from 'shiki/langs/javascript.mjs'
 import light from 'shiki/themes/github-light.mjs'
 import dark from 'shiki/themes/github-dark.mjs'
-const props=defineProps({modelValue:{type:String,default:''},readonly:Boolean})
+const props=defineProps({modelValue:{type:String,default:''},readonly:Boolean,language:{type:String,default:'hlsl'}})
 const emit=defineEmits(['update:modelValue'])
 const { isDark }=useData()
 const layer=ref(null), loaded=ref(false)
 let highlighter, disposed=false
-const html=computed(()=>loaded.value ? highlighter.codeToHtml(props.modelValue+'\n',{lang:'hlsl',theme:isDark.value?'github-dark':'github-light'}) : '')
+const html=computed(()=>loaded.value ? highlighter.codeToHtml(props.modelValue+'\n',{lang:props.language,theme:isDark.value?'github-dark':'github-light'}) : '')
 onMounted(async()=>{
   try {
-    const instance=await createHighlighterCore({langs:[hlsl],themes:[light,dark],engine:createOnigurumaEngine(import('shiki/wasm'))})
+    const instance=await createHighlighterCore({langs:[hlsl,javascript],themes:[light,dark],engine:createOnigurumaEngine(import('shiki/wasm'))})
     if(disposed){instance.dispose();return}
     highlighter=instance;loaded.value=true
   } catch { /* Keep the plain editor usable if highlighting cannot initialize. */ }
@@ -33,7 +34,7 @@ function tab(event){
 <template>
   <div class="hlsl-editor" :class="{highlighted:loaded}">
     <div ref="layer" class="code-layer" aria-hidden="true" v-html="html" />
-    <textarea :value="modelValue" :readonly="readonly" aria-label="HLSL shader 编辑器" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" @input="emit('update:modelValue',$event.target.value)" @scroll="sync" @keydown.tab="tab" />
+    <textarea :value="modelValue" :readonly="readonly" :aria-label="language === 'hlsl' ? 'HLSL shader 编辑器' : 'JavaScript 示例源码'" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" @input="emit('update:modelValue',$event.target.value)" @scroll="sync" @keydown.tab="tab" />
   </div>
 </template>
 

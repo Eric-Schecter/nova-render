@@ -197,3 +197,5 @@ cmake --build build/consumer
 独立示例见 `examples/consumer/`，网站说明见“作为依赖使用”。新安装流程已在 macOS ARM64 验证；Windows / Linux 包尚未验证。
 
 推荐示例入口为 `render/Window.hpp`：`WindowConfig` 配置窗口，`Window::PollEvents()` / `DrawFrame()` 驱动主循环，窗口系统和尺寸同步由库内部管理。原 `Renderer(GLFWwindow*, ...)` 保留为底层接口，原三角形验证用例继续使用它检查窗口边界行为。
+
+网页预览默认展示并执行 `web/examples/triangle.js`：通过 `web/src/Nova.js` 的 `createRenderer / setShader / setClearColor / drawFrame / dispose` 调用，无需直接使用 WebGPU。JavaScript 源码只读展示，背景设置实时生效；HLSL 标签保留本地编辑能力。

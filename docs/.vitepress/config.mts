@@ -18,11 +18,12 @@ export default defineConfig({
         { text: '快速开始', link: '/guide/quick-start' },
         { text: '编写示例', link: '/guide/integration' },
         { text: '作为依赖使用', link: '/guide/package' },
-        { text: 'HLSL 即时演示', link: '/guide/playground' },
+        { text: '在线三角形示例', link: '/guide/playground' },
       ] },
       { text: 'API 参考', items: [
         { text: '总览', link: '/api/' },
         { text: 'Window', link: '/api/window' },
+        { text: 'Nova Web', link: '/api/web' },
         { text: '类型与配置', link: '/api/types' },
         { text: '后端查询与选择', link: '/api/selection' },
         { text: 'Renderer', link: '/api/renderer' },
