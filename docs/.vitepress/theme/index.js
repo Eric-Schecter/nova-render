@@ -1,3 +1,4 @@
+import './custom.css'
 import DefaultTheme from 'vitepress/theme'
 import ModelPlayground from './ModelPlayground.vue'
 import ShaderPlayground from './ShaderPlayground.vue'

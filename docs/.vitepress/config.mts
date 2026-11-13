@@ -13,7 +13,6 @@ export default defineConfig({
       { text: '指南', link: '/guide/quick-start' },
       { text: '例子', link: '/examples/triangle' },
       { text: 'API', link: '/api/' },
-      { text: '资源声明', link: '/credits' },
     ],
     sidebar: [
       {
@@ -67,6 +66,9 @@ export default defineConfig({
     darkModeSwitchLabel: '切换主题',
     sidebarMenuLabel: '目录',
     returnToTopLabel: '返回顶部',
-    footer: { message: '最小固定三角形渲染器 · 接口以当前源码为准' },
+    footer: {
+      message: '最小固定三角形渲染器 · 接口以当前源码为准',
+      copyright: '<a href="/credits">资源声明</a>',
+    },
   },
 })
