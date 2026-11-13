@@ -15,33 +15,52 @@ export default defineConfig({
       { text: 'API', link: '/api/' },
     ],
     sidebar: [
-      { text: '使用指南', items: [
-        { text: '快速开始', link: '/guide/quick-start' },
-        { text: '编写示例', link: '/guide/integration' },
-        { text: '作为依赖使用', link: '/guide/package' },
-      ] },
-      { text: '例子', items: [
-        { text: '01 · 三角形', link: '/examples/triangle' },
-        { text: '02 · 模型加载', link: '/examples/damaged-helmet' },
-        { text: '03 · 光照', link: '/examples/lighting' },
-      ] },
-      { text: 'API 参考', items: [
-        { text: '总览', link: '/api/' },
-        { text: 'Window', link: '/api/window' },
-        { text: 'Nova Web', link: '/api/web' },
-        { text: '模型与相机', link: '/api/model' },
-        { text: '类型与配置', link: '/api/types' },
-        { text: '后端查询与选择', link: '/api/selection' },
-        { text: 'Renderer', link: '/api/renderer' },
-      ] },
-    ],
-    search: { provider: 'local', options: { locales: { root: {
-      translations: {
-        button: { buttonText: '搜索文档', buttonAriaLabel: '搜索文档' },
-        modal: { noResultsText: '没有找到结果', resetButtonTitle: '清空',
-          footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' } },
+      {
+        text: '使用指南',
+        items: [
+          { text: '快速开始', link: '/guide/quick-start' },
+          { text: '编写示例', link: '/guide/integration' },
+          { text: '作为依赖使用', link: '/guide/package' },
+        ],
       },
-    } } } },
+      {
+        text: '例子',
+        items: [
+          { text: '01 · 三角形', link: '/examples/triangle' },
+          { text: '02 · 模型加载', link: '/examples/damaged-helmet' },
+          { text: '03 · 光照', link: '/examples/lighting' },
+        ],
+      },
+      {
+        text: 'API 参考',
+        items: [
+          { text: '总览', link: '/api/' },
+          { text: 'Window', link: '/api/window' },
+          { text: 'Nova Web', link: '/api/web' },
+          { text: '模型与相机', link: '/api/model' },
+          { text: '类型与配置', link: '/api/types' },
+          { text: '后端查询与选择', link: '/api/selection' },
+          { text: 'Renderer', link: '/api/renderer' },
+        ],
+      },
+    ],
+    search: {
+      provider: 'local',
+      options: {
+        locales: {
+          root: {
+            translations: {
+              button: { buttonText: '搜索文档', buttonAriaLabel: '搜索文档' },
+              modal: {
+                noResultsText: '没有找到结果',
+                resetButtonTitle: '清空',
+                footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' },
+              },
+            },
+          },
+        },
+      },
+    },
     outline: { level: [2, 3], label: '本页内容' },
     docFooter: { prev: '上一页', next: '下一页' },
     lastUpdated: { text: '最后更新' },

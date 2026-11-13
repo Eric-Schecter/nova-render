@@ -12,11 +12,14 @@
     "shaders:webgpu": "node scripts/webgpu/generate.mjs",
     "predocs:dev": "npm run shaders:webgpu",
     "predocs:build": "npm run shaders:webgpu",
-    "check:webgpu": "node scripts/webgpu/check.mjs"
+    "check:webgpu": "node scripts/webgpu/check.mjs",
+    "format:web": "prettier --write web scripts/webgpu docs/.vitepress",
+    "check:format:web": "prettier --check web scripts/webgpu docs/.vitepress"
   },
   "devDependencies": {
     "naga-wasi-cli": "0.1.0",
     "playwright": "1.65.0",
+    "prettier": "3.6.2",
     "shiki": "2.5.0",
     "vitepress": "1.6.4"
   }

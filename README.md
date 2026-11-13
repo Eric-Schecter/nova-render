@@ -227,3 +227,7 @@ Damaged Helmet 默认启用左键拖动旋转、滚轮缩放。网页入口为 `
 `nova_helmet` 默认仅显示基础颜色贴图；`nova_lighting` 通过 `SetLighting(LightingMode::PBR)` 开启摄影棚光照。网页对应 `/examples/damaged-helmet` 和 `/examples/lighting`，使用 `setLighting('pbr')`。两种模式共享 HLSL 和鼠标操作封装，曝光仅影响 PBR。
 
 光照例子可通过统一 `DirectionalLight` API 调整主光方向、线性 RGB 与强度；网页提供对应滑块。模型/光照例子的命令行解析集中于 `examples/common/ModelOptions.hpp`，`--spin` 为可选自动旋转验证模式。
+
+### 代码格式
+
+C++ / Objective-C++ / HLSL 使用项目根目录的 `.clang-format`（沿用 Nova 项目配置：4 空格、120 列、独立行花括号）。网页源码使用固定版本 Prettier：`npm run format:web`，检查使用 `npm run check:format:web`。

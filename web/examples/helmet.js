@@ -1,6 +1,12 @@
 import * as Nova from '../src/Nova.js'
 
-export async function showHelmet(canvas, modelURL, shaderDirectory, camera, { onChange, onError } = {}) {
+export async function showHelmet(
+  canvas,
+  modelURL,
+  shaderDirectory,
+  camera,
+  { onChange, onError } = {},
+) {
   const renderer = await Nova.createRenderer({ canvas, shaderDirectory })
   try {
     await renderer.loadModel(modelURL)
