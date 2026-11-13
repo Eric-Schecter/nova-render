@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+# Search bundled dependencies first, while allowing conventional external packages.
+find_dependency(glfw3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/glfw3")
+if(@NOVA_ENABLE_VULKAN@)
+    if(NOT DEFINED VOLK_PULL_IN_VULKAN)
+        set(VOLK_PULL_IN_VULKAN OFF) # volk loads the system Vulkan loader at runtime.
+    endif()
+    find_dependency(volk CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/volk")
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/NovaTargets.cmake")
+check_required_components(Nova)

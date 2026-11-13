@@ -28,7 +28,7 @@ static void waitForIconified(GLFWwindow* window, bool expected) {
 int main(int argc, char** argv) {
     try {
         render::GraphicsAPI api = render::GraphicsAPI::Auto;
-        std::string shaderDirectory = TRIANGLE_SHADER_DIR;
+        std::string shaderDirectory; // Empty selects the library's embedded shaders.
         int frameLimit = 0;
         bool resizeTest = false, warp = false;
         for (int i = 1; i < argc; ++i) {

@@ -1,4 +1,5 @@
 #include "../Backend.hpp"
+#include "../ShaderData.hpp"
 #define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -45,12 +46,13 @@ public:
             layer.frame = view.bounds;
             view.wantsLayer = YES;
             view.layer = layer;
-            const auto path = config.shaderDirectory / "triangle.metallib";
+            const auto bytes = LoadShader(config.shaderDirectory, "triangle.metallib");
+            NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+            dispatch_data_t shaderData = dispatch_data_create(data.bytes, data.length,
+                dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{ (void)data; });
             NSError* error = nil;
-            NSURL* url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.string().c_str()]];
-            id<MTLLibrary> library = [device newLibraryWithURL:url error:&error];
-            if (!library) throw std::runtime_error("Load shader " + path.string() + ": " +
-                (error ? error.localizedDescription.UTF8String : "Metal library unavailable"));
+            id<MTLLibrary> library = [device newLibraryWithData:shaderData error:&error];
+            if (!library) throw metalError("Load triangle.metallib", error);
             MTLRenderPipelineDescriptor* desc = [MTLRenderPipelineDescriptor new];
             desc.vertexFunction = [library newFunctionWithName:@"vertexMain"];
             desc.fragmentFunction = [library newFunctionWithName:@"fragmentMain"];

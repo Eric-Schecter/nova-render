@@ -1,4 +1,6 @@
 #include "../Backend.hpp"
+#include "../ShaderData.hpp"
+#include <cstring>
 #include <volk.h>
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -224,14 +226,11 @@ struct VulkanBackend final : Backend {
         std::cout << "Swapchain: " << extent.width << 'x' << extent.height << '\n';
     }
     VkShaderModule shader(const char* name) {
-        auto path = (config.shaderDirectory / name).string();
-        std::ifstream file(path, std::ios::binary | std::ios::ate);
-        if (!file) throw std::runtime_error("Cannot open shader: " + path);
-        auto bytes = file.tellg();
-        if (bytes <= 0 || bytes % 4 != 0) throw std::runtime_error("Invalid SPIR-V: " + path);
-        std::vector<uint32_t> code(static_cast<size_t>(bytes) / 4);
-        file.seekg(0); file.read(reinterpret_cast<char*>(code.data()), bytes);
-        if (!file) throw std::runtime_error("Cannot read shader: " + path);
+        const auto data = LoadShader(config.shaderDirectory, name);
+        const auto bytes = data.size();
+        if (bytes % 4 != 0) throw std::runtime_error("Invalid SPIR-V size");
+        std::vector<uint32_t> code(bytes / 4);
+        std::memcpy(code.data(), data.data(), bytes);
         VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
         info.codeSize = static_cast<size_t>(bytes); info.pCode = code.data();
         VkShaderModule module = VK_NULL_HANDLE;

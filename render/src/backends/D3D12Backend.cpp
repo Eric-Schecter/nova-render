@@ -1,4 +1,5 @@
 #include "../Backend.hpp"
+#include "../ShaderData.hpp"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -205,23 +206,14 @@ private:
         resized = false;
         std::cout << "D3D12 swapchain: " << width << 'x' << height << '\n';
     }
-    std::vector<char> ReadShader(const std::filesystem::path& path) {
-        std::ifstream file(path, std::ios::binary | std::ios::ate);
-        if (!file || file.tellg() <= 0) throw std::runtime_error("Cannot read shader: " + path.string());
-        std::vector<char> bytes(static_cast<size_t>(file.tellg()));
-        file.seekg(0);
-        if (!file.read(bytes.data(), static_cast<std::streamsize>(bytes.size())))
-            throw std::runtime_error("Cannot read shader: " + path.string());
-        return bytes;
-    }
     void CreatePipeline(const std::filesystem::path& shaderDirectory) {
         D3D12_ROOT_SIGNATURE_DESC desc{};
         desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         ComPtr<ID3DBlob> signature, messages;
         checkHR(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &messages), "Serialize root signature");
         checkHR(device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&root)), "Create root signature");
-        auto vert = ReadShader(shaderDirectory / "triangle.vert.dxil");
-        auto frag = ReadShader(shaderDirectory / "triangle.frag.dxil");
+        auto vert = LoadShader(shaderDirectory, "triangle.vert.dxil");
+        auto frag = LoadShader(shaderDirectory, "triangle.frag.dxil");
         D3D12_GRAPHICS_PIPELINE_STATE_DESC info{};
         info.pRootSignature = root.Get();
         info.VS = {vert.data(), vert.size()};

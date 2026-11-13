@@ -1,0 +1,8 @@
+file(WRITE "${OUTPUT}" "// Generated from compiled shaders.\n#include \"ShaderData.hpp\"\n#include <stdexcept>\nnamespace render::detail {\nstd::vector<unsigned char> EmbeddedShader(const std::string& name) {\n")
+foreach(path IN LISTS INPUTS)
+    get_filename_component(name "${path}" NAME)
+    file(READ "${path}" bytes HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${bytes}")
+    file(APPEND "${OUTPUT}" "if (name == \"${name}\") { static const unsigned char data[] = {${bytes}}; return {data, data + sizeof(data)}; }\n")
+endforeach()
+file(APPEND "${OUTPUT}" "throw std::runtime_error(\"No embedded shader: \" + name);\n}\n}\n")

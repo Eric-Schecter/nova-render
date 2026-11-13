@@ -13,6 +13,7 @@ struct RendererConfig {
     GraphicsAPI api = GraphicsAPI::Auto;
     bool enableValidation = true;
     bool useWarp = false; // Explicit D3D12 software device for validation.
+    // Empty uses embedded triangle shaders; nonempty explicitly overrides from disk.
     std::filesystem::path shaderDirectory;
 };
 
