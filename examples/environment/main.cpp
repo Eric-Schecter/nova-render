@@ -1,3 +1,4 @@
+#include "../common/AssetChoices.hpp"
 #include "../common/ModelOptions.hpp"
 #include <iostream>
 
@@ -17,7 +18,10 @@ int main(int argc, char** argv)
         camera.pitch = 5;
         window.SetCamera(camera);
         window.EnableOrbitControls();
-        window.EnableParameterPanel();
+        render::ParameterPanelConfig panel;
+        panel.models       = example::ModelChoices(options.modelPath);
+        panel.environments = example::EnvironmentChoices(options.environmentPath);
+        window.EnableParameterPanel(panel);
         int frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
         {

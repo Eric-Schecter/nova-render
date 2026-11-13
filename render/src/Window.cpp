@@ -173,6 +173,10 @@ namespace render
     {
         impl_->renderer->LoadEnvironment(path);
     }
+    bool Window::EnableParameterPanel(const ParameterPanelConfig& config)
+    {
+        return impl_->renderer->EnableParameterPanel(config);
+    }
     void Window::SetEnvironment(const EnvironmentSettings& settings)
     {
         impl_->renderer->SetEnvironment(settings);

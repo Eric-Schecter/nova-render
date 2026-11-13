@@ -32,6 +32,8 @@ class Renderer {
   #lighting = 'unlit'
   #directionalLight = defaultDirectionalLight()
   #environment
+  #modelURL
+  #environmentURL
   #environmentSettings = defaultEnvironment()
   #model
   #shaderDirectory
@@ -83,6 +85,7 @@ class Renderer {
       }
       this.#model?.dispose()
       this.#model = next
+      this.#modelURL = url
       this.#parameterPanel?.refresh()
       return { triangles: next.triangles }
     })
@@ -113,6 +116,7 @@ class Renderer {
       }
       this.#model = candidate
       this.#environment = environment
+      this.#environmentURL = url
       this.#parameterPanel?.refresh()
     })
   }
@@ -158,6 +162,9 @@ class Renderer {
     const panel = attachParameterPanel(
       this.#canvas,
       {
+        getAssets: () => ({ model: this.#modelURL, environment: this.#environmentURL }),
+        loadModel: (url) => this.loadModel(url),
+        loadEnvironment: (url) => this.loadEnvironment(url),
         getCamera: () => this.getCamera(),
         setCamera: (value) => this.setCamera(value),
         getLight: () => this.getDirectionalLight(),
@@ -255,6 +262,8 @@ class Renderer {
     this.#model?.dispose()
     this.#model = undefined
     this.#environment = undefined
+    this.#environmentURL = undefined
+    this.#modelURL = undefined
     this.#pipeline = pipeline
     this.#parameterPanel?.refresh()
   }

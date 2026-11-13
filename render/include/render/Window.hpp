@@ -33,6 +33,7 @@ namespace render
         void                SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
+        bool                 EnableParameterPanel(const ParameterPanelConfig& config);
         void                 SetClearColor(const std::array<float, 4>& color);
         std::array<float, 4> GetClearColor() const;
         void                 SetCamera(const OrbitCamera& camera);

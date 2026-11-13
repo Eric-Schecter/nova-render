@@ -23,3 +23,13 @@ await writeFile(
   await readFile('assets/Environment/venice_sunset.nenv'),
 )
 console.log('Skybox HLSL and prefiltered HDR environment generated')
+
+for (const name of ['Avocado', 'BoomBox']) {
+  await writeFile(`docs/public/generated/${name}.glb`, await readFile(`assets/${name}/${name}.glb`))
+}
+for (const name of ['kloppenheim_06', 'studio_small_09']) {
+  await writeFile(
+    `docs/public/generated/${name}.nenv`,
+    await readFile(`assets/Environment/${name}.nenv`),
+  )
+}

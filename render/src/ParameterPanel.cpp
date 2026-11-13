@@ -98,7 +98,8 @@ namespace render::detail
       DirectionalLight&     light,
       std::array<float, 4>& clear,
       bool                  hasEnvironment,
-      EnvironmentSettings&  environment)
+      EnvironmentSettings&  environment,
+      PanelAssets&          assets)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -117,6 +118,35 @@ namespace render::detail
         size     = ImGui::GetWindowSize();
         if (open)
         {
+            auto chooseAsset = [](
+                                 const char*                           label,
+                                 const std::vector<AssetChoice>&       choices,
+                                 const std::filesystem::path&          current,
+                                 std::optional<std::filesystem::path>& requested) {
+                if (choices.empty())
+                    return;
+                std::string selected = current.stem().string();
+                for (const auto& choice : choices)
+                    if (choice.path == current)
+                        selected = choice.name;
+                if (ImGui::BeginCombo(label, selected.c_str()))
+                {
+                    for (size_t i = 0; i < choices.size(); ++i)
+                    {
+                        ImGui::PushID(static_cast<int>(i));
+                        const bool active = choices[i].path == current;
+                        if (ImGui::Selectable(choices[i].name.c_str(), active))
+                            requested = choices[i].path;
+                        if (active)
+                            ImGui::SetItemDefaultFocus();
+                        ImGui::PopID();
+                    }
+                    ImGui::EndCombo();
+                }
+            };
+            chooseAsset("Model", assets.config.models, assets.modelPath, assets.requestedModel);
+            if (!assets.error.empty())
+                ImGui::TextWrapped("%s", assets.error.c_str());
             if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 int background = clear[0] > 0.5f ? 1 : 0;
@@ -149,6 +179,7 @@ namespace render::detail
             }
             if (hasEnvironment && ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
             {
+                chooseAsset("Map", assets.config.environments, assets.environmentPath, assets.requestedEnvironment);
                 ImGui::Checkbox("Skybox", &environment.showBackground);
                 ImGui::PushID("Environment");
                 slider("Rotation", environment.rotation, -180, 180, "%.1f");

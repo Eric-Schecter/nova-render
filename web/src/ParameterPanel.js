@@ -26,7 +26,27 @@ const angles = (direction) => ({
   azimuth: degrees(Math.atan2(direction[0], direction[2])),
   elevation: degrees(Math.atan2(direction[1], Math.hypot(direction[0], direction[2]))),
 })
-export function attachParameterPanel(canvas, adapter, { onError } = {}) {
+export function attachParameterPanel(
+  canvas,
+  adapter,
+  { onError, models = [], environments = [] } = {},
+) {
+  const copyChoices = (choices) => {
+    if (!Array.isArray(choices)) throw Error('Asset choices must be arrays')
+    return choices.map((choice) => {
+      if (
+        !choice ||
+        typeof choice.name !== 'string' ||
+        !choice.name.trim() ||
+        typeof choice.url !== 'string' ||
+        !choice.url.trim()
+      )
+        throw Error('Asset choices require a name and URL')
+      return { name: choice.name, url: choice.url }
+    })
+  }
+  models = copyChoices(models)
+  environments = copyChoices(environments)
   if (!canvas.parentNode) throw Error('Parameter panel requires an attached canvas')
   if (onError != null && typeof onError !== 'function') throw Error('onError must be a function')
   let style = document.getElementById('nova-panel-style')
@@ -61,7 +81,8 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
   let disposed = false,
     frame = 0,
     mode = '',
-    collapsed = false
+    collapsed = false,
+    loading = false
   let fieldEvents = new AbortController()
   const fields = new Map()
   const report = (error) => {
@@ -144,11 +165,50 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
       direction: [Math.cos(b) * Math.sin(a), Math.sin(b), Math.cos(b) * Math.cos(a)],
     })
   }
+  function assetSelect(parent, key, caption, aria, choices, load) {
+    if (!choices.length) return
+    const label = document.createElement('label'),
+      input = document.createElement('select')
+    label.textContent = caption
+    input.setAttribute('aria-label', aria)
+    for (const choice of choices) {
+      const option = document.createElement('option')
+      option.value = choice.url
+      option.textContent = choice.name
+      input.append(option)
+    }
+    label.append(input)
+    parent.append(label)
+    fields.set(key, { input, asset: true })
+    input.addEventListener(
+      'change',
+      async () => {
+        if (loading || disposed) return
+        const url = input.value
+        loading = true
+        refresh()
+        try {
+          await load(url)
+          if (!disposed) draw()
+        } catch (error) {
+          report(error)
+        } finally {
+          loading = false
+          refresh()
+        }
+      },
+      { signal: fieldEvents.signal },
+    )
+  }
   function build(current) {
     fieldEvents.abort()
     fieldEvents = new AbortController()
     body.replaceChildren()
     fields.clear()
+    if (models.length) {
+      const assets = group('Model')
+      assetSelect(assets, 'model', 'Model', '模型选择', models, adapter.loadModel)
+    }
     const scene = group('Scene'),
       label = document.createElement('label'),
       select = document.createElement('select')
@@ -191,6 +251,14 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
       const environment = group('Environment'),
         checkboxRow = document.createElement('label'),
         checkbox = document.createElement('input')
+      assetSelect(
+        environment,
+        'environment',
+        'Map',
+        '环境贴图',
+        environments,
+        adapter.loadEnvironment,
+      )
       checkboxRow.className = 'nova-panel-check'
       checkbox.type = 'checkbox'
       checkbox.setAttribute('aria-label', '显示天空盒')
@@ -271,7 +339,21 @@ export function attachParameterPanel(canvas, adapter, { onError } = {}) {
       B: light.color[2],
       intensity: light.intensity,
     }
+    const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (field.asset) {
+        const current = assets[key]
+        if (current && ![...field.input.options].some((option) => option.value === current)) {
+          const option = document.createElement('option')
+          option.value = current
+          option.textContent = 'Custom'
+          field.input.append(option)
+        }
+        field.input.value = current || ''
+        field.input.disabled = loading
+        field.input.setAttribute('aria-busy', String(loading))
+        continue
+      }
       if (key === 'showBackground') {
         field.input.checked = environment.showBackground
         continue

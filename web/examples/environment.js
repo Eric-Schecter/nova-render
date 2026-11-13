@@ -1,4 +1,5 @@
 import * as Nova from '../src/Nova.js'
+import { modelChoices, environmentChoices } from './AssetChoices.js'
 
 export async function showEnvironment(
   canvas,
@@ -27,7 +28,11 @@ export async function showEnvironment(
     renderer.setCamera(camera)
     await renderer.drawFrame()
     renderer.enableOrbitControls({ onChange, onError })
-    renderer.enableParameterPanel({ onError })
+    renderer.enableParameterPanel({
+      onError,
+      models: modelChoices(modelURL),
+      environments: environmentChoices(environmentURL),
+    })
     return renderer
   } catch (error) {
     renderer.dispose()

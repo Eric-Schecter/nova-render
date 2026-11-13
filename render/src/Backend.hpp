@@ -9,6 +9,7 @@ namespace render::detail
     class Backend
     {
       public:
+        PanelAssets assets;
         virtual ~Backend()                                          = default;
         virtual void        Resize(uint32_t width, uint32_t height) = 0;
         virtual FrameResult DrawFrame()                             = 0;
@@ -87,7 +88,14 @@ namespace render::detail
         void                            DrawParameterPanel()
         {
             parameterPanel->Draw(
-              bool(model), lighting, camera, directionalLight, clearColor, bool(environment), environmentSettings);
+              bool(model),
+              lighting,
+              camera,
+              directionalLight,
+              clearColor,
+              bool(environment),
+              environmentSettings,
+              assets);
         }
 #endif
         std::shared_ptr<const EnvironmentData> environment;

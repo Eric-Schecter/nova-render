@@ -33,9 +33,12 @@ try {
         .evaluateAll((elements) => elements.every((e) => e.closest('.nova-panel')))
       if (!controls) throw Error('Parameter controls remain outside preview')
       await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
-      if (await panel.getByRole('combobox').isVisible()) throw Error('Panel did not collapse')
+      if (await panel.getByRole('combobox', { name: '背景色', exact: true }).isVisible())
+        throw Error('Panel did not collapse')
       await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
-      await panel.getByRole('combobox').waitFor({ state: 'visible' })
+      await panel
+        .getByRole('combobox', { name: '背景色', exact: true })
+        .waitFor({ state: 'visible' })
       if (width === 1400 && slug === 'lighting') {
         const yaw = page.getByRole('slider', { name: '水平角', exact: true }),
           distance = page.getByRole('slider', { name: '距离', exact: true })

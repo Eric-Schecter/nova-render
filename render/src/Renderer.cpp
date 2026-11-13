@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace render
 {
@@ -94,12 +95,31 @@ namespace render
     }
     FrameResult Renderer::DrawFrame()
     {
+        auto& assets = impl_->backend->assets;
+        auto  apply  = [&](auto& request, auto load) {
+            if (!request)
+                return;
+            auto path = std::exchange(request, std::nullopt);
+            try
+            {
+                load(*path);
+                assets.error.clear();
+            }
+            catch (const std::exception& error)
+            {
+                assets.error = error.what();
+            }
+        };
+        // Apply UI requests before a backend starts recording the next frame.
+        apply(assets.requestedModel, [&](const auto& path) { LoadModel(path); });
+        apply(assets.requestedEnvironment, [&](const auto& path) { LoadEnvironment(path); });
         return impl_->backend->DrawFrame();
     }
     void Renderer::LoadModel(const std::filesystem::path& path)
     {
         auto data = detail::LoadGLB(path);
         impl_->backend->LoadModel(std::move(data));
+        impl_->backend->assets.modelPath = path;
     }
     OrbitCamera Renderer::GetCamera() const
     {
@@ -117,6 +137,17 @@ namespace render
     bool Renderer::EnableParameterPanel(bool enabled)
     {
         return impl_->backend->EnableParameterPanel(impl_->window, enabled);
+    }
+    bool Renderer::EnableParameterPanel(const ParameterPanelConfig& config)
+    {
+        for (const auto* choices : {&config.models, &config.environments})
+            for (const auto& choice : *choices)
+                if (choice.name.empty() || choice.path.empty())
+                    throw std::invalid_argument("Asset choices require a name and path");
+        const bool enabled = EnableParameterPanel(true);
+        if (enabled)
+            impl_->backend->assets.config = config;
+        return enabled;
     }
     bool Renderer::UIWantsMouse() const
     {
@@ -146,6 +177,7 @@ namespace render
     void Renderer::LoadEnvironment(const std::filesystem::path& path)
     {
         impl_->backend->LoadEnvironment(detail::LoadEnvironmentFile(path));
+        impl_->backend->assets.environmentPath = path;
     }
     void Renderer::SetEnvironment(const EnvironmentSettings& settings)
     {

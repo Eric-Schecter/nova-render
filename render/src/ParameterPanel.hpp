@@ -1,6 +1,18 @@
 #pragma once
 #include "render/Model.hpp"
+#include "render/ParameterPanel.hpp"
 #include <array>
+#include <optional>
+namespace render::detail
+{
+    struct PanelAssets
+    {
+        ParameterPanelConfig                 config;
+        std::filesystem::path                modelPath, environmentPath;
+        std::optional<std::filesystem::path> requestedModel, requestedEnvironment;
+        std::string                          error;
+    };
+} // namespace render::detail
 #ifdef NOVA_HAS_UI
 #include <imgui.h>
 struct GLFWwindow;
@@ -23,7 +35,8 @@ namespace render::detail
           DirectionalLight&     light,
           std::array<float, 4>& clear,
           bool                  hasEnvironment,
-          EnvironmentSettings&  environment);
+          EnvironmentSettings&  environment,
+          PanelAssets&          assets);
         bool WantsMouse() const;
         bool WantsKeyboard() const;
 

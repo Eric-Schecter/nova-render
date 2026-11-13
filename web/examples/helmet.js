@@ -1,4 +1,5 @@
 import * as Nova from '../src/Nova.js'
+import { modelChoices } from './AssetChoices.js'
 
 export async function showHelmet(
   canvas,
@@ -13,7 +14,7 @@ export async function showHelmet(
     renderer.setCamera(camera)
     await renderer.drawFrame()
     renderer.enableOrbitControls({ onChange, onError })
-    renderer.enableParameterPanel({ onError })
+    renderer.enableParameterPanel({ onError, models: modelChoices(modelURL) })
     return renderer
   } catch (error) {
     renderer.dispose()
