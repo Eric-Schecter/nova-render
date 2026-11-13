@@ -44,3 +44,7 @@ try {
 `enableParameterPanel()` / `disableParameterPanel()` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。
 
 `loadEnvironment(url)` / `setEnvironment(settings)` / `getEnvironment()` 用于天空盒与 HDR 环境光，见[天空盒与环境光](./environment)。
+
+## 渲染模式
+
+模型例子支持光栅与渐进路径追踪，接口与参数范围对应原生 C++。用法见[渲染模式](./render-mode#网页用法)。

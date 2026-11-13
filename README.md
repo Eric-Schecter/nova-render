@@ -276,4 +276,15 @@ cmake --build build --target nova_environment
 
 本阶段验证（2026-11-13）：Apple M4 Metal 实际 GPU 通过光线命中与像素、渐进收敛、模式切换和九种资源组合；Mac 回归 30 项通过、2 项因 MoltenVK 无光追能力跳过。Ubuntu ARM64 Lavapipe 的 ray-query、path-trace、render-modes 三项通过；Windows ARM64 WARP 回归 15 项通过、虚拟显卡硬件 DXR 探测跳过。Windows RTX 真机尚未验证，软件测试不能代表硬件性能。探测工具和旧版 ARM Mesa 的进程级环境配置见 `tools/ray_probe/README.md`。
 
-当前实现无降噪、透明和动画支持，计算结果通过 CPU 回读再上传显示，属于可运行的功能版本。网页本阶段仍为光栅，能力查询明确返回不支持路径追踪。可用 `NOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。安装包独立调用 Metal 光追、无 UI 构建及关闭光追构建均已通过；本机验证记录在 `build/validation/path-*`。
+当前实现无降噪、透明和动画支持，计算结果通过 CPU 回读再上传显示，属于可运行的功能版本。网页现已支持 WebGPU compute BVH 路径追踪，见下节。可用 `NOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。安装包独立调用 Metal 光追、无 UI 构建及关闭光追构建均已通过；本机验证记录在 `build/validation/path-*`。
+
+
+### 网页 BVH 路径追踪
+
+网页三个模型例子均可在 Renderer → Mode 切换光栅 / Path tracing。API 与原生对应，支持采样、反弹次数、内部渲染比例和手动重置；相机、模型、光照、环境与尺寸变化自动重新累计。隐藏或移出预览、切到后台暂停，恢复后继续。默认仍为光栅。
+
+共享 `render/shaders/pathtrace.hlsl` 的材质、光照和采样逻辑，网页分支使用线程化 BVH 求交。JavaScript 构建 BVH，DXC → SPIR-V → Naga 在构建时生成 WGSL；计算、累计和显示直接留在 GPU，无 WASM、无新增依赖、无需服务器编译。浏览器路径使用通用 GPU 计算，不是 DXR/Metal 专用光追单元；当前无降噪。
+
+验证命令：`node scripts/webgpu/check-path-kernel.mjs`（命中、实际像素与 Helmet HDR 渐进收敛）和 `node scripts/webgpu/check-path-modes.mjs`（统一 API、九种资源组合、真实面板与暂停恢复）。静态站点启动后可设置 `NOVA_PREVIEW_URL=http://127.0.0.1:4187` 执行后者。网页依赖及运行限制见 `docs/api/render-mode.md`。
+
+网页光追验证（2026-11-14）：Chrome WebGPU 通过 BVH 正反面、未命中、平行、近距离和边缘射线检查；Damaged Helmet 15,452 个三角形、8,191 个 BVH 节点实际运行，2 → 8 次采样相对 34 次参考图的 MSE 从 391.18 降至 79.84。通过红色三角形像素、累计与重置、九种资源组合、切回光栅像素恢复、隐藏暂停恢复及桌面/手机面板检查。静态站点三个例子全部通过且未请求在线编译；共享 HLSL 的原生 Metal 两项回归通过，原生 DXIL 分支编译通过。日志与截图在 `build/validation/web-path-*`。

@@ -1,6 +1,6 @@
 # 渲染模式
 
-原生 `Window` 和 `Renderer` 提供相同接口。默认使用光栅；加载模型后，可在参数面板的 **Renderer → Mode** 切换渐进路径追踪。
+原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，可在参数面板的 **Renderer → Mode** 切换渐进路径追踪。
 
 ```cpp
 render::Window window;
@@ -51,8 +51,28 @@ DX12 使用 DXR 1.1 inline ray query；Vulkan 使用 acceleration structure 与 
 
 当前实现支持静态不透明模型、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。尚无降噪、透明材质、蒙皮和多材质支持；为减少亮点，单条路径辐射值上限为 64。
 
-这是功能验证版本：计算结果每帧回读 CPU，再上传到显示后端，存在传输与同步开销。软件光追适合验证功能，不用于判断硬件光追性能。
+原生当前为功能验证版本：计算结果每帧回读 CPU，再上传到显示后端，存在传输与同步开销。网页的计算与显示直接留在 GPU，不需要逐帧回读。
 
-网页端本阶段仍使用光栅。`getCapabilities().pathTracing` 返回 `false`，面板禁用路径追踪；`setRenderMode('path-tracing')` 会报告原因。
+## 网页用法
+
+```js
+await renderer.loadModel('/generated/DamagedHelmet.glb')
+renderer.setPathTracing({
+  samplesPerFrame: 1,
+  maxBounces: 3,
+  resolutionScale: 0.5,
+})
+renderer.setRenderMode('path-tracing') // 'raster' 切回光栅
+await renderer.drawFrame()
+renderer.enableParameterPanel()
+```
+
+对应方法为 `getCapabilities()`、`setRenderMode()` / `getRenderMode()`、`setPathTracing()` / `getPathTracing()`、`resetAccumulation()` 和 `getAccumulatedSamples()`，参数范围与原生一致。设置无效参数或未加载模型就切换路径追踪会抛异常。
+
+网页在 JavaScript 中构建 BVH，使用 WebGPU compute shader 遍历与求交，不调用专用硬件光追接口。`softwareRayTracing: true` 在网页表示通用 GPU 上的 BVH 求交，并不表示 CPU 渲染；`rayTracingDevice` 为 `WebGPU compute BVH`。材质、光照和采样与原生共享 HLSL，仅求交实现不同。没有新增第三方依赖或 WASM。
+
+首次 `drawFrame()` 后自动逐帧累计；隐藏预览、移出屏幕或切到后台时暂停，恢复可见后继续。切回光栅或 `dispose()` 会停止累计。普通 `drawFrame()` 仍可手动调用。面板提供模式、采样、反弹次数、渲染比例和重置按钮；低分辨率通过 GPU 双线性放大显示，效果仍需逐步收敛。
+
+资源与渲染缓冲区须符合浏览器设备的 storage buffer 限制；超限会报告错误。当前没有降噪，性能取决于模型、分辨率和 GPU。
 
 构建时可用 `-DNOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。

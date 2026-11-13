@@ -11,6 +11,9 @@ try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 } }),
     errors = []
   page.on('pageerror', (e) => errors.push(e.message))
+  page.on('request', (request) => {
+    if (request.url().includes('/__nova/compile')) errors.push('Runtime shader compiler requested')
+  })
   if (!process.env.NOVA_PREVIEW_URL) {
     await page.goto(base + '/')
     console.log(
@@ -160,9 +163,31 @@ try {
     await mode.selectOption('raster')
     console.log('PASS real mode panel, path controls, reset and progressive render:', slug)
   }
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.goto(base + '/examples/environment')
+  await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
+  await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
+  await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('path-tracing')
+  await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
+  await page.waitForFunction(
+    () => Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 2,
+    null,
+    { timeout: 60000 },
+  )
+  const panelBounds = await page.locator('.nova-panel').boundingBox(),
+    canvasBounds = await page.locator('canvas').boundingBox()
+  if (
+    panelBounds.x < canvasBounds.x ||
+    panelBounds.x + panelBounds.width > canvasBounds.x + canvasBounds.width + 1
+  )
+    throw Error('Mobile path panel outside canvas')
+  await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('raster')
+  console.log('PASS mobile path mode and panel bounds')
   if (errors.length) throw Error(errors.join('\n'))
   // Moving away disposes the renderer and cancels refinement.
-  await page.goto(base + '/api/')
+  await page.goto(base + '/api/render-mode')
+  await page.locator('h2#网页用法').waitFor()
+  if (await page.locator('.VPNavBarMenu a').count()) throw Error('Top navigation links remain')
   await page.waitForTimeout(150)
   console.log(
     'PASS browser path tracing lifecycle' + (process.env.NOVA_PREVIEW_URL ? ' on static site' : ''),
