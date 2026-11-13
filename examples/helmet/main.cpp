@@ -22,10 +22,11 @@ int main(int argc,char** argv) {
         render::Window window(config);
         window.LoadModel(argv[1]);
         render::OrbitCamera camera;camera.yaw=20;camera.pitch=5;
+        window.SetCamera(camera);
+        window.EnableOrbitControls();
         int frames=0;
         while((!limit||frames<limit)&&window.PollEvents()){
-            if(spin)camera.yaw=20.0f+frames*0.25f;
-            window.SetCamera(camera);
+            if(spin){camera.yaw=20.0f+frames*0.25f;window.SetCamera(camera);}
             if(window.DrawFrame()==render::FrameResult::Rendered)++frames;
         }
         window.WaitIdle();

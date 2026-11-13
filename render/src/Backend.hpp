@@ -10,6 +10,7 @@ public:
     virtual FrameResult DrawFrame() = 0;
     virtual void WaitIdle() = 0;
     virtual void LoadModel(std::shared_ptr<const ModelData> data) { model = std::move(data); }
+    OrbitCamera GetCamera() const { return camera; }
     void SetCamera(const OrbitCamera& value) { camera = value; }
 protected:
     std::shared_ptr<const ModelData> model;

@@ -42,6 +42,7 @@ public:
     void WaitIdle();
     void LoadModel(const std::filesystem::path& glbPath);
     void SetCamera(const OrbitCamera& camera);
+    OrbitCamera GetCamera() const;
     GraphicsAPI GetAPI() const;
     uint32_t ValidationErrorCount() const;
 

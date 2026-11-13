@@ -1,3 +1,4 @@
+import { attachOrbitControls } from './OrbitControls.js'
 import { createModelView } from './ModelView.js'
 import { validateCamera } from './ModelData.js'
 // Browser adapter. Native C++ backends and the web adapter share concepts, not binaries.
@@ -12,6 +13,7 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
 }
 class Renderer {
   #canvas; #device; #context; #pipeline; #configured = false; #disposed = false; #lost; #clear = [0.025, 0.035, 0.055, 1]
+  #orbitControls; #renderTail = Promise.resolve()
   #model; #shaderDirectory; #camera = {yaw:0,pitch:0,distance:3.6,exposure:1}
   constructor(canvas, device, context, shaderDirectory) {
     this.#shaderDirectory=shaderDirectory;
@@ -32,6 +34,17 @@ class Renderer {
     return {triangles:next.triangles}
   }
   setCamera(camera) { this.#check();const value={...this.#camera,...camera};validateCamera(value);this.#camera=value }
+  getCamera() { this.#check(); return { ...this.#camera } }
+  enableOrbitControls(options = {}) {
+    this.#check()
+    this.disableOrbitControls()
+    const controls = attachOrbitControls(this.#canvas, { ...options,
+      getCamera: () => this.getCamera(), setCamera: camera => this.setCamera(camera), drawFrame: () => this.drawFrame(),
+    })
+    this.#orbitControls = controls
+    return () => { controls.dispose(); if (this.#orbitControls === controls) this.#orbitControls = undefined }
+  }
+  disableOrbitControls() { this.#orbitControls?.dispose(); this.#orbitControls = undefined }
   async setShader({ source, vert, frag }) {
     this.#check()
     // Generated packages carry source + WGSL. Edited HLSL is compiled locally.
@@ -63,7 +76,13 @@ class Renderer {
     if (!Array.isArray(color) || color.length !== 4 || !color.every(v => Number.isFinite(v) && v >= 0 && v <= 1)) throw Error('背景色需要 4 个 0～1 的数值')
     this.#clear = [...color]
   }
-  async drawFrame() {
+  drawFrame() {
+    this.#check()
+    const frame = this.#renderTail.then(() => this.#drawFrame())
+    this.#renderTail = frame.catch(() => {})
+    return frame
+  }
+  async #drawFrame() {
     this.#check()
     if (!this.#pipeline && !this.#model) throw Error('请先调用 setShader 或 loadModel')
     const rect = this.#canvas.getBoundingClientRect()
@@ -88,12 +107,12 @@ class Renderer {
       pass.setPipeline(this.#pipeline); pass.draw(3); pass.end()
       this.#device.queue.submit([encoder.finish()]);
       }
-      await this.waitIdle()
+      await this.#device.queue.onSubmittedWorkDone()
     } catch(e) { failure = e }
     const error = await this.#device.popErrorScope()
     if (failure || error) throw failure || Error(error.message)
     return 'rendered'
   }
-  async waitIdle() { this.#check(); await this.#device.queue.onSubmittedWorkDone() }
-  dispose() { if (this.#disposed) return; this.#disposed = true; this.#model?.dispose(); this.#context.unconfigure(); this.#device.destroy() }
+  async waitIdle() { this.#check(); await this.#renderTail; this.#check(); await this.#device.queue.onSubmittedWorkDone() }
+  dispose() { if (this.#disposed) return; this.disableOrbitControls(); this.#disposed = true; this.#model?.dispose(); this.#context.unconfigure(); this.#device.destroy() }
 }
