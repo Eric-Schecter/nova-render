@@ -32,6 +32,6 @@ macOS / Windows 可设置 `NOVA_ENABLE_VULKAN=OFF` 只构建原生后端。Linux
 
 常用参数：`--api auto|metal|dx12|vulkan`、`--frames 120`、`--resize-test`、`--shader-dir PATH`。Windows 可用 `--warp` 测试 CPU 渲染，真实 DX12 设备须支持 Shader Model 6.0 / DXIL。
 
-shader 仅维护 `render/shaders/triangle.hlsl`，构建时生成对应后端二进制。当前没有分发打包，程序默认从构建目录加载资源。
+shader 仅维护 `render/shaders/triangle.hlsl`，构建时生成对应后端二进制。默认使用库内二进制资源，无需外部 shader 文件；安装接入见[作为依赖使用](./package)。
 
 接下来：[编写自己的示例](./integration)。

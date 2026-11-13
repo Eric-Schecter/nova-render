@@ -17,6 +17,7 @@ export default defineConfig({
       { text: '使用指南', items: [
         { text: '快速开始', link: '/guide/quick-start' },
         { text: '编写示例', link: '/guide/integration' },
+        { text: '作为依赖使用', link: '/guide/package' },
         { text: 'HLSL 即时演示', link: '/guide/playground' },
       ] },
       { text: 'API 参考', items: [

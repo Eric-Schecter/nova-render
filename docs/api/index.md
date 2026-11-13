@@ -6,4 +6,4 @@
 - [后端查询与选择](./selection)：`GraphicsAPIName`、`IsGraphicsAPIAvailable`、`ResolveGraphicsAPI`。
 - [Renderer](./renderer)：初始化、尺寸变化、绘制、等待与错误计数。
 
-接口描述对应当前源码。内部 `detail::Backend` 和各平台后端不属于公共 API。当前没有稳定 ABI 或安装包承诺。
+接口描述对应当前源码。内部 `detail::Backend` 和各平台后端不属于公共 API。当前不承诺跨版本稳定 ABI。

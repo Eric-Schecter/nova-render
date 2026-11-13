@@ -94,13 +94,13 @@ CMake 从 vcpkg host 工具目录、`VULKAN_SDK/bin`、macOS 的 `~/VulkanSDK/*/
 
 固定 vcpkg 基线的 DXC 包不支持 macOS / Linux ARM64。Linux ARM64 需另行提供可运行的 DXC，例如从官方源码构建。本次 Ubuntu 验证使用隔离的官方 Linux x64 DXC 1.8.2505.1 和 QEMU 用户态工具仿真；只有构建工具经仿真，渲染程序和 Lavapipe 仍为原生 ARM64。不复制预编译 SPIR-V 来绕过构建验证。
 
-`Renderer(window, config)` 借用 GLFW 窗口；窗口和 GLFW 必须比 Renderer 活得更久。显式传入 shader 目录，在窗口主线程使用，当前只支持同时存在一个 Renderer（Vulkan 的 volk 全局派发表限制）。初始化失败自动清理已创建资源，运行错误抛异常。
+`Renderer(window, config)` 借用 GLFW 窗口；窗口和 GLFW 必须比 Renderer 活得更久。shaderDirectory 留空使用内置资源，非空则从指定目录加载；在窗口主线程使用，当前只支持同时存在一个 Renderer（Vulkan 的 volk 全局派发表限制）。初始化失败自动清理已创建资源，运行错误抛异常。
 
 应用在首次绘制及尺寸变化后传入 framebuffer 像素尺寸。零尺寸暂停绘制，重建延迟到 `DrawFrame()`；模块不创建窗口、不处理事件、不等待窗口恢复。各后端使用单个 CPU 在途帧，优先保证清晰和正确性，暂不做吞吐优化。
 
 退出前调用 `WaitIdle()` 并检查 `ValidationErrorCount()`，随后按 Renderer → Window → GLFW 销毁。析构仍负责等待与清理；销毁阶段的日志不计入示例退出前读取的计数。
 
-shader 路径指向构建目录，当前没有安装或分发打包。没有引入 ECS、RenderGraph 或原 nova 的复杂模块。
+支持 CMake 安装包与 `Nova::Render` 导出，默认 shader 已内置。没有引入 ECS、RenderGraph 或原 nova 的复杂模块。
 
 ## 当前验证状态（HLSL 离线构建，本机 ARM64 环境）
 
@@ -178,3 +178,20 @@ npm run docs:preview
 `npm run docs:build` 自动生成静态示例资源。静态网站能展示默认三角形，但不提供即时 HLSL 编译。`npm run check:webgpu` 在运行中的本地预览上执行 Chrome GPU 像素读回检查；`node scripts/webgpu/check-ui.mjs` 检查编辑、错误和重置流程，需要本机 Chrome。
 
 已在本机 Chrome 的 Apple / Metal 3 非回退适配器验证该链路。新增依赖仅用于文档与验证，不改变 C++ 后端或 vcpkg manifest。
+
+
+## 安装为 C++ 依赖
+
+```sh
+cmake --preset debug -DNOVA_BUILD_EXAMPLES=OFF
+cmake --build --preset debug
+cmake --install build --prefix /absolute/path/to/nova-install
+cmake -S examples/consumer -B build/consumer -DCMAKE_PREFIX_PATH=/absolute/path/to/nova-install -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/consumer
+```
+
+应用使用 `find_package(Nova 0.1 CONFIG REQUIRED)` 并链接 `Nova::Render`，创建窗口时另链接 `glfw`。默认安装包含必要的 vcpkg GLFW / volk 开发文件；可用 `NOVA_BUNDLE_DEPENDENCIES=OFF` 改由使用方管理。使用安装包不需要 shader 编译器或 Node.js。
+
+默认使用内置 shader，不必携带 shader 文件。显式 `--shader-dir` 仍可覆盖，路径错误会直接失败。静态 triplet 可减少动态库依赖；动态 triplet 仍需部署对应动态库。显卡驱动、平台图形组件和窗口系统仍是运行要求。包须匹配平台、架构和编译器 ABI。
+
+独立示例见 `examples/consumer/`，网站说明见“作为依赖使用”。新安装流程已在 macOS ARM64 验证；Windows / Linux 包尚未验证。

@@ -15,8 +15,7 @@ add_executable(nova_basic examples/basic/main.cpp)
 target_link_libraries(nova_basic PRIVATE nova_render glfw)
 add_dependencies(nova_basic triangle_shaders)
 target_compile_definitions(nova_basic PRIVATE
-    GLFW_INCLUDE_NONE
-    APP_SHADER_DIR="${SHADER_OUTPUT_DIR}")
+    GLFW_INCLUDE_NONE)
 ```
 
 ## 3. 编写主循环
@@ -40,7 +39,7 @@ struct GlfwContext {
 int main() {
     try {
         render::RendererConfig config;
-        config.shaderDirectory = APP_SHADER_DIR;
+        // 留空使用库内 shader。
         render::ResolveGraphicsAPI(config);
         GlfwContext glfw;
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -88,4 +87,4 @@ Windows 使用相应目录，例如 `cmake --build build-windows-vulkan --target
 config.api = render::GraphicsAPI::Vulkan;
 ```
 
-先保证基础例子运行，再增加自己的窗口交互。当前库没有安装导出包，以上写法适用于本仓库内的示例。
+先保证基础例子运行，再增加自己的窗口交互。以上写法适用于本仓库内的示例；独立应用见[作为依赖使用](./package)。

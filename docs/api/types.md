@@ -22,7 +22,7 @@ struct RendererConfig {
 - `api`：请求的后端。
 - `enableValidation`：请求 Vulkan / D3D12 校验层；Metal 使用环境变量 `MTL_DEBUG_LAYER=1`。
 - `useWarp`：显式选择 D3D12 CPU 软件渲染，仅对 D3D12 有效。
-- `shaderDirectory`：生成的二进制 shader 目录，建议传绝对路径，不会自动定位。
+- `shaderDirectory`：生成的二进制 shader 目录，留空使用内置三角形 shader；非空时严格从指定目录加载，建议传绝对路径。
 
 资源文件：Vulkan 使用 `triangle.vert.spv` / `triangle.frag.spv`，D3D12 使用 `triangle.vert.dxil` / `triangle.frag.dxil`，Metal 使用 `triangle.metallib`。
 
