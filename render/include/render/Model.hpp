@@ -16,6 +16,14 @@ namespace render
         std::array<float, 3> color{1.0f, 3.2f / 3.5f, 0.8f};
         float                intensity = 3.5f;
     };
+    // Rotation in degrees [-180,180], linear intensity multipliers [0,16].
+    struct EnvironmentSettings
+    {
+        float rotation            = 0.0f;
+        float intensity           = 1.0f;
+        float backgroundIntensity = 1.0f;
+        bool  showBackground      = true;
+    };
     // Orbit about the normalized model center. Angles are degrees, distance > 0.
     struct OrbitCamera
     {
