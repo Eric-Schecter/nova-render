@@ -261,3 +261,11 @@ cmake --build build --target nova_environment
 原生使用 `EnableParameterPanel(ParameterPanelConfig)`，网页使用 `enableParameterPanel({models, environments})`；应用提供显示名与资源地址，加载与替换封装在 Nova 内。详见 `docs/api/ui.md`。验证命令：`ctest --test-dir build --output-on-failure`、`node scripts/webgpu/check-asset-choices.mjs`。
 
 资源切换验证（2026-11-13）：Mac Metal / MoltenVK 26 项、Ubuntu Lavapipe 19 项、Windows DX12 WARP 12 项通过；包含九种模型与环境组合。另以 Ubuntu 实际键鼠检查两个下拉框，以 Chrome 检查三个模型页面、像素变化、失败恢复、窄屏和静态站点，并验证安装包独立调用及无 UI 构建。Windows 本轮仅验证 WARP，未验证真机 GPU。本机日志与截图在 `build/validation/asset-choices-*`。
+
+### HDR 背景画质
+
+天空盒改用 4K HDR 原图生成的独立 512×512 六面 RGBA16F 立方体，带常规空间 mip 过滤；模型照明继续使用原有的 256×256 GGX 预过滤贴图和 SH 系数，数据保持不变。支持旧版环境资源，公开 API 不变。当前环境包约 20 MiB/套；4K 原图作为可选离线输入，不随仓库分发，下载地址、校验值与重建命令见 `assets/Environment/README.md`。
+
+网页生成资源以 `.bin` 提供，使用标准二进制 MIME，避免本地静态服务器将 HDR 数据当作文本实时压缩；格式内容仍是 Nova 环境资源。`node scripts/webgpu/check-hdr-background.mjs` 检查同视角画面、照明像素不变、旧格式和错误头部。构建后在端口 4187 启动静态预览，运行 `node scripts/webgpu/check-hdr-static.mjs` 检查静态切换与响应类型。
+
+背景升级验证（2026-11-13）：Mac 26 项、Ubuntu Lavapipe 19 项、Windows DX12 WARP 12 项通过；Chrome 检查三套环境切换、背景与照明独立、实际前后画面、缩小过滤和静态预览。安装包独立运行及无 UI 构建通过。本机日志在 `build/validation/hdr-*`；本轮没有验证 Windows 真机 GPU。
