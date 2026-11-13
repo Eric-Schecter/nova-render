@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
+import HlslEditor from './HlslEditor.vue'
 const source=ref(''), message=ref('初始化 WebGPU…'), busy=ref(false), ready=ref(false), canvas=ref(null)
 const local=import.meta.env.DEV
 let device, context, initial, disposed=false
@@ -55,12 +56,12 @@ onBeforeUnmount(()=>{disposed=true;context?.unconfigure();device?.destroy()})
 <template>
   <div class="playground">
     <div class="toolbar"><strong>HLSL 三角形</strong><span><button :disabled="!ready||busy||!local" @click="run(false)">{{ busy ? '编译中…' : '运行' }}</button><button :disabled="!ready||busy||!local" @click="run(true)">重置</button></span></div>
-    <div class="panes"><label>triangle.hlsl<textarea v-model="source" aria-label="HLSL shader 编辑器" wrap="off" spellcheck="false" :readonly="!local" /></label><div class="output"><span>WebGPU 预览</span><canvas ref="canvas" width="640" height="480" aria-label="WebGPU 三角形预览" /></div></div>
+    <div class="panes"><div class="source-pane"><span>triangle.hlsl</span><HlslEditor v-model="source" :readonly="!local" /></div><div class="output"><span>WebGPU 预览</span><canvas ref="canvas" width="640" height="480" aria-label="WebGPU 三角形预览" /></div></div>
     <pre role="status" aria-live="polite">{{message}}</pre>
     <p v-if="!local">静态网站展示构建时生成的 shader。编辑 HLSL 并重新编译需要本地开发服务。</p>
   </div>
 </template>
 
 <style scoped>
-.playground{border:1px solid var(--vp-c-divider);border-radius:12px;overflow:hidden;margin:24px 0}.toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--vp-c-bg-soft)}button{border:1px solid var(--vp-c-divider);border-radius:6px;padding:4px 14px;margin-left:8px;color:var(--vp-c-brand-1)}button:disabled{opacity:.45;cursor:not-allowed}.panes{display:grid;grid-template-columns:1fr 1fr}.panes label,.output{display:flex;flex-direction:column;min-width:0;padding:12px;gap:8px;font-size:12px}.panes label{border-right:1px solid var(--vp-c-divider)}textarea{width:100%;height:380px;resize:vertical;font:12px/1.6 var(--vp-font-family-mono);padding:10px;background:var(--vp-c-bg-soft);color:var(--vp-c-text-1);border:1px solid var(--vp-c-divider);border-radius:6px}canvas{width:100%;height:auto;aspect-ratio:4/3;background:#111827;border-radius:6px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:12px 16px;margin:0;border-top:1px solid var(--vp-c-divider)}p{padding:0 16px;font-size:13px}@media(max-width:760px){.panes{grid-template-columns:1fr}.panes label{border-right:0;border-bottom:1px solid var(--vp-c-divider)}}
+.playground{border:1px solid var(--vp-c-divider);border-radius:12px;overflow:hidden;margin:24px 0}.toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--vp-c-bg-soft)}button{border:1px solid var(--vp-c-divider);border-radius:6px;padding:4px 14px;margin-left:8px;color:var(--vp-c-brand-1)}button:disabled{opacity:.45;cursor:not-allowed}.panes{display:grid;grid-template-columns:1fr 1fr}.panes .source-pane,.output{display:flex;flex-direction:column;min-width:0;padding:12px;gap:8px;font-size:12px}.panes .source-pane{border-right:1px solid var(--vp-c-divider)}canvas{width:100%;height:auto;aspect-ratio:4/3;background:#111827;border-radius:6px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:12px 16px;margin:0;border-top:1px solid var(--vp-c-divider)}p{padding:0 16px;font-size:13px}@media(max-width:760px){.panes{grid-template-columns:1fr}.panes .source-pane{border-right:0;border-bottom:1px solid var(--vp-c-divider)}}
 </style>

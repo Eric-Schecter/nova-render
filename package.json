@@ -17,6 +17,7 @@
   "devDependencies": {
     "naga-wasi-cli": "0.1.0",
     "playwright": "1.65.0",
+    "shiki": "2.5.0",
     "vitepress": "1.6.4"
   }
 }
