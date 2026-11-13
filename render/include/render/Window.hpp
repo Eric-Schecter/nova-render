@@ -22,6 +22,7 @@ public:
     FrameResult DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
     void WaitIdle();
     void LoadModel(const std::filesystem::path& glbPath);
+    void SetLighting(LightingMode mode);
     void SetCamera(const OrbitCamera& camera);
     OrbitCamera GetCamera() const;
     void EnableOrbitControls(bool enabled = true);

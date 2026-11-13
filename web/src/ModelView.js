@@ -27,10 +27,10 @@ export async function createModelView(device,context,url,shaderURL){
     let depth,disposed=false
     return {
       triangles:data.vertices.length/36,
-      draw(camera,clear,width,height){
+      draw(camera,clear,width,height,lighting){
         if(disposed)throw Error('Model has been disposed')
         if(!depth||depth.width!==width||depth.height!==height){depth?.destroy();depth=device.createTexture({size:[width,height],format:'depth32float',usage:GPUTextureUsage.RENDER_ATTACHMENT})}
-        device.queue.writeBuffer(uniform,0,sceneUniforms(data,camera,width/height))
+        device.queue.writeBuffer(uniform,0,sceneUniforms(data,camera,width/height,lighting))
         const encoder=device.createCommandEncoder();const pass=encoder.beginRenderPass({colorAttachments:[{view:context.getCurrentTexture().createView(),clearValue:clear,loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}})
         pass.setPipeline(pipeline);pass.setBindGroup(0,bindGroup);pass.draw(data.vertices.length/12);pass.end();device.queue.submit([encoder.finish()])
       },

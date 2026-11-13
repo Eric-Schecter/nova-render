@@ -107,7 +107,7 @@ public:
             [encoder setViewport:MTLViewport{0, 0, double(width), double(height), 0, 1}];
             [encoder setCullMode:MTLCullModeNone];
             if (model) {
-                const auto uniforms = MakeSceneUniforms(*model, camera, float(width)/height);
+                const auto uniforms = MakeSceneUniforms(*model, camera, float(width)/height,lighting);
                 [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                 [encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                 [encoder setVertexBuffer:vertices offset:0 atIndex:1];

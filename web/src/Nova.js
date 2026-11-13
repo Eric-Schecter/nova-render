@@ -14,6 +14,7 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
 class Renderer {
   #canvas; #device; #context; #pipeline; #configured = false; #disposed = false; #lost; #clear = [0.025, 0.035, 0.055, 1]
   #orbitControls; #renderTail = Promise.resolve()
+  #lighting = 'unlit'
   #model; #shaderDirectory; #camera = {yaw:0,pitch:0,distance:3.6,exposure:1}
   constructor(canvas, device, context, shaderDirectory) {
     this.#shaderDirectory=shaderDirectory;
@@ -32,6 +33,11 @@ class Renderer {
     if(this.#disposed){next.dispose();throw Error('Renderer 已释放')}
     await this.waitIdle();this.#model?.dispose();this.#model=next
     return {triangles:next.triangles}
+  }
+  setLighting(mode) {
+    this.#check()
+    if (mode !== 'unlit' && mode !== 'pbr') throw Error('Invalid lighting mode: expected unlit or pbr')
+    this.#lighting = mode
   }
   setCamera(camera) { this.#check();const value={...this.#camera,...camera};validateCamera(value);this.#camera=value }
   getCamera() { this.#check(); return { ...this.#camera } }
@@ -100,7 +106,7 @@ class Renderer {
     let failure
     try {
       if(this.#model) {
-        this.#model.draw(this.#camera,this.#clear,width,height)
+        this.#model.draw(this.#camera,this.#clear,width,height,this.#lighting)
       } else {
       const encoder = this.#device.createCommandEncoder()
       const pass = encoder.beginRenderPass({colorAttachments:[{view:this.#context.getCurrentTexture().createView(),clearValue:this.#clear,loadOp:'clear',storeOp:'store'}]})

@@ -4,7 +4,7 @@ struct Vertex { float4 position; float4 normal; float4 uv; };
     float4 eyeExposure;
     float4 baseColorFactor;
     float4 materialFactor;
-    float4 emissiveFactor;
+    float4 emissiveFactor; // rgb: emissive factor, w: PBR enabled
 };
 [[vk::binding(1, 0)]] StructuredBuffer<Vertex> vertices : register(t0);
 [[vk::binding(2, 0)]] Texture2D<float4> baseTexture : register(t1);
@@ -43,6 +43,13 @@ float3 studio(float3 r,float roughness) {
 }
 float4 PSMain(VertexOut input) : SV_Target {
     float3 base=pow(max(baseTexture.Sample(textureSampler,input.uv).rgb,0),2.2)*baseColorFactor.rgb;
+    if (emissiveFactor.w < 0.5) {
+        // Base color only: no lighting, AO, emissive, exposure or tone mapping.
+#ifdef NOVA_WEB_OUTPUT
+        base=pow(max(base,0),1.0/2.2);
+#endif
+        return float4(base,1);
+    }
     float3 n=normalize(input.normal);
     float3 dp1=ddx(input.worldPosition),dp2=ddy(input.worldPosition);
     float2 duv1=ddx(input.uv),duv2=ddy(input.uv);

@@ -14,6 +14,8 @@ int main(int argc,char** argv){
         render::OrbitCamera camera;const auto first=render::detail::MakeSceneUniforms(*model,camera,1.3f);camera.yaw=45;
         const auto second=render::detail::MakeSceneUniforms(*model,camera,1.3f);
         if(std::memcmp(first.viewProjection,second.viewProjection,64)==0)throw std::runtime_error("Camera did not move");
+        const auto lit=render::detail::MakeSceneUniforms(*model,camera,1.3f,render::LightingMode::PBR);
+        if(first.emissive[3]!=0 || lit.emissive[3]!=1)throw std::runtime_error("Lighting mode uniform mismatch");
         const auto dragged=render::detail::DragOrbit(camera,100,1000);
         if(dragged.yaw==camera.yaw || dragged.pitch!=85)throw std::runtime_error("Orbit drag/clamp failed");
         auto zoom=render::detail::ZoomOrbit(camera,-1000);

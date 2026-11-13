@@ -82,6 +82,10 @@ void Renderer::Resize(uint32_t width, uint32_t height) { impl_->backend->Resize(
 FrameResult Renderer::DrawFrame() { return impl_->backend->DrawFrame(); }
 void Renderer::LoadModel(const std::filesystem::path& path) { auto data = detail::LoadGLB(path); impl_->backend->LoadModel(std::move(data)); }
 OrbitCamera Renderer::GetCamera() const { return impl_->backend->GetCamera(); }
+void Renderer::SetLighting(LightingMode mode) {
+    if (mode != LightingMode::Unlit && mode != LightingMode::PBR) throw std::invalid_argument("Invalid lighting mode");
+    impl_->backend->SetLighting(mode);
+}
 void Renderer::SetCamera(const OrbitCamera& camera) { detail::ValidateCamera(camera); impl_->backend->SetCamera(camera); }
 void Renderer::WaitIdle() { impl_->backend->WaitIdle(); }
 GraphicsAPI Renderer::GetAPI() const { return impl_->api; }

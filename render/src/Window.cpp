@@ -92,6 +92,7 @@ FrameResult Window::DrawFrame() {
 void Window::LoadModel(const std::filesystem::path& path) { impl_->renderer->LoadModel(path); }
 OrbitCamera Window::GetCamera() const { return impl_->renderer->GetCamera(); }
 void Window::EnableOrbitControls(bool enabled) { impl_->orbitEnabled=enabled;impl_->dragging=false; }
+void Window::SetLighting(LightingMode mode) { impl_->renderer->SetLighting(mode); }
 void Window::SetCamera(const OrbitCamera& camera) { impl_->renderer->SetCamera(camera); }
 void Window::WaitIdle() { impl_->renderer->WaitIdle(); }
 GraphicsAPI Window::GetAPI() const { return impl_->renderer->GetAPI(); }

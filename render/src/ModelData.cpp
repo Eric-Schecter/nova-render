@@ -103,13 +103,14 @@ void ValidateCamera(const OrbitCamera& c){
     if(!std::isfinite(c.yaw)||!std::isfinite(c.pitch)||!std::isfinite(c.distance)||!std::isfinite(c.exposure)||std::abs(c.pitch)>85||c.distance<1.5f||c.distance>100||c.exposure<=0||c.exposure>16)
         throw std::invalid_argument("Invalid orbit camera (pitch +/-85, distance 1.5..100, exposure 0..16)");
 }
-SceneUniforms MakeSceneUniforms(const ModelData& data,const OrbitCamera& camera,float aspect){
+SceneUniforms MakeSceneUniforms(const ModelData& data,const OrbitCamera& camera,float aspect,LightingMode lighting){
     const float yaw=glm::radians(camera.yaw),pitch=glm::radians(camera.pitch);
     const glm::vec3 eye(camera.distance*std::cos(pitch)*std::sin(yaw),camera.distance*std::sin(pitch),camera.distance*std::cos(pitch)*std::cos(yaw));
     const auto vp=glm::perspectiveRH_ZO(glm::radians(45.0f),aspect,0.01f,200.0f)*glm::lookAtRH(eye,glm::vec3(0),glm::vec3(0,1,0));
     SceneUniforms result{};std::memcpy(result.viewProjection,glm::value_ptr(vp),64);
     result.eyeExposure[0]=eye.x;result.eyeExposure[1]=eye.y;result.eyeExposure[2]=eye.z;result.eyeExposure[3]=camera.exposure;
     std::copy(data.baseColor.begin(),data.baseColor.end(),result.baseColor);std::copy(data.material.begin(),data.material.end(),result.material);std::copy(data.emissive.begin(),data.emissive.end(),result.emissive);
+    result.emissive[3]=lighting==LightingMode::PBR ? 1.0f : 0.0f;
     return result;
 }
 }
