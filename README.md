@@ -149,3 +149,23 @@ Linux 构建需要 C++17、CMake、Ninja、Git，以及 GLFW 所需的 X11 开�
 ```sh
 cmake -S . -B build-no-api -DNOVA_ENABLE_VULKAN=OFF
 ```
+
+## 接口文档网站
+
+文档源码位于 `docs/`，独立使用 Node.js 22+ 与 VitePress，不影响 C++ / vcpkg 构建。
+
+```sh
+npm ci
+npm run docs:dev
+```
+
+打开终端输出的本地地址（默认 `http://127.0.0.1:5173`）。包含公共 API 参考、接入示例、后端与 HLSL 构建指南、验证范围，以及本地搜索和明暗主题。
+
+构建与预览静态产物：
+
+```sh
+npm run docs:build
+npm run docs:preview
+```
+
+默认静态预览地址为 `http://127.0.0.1:4173`；端口占用时以实际输出为准。产物位于 `docs/.vitepress/dist/`，不提交 Git。本阶段仅提供本地预览，尚未发布到公网。首次安装用 `npm ci` 复用锁文件中的版本。
