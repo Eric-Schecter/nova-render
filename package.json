@@ -11,6 +11,8 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
+    "naga-wasi-cli": "0.1.0",
+    "playwright": "1.65.0",
     "vitepress": "1.6.4"
   }
 }
