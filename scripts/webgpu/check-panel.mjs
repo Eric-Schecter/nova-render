@@ -17,9 +17,8 @@ try {
       'lighting',
       'environment',
       'skeletal-animation',
-      'integrators',
     ]) {
-      await page.goto('http://127.0.0.1:5173/examples/' + slug)
+      await page.goto((process.env.NOVA_TEST_URL || 'http://127.0.0.1:5173') + '/examples/' + slug)
       await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
       const panel = page.getByRole('region', { name: '参数面板', exact: true }),
         canvas = page.locator('canvas')
@@ -28,11 +27,7 @@ try {
       if (await open.count()) await open.click()
       if (slug !== 'triangle') {
         const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
-        if (
-          (await mode.inputValue()) !==
-          (slug === 'integrators' ? 'integrator-comparison' : 'raster')
-        )
-          throw Error('Web default mode changed')
+        if ((await mode.inputValue()) !== 'raster') throw Error('Web default mode changed')
         if (
           slug !== 'skeletal-animation' &&
           (await mode.locator('option[value="ray-tracing"]').isDisabled())
@@ -41,28 +36,21 @@ try {
       }
       const a = await panel.boundingBox(),
         b = await canvas.boundingBox()
-      if (slug === 'integrators') {
-        const layout = await canvas.evaluate((e) => {
-          const box = e.getBoundingClientRect()
-          const legend = e.closest('.nova-viewport').querySelector('[aria-label="积分器对比结果"]')
-          return {
-            ratio: box.width / box.height,
-            columns: getComputedStyle(legend).gridTemplateColumns.split(' ').length,
-            rows: getComputedStyle(legend).gridTemplateRows.split(' ').length,
-          }
-        })
-        if (Math.abs(layout.ratio - 1) > 0.01 || layout.columns !== 2 || layout.rows !== 2)
-          throw Error('Comparison is not a 2x2 grid')
-        if (a.x < b.x || a.y < b.y + b.height + 8 || a.x + a.width > b.x + b.width + 1)
-          throw Error('Comparison controls overlap render surface')
-      } else if (
+      if (
         a.x < b.x ||
         a.y < b.y ||
         a.x + a.width > b.x + b.width + 1 ||
         a.y + a.height > b.y + b.height + 1
-      ) {
-        throw Error('Regular example overlay left the render area')
-      }
+      )
+        throw Error('Overlay left render area')
+      if (
+        slug !== 'triangle' &&
+        (await panel
+          .getByRole('combobox', { name: '渲染模式', exact: true })
+          .locator('option')
+          .count()) !== 2
+      )
+        throw Error('Mode must only contain Raster and Ray tracing')
       const controls = await page
         .locator('input[type=range],select')
         .evaluateAll((elements) => elements.every((e) => e.closest('.nova-panel')))
@@ -146,7 +134,7 @@ try {
   )
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS comparison controls below rendering, five original overlays, desktop/mobile bounds, collapse, real pointer/wheel isolation, scene drag, reset, hide/show and enable/disable/dispose',
+    'PASS five original overlays and two-mode UI, desktop/mobile bounds, collapse, real pointer/wheel isolation, scene drag, reset, hide/show and enable/disable/dispose',
   )
 } finally {
   await browser.close()

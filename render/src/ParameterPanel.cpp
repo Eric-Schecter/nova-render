@@ -92,53 +92,35 @@ namespace render::detail
         return ImGui::GetIO().WantCaptureKeyboard;
     }
     void ParameterPanel::Draw(
-      bool                                     model,
-      LightingMode                             lighting,
-      OrbitCamera&                             camera,
-      DirectionalLight&                        light,
-      std::array<float, 4>&                    clear,
-      bool                                     hasEnvironment,
-      EnvironmentSettings&                     environment,
-      PanelAssets&                             assets,
-      RenderMode                               mode,
-      const RendererCapabilities&              capabilities,
-      PathTracingSettings&                     path,
-      uint32_t                                 samples,
-      const std::array<ComparisonProgress, 4>& comparison,
-      const std::vector<AnimationClip>&        clips,
-      AnimationState&                          animation)
+      bool                              model,
+      LightingMode                      lighting,
+      OrbitCamera&                      camera,
+      DirectionalLight&                 light,
+      std::array<float, 4>&             clear,
+      bool                              hasEnvironment,
+      EnvironmentSettings&              environment,
+      PanelAssets&                      assets,
+      RenderMode                        mode,
+      const RendererCapabilities&       capabilities,
+      PathTracingSettings&              path,
+      uint32_t                          samples,
+      const std::vector<AnimationClip>& clips,
+      AnimationState&                   animation)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        const auto display = ImGui::GetIO().DisplaySize;
-        if (mode == RenderMode::IntegratorComparison)
+        if (assets.config.drawUI)
+            assets.config.drawUI();
+        if (!assets.config.showBuiltinPanel)
         {
-            const bool  vertical = display.y > display.x;
-            const float side     = vertical ? std::min(display.x, display.y / 4) : std::min(display.x / 4, display.y),
-                        top      = (display.y - side * (vertical ? 4 : 1)) / 2,
-                        left     = (display.x - side * (vertical ? 1 : 4)) / 2;
-            const char* names[]  = {"PT", "BDPT", "Photon mapping", "MLT"};
-            for (size_t i = 0; i < 4; ++i)
-            {
-                char label[128];
-                std::snprintf(
-                  label,
-                  sizeof(label),
-                  "%s | %u %s | %.0f ms%s",
-                  names[i],
-                  comparison[i].samples,
-                  i == 3 ? "mpp" : "spp",
-                  comparison[i].milliseconds,
-                  comparison[i].complete ? " | paused" : "");
-                auto*        draw = ImGui::GetBackgroundDrawList();
-                const ImVec2 pos{
-                  left + (vertical ? 0 : float(i) * side) + 5, std::max(0.f, top + (vertical ? float(i) * side : 0))};
-                draw->AddRectFilled(pos, ImVec2{pos.x + side - 8, pos.y + 21}, IM_COL32(0, 0, 0, 210));
-                draw->AddText(pos, IM_COL32(255, 255, 255, 255), label);
-            }
+            position = {};
+            size     = {};
+            ImGui::Render();
+            return;
         }
-        const float width = std::min(250.0f, std::max(80.0f, display.x - 24));
+        const auto  display = ImGui::GetIO().DisplaySize;
+        const float width   = std::min(250.0f, std::max(80.0f, display.x - 24));
         ImGui::SetNextWindowPos({std::max(0.0f, display.x - width - 12), 12}, ImGuiCond_Always);
         ImGui::SetNextWindowSizeConstraints({width, 0}, {width, std::max(40.0f, display.y - 24)});
         ImGui::SetNextWindowCollapsed(display.x < 520, ImGuiCond_Once);
@@ -185,19 +167,13 @@ namespace render::detail
             {
                 ImGui::TextUnformatted("Mode");
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::BeginCombo(
-                      "##RenderMode",
-                      mode == RenderMode::Raster                 ? "Raster"
-                      : mode == RenderMode::IntegratorComparison ? "Integrator comparison"
-                                                                 : "Ray tracing"))
+                if (ImGui::BeginCombo("##RenderMode", mode == RenderMode::Raster ? "Raster" : "Ray tracing"))
                 {
                     if (ImGui::Selectable("Raster", mode == RenderMode::Raster))
                         assets.requestedMode = RenderMode::Raster;
                     ImGui::BeginDisabled(!capabilities.pathTracing);
                     if (ImGui::Selectable("Ray tracing", mode == RenderMode::RayTracing))
                         assets.requestedMode = RenderMode::PathTracing;
-                    if (ImGui::Selectable("Integrator comparison", mode == RenderMode::IntegratorComparison))
-                        assets.requestedMode = RenderMode::IntegratorComparison;
                     if (!capabilities.pathTracing && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                         ImGui::SetTooltip("%s", capabilities.reason.c_str());
                     ImGui::EndDisabled();
@@ -205,44 +181,17 @@ namespace render::detail
                 }
                 if (mode != RenderMode::Raster)
                 {
-                    const bool comparing = mode == RenderMode::IntegratorComparison;
-                    if (comparing)
-                    {
-                        ImGui::TextWrapped(
-                          "Emitter-only lighting; no denoising. PT | BDPT | Photon mapping | MLT. One camera sample "
-                          "per "
-                          "iteration.");
-                        int budget = path.comparisonMilliseconds ? 1 : 0;
-                        if (ImGui::Combo("Budget", &budget, "Fixed samples\0Fixed time\0"))
-                            path.comparisonMilliseconds = budget ? 1000 : 0;
-                        if (budget)
-                        {
-                            int ms = int(path.comparisonMilliseconds);
-                            if (ImGui::SliderInt("Time / method (ms)", &ms, 1, 60000))
-                                path.comparisonMilliseconds = uint32_t(ms);
-                        }
-                        else
-                        {
-                            int n = int(path.comparisonSamples);
-                            if (ImGui::SliderInt("Samples / method", &n, 1, 65536))
-                                path.comparisonSamples = uint32_t(n);
-                        }
-                    }
-                    ImGui::BeginDisabled(comparing);
                     ImGui::TextUnformatted("Integrator");
                     ImGui::SetNextItemWidth(-1);
                     int integrator = static_cast<int>(path.integrator);
                     if (ImGui::Combo(
                           "##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0Photon mapping\0MLT\0"))
                         path.integrator = static_cast<PathIntegrator>(integrator);
-                    ImGui::EndDisabled();
                     int spp = int(path.samplesPerFrame), bounces = int(path.maxBounces);
-                    ImGui::BeginDisabled(comparing);
                     ImGui::TextUnformatted("Samples per frame");
                     ImGui::SetNextItemWidth(-1);
                     if (ImGui::SliderInt("##SamplesPerFrame", &spp, 1, 4))
                         path.samplesPerFrame = uint32_t(spp);
-                    ImGui::EndDisabled();
                     ImGui::TextUnformatted("Max bounces");
                     ImGui::SetNextItemWidth(-1);
                     if (ImGui::SliderInt("##MaxBounces", &bounces, 1, 8))
@@ -251,7 +200,7 @@ namespace render::detail
                     ImGui::SetNextItemWidth(-1);
                     ImGui::SliderFloat(
                       "##RenderScale", &path.resolutionScale, .25f, 1, "%.2f", ImGuiSliderFlags_AlwaysClamp);
-                    if (comparing || path.integrator == PathIntegrator::PhotonMapping)
+                    if (path.integrator == PathIntegrator::PhotonMapping)
                     {
                         int photons = int(path.photonsPerIteration);
                         ImGui::TextUnformatted("Photons per iteration");
@@ -262,7 +211,7 @@ namespace render::detail
                         ImGui::SetNextItemWidth(-1);
                         ImGui::SliderFloat("##PhotonRadius", &path.photonRadius, .03f, .5f, "%.3f");
                     }
-                    if (comparing || path.integrator == PathIntegrator::Metropolis)
+                    if (path.integrator == PathIntegrator::Metropolis)
                     {
                         int bootstrap = int(path.mltBootstrapSamples);
                         ImGui::TextUnformatted("MLT bootstrap samples");
@@ -277,12 +226,8 @@ namespace render::detail
                         ImGui::SliderFloat(
                           "##MLTScale", &path.mltMutationScale, .0001f, .25f, "%.4f", ImGuiSliderFlags_Logarithmic);
                     }
-                    ImGui::BeginDisabled(comparing);
                     ImGui::Checkbox("Denoise", &path.denoise);
-                    ImGui::EndDisabled();
-                    if (comparing)
-                        ImGui::TextUnformatted("PT: MIS enabled; photon density estimate");
-                    else if (path.integrator != PathIntegrator::PathTracing)
+                    if (path.integrator != PathIntegrator::PathTracing)
                         ImGui::TextUnformatted(
                           path.integrator == PathIntegrator::PhotonMapping ? "Photon density estimate"
                                                                            : "Path-space MIS");
@@ -327,8 +272,7 @@ namespace render::detail
                 int background = clear[0] > 0.5f ? 1 : 0;
                 ImGui::TextUnformatted("Background");
                 ImGui::SetNextItemWidth(-1);
-                ImGui::BeginDisabled(
-                  mode == RenderMode::IntegratorComparison || (hasEnvironment && environment.showBackground));
+                ImGui::BeginDisabled((hasEnvironment && environment.showBackground));
                 if (ImGui::Combo("##Background", &background, "Dark\0Light\0"))
                     clear = background ? std::array<float, 4>{0.8f, 0.85f, 0.95f, 1}
                                        : std::array<float, 4>{0.025f, 0.035f, 0.055f, 1};
@@ -353,9 +297,7 @@ namespace render::detail
                 if (ImGui::Button("Reset camera"))
                     camera = initialCamera;
             }
-            if (
-              mode != RenderMode::IntegratorComparison && hasEnvironment
-              && ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
+            if (hasEnvironment && ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 chooseAsset("Map", assets.config.environments, assets.environmentPath, assets.requestedEnvironment);
                 ImGui::Checkbox("Skybox", &environment.showBackground);
@@ -368,8 +310,7 @@ namespace render::detail
                 ImGui::PopID();
             }
             if (
-              mode != RenderMode::IntegratorComparison && model
-              && (lighting == LightingMode::PBR || mode != RenderMode::Raster)
+              model && (lighting == LightingMode::PBR || mode != RenderMode::Raster)
               && ImGui::CollapsingHeader("Main light", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 constexpr float degrees = 57.2957795131f;

@@ -375,7 +375,7 @@ Windows 软件验证使用 [微软 WARP 1.0.22](https://www.nuget.org/packages/M
 
 ### 玻璃焦散与积分器对比
 
-新增 `nova_comparison` / 网页第六例子：`IntegratorComparison`（网页 `'integrator-comparison'`）并排显示 PT、BDPT、光子映射、MLT，同相机、仅面光源、无显示降噪；固定 spp 或每种方法的活跃时间预算用完后暂停。`comparisonSamples` 默认 64，`comparisonMilliseconds` 默认 0（非零使用时间预算）；通过 `GetComparisonProgress()` / `getComparisonProgress()` 读取各栏采样、毫秒和完成状态。预热不计入预算，每轮每栏 1 个相机样本；最后一轮可能超过时间预算。光子总路径数另计，四栏串行执行。
+`nova_comparison` / 网页第六例子在例子层创建四个独立视图，以 2×2 展示 PT、BDPT、光子映射和 MLT。核心 Mode 只有光栅和光追；对比预算、统计、相机同步及下方 UI 都由例子负责。C++ 使用公开 `RayTracingView` 和 `Window::PresentImage`，网页使用四个普通 Renderer 并关闭自动续帧。预算默认每方法 64 spp（MLT 为 mpp），也可指定活跃时间；首次绘制的资源准备计入时间，达到预算后冻结。普通例子没有对比 Mode。
 
 `assets/CornellCaustics` 为原创小顶灯、悬空玻璃球和地面焦散场景。C++ 与网页加载同一 GLB，共享 HLSL 粗糙介质 Fresnel、Snell 折射、全反射、BSDF/PDF 与重要性传输。支持 transmission factor 与 IOR；不同材质共用核心 PBR 因子和纹理图集。当前仅空气/玻璃界面，不含嵌套介质、吸收、色散或透射纹理；光栅保留不透明回退。无新增项目依赖。
 
@@ -387,7 +387,7 @@ node scripts/webgpu/check-glass.mjs
 node scripts/webgpu/check-comparison.mjs
 ```
 
-Metal / WebGPU 的玻璃场景 4096 spp 室内平均亮度，PT / BDPT / 光子映射约为 0.011264 / 0.011163 / 0.011125。WebGPU 独立 BSDF 探针检验入射、出射辐亮度能量与全反射；实际对比像素、预算暂停、非整批 spp、相机重置和模式恢复均有验证。截图和日志位于 `build/validation/comparison-*`、`glass-*`。
+Metal / WebGPU 的玻璃场景 4096 spp 室内平均亮度，PT / BDPT / 光子映射约为 0.011264 / 0.011163 / 0.011125。WebGPU 独立 BSDF 探针检验入射、出射辐亮度能量与全反射；实际对比像素、预算暂停、非整批 spp、相机重置和普通模式均有验证。截图和日志位于 `build/validation/comparison-*`、`glass-*`。
 
 最终回归：Mac 45 项中 40 项通过、5 项因 MoltenVK 缺少光追跳过；Ubuntu Vulkan Lavapipe 的对比、玻璃、模式、光子映射 4 项通过；Windows DX12 WARP 1.0.22 同样 4 项通过。Windows 首轮 4096 spp 玻璃 BDPT 超过 900 秒，软件后端正确性回归改用 512 spp 后通过；Metal/WebGPU 保留 4096 spp 能量和像素检查。原生实际读回像素确认横向／纵向对比均非空、暂停图像保持不变；Chrome 静态文档、代码页签与手机上下布局通过。Windows 真机 GPU 尚未验证。
 

@@ -197,10 +197,10 @@ onBeforeUnmount(() => {
       :aria-hidden="!visible"
       :inert="!visible"
     >
-      <span class="hint">拖动旋转 · 滚轮缩放</span
-      ><canvas
-        :class="{ comparison: props.comparison }"
-        :style="props.comparison ? { aspectRatio: '1 / 1' } : {}"
+      <span class="hint">拖动旋转 · 滚轮缩放</span>
+      <div v-if="comparison" ref="canvas" class="comparison-host" />
+      <canvas
+        v-else
         ref="canvas"
         width="800"
         height="650"

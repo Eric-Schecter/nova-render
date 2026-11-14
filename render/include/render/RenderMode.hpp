@@ -7,8 +7,7 @@ namespace render
     {
         Raster,
         RayTracing,
-        PathTracing = RayTracing, // Compatibility alias.
-        IntegratorComparison
+        PathTracing = RayTracing // Compatibility alias.
     };
     enum class PathIntegrator
     {
@@ -27,8 +26,6 @@ namespace render
         PathIntegrator integrator              = PathIntegrator::PathTracing;
         uint32_t       photonsPerIteration     = 8192;
         float          photonRadius            = .16f;
-        uint32_t       comparisonSamples       = 64;
-        uint32_t       comparisonMilliseconds  = 0; // 0: fixed spp; otherwise active render time per method.
         uint32_t       mltBootstrapSamples     = 262144;
         float          mltLargeStepProbability = .3f;
         float          mltMutationScale        = .01f;
@@ -36,13 +33,6 @@ namespace render
     };
     using RayTracingSettings = PathTracingSettings;
     using RayIntegrator      = PathIntegrator;
-    struct ComparisonProgress
-    {
-        PathIntegrator integrator   = PathIntegrator::PathTracing;
-        uint32_t       samples      = 0;
-        double         milliseconds = 0;
-        bool           complete     = false;
-    };
     struct RendererCapabilities
     {
         bool        pathTracing        = false;

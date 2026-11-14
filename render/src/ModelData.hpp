@@ -1,5 +1,6 @@
 #pragma once
 #include "EnvironmentData.hpp"
+#include "render/Image.hpp"
 #include "render/Model.hpp"
 #include <array>
 #include <cstdint>
@@ -14,11 +15,7 @@ namespace render::detail
         float normal[4]; // xyz: normal; w: dielectric transmission fraction.
         float uv[4];     // xy: UV; z: generated flat-normal flag; w: dielectric IOR.
     };
-    struct ModelImage
-    {
-        uint32_t                   width = 1, height = 1;
-        std::vector<unsigned char> pixels;
-    };
+    using ModelImage = render::Image;
     struct SkinInput
     {
         std::array<float, 4>    position{}, normal{};

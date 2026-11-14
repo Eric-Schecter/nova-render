@@ -55,3 +55,7 @@ uint32_t ValidationErrorCount() const;
 `EnableParameterPanel(const ParameterPanelConfig&)` 可配置模型与环境选择列表，见[参数面板](./ui#模型与环境选择)。
 
 光栅与光追的模式、采样和能力查询接口见[渲染模式](./render-mode)。
+
+## 应用组织的视图
+
+`GetFramebufferSize()` 返回当前帧缓冲的像素宽高；窗口最小化时可返回零。`PresentImage(image)` 复制 sRGB RGBA8 图像并在下一帧显示；`ClearImage()` 恢复 Window 自己的光栅或光追输出。由应用决定图像布局、预算与 UI，例如[积分器对比](../examples/integrators)。

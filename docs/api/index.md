@@ -1,6 +1,6 @@
 # API 总览
 
-公共头文件为 `render/Renderer.hpp`，所有接口位于 `render` 命名空间。当前支持内置三角形和单材质 GLB 模型（含骨骼动画），模型加载与相机控制使用封装接口。
+入口头文件为 `render/Renderer.hpp` 和 `render/Window.hpp`，所有接口位于 `render` 命名空间。当前支持内置三角形和单材质 GLB 模型（含骨骼动画），模型加载与相机控制使用封装接口。
 
 - [模型与相机](./model)：GLB 加载、OrbitCamera 和共享 HLSL 材质。
 - [骨骼动画](./animation)：片段、播放状态、时间与蒙皮。
@@ -13,3 +13,5 @@
 - [Renderer](./renderer)：初始化、尺寸变化、绘制、等待与错误计数。
 
 接口描述对应当前源码。内部 `detail::Backend` 和各平台后端不属于公共 API。当前不承诺跨版本稳定 ABI。
+
+- [离屏视图与图像展示](./render-mode#离屏视图与例子层对比)：`RayTracingView`、`Image`、`PresentImage`，供应用组织多视图。

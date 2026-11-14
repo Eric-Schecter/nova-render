@@ -1,5 +1,6 @@
 #pragma once
 #include "Animation.hpp"
+#include "Image.hpp"
 #include "RenderMode.hpp"
 #include "Renderer.hpp"
 #include <string>
@@ -24,7 +25,8 @@ namespace render
         Window(const Window&)                               = delete;
         Window&                    operator=(const Window&) = delete;
         bool                       PollEvents(); // false after closing the window or pressing Escape.
-        FrameResult                DrawFrame();  // Updates framebuffer size; yields briefly if skipped.
+        std::array<uint32_t, 2>    GetFramebufferSize() const;
+        FrameResult                DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
         void                       WaitIdle();
         std::vector<AnimationClip> GetAnimations() const;
         AnimationState             GetAnimationState() const;
@@ -40,13 +42,14 @@ namespace render
         RayTracingSettings         GetRayTracing() const { return GetPathTracing(); }
         void                       ResetAccumulation();
         uint32_t                   GetAccumulatedSamples() const;
-        std::array<ComparisonProgress, 4> GetComparisonProgress() const;
-        void                              LoadEnvironment(const std::filesystem::path& path);
-        void                              SetEnvironment(const EnvironmentSettings& settings);
-        EnvironmentSettings               GetEnvironment() const;
-        void                              SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight                  GetDirectionalLight() const;
-        void                              SetLighting(LightingMode mode);
+        void                       PresentImage(const Image& image);
+        void                       ClearImage();
+        void                       LoadEnvironment(const std::filesystem::path& path);
+        void                       SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings        GetEnvironment() const;
+        void                       SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight           GetDirectionalLight() const;
+        void                       SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
         bool                 EnableParameterPanel(const ParameterPanelConfig& config);

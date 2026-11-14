@@ -35,10 +35,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     disposed = false,
     environment = null,
     skyPipeline,
-    pathView,
-    comparisonViews = [],
-    comparisonProgress = [],
-    comparisonKey = ''
+    pathView
   try {
     const animator = createAnimationPlayer(data)
     const response = await fetch(shaderURL)
@@ -187,110 +184,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         animator.update(delta)
       },
       get accumulatedSamples() {
-        return comparisonKey
-          ? Math.min(...comparisonProgress.map((p) => p.samples))
-          : pathView?.samples || 0
+        return pathView?.samples || 0
       },
       resetAccumulation() {
         pathView?.reset()
-        comparisonKey = ''
-        comparisonProgress = []
-        comparisonViews.forEach((v) => v.reset())
-      },
-      get comparisonProgress() {
-        return comparisonProgress.map((p) => ({ ...p }))
-      },
-      async drawComparison(camera, width, height, path) {
-        const size = Math.max(1, Math.floor(Math.min(width, height) / 2)),
-          light = { direction: [0, 1, 0], color: [1, 1, 1], intensity: 0 },
-          env = { rotation: 0, intensity: 0, backgroundIntensity: 0, showBackground: false },
-          key = JSON.stringify([camera, width, height, path])
-        if (comparisonViews.length === 0) {
-          try {
-            for (let i = 0; i < 4; i++)
-              comparisonViews.push(
-                await createPathView(
-                  device,
-                  data,
-                  shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1),
-                ),
-              )
-          } catch (e) {
-            comparisonViews.forEach((v) => v.dispose())
-            comparisonViews = []
-            throw e
-          }
-        }
-        if (key !== comparisonKey) {
-          comparisonKey = key
-          comparisonViews.forEach((v) => v.reset())
-          comparisonProgress = ['path', 'bidirectional', 'photon-mapping', 'mlt'].map(
-            (integrator) => ({
-              integrator,
-              samples: 0,
-              milliseconds: 0,
-              complete: false,
-            }),
-          )
-        }
-        if (comparisonProgress.every((p) => p.samples === 0)) {
-          for (let i = 0; i < 4; i++) {
-            comparisonViews[i].draw(
-              null,
-              camera,
-              [0, 0, 0, 1],
-              size,
-              size,
-              'pbr',
-              light,
-              null,
-              env,
-              {
-                ...path,
-                integrator: comparisonProgress[i].integrator,
-                samplesPerFrame: 1,
-                denoise: false,
-                lightSampling: true,
-              },
-            )
-            await device.queue.onSubmittedWorkDone()
-            comparisonViews[i].reset()
-          }
-        }
-        for (let i = 0; i < 4; i++) {
-          const progress = comparisonProgress[i],
-            view = comparisonViews[i]
-          if (!progress.complete) {
-            const start = performance.now()
-            view.draw(null, camera, [0, 0, 0, 1], size, size, 'pbr', light, null, env, {
-              ...path,
-              integrator: progress.integrator,
-              samplesPerFrame: 1,
-              denoise: false,
-              lightSampling: true,
-            })
-            await device.queue.onSubmittedWorkDone()
-            progress.milliseconds += performance.now() - start
-            progress.samples = view.samples
-            progress.complete =
-              path.comparisonMilliseconds > 0
-                ? progress.milliseconds >= path.comparisonMilliseconds
-                : progress.samples >= (path.comparisonSamples ?? 64)
-          }
-        }
-        // Present all tiles in one uninterrupted turn: awaiting GPU completion
-        // between tiles would let the browser swap the canvas texture.
-        for (let i = 0; i < 4; i++)
-          comparisonViews[i].present(
-            context,
-            {
-              x: Math.floor((width - size * 2) / 2) + (i % 2) * size,
-              y: Math.floor((height - size * 2) / 2) + Math.floor(i / 2) * size,
-              width: size,
-              height: size,
-            },
-            i === 0,
-          )
       },
       async drawPath(camera, clear, width, height, lighting, light, settings, path) {
         if (disposed) throw Error('Model has been disposed')
@@ -404,7 +301,6 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (disposed) return
         disposed = true
         pathView?.dispose()
-        comparisonViews.forEach((v) => v.dispose())
         for (const image of data.images) image.bitmap?.close()
         depth?.destroy()
         cube?.destroy()

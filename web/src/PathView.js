@@ -15,10 +15,10 @@ export const defaultPathTracing = () => ({
   mltLargeStepProbability: 0.3,
   mltMutationScale: 0.01,
   mltSeed: 1,
-  comparisonSamples: 64,
-  comparisonMilliseconds: 0,
 })
 export function validatePathTracing(value) {
+  if (value && Object.keys(value).some((key) => !Object.hasOwn(defaultPathTracing(), key)))
+    throw Error('Unknown ray tracing setting')
   if (
     !value ||
     (value.mltBootstrapSamples !== undefined &&
@@ -35,14 +35,6 @@ export function validatePathTracing(value) {
         value.mltMutationScale > 0.25)) ||
     (value.mltSeed !== undefined &&
       (!Number.isInteger(value.mltSeed) || value.mltSeed < 0 || value.mltSeed > 4294967295)) ||
-    (value.comparisonSamples !== undefined &&
-      (!Number.isInteger(value.comparisonSamples) ||
-        value.comparisonSamples < 1 ||
-        value.comparisonSamples > 65536)) ||
-    (value.comparisonMilliseconds !== undefined &&
-      (!Number.isInteger(value.comparisonMilliseconds) ||
-        value.comparisonMilliseconds < 0 ||
-        value.comparisonMilliseconds > 60000)) ||
     (value.integrator !== undefined &&
       !['path', 'bidirectional', 'photon-mapping', 'mlt'].includes(value.integrator)) ||
     (value.lightSampling !== undefined && typeof value.lightSampling !== 'boolean') ||

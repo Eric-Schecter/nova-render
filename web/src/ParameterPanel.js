@@ -1,12 +1,10 @@
-// Optional DOM panel; comparison controls occupy a separate row below the canvas.
+// Optional single-view DOM overlay.
 const dark = [0.025, 0.035, 0.055, 1]
 const light = [0.8, 0.85, 0.95, 1]
 const styles = `
 .nova-viewport{position:relative;width:100%;isolation:isolate}
 .nova-render-surface{position:relative;width:100%;min-width:0}
 .nova-panel{position:absolute;z-index:1;top:12px;right:12px;width:250px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);overflow:auto;overscroll-behavior:contain;background:#181e29f5;border:1px solid #3c4659;border-radius:7px;color:#e1e6f0;box-shadow:0 4px 16px #0004;font:12px/1.4 system-ui,sans-serif;text-align:left;color-scheme:dark}
-.nova-comparison .nova-panel{box-sizing:border-box;position:relative;top:auto;right:auto;width:100%;max-width:none;max-height:none;margin-top:12px;overflow:hidden;background:#181e29;box-shadow:none}
-.nova-comparison .nova-panel-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));align-items:start;gap:12px;padding:12px;max-height:360px;overflow:auto;overscroll-behavior:contain}
 .nova-panel *{box-sizing:border-box}
 .nova-panel button,.nova-panel select,.nova-panel input{font:inherit;color:inherit}
 .nova-panel button{cursor:pointer;background:#29364e;border:1px solid #465776;border-radius:4px;padding:4px 8px}
@@ -80,11 +78,6 @@ export function attachParameterPanel(
   body.className = 'nova-panel-body'
   panel.append(toggle, body)
   wrapper.append(panel)
-  const legend = document.createElement('div')
-  legend.setAttribute('aria-label', '积分器对比结果')
-  legend.style.cssText =
-    'position:absolute;top:0;left:0;right:0;display:none;grid-template-columns:repeat(4,minmax(0,1fr));pointer-events:none;z-index:2;color:white;font:12px/1.5 monospace'
-  surface.append(legend)
   const events = new AbortController(),
     initialCamera = adapter.getCamera(),
     initialLight = adapter.getLight(),
@@ -228,7 +221,6 @@ export function attachParameterPanel(
       for (const [value, text] of [
         ['raster', 'Raster'],
         ['ray-tracing', 'Ray tracing'],
-        ['integrator-comparison', 'Integrator comparison'],
       ]) {
         const option = document.createElement('option')
         option.value = value
@@ -248,65 +240,6 @@ export function attachParameterPanel(
       renderer.append(label)
       fields.set('renderMode', { input: select })
       if (current.pathTracing) {
-        if (current.comparison) {
-          const note = document.createElement('div')
-          note.textContent = 'Emitter-only · no denoising · 1 spp / mpp per iteration'
-          renderer.append(note)
-          const label = document.createElement('label'),
-            budget = document.createElement('select')
-          label.textContent = 'Budget'
-          budget.setAttribute('aria-label', '对比预算')
-          for (const [value, text] of [
-            ['samples', 'Fixed samples'],
-            ['time', 'Fixed time'],
-          ]) {
-            const option = document.createElement('option')
-            option.value = value
-            option.textContent = text
-            budget.append(option)
-          }
-          budget.value = adapter.getPathTracing().comparisonMilliseconds ? 'time' : 'samples'
-          budget.addEventListener(
-            'change',
-            () =>
-              change(() =>
-                adapter.setPathTracing({
-                  ...adapter.getPathTracing(),
-                  comparisonMilliseconds: budget.value === 'time' ? 1000 : 0,
-                }),
-              ),
-            { signal: fieldEvents.signal },
-          )
-          label.append(budget)
-          renderer.append(label)
-          fields.set('comparisonBudget', { input: budget })
-          slider(
-            renderer,
-            'comparisonSamples',
-            'Samples / method',
-            '对比采样预算',
-            1,
-            65536,
-            1,
-            (value) =>
-              adapter.setPathTracing({ ...adapter.getPathTracing(), comparisonSamples: value }),
-          )
-          slider(
-            renderer,
-            'comparisonMilliseconds',
-            'Time / method (ms)',
-            '对比时间预算',
-            1,
-            60000,
-            1,
-            (value) =>
-              adapter.setPathTracing({
-                ...adapter.getPathTracing(),
-                comparisonMilliseconds: value,
-              }),
-          )
-        }
-
         const integratorRow = document.createElement('label'),
           integrator = document.createElement('select')
         integratorRow.textContent = 'Integrator'
@@ -498,7 +431,7 @@ export function attachParameterPanel(
         )
       reset(camera, '重置相机', () => adapter.setCamera(initialCamera))
     }
-    if (current.environment && !current.comparison) {
+    if (current.environment) {
       const environment = group('Environment'),
         checkboxRow = document.createElement('label'),
         checkbox = document.createElement('input')
@@ -540,7 +473,7 @@ export function attachParameterPanel(
         )
       reset(environment, '重置环境', () => adapter.setEnvironment(initialEnvironment))
     }
-    if (current.lighting && !current.comparison) {
+    if (current.lighting) {
       const lamp = group('Main light')
       slider(lamp, 'azimuth', 'Azimuth', '光源方位', -180, 180, 0.1, (value) =>
         direction('azimuth', value),
@@ -591,45 +524,8 @@ export function attachParameterPanel(
       B: light.color[2],
       intensity: light.intensity,
     }
-    const comparing = !!current.comparison
-    wrapper.classList.toggle('nova-comparison', comparing)
-    legend.style.display = comparing ? 'grid' : 'none'
-    const side = Math.min(canvas.clientWidth, canvas.clientHeight)
-    legend.style.width = `${side}px`
-    legend.style.height = `${side}px`
-    legend.style.left = `${(canvas.clientWidth - side) / 2}px`
-    legend.style.top = `${(canvas.clientHeight - side) / 2}px`
-    legend.style.gridTemplateColumns = 'repeat(2,minmax(0,1fr))'
-    legend.style.gridTemplateRows = 'repeat(2,minmax(0,1fr))'
-    if (comparing) {
-      legend.replaceChildren(
-        ...(adapter.getComparisonProgress?.() || []).map((p, i) => {
-          const cell = document.createElement('span')
-          cell.style.cssText = 'padding:4px;overflow:hidden;align-self:start;background:#111c'
-          cell.textContent =
-            ['PT', 'BDPT', 'Photon mapping', 'MLT'][i] +
-            ' · ' +
-            p.samples +
-            (i === 3 ? ' mpp · ' : ' spp · ') +
-            Math.round(p.milliseconds) +
-            ' ms' +
-            (p.complete ? ' · paused' : '')
-          return cell
-        }),
-      )
-    }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
-      if (key === 'comparisonBudget') {
-        field.input.value = values.comparisonMilliseconds ? 'time' : 'samples'
-        continue
-      }
-      if (['comparisonSamples', 'comparisonMilliseconds'].includes(key))
-        field.input.closest('label').style.display =
-          (key === 'comparisonMilliseconds') === !!values.comparisonMilliseconds ? '' : 'none'
-      if (['integrator', 'samplesPerFrame', 'denoise', 'lightSampling'].includes(key))
-        field.input.closest('label').style.display = comparing ? 'none' : ''
-
       if (key.startsWith('animation')) {
         const state = adapter.getAnimationState()
         if (key === 'animationClip') field.input.value = state.clip
@@ -685,17 +581,17 @@ export function attachParameterPanel(
         continue
       }
       if (key === 'background') {
-        field.input.disabled = comparing || (current.environment && environment.showBackground)
+        field.input.disabled = current.environment && environment.showBackground
         field.input.title = field.input.disabled ? 'Used when skybox is hidden' : ''
         field.input.value = adapter.getClear()[0] > 0.5 ? 'light' : 'dark'
         continue
       }
       if (key.startsWith('mlt'))
         field.input.closest('label').style.display =
-          comparing || adapter.getPathTracing().integrator === 'mlt' ? '' : 'none'
+          adapter.getPathTracing().integrator === 'mlt' ? '' : 'none'
       if (key === 'photonsPerIteration' || key === 'photonRadius')
         field.input.closest('label').style.display =
-          comparing || adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
+          adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
       field.input.value = values[key]
       field.output.textContent = Number(values[key]).toFixed(
         key === 'mltMutationScale'
@@ -721,7 +617,7 @@ export function attachParameterPanel(
     refresh()
   })
   resizeObserver.observe(canvas)
-  setCollapsed(!adapter.getMode().comparison && canvas.getBoundingClientRect().width < 520)
+  setCollapsed(canvas.getBoundingClientRect().width < 520)
   refresh()
   return {
     refresh,

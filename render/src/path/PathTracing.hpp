@@ -65,39 +65,19 @@ namespace render::detail
              const std::array<float, 4>& clear,
              uint32_t                    width,
              uint32_t                    height);
-        const ModelImage& RenderComparison(
-          std::shared_ptr<const ModelData>,
-          const SceneUniforms&,
-          const PathTracingSettings&,
-          uint32_t width,
-          uint32_t height);
-        std::array<ComparisonProgress, 4> Comparison() const { return comparisonProgress; }
-        void                              Reset()
-        {
-            samples         = 0;
-            comparisonDirty = true;
-        }
+        void     Reset() { samples = 0; }
         uint32_t Samples() const { return samples; }
 
       private:
-        std::array<std::unique_ptr<PathSession>, 4> comparisons;
-        std::array<ComparisonProgress, 4>           comparisonProgress{};
-        SceneUniforms                               comparisonScene{};
-        std::array<float, 14>                       comparisonKey{};
-        const ModelData*                            comparisonModel = nullptr;
-        bool                                        comparisonDirty = true;
-        ModelImage                                  comparisonImage;
-        GraphicsAPI                                 comparisonAPI = GraphicsAPI::Auto;
-        RendererConfig                              comparisonConfig;
-        std::unique_ptr<PathDevice>                 device;
-        RendererCapabilities                        capabilities;
-        bool                                        queried      = false;
-        bool                                        linearOutput = false;
-        std::shared_ptr<const ModelData>            currentModel;
-        std::shared_ptr<const EnvironmentData>      currentEnvironment;
-        std::array<std::array<uint32_t, 4>, 5>      imageInfo{};
-        PathUniforms                                previous{};
-        ModelImage                                  image;
-        uint32_t                                    samples = 0;
+        std::unique_ptr<PathDevice>            device;
+        RendererCapabilities                   capabilities;
+        bool                                   queried      = false;
+        bool                                   linearOutput = false;
+        std::shared_ptr<const ModelData>       currentModel;
+        std::shared_ptr<const EnvironmentData> currentEnvironment;
+        std::array<std::array<uint32_t, 4>, 5> imageInfo{};
+        PathUniforms                           previous{};
+        ModelImage                             image;
+        uint32_t                               samples = 0;
     };
 } // namespace render::detail

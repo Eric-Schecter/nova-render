@@ -14,6 +14,7 @@ namespace example
         render::DirectionalLight    light;
         render::RenderMode          mode = render::RenderMode::Raster;
         render::PathTracingSettings path;
+        uint32_t                    comparisonSamples = 64, comparisonMilliseconds = 0;
         int                         frameLimit = 0;
         bool                        spin       = false; // Optional automatic orbit for fixed-frame validation.
     };
@@ -30,7 +31,7 @@ namespace example
             throw std::invalid_argument(
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
               "[--frames N] [--spin] [--environment path.nenv] "
-              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray|compare] "
+              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray] "
               "[--spp N] "
               "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping|mlt] [--compare-samples N | "
               "--compare-ms N]");
@@ -93,8 +94,6 @@ namespace example
                 const std::string mode = argv[++i];
                 if (mode == "raster")
                     options.mode = render::RenderMode::Raster;
-                else if (mode == "compare")
-                    options.mode = render::RenderMode::IntegratorComparison;
                 else if (mode == "ray" || mode == "path")
                     options.mode = render::RenderMode::PathTracing;
                 else
@@ -132,11 +131,11 @@ namespace example
                   || std::floor(value) != value)
                     throw std::invalid_argument("Invalid comparison budget");
                 if (arg == "--compare-ms")
-                    options.path.comparisonMilliseconds = uint32_t(value);
+                    options.comparisonMilliseconds = uint32_t(value);
                 else
                 {
-                    options.path.comparisonSamples      = uint32_t(value);
-                    options.path.comparisonMilliseconds = 0;
+                    options.comparisonSamples      = uint32_t(value);
+                    options.comparisonMilliseconds = 0;
                 }
             }
             else if (arg == "--scale" && i + 1 < argc)

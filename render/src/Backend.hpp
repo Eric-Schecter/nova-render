@@ -39,9 +39,7 @@ namespace render::detail
         }
         void SetRenderMode(RenderMode value)
         {
-            if (
-              value != RenderMode::Raster && value != RenderMode::PathTracing
-              && value != RenderMode::IntegratorComparison)
+            if (value != RenderMode::Raster && value != RenderMode::PathTracing)
                 throw std::invalid_argument("Invalid render mode");
             if (value != RenderMode::Raster)
             {
@@ -64,10 +62,20 @@ namespace render::detail
             pathSettings = value;
             pathSession.Reset();
         }
-        PathTracingSettings               GetPathTracing() const { return pathSettings; }
-        void                              ResetAccumulation() { pathSession.Reset(); }
-        uint32_t                          GetAccumulatedSamples() const { return pathSession.Samples(); }
-        std::array<ComparisonProgress, 4> GetComparisonProgress() const { return pathSession.Comparison(); }
+        PathTracingSettings GetPathTracing() const { return pathSettings; }
+        void                ResetAccumulation() { pathSession.Reset(); }
+        uint32_t            GetAccumulatedSamples() const { return pathSession.Samples(); }
+        void                PresentImage(const Image& image)
+        {
+            if (
+              !image.width || !image.height || image.width > 8192 || image.height > 8192
+              || image.pixels.size() != size_t(image.width) * image.height * 4)
+                throw std::invalid_argument("Image requires width*height RGBA8 pixels, dimensions 1..8192");
+            if (!model)
+                LoadModel(EmptyModelData());
+            presentedImage = image;
+        }
+        void ClearImage() { presentedImage.reset(); }
         virtual ~Backend()                                          = default;
         virtual void        Resize(uint32_t width, uint32_t height) = 0;
         virtual FrameResult DrawFrame()                             = 0;
@@ -140,13 +148,16 @@ namespace render::detail
         void                 SetCamera(const OrbitCamera& value) { camera = value; }
 
       protected:
-        RenderMode          mode = RenderMode::Raster;
-        PathTracingSettings pathSettings;
-        PathSession         pathSession;
-        GraphicsAPI         pathAPI = GraphicsAPI::Auto;
-        RendererConfig      pathConfig;
-        const ModelImage*   DrawPathFrame(uint32_t width, uint32_t height)
+        std::optional<Image> presentedImage;
+        RenderMode           mode = RenderMode::Raster;
+        PathTracingSettings  pathSettings;
+        PathSession          pathSession;
+        GraphicsAPI          pathAPI = GraphicsAPI::Auto;
+        RendererConfig       pathConfig;
+        const ModelImage*    DrawPathFrame(uint32_t width, uint32_t height)
         {
+            if (presentedImage)
+                return &*presentedImage;
             if (mode == RenderMode::Raster)
                 return nullptr;
             const auto uniform = MakeSceneUniforms(
@@ -157,8 +168,6 @@ namespace render::detail
               directionalLight,
               environment.get(),
               environmentSettings);
-            if (mode == RenderMode::IntegratorComparison)
-                return &pathSession.RenderComparison(model, uniform, pathSettings, width, height);
             return &pathSession.Render(
               model, environment, uniform, pathSettings, ClearColorForTarget(true), width, height);
         }
@@ -191,7 +200,6 @@ namespace render::detail
               model && !model->vertices.empty() ? GetCapabilities() : RendererCapabilities{},
               pathSettings,
               pathSession.Samples(),
-              pathSession.Comparison(),
               animation.Clips(),
               animation.state);
             if (previous.clip != animation.state.clip || previous.time != animation.state.time)

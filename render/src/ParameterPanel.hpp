@@ -33,21 +33,20 @@ namespace render::detail
         void CaptureDefaults(
           const OrbitCamera& camera, const DirectionalLight& light, const EnvironmentSettings& environment);
         void Draw(
-          bool                                     model,
-          LightingMode                             lighting,
-          OrbitCamera&                             camera,
-          DirectionalLight&                        light,
-          std::array<float, 4>&                    clear,
-          bool                                     hasEnvironment,
-          EnvironmentSettings&                     environment,
-          PanelAssets&                             assets,
-          RenderMode                               mode,
-          const RendererCapabilities&              capabilities,
-          PathTracingSettings&                     path,
-          uint32_t                                 samples,
-          const std::array<ComparisonProgress, 4>& comparison,
-          const std::vector<AnimationClip>&        clips,
-          AnimationState&                          animation);
+          bool                              model,
+          LightingMode                      lighting,
+          OrbitCamera&                      camera,
+          DirectionalLight&                 light,
+          std::array<float, 4>&             clear,
+          bool                              hasEnvironment,
+          EnvironmentSettings&              environment,
+          PanelAssets&                      assets,
+          RenderMode                        mode,
+          const RendererCapabilities&       capabilities,
+          PathTracingSettings&              path,
+          uint32_t                          samples,
+          const std::vector<AnimationClip>& clips,
+          AnimationState&                   animation);
         bool WantsMouse() const;
         bool WantsKeyboard() const;
 

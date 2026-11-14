@@ -1,5 +1,6 @@
 #pragma once
 #include "Animation.hpp"
+#include "Image.hpp"
 #include "Model.hpp"
 #include "ParameterPanel.hpp"
 #include "RenderMode.hpp"
@@ -70,13 +71,14 @@ namespace render
         RayTracingSettings         GetRayTracing() const { return GetPathTracing(); }
         void                       ResetAccumulation();
         uint32_t                   GetAccumulatedSamples() const;
-        std::array<ComparisonProgress, 4> GetComparisonProgress() const;
-        void                              LoadEnvironment(const std::filesystem::path& path);
-        void                              SetEnvironment(const EnvironmentSettings& settings);
-        EnvironmentSettings               GetEnvironment() const;
-        void                              SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight                  GetDirectionalLight() const;
-        void                              SetLighting(LightingMode mode);
+        void                       PresentImage(const Image& image);
+        void                       ClearImage();
+        void                       LoadEnvironment(const std::filesystem::path& path);
+        void                       SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings        GetEnvironment() const;
+        void                       SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight           GetDirectionalLight() const;
+        void                       SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
         bool                 EnableParameterPanel(const ParameterPanelConfig& config);

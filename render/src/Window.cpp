@@ -122,6 +122,12 @@ namespace render
         }
         return !glfwWindowShouldClose(impl_->window.get());
     }
+    std::array<uint32_t, 2> Window::GetFramebufferSize() const
+    {
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(impl_->window.get(), &width, &height);
+        return {uint32_t(width), uint32_t(height)};
+    }
     FrameResult Window::DrawFrame()
     {
         int w, h;
@@ -209,9 +215,13 @@ namespace render
     {
         impl_->renderer->ResetAccumulation();
     }
-    std::array<ComparisonProgress, 4> Window::GetComparisonProgress() const
+    void Window::PresentImage(const Image& image)
     {
-        return impl_->renderer->GetComparisonProgress();
+        impl_->renderer->PresentImage(image);
+    }
+    void Window::ClearImage()
+    {
+        impl_->renderer->ClearImage();
     }
     uint32_t Window::GetAccumulatedSamples() const
     {

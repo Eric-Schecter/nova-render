@@ -1,133 +1,145 @@
 import { chromium } from 'playwright'
-import { resolve } from 'node:path'
-import { writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5173'
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
   args: ['--enable-unsafe-webgpu'],
 })
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 650 } }),
+  const page = await browser.newPage({ viewport: { width: 1100, height: 1100 } }),
     errors = []
   page.on('pageerror', (e) => errors.push(e.message))
-  await page.goto('http://127.0.0.1:5173/')
+  await page.goto(base + '/')
   await page.evaluate(
     async (root) => {
-      const Nova = await import(root + '/Nova.js'),
-        canvas = document.createElement('canvas')
-      canvas.style.cssText = 'width:640px;height:640px'
-      document.body.replaceChildren(canvas)
-      const renderer = await Nova.createRenderer({ canvas })
-      window.testRenderer = renderer
-      await renderer.loadModel('/generated/CornellCaustics.glb')
-      renderer.setCamera({ yaw: 0, pitch: 0, distance: 3.6, exposure: 3 })
-      renderer.setRayTracing({
-        ...renderer.getRayTracing(),
-        comparisonSamples: 64,
-        comparisonMilliseconds: 0,
-        maxBounces: 8,
-        photonRadius: 0.1,
-        resolutionScale: 0.5,
+      const { showComparison } = await import(root + '/web/examples/comparison.js')
+      const host = document.createElement('div')
+      host.style.cssText = 'width:640px;max-width:100%'
+      document.body.replaceChildren(host)
+      const scene = await showComparison(host, '/generated/CornellCaustics.glb', '/generated/', {
+        yaw: 0,
+        pitch: 0,
+        distance: 3.6,
+        exposure: 3,
       })
-      renderer.setRenderMode('integrator-comparison')
-      await renderer.drawFrame()
-      renderer.enableParameterPanel()
+      window.scene = scene
+      scene.setRayTracing({ ...scene.getRayTracing(), maxBounces: 8, resolutionScale: 0.5 })
+      scene.setBudget({ samples: 16, milliseconds: 0 })
     },
-    '/@fs' + resolve('web/src'),
+    '/@fs' + realpathSync('.'),
   )
-  await page.waitForFunction(
-    () =>
-      window.testRenderer.getComparisonProgress().length === 4 &&
-      window.testRenderer.getComparisonProgress().every((p) => p.complete),
-    { timeout: 120000 },
-  )
-  const frozen = await page.evaluate(() => window.testRenderer.getComparisonProgress())
-  if (frozen.some((p) => p.samples !== 64)) throw Error('Spp budget overshot')
-  await page.waitForTimeout(200)
-  const after = await page.evaluate(() => window.testRenderer.getComparisonProgress())
-  if (JSON.stringify(frozen) !== JSON.stringify(after)) throw Error('Frozen render continued')
-  await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
-  await page.screenshot({ path: 'build/validation/comparison-web.png' })
-  const png = await page.locator('canvas').screenshot()
-  await writeFile('build/validation/comparison-canvas.png', png)
-  const columns = await page.evaluate(async (base64) => {
-    const image = new Image()
-    image.src = 'data:image/png;base64,' + base64
-    await image.decode()
-    const c = document.createElement('canvas')
-    c.width = image.width
-    c.height = image.height
-    const ctx = c.getContext('2d')
-    ctx.drawImage(image, 0, 0)
-    const p = ctx.getImageData(0, 0, c.width, c.height).data
-    return [0, 1, 2, 3].map((tile) => {
-      let sum = 0,
-        n = 0
-      for (
-        let y = (Math.floor(tile / 2) * c.height) / 2 + 30;
-        y < ((Math.floor(tile / 2) + 1) * c.height) / 2 - 10;
-        y++
-      )
-        for (
-          let x = Math.floor(((tile % 2) * c.width) / 2) + 10;
-          x < (((tile % 2) + 1) * c.width) / 2 - 10;
-          x++
-        ) {
-          sum +=
-            p[(y * c.width + x) * 4] + p[(y * c.width + x) * 4 + 1] + p[(y * c.width + x) * 4 + 2]
-          n += 3
-        }
-      return sum / n
-    })
-  }, png.toString('base64'))
-  if (columns.some((v) => !Number.isFinite(v) || v < 5))
-    throw Error('Blank comparison tile ' + columns)
-  await page.evaluate(async () => {
-    const r = window.testRenderer
-    r.setRayTracing({ ...r.getRayTracing(), comparisonSamples: 3, comparisonMilliseconds: 0 })
-    await r.drawFrame()
+  await page.waitForFunction(() => window.scene.getProgress().every((p) => p.complete), null, {
+    timeout: 120000,
   })
-  await page.waitForFunction(() =>
-    window.testRenderer.getComparisonProgress().every((p) => p.complete),
+  const frozen = await page.evaluate(() => window.scene.getProgress())
+  if (frozen.some((p) => p.samples !== 16)) throw Error('Budget overshot')
+  await page.waitForTimeout(300)
+  if (
+    JSON.stringify(await page.evaluate(() => window.scene.getProgress())) !== JSON.stringify(frozen)
+  )
+    throw Error('Frozen scene kept rendering')
+  if ((await page.locator('canvas').count()) !== 4) throw Error('Not four independent views')
+  const boxes = await page.locator('canvas').evaluateAll((es) =>
+    es.map((e) => {
+      const b = e.getBoundingClientRect()
+      return { x: b.x, y: b.y, w: b.width, h: b.height }
+    }),
   )
   if (
-    (await page.evaluate(() => window.testRenderer.getComparisonProgress())).some(
-      (p) => p.samples !== 3,
+    boxes[0].y !== boxes[1].y ||
+    boxes[2].y <= boxes[0].y ||
+    boxes[2].x !== boxes[0].x ||
+    boxes[3].x !== boxes[1].x
+  )
+    throw Error('Not 2x2')
+  const panel = await page.locator('.comparison-controls').boundingBox()
+  if (panel.y < boxes[3].y + boxes[3].h) throw Error('Panel covers results')
+  if (await page.getByRole('combobox', { name: '渲染模式', exact: true }).count())
+    throw Error('Comparison is still a mode')
+  const sums = []
+  for (let i = 0; i < 4; i++) {
+    const png = await page.locator('canvas').nth(i).screenshot()
+    sums.push(
+      await page.evaluate(async (base64) => {
+        const image = new Image()
+        image.src = 'data:image/png;base64,' + base64
+        await image.decode()
+        const c = document.createElement('canvas')
+        c.width = image.width
+        c.height = image.height
+        const ctx = c.getContext('2d')
+        ctx.drawImage(image, 0, 0)
+        const data = ctx.getImageData(0, 0, c.width, c.height).data
+        let sum = 0
+        for (let k = 0; k < data.length; k += 4) sum += data[k] + data[k + 1] + data[k + 2]
+        return sum / (c.width * c.height * 3)
+      }, png.toString('base64')),
     )
-  )
-    throw Error('Nonmultiple spp failed')
-  await page.evaluate(async () => {
-    const r = window.testRenderer
-    r.setCamera({ ...r.getCamera(), yaw: 5 })
-    await r.drawFrame()
+  }
+  await page
+    .locator('.comparison-grid')
+    .screenshot({ path: 'build/validation/comparison-example-grid.png' })
+  if (sums.some((s) => !Number.isFinite(s) || s < 1 || s > 110))
+    throw Error('Invalid comparison brightness ' + sums)
+  await page.evaluate(() => {
+    window.scene.setBudget({ samples: 3, milliseconds: 0 })
+    window.scene.setCamera({ ...window.scene.getCamera(), yaw: 5 })
   })
-  await page.waitForFunction(() =>
-    window.testRenderer.getComparisonProgress().every((p) => p.complete),
-  )
-  await page.evaluate(async () => {
-    const r = window.testRenderer
-    r.setRayTracing({ ...r.getRayTracing(), comparisonMilliseconds: 20 })
-    await r.drawFrame()
+  await page.waitForFunction(() => window.scene.getProgress().every((p) => p.complete), null, {
+    timeout: 120000,
   })
-  await page.waitForFunction(() =>
-    window.testRenderer.getComparisonProgress().every((p) => p.complete),
-  )
-  const timed = await page.evaluate(() => window.testRenderer.getComparisonProgress())
-  if (timed.some((p) => p.milliseconds < 20)) throw Error('Time budget stopped early')
-  await page.evaluate(async () => {
-    const r = window.testRenderer
-    r.setRenderMode('ray-tracing')
-    await r.drawFrame()
-    r.setRenderMode('raster')
-    await r.drawFrame()
-    r.dispose()
+  if ((await page.evaluate(() => window.scene.getProgress())).some((p) => p.samples !== 3))
+    throw Error('Camera reset/budget failed')
+  const oldYaw = await page.evaluate(() => window.scene.getCamera().yaw),
+    tile = await page.locator('canvas').nth(3).boundingBox()
+  await page.mouse.move(tile.x + 30, tile.y + 60)
+  await page.mouse.down()
+  await page.mouse.move(tile.x + 70, tile.y + 60, { steps: 5 })
+  await page.mouse.up()
+  await page.waitForFunction((yaw) => window.scene.getCamera().yaw !== yaw, oldYaw)
+  await page.evaluate(() => window.scene.setBudget({ samples: 64, milliseconds: 1 }))
+  await page.waitForFunction(() => window.scene.getProgress().every((p) => p.complete), null, {
+    timeout: 120000,
   })
+  await page.evaluate(() =>
+    window.scene.setRayTracing({ ...window.scene.getRayTracing(), mltBootstrapSamples: 1024 }),
+  )
+  await page.evaluate(() => window.scene.loadModel('/generated/WeekendSpheres.glb'))
+  await page.waitForFunction(() => window.scene.getProgress().every((p) => p.complete), null, {
+    timeout: 120000,
+  })
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.waitForTimeout(500)
+  if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)
+    throw Error('Mobile overflow')
+  await page.evaluate(() => window.scene.dispose())
+  if (await page.locator('canvas').count()) throw Error('Dispose leaked views')
+  const modeCheck = await page.evaluate(
+    async (root) => {
+      const Nova = await import(root + '/web/src/Nova.js')
+      const c = document.createElement('canvas')
+      document.body.append(c)
+      const r = await Nova.createRenderer({ canvas: c })
+      let rejected = false
+      try {
+        r.setRenderMode('integrator-comparison')
+      } catch {
+        rejected = true
+      }
+      const budgetLeaked = 'comparisonSamples' in r.getRayTracing()
+      r.dispose()
+      c.remove()
+      return { rejected, budgetLeaked }
+    },
+    '/@fs' + realpathSync('.'),
+  )
+  if (!modeCheck.rejected || modeCheck.budgetLeaked) throw Error('Core retains comparison API')
   if (errors.length) throw Error(errors.join('\n'))
-  await writeFile(
-    'build/validation/comparison-web.json',
-    JSON.stringify({ frozen, timed }, null, 2),
+  console.log(
+    'PASS example-owned comparison: four independent renderers, grid/pixels, samples/time/freeze/reset, fourth-view orbit, scene change, mobile/dispose, two-mode core',
+    frozen,
   )
-  console.log('PASS comparison samples/time/freeze/reset and mode restore', frozen, timed)
 } finally {
   await browser.close()
 }

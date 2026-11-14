@@ -44,34 +44,53 @@ try {
       r.setRayTracing({
         ...r.getRayTracing(),
         resolutionScale: 0.25,
-        comparisonSamples: 4,
         mltBootstrapSamples: 1024,
         maxBounces: 4,
         photonsPerIteration: 1024,
       })
-      r.setRenderMode('integrator-comparison')
-      await r.drawFrame()
-      r.enableParameterPanel()
+      r.dispose()
+      const { showComparison } = await import(
+        root.replace(/\/web\/src$/, '') + '/web/examples/comparison.js'
+      )
+      const host = document.createElement('div')
+      host.style.width = '360px'
+      document.body.replaceChildren(host)
+      const scene = await showComparison(host, '/generated/WeekendSpheres.glb', '/generated/', {
+        yaw: 25,
+        pitch: 12,
+        distance: 2.8,
+        exposure: 1,
+      })
+      scene.setRayTracing({
+        ...scene.getRayTracing(),
+        resolutionScale: 0.25,
+        mltBootstrapSamples: 1024,
+        maxBounces: 4,
+        photonsPerIteration: 1024,
+      })
+      scene.setBudget({ samples: 4, milliseconds: 0 })
+      window.scene = scene
       return { triangles: data.vertices.length / 36, glassVertices: glass }
     },
     '/@fs' + resolve('web/src'),
   )
   await page.waitForFunction(
     () =>
-      window.testRenderer.getComparisonProgress().length === 4 &&
-      window.testRenderer.getComparisonProgress().every((p) => p.complete),
+      window.scene.getProgress().length === 4 &&
+      window.scene.getProgress().every((p) => p.complete),
+    null,
     { timeout: 120000 },
   )
   const bounds = await page.evaluate(() => {
     const c = document.querySelector('canvas').getBoundingClientRect(),
-      p = document.querySelector('.nova-panel').getBoundingClientRect()
+      p = document.querySelector('.comparison-controls').getBoundingClientRect()
     return p.top >= c.bottom
   })
   if (!bounds) throw Error('Panel overlaps scene')
   await page
-    .locator('.nova-viewport')
+    .locator('.comparison-grid')
     .screenshot({ path: 'build/validation/weekend-comparison.png' })
-  await page.evaluate(() => window.testRenderer.dispose())
+  await page.evaluate(() => window.scene.dispose())
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
     'PASS Weekend Spheres page, ray/raster/comparison, glass geometry, mobile bounds and separate controls',

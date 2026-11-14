@@ -1,6 +1,6 @@
 # 渲染模式
 
-原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）、Ray tracing（光追）或 Integrator comparison（四栏对比）；光追模式内再通过 **Integrator** 选择 PT、BDPT、光子映射或 MLT。
+原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）、Ray tracing（光追）；光追模式内再通过 **Integrator** 选择 PT、BDPT、光子映射或 MLT。
 
 ```cpp
 render::Window window;
@@ -29,7 +29,7 @@ window.WaitIdle();
 ## 接口
 
 - `GetCapabilities()`：返回 `rayTracing`、`softwareRayTracing`、设备名称 `rayTracingDevice` 和不可用原因 `reason`。
-- `SetRenderMode(RenderMode::Raster / RayTracing / IntegratorComparison)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
+- `SetRenderMode(RenderMode::Raster / RayTracing)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
 - `SetRayTracing(settings)` / `GetRayTracing()`：每帧采样数 `1–4`、最大反弹次数 `1–8`、内部渲染比例 `0.25–1`。非法参数抛异常。
 - `GetAccumulatedSamples()`：读取当前累计采样数。
 - `ResetAccumulation()`：清空累计采样；下一帧重新开始。
@@ -160,31 +160,31 @@ await renderer.drawFrame()
 
 骨骼动画模型目前仅用光栅渲染，能力查询和面板会明确报告；动画接口见[骨骼动画](./animation)。
 
-## 专用积分器对比
+## 离屏视图与例子层对比
+
+Mode 只有 `Raster` 与 `RayTracing`（网页 `'raster'` / `'ray-tracing'`）。积分器对比是例子，不是 Mode；核心设置不再包含对比预算，Window / Renderer 不再提供对比进度查询。
+
+原生 `RayTracingView` 独立维护一个离屏光追视图的累计，使用共享 HLSL 和所选后端，不持有窗口或 UI。支持相机、方向光和环境设置，静态模型必须先加载；对比示例自行关闭方向光并省略环境，使四种方法只使用同一场景的面光源。
 
 ```cpp
-auto settings = window.GetRayTracing();
-settings.maxBounces = 8;
-settings.photonRadius = 0.1f;
-settings.comparisonSamples = 64;
-settings.comparisonMilliseconds = 0; // 改为 1000：每种方法约 1 秒活跃渲染时间
-window.SetRayTracing(settings);
-window.SetRenderMode(render::RenderMode::IntegratorComparison);
-const auto progress = window.GetComparisonProgress();
+#include <render/RayTracingView.hpp>
+render::RayTracingView view;
+view.LoadModel("assets/CornellCaustics/CornellCaustics.glb");
+render::RayTracingSettings settings;
+settings.integrator = render::RayIntegrator::Metropolis;
+view.SetRayTracing(settings);
+const render::Image& frame = view.DrawFrame(256, 256);
+window.PresentImage(frame);
+// window.ClearImage(); // 恢复由 Window 自身渲染
 ```
 
-```js
-renderer.setRayTracing({ ...renderer.getRayTracing(), maxBounces: 8,
-  photonRadius: 0.1, comparisonSamples: 64, comparisonMilliseconds: 0 })
-renderer.setRenderMode('integrator-comparison')
-const progress = renderer.getComparisonProgress()
-```
+`Image` 为 sRGB RGBA8，包含 `width`、`height` 和 `pixels`。`PresentImage` 复制像素；`ClearImage` 恢复窗口自身的 Mode。尺寸范围为 1–8192，像素数必须等于 width × height × 4。`GetFramebufferSize()` 返回 Window 当前帧缓冲尺寸；缩小到零时例子暂停。
 
-固定采样预算范围 `1–65536`；时间预算 `0–60000` 毫秒，非零时优先使用时间预算。每栏每轮 1 spp；MLT 为 1 mutation/pixel，预热不计入预算；暂停后保留结果。时间包含各方法的 CPU 提交与 GPU 完成，原生还包括现有回读流程，不计等待其他栏的时间；最后一轮可能超过时间预算，四栏串行执行，所以不是整个页面的墙钟预算。两端的绝对耗时不适合直接比较。
+网页可用 `renderer.setContinuousRendering(false)` 关闭自动续帧，再由例子显式 `await renderer.drawFrame()`。`Nova.attachOrbitControls(element, { getCamera, setCamera, drawFrame })` 可将同一套交互绑定到应用组织的多视图容器，返回对象的 `dispose()` 解除绑定。
 
-返回四项 `ComparisonProgress`，顺序 PT、BDPT、光子映射、MLT，各含 `integrator`、`samples`、`milliseconds`、`complete`。相机、模型、尺寸、预算或有效采样参数变化会重跑，`ResetAccumulation()` / `resetAccumulation()` 也会重跑。切回普通光追会继续使用原有场景配置。
+第六例子创建四个独立视图，顺序 PT、BDPT、光子映射、MLT，以两行两列展示。共享相机和场景、固定使用面光源、关闭降噪。预算、统计与下方控制面板都在例子层：C++ 为 `example::ComparisonScene`，网页为 `web/examples/comparison.js` 返回的控制器。
 
-对比模式固定正方形视图；网页以两行两列展示，参数独立放在下方。原生宽窗口横排、竖窗口上下排列。对比模式强制关闭外部光照、天空背景和显示降噪，PT 启用 MIS。每轮光子预算仍独立计数：光子发射路径总数 = 光子映射相机 spp × `photonsPerIteration`。使用带发光面的场景；无发光面的模型在此模式下可能全黑。专用[积分器例子](../examples/integrators)提供玻璃焦散场景。
+C++ 例子用 `SetBudget({64, 0})` / `Progress()`，网页例子用 `setBudget({samples:64, milliseconds:0})` / `getProgress()`。固定采样预算 1–65536；时间预算 0–60000 毫秒，非零时优先使用时间预算。每个视图每轮 1 spp（MLT 为 1 mutation/pixel），达到预算后冻结。计时包括首次绘制时的资源准备、CPU 提交与 GPU 完成（不含此前的设备创建和模型加载），原生还包含回读；不含其他视图的等待，最后一轮可能超过时间预算。相机、场景、预算、有效采样参数或尺寸变化会重跑。
 
 ## 梅特波利斯光传输（MLT）
 
