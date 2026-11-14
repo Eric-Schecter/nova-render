@@ -49,7 +49,7 @@ window.WaitIdle();
 
 DX12 使用 DXR 1.1 inline ray query；Vulkan 使用 acceleration structure 与 ray query 扩展；Metal 使用原生加速结构与 ray query。内核只维护 HLSL，由 DXC 生成 DXIL / SPIR-V，再由 SPIRV-Cross 生成 Metal shader。没有新增第三方依赖。
 
-当前实现支持静态不透明模型、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。尚无降噪、透明材质、蒙皮和多材质支持；为减少亮点，单条路径辐射值上限为 64。
+当前实现支持静态不透明模型、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。支持可选空间降噪；尚无透明材质、蒙皮和多材质支持；为减少亮点，单条路径辐射值上限为 64。
 
 原生当前为功能验证版本：计算结果每帧回读 CPU，再上传到显示后端，存在传输与同步开销。网页的计算与显示直接留在 GPU，不需要逐帧回读。
 
@@ -73,6 +73,26 @@ renderer.enableParameterPanel()
 
 首次 `drawFrame()` 后自动逐帧累计；隐藏预览、移出屏幕或切到后台时暂停，恢复可见后继续。切回光栅或 `dispose()` 会停止累计。普通 `drawFrame()` 仍可手动调用。面板提供模式、采样、反弹次数、渲染比例和重置按钮；低分辨率通过 GPU 双线性放大显示，效果仍需逐步收敛。
 
-资源与渲染缓冲区须符合浏览器设备的 storage buffer 限制；超限会报告错误。当前没有降噪，性能取决于模型、分辨率和 GPU。
+资源与渲染缓冲区须符合浏览器设备的 storage buffer 限制；超限会报告错误。性能取决于模型、分辨率和 GPU。
 
 构建时可用 `-DNOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。
+
+
+## 降噪
+
+路径追踪参数新增 `denoise`，默认 `false`。原生与网页面板的 **Denoise** 复选框控制同一功能，仅在路径追踪模式显示。
+
+```cpp
+auto settings = window.GetPathTracing();
+settings.denoise = true;
+window.SetPathTracing(settings);
+```
+
+```js
+renderer.setPathTracing({ ...renderer.getPathTracing(), denoise: true })
+await renderer.drawFrame()
+```
+
+两端共用 HLSL 的 5×5 深度、法线与亮度引导双边滤波，保护轮廓和表面边缘，天空背景不参与过滤。降噪在 GPU 的独立计算 pass 执行，只生成显示图，不回写原始辐射累计。修改开关与其他路径追踪参数一样会重新累计；关闭后恢复未过滤的采样结果。
+
+这是轻量空间降噪，不使用 AI 或时域历史，没有新增依赖。极低采样下仍可能有亮点，细小纹理也可能变软；仍建议保持渐进累计。它不会补足较低内部渲染比例丢失的细节。
