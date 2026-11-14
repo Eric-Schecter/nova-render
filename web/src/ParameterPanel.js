@@ -244,6 +244,22 @@ export function attachParameterPanel(
           slider(renderer, key, caption, aria, min, max, step, (value) =>
             adapter.setPathTracing({ ...adapter.getPathTracing(), [key]: value }),
           )
+        const denoiseRow = document.createElement('label'),
+          denoise = document.createElement('input')
+        denoiseRow.className = 'nova-panel-check'
+        denoise.type = 'checkbox'
+        denoise.setAttribute('aria-label', '降噪')
+        denoiseRow.append(denoise, 'Denoise')
+        renderer.append(denoiseRow)
+        denoise.addEventListener(
+          'change',
+          () =>
+            change(() =>
+              adapter.setPathTracing({ ...adapter.getPathTracing(), denoise: denoise.checked }),
+            ),
+          { signal: fieldEvents.signal },
+        )
+        fields.set('denoise', { input: denoise })
         const samples = document.createElement('div')
         samples.setAttribute('aria-label', '累计采样')
         renderer.append(samples)
@@ -391,6 +407,10 @@ export function attachParameterPanel(
     }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (key === 'denoise') {
+        field.input.checked = adapter.getPathTracing().denoise
+        continue
+      }
       if (key === 'renderMode') {
         field.input.value = adapter.getRenderMode()
         continue

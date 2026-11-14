@@ -91,7 +91,7 @@ int main(int argc, char** argv)
             if (i == 3)
                 middle = frame.pixels;
         }
-        const auto& image = session.Render(model, sky, uniforms, settings, {0, 0, 0, 1}, 320, 240);
+        const auto image = session.Render(model, sky, uniforms, settings, {0, 0, 0, 1}, 320, 240);
         std::filesystem::create_directories(argv[3]);
         const auto path = std::filesystem::path(argv[3]) / ("path-" + api + ".png");
         if (!stbi_write_png(path.string().c_str(), image.width, image.height, 4, image.pixels.data(), image.width * 4))
@@ -116,6 +116,23 @@ int main(int argc, char** argv)
         std::cout << "Convergence MSE: 2spp=" << earlyError << "; 8spp=" << middleError << "; reference=34spp\n";
         if (session.Samples() != 34)
             throw std::runtime_error("Model accumulation did not advance");
+        settings.denoise         = true;
+        const auto filtered      = session.Render(model, sky, uniforms, settings, {0, 0, 0, 1}, 320, 240);
+        const auto filteredError = mse(filtered.pixels);
+        std::cout << "Denoise MSE: raw=" << earlyError << "; filtered=" << filteredError << '\n';
+        if (!(filteredError < earlyError) || session.Samples() != 2)
+            throw std::runtime_error("Denoise did not reduce reference error or reset samples");
+        for (size_t i = 0; i < 4; ++i)
+            if (filtered.pixels[i] != early[i])
+                throw std::runtime_error("Denoise modified sky background");
+        const auto filteredPath = std::filesystem::path(argv[3]) / ("denoise-" + api + ".png");
+        stbi_write_png(filteredPath.string().c_str(), 320, 240, 4, filtered.pixels.data(), 320 * 4);
+        const auto rawPath = std::filesystem::path(argv[3]) / ("denoise-raw-" + api + ".png");
+        stbi_write_png(rawPath.string().c_str(), 320, 240, 4, early.data(), 320 * 4);
+        settings.denoise    = false;
+        const auto restored = session.Render(model, sky, uniforms, settings, {0, 0, 0, 1}, 320, 240);
+        if (restored.pixels != early)
+            throw std::runtime_error("Disabling denoise did not restore raw output");
         std::cout << "PASS red triangle pixels, accumulation, automatic/manual reset and textured HDR model at "
                   << session.Samples() << " samples\n";
     }

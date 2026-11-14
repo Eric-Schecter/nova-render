@@ -86,7 +86,7 @@ namespace render::detail
           settings.samplesPerFrame,
           BackgroundMips(environment ? *environment : FallbackEnvironment()).front().size,
           0,
-          0};
+          settings.denoise ? 1u : 0u};
         if (std::memcmp(&params, &previous, sizeof(params)) || samples > 1000000)
         {
             samples  = 0;

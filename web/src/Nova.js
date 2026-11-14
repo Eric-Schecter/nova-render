@@ -128,13 +128,13 @@ class Renderer {
   getCapabilities() {
     this.#check()
     return {
-      pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 7,
+      pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       softwareRayTracing: true,
       rayTracingDevice: 'WebGPU compute BVH',
       reason:
-        this.#device.limits.maxStorageBuffersPerShaderStage >= 7
+        this.#device.limits.maxStorageBuffersPerShaderStage >= 8
           ? ''
-          : 'At least seven storage buffers are required.',
+          : 'At least eight storage buffers are required.',
     }
   }
   getRenderMode() {
@@ -158,7 +158,7 @@ class Renderer {
   setPathTracing(settings) {
     this.#check()
     validatePathTracing(settings)
-    this.#pathSettings = { ...settings }
+    this.#pathSettings = { ...settings, denoise: settings.denoise ?? false }
     this.resetAccumulation()
     this.#parameterPanel?.refresh()
   }

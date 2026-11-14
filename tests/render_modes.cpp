@@ -93,6 +93,14 @@ int main(int argc, char** argv)
         draw();
         if (window.GetAccumulatedSamples() != 2)
             throw std::runtime_error("Samples per frame mismatch");
+        path.denoise = true;
+        window.SetPathTracing(path);
+        if (!window.GetPathTracing().denoise || window.GetAccumulatedSamples() != 0)
+            throw std::runtime_error("Denoise API/reset mismatch");
+        draw();
+        path.denoise = false;
+        window.SetPathTracing(path);
+        draw();
         window.ResetAccumulation();
         if (window.GetAccumulatedSamples() != 0)
             throw std::runtime_error("Manual reset failed");

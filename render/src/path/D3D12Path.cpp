@@ -27,9 +27,9 @@ namespace render::detail
             ComPtr<ID3D12GraphicsCommandList4> commands;
             ComPtr<ID3D12Fence>                fence;
             ComPtr<ID3D12RootSignature>        root;
-            ComPtr<ID3D12PipelineState>        pipeline;
+            ComPtr<ID3D12PipelineState>        pipeline, denoisePipeline;
             ComPtr<ID3D12Resource> params, vertices, texels, sky, blas, tlas, instances, scratch, accumulation, output,
-              readback;
+              readback, guides;
             uint64_t               signal = 0;
             uint32_t               width = 0, height = 0;
             bool                   copied = false;
@@ -146,14 +146,14 @@ namespace render::detail
                 Check(device->CreateCommandList(0, q.Type, allocator.Get(), nullptr, IID_PPV_ARGS(&commands)));
                 Check(commands->Close());
                 Check(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)));
-                D3D12_ROOT_PARAMETER bindings[7]{};
-                for (UINT i = 0; i < 7; ++i)
+                D3D12_ROOT_PARAMETER bindings[8]{};
+                for (UINT i = 0; i < 8; ++i)
                 {
                     bindings[i].ParameterType = i < 5 ? D3D12_ROOT_PARAMETER_TYPE_SRV : D3D12_ROOT_PARAMETER_TYPE_UAV;
                     bindings[i].Descriptor.ShaderRegister = i < 5 ? i : i - 5;
                 }
                 D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-                rootDesc.NumParameters = 7;
+                rootDesc.NumParameters = 8;
                 rootDesc.pParameters   = bindings;
                 ComPtr<ID3DBlob> blob, error;
                 Check(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error));
@@ -164,6 +164,9 @@ namespace render::detail
                 pso.pRootSignature = root.Get();
                 pso.CS             = {code.data(), code.size()};
                 Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&pipeline)));
+                const auto filterCode = LoadShader(config.shaderDirectory, "denoise.compute.dxil");
+                pso.CS                = {filterCode.data(), filterCode.size()};
+                Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&denoisePipeline)));
                 const PathUniforms zero{};
                 params = Upload(&zero, sizeof(zero));
             }
@@ -243,6 +246,11 @@ namespace render::detail
                       D3D12_HEAP_TYPE_DEFAULT,
                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+                    guides = Buffer(
+                      size_t(width) * height * 16,
+                      D3D12_HEAP_TYPE_DEFAULT,
+                      D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                      D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
                     readback =
                       Buffer(size_t(width) * height * 4, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST);
                 }
@@ -253,6 +261,7 @@ namespace render::detail
                 params->Unmap(0, nullptr);
                 Begin();
                 Barrier(accumulation.Get());
+                Barrier(guides.Get());
                 D3D12_RESOURCE_BARRIER transition{};
                 transition.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                 transition.Transition.pResource   = output.Get();
@@ -271,7 +280,16 @@ namespace render::detail
                     commands->SetComputeRootShaderResourceView(i + 1, inputs[i]->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(5, accumulation->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(6, output->GetGPUVirtualAddress());
+                commands->SetComputeRootUnorderedAccessView(7, guides->GetGPUVirtualAddress());
                 commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
+                if (uniforms.options[3])
+                {
+                    Barrier(accumulation.Get());
+                    Barrier(guides.Get());
+                    Barrier(output.Get());
+                    commands->SetPipelineState(denoisePipeline.Get());
+                    commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
+                }
                 transition.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
                 transition.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_SOURCE;
                 commands->ResourceBarrier(1, &transition);

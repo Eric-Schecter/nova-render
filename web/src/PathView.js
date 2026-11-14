@@ -5,10 +5,12 @@ export const defaultPathTracing = () => ({
   samplesPerFrame: 1,
   maxBounces: 3,
   resolutionScale: 0.5,
+  denoise: false,
 })
 export function validatePathTracing(value) {
   if (
     !value ||
+    (value.denoise !== undefined && typeof value.denoise !== 'boolean') ||
     !Number.isInteger(value.samplesPerFrame) ||
     value.samplesPerFrame < 1 ||
     value.samplesPerFrame > 4 ||
@@ -23,7 +25,8 @@ export function validatePathTracing(value) {
 }
 export async function createPathView(device, data, shaderDirectory) {
   const resources = new Set()
-  let accumulation,
+  let guides,
+    accumulation,
     output,
     computeGroup,
     presentGroup,
@@ -83,7 +86,11 @@ export async function createPathView(device, data, shaderDirectory) {
       if (!response.ok) throw Error('Missing path shader package: ' + name)
       return response.json()
     }
-    const [kernel, presentation] = await Promise.all([shader('pathtrace'), shader('pathpresent')])
+    const [kernel, presentation, filter] = await Promise.all([
+      shader('pathtrace'),
+      shader('pathpresent'),
+      shader('denoise'),
+    ])
     async function module(code) {
       const m = device.createShaderModule({ code })
       const info = await m.getCompilationInfo()
@@ -92,7 +99,7 @@ export async function createPathView(device, data, shaderDirectory) {
       return m
     }
     const computeLayout = device.createBindGroupLayout({
-      entries: Array.from({ length: 7 }, (_, binding) => ({
+      entries: Array.from({ length: 8 }, (_, binding) => ({
         binding,
         visibility: GPUShaderStage.COMPUTE,
         buffer: { type: binding >= 5 ? 'storage' : 'read-only-storage' },
@@ -101,6 +108,10 @@ export async function createPathView(device, data, shaderDirectory) {
     const compute = await device.createComputePipelineAsync({
       layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: await module(kernel.compute), entryPoint: 'CSMain' },
+    })
+    const denoise = await device.createComputePipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
+      compute: { module: await module(filter.compute), entryPoint: 'DenoiseMain' },
     })
     const presentLayout = device.createBindGroupLayout({
       entries: [0, 1].map((binding) => ({
@@ -165,6 +176,9 @@ export async function createPathView(device, data, shaderDirectory) {
               new Uint8Array(w * h * 4),
               GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             )
+          const nextGuide = buffer(new Uint8Array(w * h * 16))
+          release(guides)
+          guides = nextGuide
           release(accumulation)
           release(output)
           accumulation = nextAcc
@@ -194,7 +208,7 @@ export async function createPathView(device, data, shaderDirectory) {
             path.samplesPerFrame,
             (environment?.backgroundMips || environment?.mips || fallbackEnvironment.mips)[0].size,
             bvh.count,
-            0,
+            path.denoise ? 1 : 0,
           ],
           100,
         )
@@ -216,6 +230,7 @@ export async function createPathView(device, data, shaderDirectory) {
             skyBuffer,
             accumulation,
             output,
+            guides,
           ])
           presentGroup = group(presentLayout, [output, params])
         }
@@ -225,6 +240,13 @@ export async function createPathView(device, data, shaderDirectory) {
         pass.setBindGroup(0, computeGroup)
         pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
         pass.end()
+        if (path.denoise) {
+          const filterPass = encoder.beginComputePass()
+          filterPass.setPipeline(denoise)
+          filterPass.setBindGroup(0, computeGroup)
+          filterPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+          filterPass.end()
+        }
         if (context) {
           const display = encoder.beginRenderPass({
             colorAttachments: [

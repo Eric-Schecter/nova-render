@@ -209,8 +209,8 @@ namespace render::detail
             VkDescriptorPool                        descriptors{};
             VkDescriptorSetLayout                   layout{};
             VkPipelineLayout                        pipelineLayout{};
-            VkPipeline                              pipeline{};
-            VkShaderModule                          shader{};
+            VkPipeline                              pipeline{}, denoisePipeline{};
+            VkShaderModule                          shader{}, denoiseShader{};
             std::vector<Buffer>                     buffers;
             std::vector<VkAccelerationStructureKHR> structures;
             ~Context()
@@ -220,6 +220,10 @@ namespace render::detail
                     api.vkDeviceWaitIdle(device);
                     if (pipeline)
                         api.vkDestroyPipeline(device, pipeline, nullptr);
+                    if (denoisePipeline)
+                        api.vkDestroyPipeline(device, denoisePipeline, nullptr);
+                    if (denoiseShader)
+                        api.vkDestroyShaderModule(device, denoiseShader, nullptr);
                     if (shader)
                         api.vkDestroyShaderModule(device, shader, nullptr);
                     if (pipelineLayout)
@@ -323,7 +327,7 @@ namespace render::detail
             VkCommandBuffer            cmd{};
             VkAccelerationStructureKHR tlas{};
             VkDescriptorSet            set{};
-            std::array<Buffer, 6>      data{};
+            std::array<Buffer, 7>      data{};
             uint32_t                   width = 0, height = 0;
             void                       Init()
             {
@@ -478,8 +482,8 @@ namespace render::detail
                 capabilities.pathTracing        = true;
                 capabilities.softwareRayTracing = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
                 capabilities.rayTracingDevice   = props.deviceName;
-                VkDescriptorSetLayoutBinding bindings[7]{};
-                for (uint32_t i = 0; i < 7; ++i)
+                VkDescriptorSetLayoutBinding bindings[8]{};
+                for (uint32_t i = 0; i < 8; ++i)
                 {
                     bindings[i].binding         = i;
                     bindings[i].descriptorCount = 1;
@@ -488,11 +492,11 @@ namespace render::detail
                       i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
                 }
                 VkDescriptorSetLayoutCreateInfo layout{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-                layout.bindingCount = 7;
+                layout.bindingCount = 8;
                 layout.pBindings    = bindings;
                 Check(c.api.vkCreateDescriptorSetLayout(c.device, &layout, nullptr, &c.layout));
                 VkDescriptorPoolSize sizes[] = {
-                  {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6}};
+                  {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7}};
                 VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
                 dp.maxSets       = 1;
                 dp.poolSizeCount = 2;
@@ -521,6 +525,16 @@ namespace render::detail
                 pipeline.stage.module = c.shader;
                 pipeline.stage.pName  = "CSMain";
                 Check(c.api.vkCreateComputePipelines(c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.pipeline));
+                const auto            filterBytes = LoadShader(config.shaderDirectory, "denoise.compute.spv");
+                std::vector<uint32_t> filterCode(filterBytes.size() / 4);
+                std::memcpy(filterCode.data(), filterBytes.data(), filterBytes.size());
+                module.codeSize = filterBytes.size();
+                module.pCode    = filterCode.data();
+                Check(c.api.vkCreateShaderModule(c.device, &module, nullptr, &c.denoiseShader));
+                pipeline.stage.module = c.denoiseShader;
+                pipeline.stage.pName  = "DenoiseMain";
+                Check(
+                  c.api.vkCreateComputePipelines(c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.denoisePipeline));
             }
             void Submit()
             {
@@ -694,18 +708,20 @@ namespace render::detail
                 {
                     ReleaseImageBuffer(data[4]);
                     ReleaseImageBuffer(data[5]);
+                    ReleaseImageBuffer(data[6]);
                     width   = uniforms.frame[1];
                     height  = uniforms.frame[2];
                     data[4] = c.MakeBuffer(size_t(width) * height * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
                     data[5] = c.MakeBuffer(size_t(width) * height * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+                    data[6] = c.MakeBuffer(size_t(width) * height * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
                 }
                 VkWriteDescriptorSetAccelerationStructureKHR writeAS{
                   VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
                 writeAS.accelerationStructureCount = 1;
                 writeAS.pAccelerationStructures    = &tlas;
-                VkDescriptorBufferInfo infos[6]{};
-                VkWriteDescriptorSet   writes[7]{};
-                for (uint32_t i = 0; i < 7; ++i)
+                VkDescriptorBufferInfo infos[7]{};
+                VkWriteDescriptorSet   writes[8]{};
+                for (uint32_t i = 0; i < 8; ++i)
                 {
                     auto& w           = writes[i];
                     w.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -722,7 +738,7 @@ namespace render::detail
                         w.pBufferInfo = &infos[i - 1];
                     }
                 }
-                c.api.vkUpdateDescriptorSets(c.device, 7, writes, 0, nullptr);
+                c.api.vkUpdateDescriptorSets(c.device, 8, writes, 0, nullptr);
                 void* mapped;
                 Check(c.api.vkMapMemory(c.device, data[0].memory, 0, sizeof(uniforms), 0, &mapped));
                 std::memcpy(mapped, &uniforms, sizeof(uniforms));
@@ -748,6 +764,22 @@ namespace render::detail
                 c.api.vkCmdBindDescriptorSets(
                   cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipelineLayout, 0, 1, &set, 0, nullptr);
                 c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
+                if (uniforms.options[3])
+                {
+                    c.api.vkCmdPipelineBarrier(
+                      cmd,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      0,
+                      1,
+                      &barrier,
+                      0,
+                      nullptr,
+                      0,
+                      nullptr);
+                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.denoisePipeline);
+                    c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
+                }
                 barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
                 barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
                 c.api.vkCmdPipelineBarrier(

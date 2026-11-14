@@ -39,3 +39,9 @@ await writeFile('docs/public/generated/pathtrace.json', JSON.stringify(path))
 const present = await compile(await readFile('render/shaders/pathpresent.hlsl', 'utf8'))
 await writeFile('docs/public/generated/pathpresent.json', JSON.stringify(present))
 console.log('BVH path tracing HLSL → WGSL generated')
+
+const denoise = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
+  compute: true,
+  computeEntry: 'DenoiseMain',
+})
+await writeFile('docs/public/generated/denoise.json', JSON.stringify(denoise))

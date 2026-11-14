@@ -13,6 +13,7 @@ namespace render
         uint32_t samplesPerFrame = 1;
         uint32_t maxBounces      = 3;
         float    resolutionScale = 0.5f;
+        bool     denoise         = false;
     };
     struct RendererCapabilities
     {

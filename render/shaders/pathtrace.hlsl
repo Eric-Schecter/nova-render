@@ -23,6 +23,7 @@ struct BVHNode
 [[vk::binding(4, 0)]] StructuredBuffer<uint2>    skyTexels : register(t4);
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> accumulation : register(u0);
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint>   outputImage : register(u1);
+[[vk::binding(7, 0)]] RWStructuredBuffer<float4> guides : register(u2);
 static const float                               PI = 3.14159265;
 uint                                             randomBits(inout uint state)
 {
@@ -293,8 +294,26 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
     uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
     if (id.x >= frame.y || id.y >= frame.z)
         return;
-    uint   index = id.y * frame.y + id.x;
-    float3 sum   = frame.x ? accumulation[index].rgb : float3(0, 0, 0);
+    uint index = id.y * frame.y + id.x;
+    if (options.w != 0)
+    {
+        float2 p         = (float2(id.xy) + .5) / float2(frame.yz) * 2 - 1;
+        float3 direction = normalize(
+          parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz
+          - p.y * parameters[11].w * parameters[11].xyz);
+        Hit    hit;
+        float4 guide = float4(0, 0, 0, -1);
+        if (trace(parameters[4].xyz, direction, hit))
+        {
+            Vertex a = vertices[hit.primitive * 3], b = vertices[hit.primitive * 3 + 1],
+                   c       = vertices[hit.primitive * 3 + 2];
+            float3 weights = float3(1 - hit.bary.x - hit.bary.y, hit.bary);
+            guide          = float4(
+              normalize(a.normal.xyz * weights.x + b.normal.xyz * weights.y + c.normal.xyz * weights.z), hit.distance);
+        }
+        guides[index] = guide;
+    }
+    float3 sum = frame.x ? accumulation[index].rgb : float3(0, 0, 0);
     for (uint sampleIndex = 0; sampleIndex < options.x; ++sampleIndex)
     {
         uint state = index * 1973u + (frame.x + sampleIndex) * 9277u + 89173u;
@@ -309,4 +328,43 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
     float3 color        = 1 - exp(-sum / float(frame.x + options.x) * parameters[4].w);
     uint3  encoded      = uint3(saturate(pow(max(color, 0), 1 / 2.2)) * 255 + .5);
     outputImage[index]  = encoded.x | (encoded.y << 8) | (encoded.z << 16) | 0xff000000u;
+}
+
+  // Display-only joint bilateral filter. Raw progressive radiance is never modified.
+  // Geometry guides stop filtering across silhouettes, depth breaks and normal edges.
+  [numthreads(8, 8, 1)] void DenoiseMain(uint3 id : SV_DispatchThreadID)
+{
+    uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
+    if (id.x >= frame.y || id.y >= frame.z)
+        return;
+    uint   index       = id.y * frame.y + id.x;
+    float4 centerGuide = guides[index];
+    if (centerGuide.w < 0)
+        return;
+    float  count      = float(frame.x + options.x);
+    float3 center     = accumulation[index].rgb / count;
+    float  centerLuma = dot(center, float3(.2126, .7152, .0722));
+    float3 sum        = 0;
+    float  total      = 0;
+    for (int y = -2; y <= 2; ++y)
+        for (int x = -2; x <= 2; ++x)
+        {
+            int2 pixel = int2(id.xy) + int2(x, y);
+            if (any(pixel < 0) || pixel.x >= int(frame.y) || pixel.y >= int(frame.z))
+                continue;
+            uint   neighbor = uint(pixel.y) * frame.y + uint(pixel.x);
+            float4 guide    = guides[neighbor];
+            if (guide.w < 0)
+                continue;
+            float3 value  = accumulation[neighbor].rgb / count;
+            float  luma   = dot(value, float3(.2126, .7152, .0722));
+            float  weight = exp(-float(x * x + y * y) / 4.0) * pow(saturate(dot(centerGuide.xyz, guide.xyz)), 32)
+                           * exp(-abs(guide.w - centerGuide.w) / max(.005, centerGuide.w * .015))
+                           * exp(-abs(luma - centerLuma) / max(.15, centerLuma * .75));
+            sum += value * weight;
+            total += weight;
+        }
+    float3 color       = 1 - exp(-sum / max(total, 1e-6) * parameters[4].w);
+    uint3  encoded     = uint3(saturate(pow(max(color, 0), 1 / 2.2)) * 255 + .5);
+    outputImage[index] = encoded.x | (encoded.y << 8) | (encoded.z << 16) | 0xff000000u;
 }

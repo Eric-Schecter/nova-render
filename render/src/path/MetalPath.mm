@@ -20,9 +20,9 @@ namespace render::detail
         {
             id<MTLDevice>                device;
             id<MTLCommandQueue>          queue;
-            id<MTLComputePipelineState>  pipeline;
+            id<MTLComputePipelineState>  pipeline, denoisePipeline;
             id<MTLAccelerationStructure> blas, tlas;
-            id<MTLBuffer>                vertices, texels, sky, params, accumulation, output;
+            id<MTLBuffer>                vertices, texels, sky, params, accumulation, output, guides;
             uint32_t                     width = 0, height = 0;
             id<MTLBuffer>                Buffer(const void* data, size_t size)
             {
@@ -79,6 +79,23 @@ namespace render::detail
                                                                  error:&error];
                 if (!pipeline)
                     throw std::runtime_error(error.localizedDescription.UTF8String);
+                {
+                    const auto      bytes = LoadShader(config.shaderDirectory, "denoise.metallib");
+                    NSData*         data  = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+                    dispatch_data_t blob =
+                      dispatch_data_create(data.bytes, data.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                        (void)data;
+                      });
+                    NSError* error   = nil;
+                    auto     library = [device newLibraryWithData:blob error:&error];
+                    if (!library)
+                        throw std::runtime_error(error.localizedDescription.UTF8String);
+                    denoisePipeline =
+                      [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"DenoiseMain"]
+                                                            error:&error];
+                    if (!denoisePipeline)
+                        throw std::runtime_error(error.localizedDescription.UTF8String);
+                }
             }
             void SetScene(const PathScene& scene) override
             {
@@ -117,7 +134,9 @@ namespace render::detail
                                                        options:MTLResourceStorageModePrivate];
                     output       = [device newBufferWithLength:size_t(width) * height * 4
                                                  options:MTLResourceStorageModeShared];
-                    if (!accumulation || !output)
+                    guides       = [device newBufferWithLength:size_t(width) * height * 16
+                                                 options:MTLResourceStorageModePrivate];
+                    if (!accumulation || !output || !guides)
                         throw std::runtime_error("Metal path image allocation failed");
                 }
                 auto command = [queue commandBuffer];
@@ -132,8 +151,20 @@ namespace render::detail
                 [encoder setBuffer:sky offset:0 atIndex:4];
                 [encoder setBuffer:accumulation offset:0 atIndex:5];
                 [encoder setBuffer:output offset:0 atIndex:6];
+                [encoder setBuffer:guides offset:0 atIndex:7];
                 [encoder dispatchThreads:MTLSizeMake(width, height, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
                 [encoder endEncoding];
+                if (uniforms.options[3])
+                {
+                    auto filter = [command computeCommandEncoder];
+                    [filter setComputePipelineState:denoisePipeline];
+                    [filter setBuffer:params offset:0 atIndex:1];
+                    [filter setBuffer:accumulation offset:0 atIndex:5];
+                    [filter setBuffer:output offset:0 atIndex:6];
+                    [filter setBuffer:guides offset:0 atIndex:7];
+                    [filter dispatchThreads:MTLSizeMake(width, height, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+                    [filter endEncoding];
+                }
                 Finish(command);
                 std::vector<unsigned char> pixels(size_t(width) * height * 4);
                 std::memcpy(pixels.data(), output.contents, pixels.size());

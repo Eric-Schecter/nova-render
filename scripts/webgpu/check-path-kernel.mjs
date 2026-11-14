@@ -199,7 +199,38 @@ try {
           later = mse(shots[1].pixels, shots[2].pixels)
         if (!(later < early * 0.8))
           throw Error('No progressive convergence: ' + early + ' -> ' + later)
-        if (path.samples !== 34) throw Error('Sample count')
+        path.draw(null, camera, [0.02, 0.03, 0.05, 1], 160, 120, 'pbr', light, env, settings, {
+          ...options,
+          denoise: true,
+        })
+        const filtered = await path.readPixels(),
+          filteredError = mse(filtered.pixels, shots[2].pixels)
+        if (!(filteredError < early) || path.samples !== 2)
+          throw Error(
+            'Denoise did not improve reference error/reset samples: ' +
+              filteredError +
+              ' vs ' +
+              early,
+          )
+        for (let c = 0; c < 4; c++)
+          if (filtered.pixels[c] !== shots[0].pixels[c]) throw Error('Sky changed by denoise')
+        path.draw(
+          null,
+          camera,
+          [0.02, 0.03, 0.05, 1],
+          160,
+          120,
+          'pbr',
+          light,
+          env,
+          settings,
+          options,
+        )
+        const restored = await path.readPixels()
+        if (restored.pixels.some((v, i) => v !== shots[0].pixels[i]))
+          throw Error('Raw output not restored')
+        console.log('Denoise MSE', early, filteredError)
+        if (path.samples !== 2) throw Error('Sample count')
         path.draw(
           null,
           { ...camera, yaw: 21 },
@@ -226,6 +257,7 @@ try {
         return {
           early,
           later,
+          filteredError,
           triangles: helmet.vertices.length / 36,
           nodes: buildBVH(helmet.vertices).count,
           png: canvas.toDataURL().split(',')[1],

@@ -135,6 +135,17 @@ try {
       null,
       { timeout: 60000 },
     )
+    const denoise = page.getByRole('checkbox', { name: '降噪', exact: true })
+    if (await denoise.isChecked()) throw Error('Denoise should default off')
+    await denoise.check()
+    await page.waitForFunction(
+      () =>
+        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 2,
+      null,
+      { timeout: 60000 },
+    )
+    if (!(await denoise.isChecked())) throw Error('Denoise toggle did not persist')
+    await denoise.uncheck()
     await page.getByRole('button', { name: '重置累计', exact: true }).click()
     await mode.selectOption('raster')
     if (await samples.count()) throw Error('Path controls remain in raster mode')
