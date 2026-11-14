@@ -7,7 +7,8 @@ namespace render
     {
         Raster,
         RayTracing,
-        PathTracing = RayTracing // Compatibility alias.
+        PathTracing = RayTracing, // Compatibility alias.
+        IntegratorComparison
     };
     enum class PathIntegrator
     {
@@ -17,17 +18,26 @@ namespace render
     };
     struct PathTracingSettings
     {
-        uint32_t       samplesPerFrame     = 1;
-        uint32_t       maxBounces          = 3;
-        float          resolutionScale     = 0.5f;
-        bool           denoise             = false;
-        bool           lightSampling       = true; // PT next-event estimation. BDPT always uses MIS.
-        PathIntegrator integrator          = PathIntegrator::PathTracing;
-        uint32_t       photonsPerIteration = 8192;
-        float          photonRadius        = .16f;
+        uint32_t       samplesPerFrame        = 1;
+        uint32_t       maxBounces             = 3;
+        float          resolutionScale        = 0.5f;
+        bool           denoise                = false;
+        bool           lightSampling          = true; // PT next-event estimation. BDPT always uses MIS.
+        PathIntegrator integrator             = PathIntegrator::PathTracing;
+        uint32_t       photonsPerIteration    = 8192;
+        float          photonRadius           = .16f;
+        uint32_t       comparisonSamples      = 64;
+        uint32_t       comparisonMilliseconds = 0; // 0: fixed spp; otherwise active render time per method.
     };
     using RayTracingSettings = PathTracingSettings;
     using RayIntegrator      = PathIntegrator;
+    struct ComparisonProgress
+    {
+        PathIntegrator integrator   = PathIntegrator::PathTracing;
+        uint32_t       samples      = 0;
+        double         milliseconds = 0;
+        bool           complete     = false;
+    };
     struct RendererCapabilities
     {
         bool        pathTracing        = false;

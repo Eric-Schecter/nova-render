@@ -5,6 +5,8 @@ namespace example
     inline std::string AssetName(const std::filesystem::path& path)
     {
         const auto name = path.stem().string();
+        if (name == "CornellCaustics")
+            return "Cornell Caustics";
         if (name == "CornellIndirect")
             return "Cornell Indirect";
         if (name == "CornellGlossy")
@@ -26,7 +28,13 @@ namespace example
         const auto                       assets = current.parent_path().parent_path();
         std::vector<render::AssetChoice> result{{AssetName(current), current}};
         for (const auto* name :
-             {"DamagedHelmet", "Avocado", "BoomBox", "CornellBox", "CornellIndirect", "CornellGlossy"})
+             {"DamagedHelmet",
+              "Avocado",
+              "BoomBox",
+              "CornellBox",
+              "CornellIndirect",
+              "CornellGlossy",
+              "CornellCaustics"})
         {
             const auto path = assets / name / (std::string(name) + ".glb");
             if (path != current && std::filesystem::exists(path))

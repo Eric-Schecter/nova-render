@@ -70,12 +70,13 @@ namespace render
         RayTracingSettings         GetRayTracing() const { return GetPathTracing(); }
         void                       ResetAccumulation();
         uint32_t                   GetAccumulatedSamples() const;
-        void                       LoadEnvironment(const std::filesystem::path& path);
-        void                       SetEnvironment(const EnvironmentSettings& settings);
-        EnvironmentSettings        GetEnvironment() const;
-        void                       SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight           GetDirectionalLight() const;
-        void                       SetLighting(LightingMode mode);
+        std::array<ComparisonProgress, 3> GetComparisonProgress() const;
+        void                              LoadEnvironment(const std::filesystem::path& path);
+        void                              SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings               GetEnvironment() const;
+        void                              SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight                  GetDirectionalLight() const;
+        void                              SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
         bool                 EnableParameterPanel(const ParameterPanelConfig& config);

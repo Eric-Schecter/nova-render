@@ -11,10 +11,20 @@ export const defaultPathTracing = () => ({
   integrator: 'path',
   photonsPerIteration: 8192,
   photonRadius: 0.16,
+  comparisonSamples: 64,
+  comparisonMilliseconds: 0,
 })
 export function validatePathTracing(value) {
   if (
     !value ||
+    (value.comparisonSamples !== undefined &&
+      (!Number.isInteger(value.comparisonSamples) ||
+        value.comparisonSamples < 1 ||
+        value.comparisonSamples > 65536)) ||
+    (value.comparisonMilliseconds !== undefined &&
+      (!Number.isInteger(value.comparisonMilliseconds) ||
+        value.comparisonMilliseconds < 0 ||
+        value.comparisonMilliseconds > 60000)) ||
     (value.integrator !== undefined &&
       !['path', 'bidirectional', 'photon-mapping'].includes(value.integrator)) ||
     (value.lightSampling !== undefined && typeof value.lightSampling !== 'boolean') ||
@@ -334,6 +344,26 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
         }
         device.queue.submit([encoder.finish()])
         samples += path.samplesPerFrame
+      },
+      present(context, rectangle, clear = true) {
+        if (!presentGroup) return
+        const encoder = device.createCommandEncoder(),
+          pass = encoder.beginRenderPass({
+            colorAttachments: [
+              {
+                view: context.getCurrentTexture().createView(),
+                loadOp: clear ? 'clear' : 'load',
+                storeOp: 'store',
+                clearValue: [0, 0, 0, 1],
+              },
+            ],
+          })
+        pass.setPipeline(present)
+        pass.setBindGroup(0, presentGroup)
+        pass.setViewport(rectangle.x, rectangle.y, rectangle.width, rectangle.height, 0, 1)
+        pass.draw(3)
+        pass.end()
+        device.queue.submit([encoder.finish()])
       },
       async readPixels() {
         const read = device.createBuffer({

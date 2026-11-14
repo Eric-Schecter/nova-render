@@ -209,6 +209,10 @@ namespace render
     {
         impl_->renderer->ResetAccumulation();
     }
+    std::array<ComparisonProgress, 3> Window::GetComparisonProgress() const
+    {
+        return impl_->renderer->GetComparisonProgress();
+    }
     uint32_t Window::GetAccumulatedSamples() const
     {
         return impl_->renderer->GetAccumulatedSamples();

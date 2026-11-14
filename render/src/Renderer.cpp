@@ -116,6 +116,10 @@ namespace render
     {
         impl_->backend->ResetAccumulation();
     }
+    std::array<ComparisonProgress, 3> Renderer::GetComparisonProgress() const
+    {
+        return impl_->backend->GetComparisonProgress();
+    }
     uint32_t Renderer::GetAccumulatedSamples() const
     {
         return impl_->backend->GetAccumulatedSamples();

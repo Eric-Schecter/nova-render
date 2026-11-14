@@ -39,9 +39,11 @@ namespace render::detail
         }
         void SetRenderMode(RenderMode value)
         {
-            if (value != RenderMode::Raster && value != RenderMode::PathTracing)
+            if (
+              value != RenderMode::Raster && value != RenderMode::PathTracing
+              && value != RenderMode::IntegratorComparison)
                 throw std::invalid_argument("Invalid render mode");
-            if (value == RenderMode::PathTracing)
+            if (value != RenderMode::Raster)
             {
                 if (!model || model->vertices.empty())
                     throw std::invalid_argument("Load a model before path tracing");
@@ -62,9 +64,10 @@ namespace render::detail
             pathSettings = value;
             pathSession.Reset();
         }
-        PathTracingSettings GetPathTracing() const { return pathSettings; }
-        void                ResetAccumulation() { pathSession.Reset(); }
-        uint32_t            GetAccumulatedSamples() const { return pathSession.Samples(); }
+        PathTracingSettings               GetPathTracing() const { return pathSettings; }
+        void                              ResetAccumulation() { pathSession.Reset(); }
+        uint32_t                          GetAccumulatedSamples() const { return pathSession.Samples(); }
+        std::array<ComparisonProgress, 3> GetComparisonProgress() const { return pathSession.Comparison(); }
         virtual ~Backend()                                          = default;
         virtual void        Resize(uint32_t width, uint32_t height) = 0;
         virtual FrameResult DrawFrame()                             = 0;
@@ -144,7 +147,7 @@ namespace render::detail
         RendererConfig      pathConfig;
         const ModelImage*   DrawPathFrame(uint32_t width, uint32_t height)
         {
-            if (mode != RenderMode::PathTracing)
+            if (mode == RenderMode::Raster)
                 return nullptr;
             const auto uniform = MakeSceneUniforms(
               *model,
@@ -154,6 +157,8 @@ namespace render::detail
               directionalLight,
               environment.get(),
               environmentSettings);
+            if (mode == RenderMode::IntegratorComparison)
+                return &pathSession.RenderComparison(model, uniform, pathSettings, width, height);
             return &pathSession.Render(
               model, environment, uniform, pathSettings, ClearColorForTarget(true), width, height);
         }
@@ -186,6 +191,7 @@ namespace render::detail
               model && !model->vertices.empty() ? GetCapabilities() : RendererCapabilities{},
               pathSettings,
               pathSession.Samples(),
+              pathSession.Comparison(),
               animation.Clips(),
               animation.state);
             if (previous.clip != animation.state.clip || previous.time != animation.state.time)

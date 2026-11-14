@@ -156,8 +156,9 @@ class Renderer {
   setRenderMode(mode) {
     this.#check()
     if (mode === 'path-tracing') mode = 'ray-tracing'
-    if (mode !== 'raster' && mode !== 'ray-tracing') throw Error('Invalid render mode')
-    if (mode === 'ray-tracing') {
+    if (!['raster', 'ray-tracing', 'integrator-comparison'].includes(mode))
+      throw Error('Invalid render mode')
+    if (mode !== 'raster') {
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
       if (!this.#model?.triangles) throw Error('Path tracing requires a loaded model')
     }
@@ -208,6 +209,8 @@ class Renderer {
       integrator: settings.integrator ?? 'path',
       photonsPerIteration: settings.photonsPerIteration ?? 8192,
       photonRadius: settings.photonRadius ?? 0.16,
+      comparisonSamples: settings.comparisonSamples ?? 64,
+      comparisonMilliseconds: settings.comparisonMilliseconds ?? 0,
     }
     this.resetAccumulation()
     this.#parameterPanel?.refresh()
@@ -221,6 +224,10 @@ class Renderer {
     this.#model?.resetAccumulation()
     this.#pathError = undefined
   }
+  getComparisonProgress() {
+    this.#check()
+    return this.#model?.comparisonProgress || []
+  }
   getAccumulatedSamples() {
     this.#check()
     return this.#model?.accumulatedSamples || 0
@@ -228,16 +235,21 @@ class Renderer {
   // Only one scheduled frame, requested after the previous GPU submission finishes.
   #continuePathTracing() {
     if (
+      this.#renderMode === 'integrator-comparison' &&
+      this.getComparisonProgress().length === 3 &&
+      this.getComparisonProgress().every((p) => p.complete)
+    )
+      return
+    if (
       this.#disposed ||
       this.#pathError ||
-      (this.#renderMode !== 'ray-tracing' && !this.#animationPlaying()) ||
+      (this.#renderMode === 'raster' && !this.#animationPlaying()) ||
       this.#pathFrame
     )
       return
     this.#pathFrame = requestAnimationFrame((timestamp) => {
       this.#pathFrame = 0
-      if (this.#disposed || (this.#renderMode !== 'ray-tracing' && !this.#animationPlaying()))
-        return
+      if (this.#disposed || (this.#renderMode === 'raster' && !this.#animationPlaying())) return
       const rect = this.#canvas.getBoundingClientRect()
       if (
         document.hidden ||
@@ -314,6 +326,7 @@ class Renderer {
         getAnimationState: () => this.getAnimationState(),
         setAnimationState: (value) => this.setAnimationState(value),
         getPathTracing: () => this.getPathTracing(),
+        getComparisonProgress: () => this.getComparisonProgress(),
         setPathTracing: (settings) => this.setPathTracing(settings),
         getAccumulatedSamples: () => this.getAccumulatedSamples(),
         resetAccumulation: () => this.resetAccumulation(),
@@ -333,7 +346,8 @@ class Renderer {
           environment: !!this.#environment,
           lighting:
             !!this.#model && (this.#lighting === 'pbr' || this.#renderMode === 'ray-tracing'),
-          pathTracing: this.#renderMode === 'ray-tracing',
+          pathTracing: this.#renderMode !== 'raster',
+          comparison: this.#renderMode === 'integrator-comparison',
           animation: this.getAnimations()
             .map((c) => c.name)
             .join('|'),
@@ -475,7 +489,9 @@ class Renderer {
     let failure
     try {
       if (this.#model) {
-        if (this.#renderMode === 'ray-tracing')
+        if (this.#renderMode === 'integrator-comparison')
+          await this.#model.drawComparison(this.#camera, width, height, this.#pathSettings)
+        else if (this.#renderMode === 'ray-tracing')
           await this.#model.drawPath(
             this.#camera,
             this.#clear,

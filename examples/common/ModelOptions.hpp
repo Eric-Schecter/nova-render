@@ -30,8 +30,10 @@ namespace example
             throw std::invalid_argument(
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
               "[--frames N] [--spin] [--environment path.nenv] "
-              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray] [--spp N] "
-              "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping]");
+              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray|compare] "
+              "[--spp N] "
+              "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping] [--compare-samples N | "
+              "--compare-ms N]");
         ModelOptions options;
         options.modelPath = argv[1];
         if (defaultEnvironment)
@@ -91,6 +93,8 @@ namespace example
                 const std::string mode = argv[++i];
                 if (mode == "raster")
                     options.mode = render::RenderMode::Raster;
+                else if (mode == "compare")
+                    options.mode = render::RenderMode::IntegratorComparison;
                 else if (mode == "ray" || mode == "path")
                     options.mode = render::RenderMode::PathTracing;
                 else
@@ -117,6 +121,19 @@ namespace example
                     options.path.samplesPerFrame = uint32_t(value);
                 else
                     options.path.maxBounces = uint32_t(value);
+            }
+            else if ((arg == "--compare-samples" || arg == "--compare-ms") && i + 1 < argc)
+            {
+                const float value = number(argv[++i]);
+                if (!std::isfinite(value) || value < 1 || value > 60000 || std::floor(value) != value)
+                    throw std::invalid_argument("Invalid comparison budget");
+                if (arg == "--compare-ms")
+                    options.path.comparisonMilliseconds = uint32_t(value);
+                else
+                {
+                    options.path.comparisonSamples      = uint32_t(value);
+                    options.path.comparisonMilliseconds = 0;
+                }
             }
             else if (arg == "--scale" && i + 1 < argc)
                 options.path.resolutionScale = number(argv[++i]);

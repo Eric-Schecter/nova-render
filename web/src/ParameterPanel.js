@@ -74,6 +74,11 @@ export function attachParameterPanel(
   body.className = 'nova-panel-body'
   panel.append(toggle, body)
   wrapper.append(panel)
+  const legend = document.createElement('div')
+  legend.setAttribute('aria-label', '积分器对比结果')
+  legend.style.cssText =
+    'position:absolute;top:0;left:0;right:0;display:none;grid-template-columns:repeat(3,minmax(0,1fr));pointer-events:none;z-index:2;color:white;background:#111c;font:12px/1.5 monospace'
+  wrapper.append(legend)
   const events = new AbortController(),
     initialCamera = adapter.getCamera(),
     initialLight = adapter.getLight(),
@@ -217,11 +222,12 @@ export function attachParameterPanel(
       for (const [value, text] of [
         ['raster', 'Raster'],
         ['ray-tracing', 'Ray tracing'],
+        ['integrator-comparison', 'Integrator comparison'],
       ]) {
         const option = document.createElement('option')
         option.value = value
         option.textContent = text
-        if (value === 'ray-tracing' && !capabilities.pathTracing) {
+        if (value !== 'raster' && !capabilities.pathTracing) {
           option.disabled = true
           option.title = capabilities.reason
         }
@@ -236,6 +242,65 @@ export function attachParameterPanel(
       renderer.append(label)
       fields.set('renderMode', { input: select })
       if (current.pathTracing) {
+        if (current.comparison) {
+          const note = document.createElement('div')
+          note.textContent = 'Emitter-only · no denoising · 1 camera sample / iteration'
+          renderer.append(note)
+          const label = document.createElement('label'),
+            budget = document.createElement('select')
+          label.textContent = 'Budget'
+          budget.setAttribute('aria-label', '对比预算')
+          for (const [value, text] of [
+            ['samples', 'Fixed samples'],
+            ['time', 'Fixed time'],
+          ]) {
+            const option = document.createElement('option')
+            option.value = value
+            option.textContent = text
+            budget.append(option)
+          }
+          budget.value = adapter.getPathTracing().comparisonMilliseconds ? 'time' : 'samples'
+          budget.addEventListener(
+            'change',
+            () =>
+              change(() =>
+                adapter.setPathTracing({
+                  ...adapter.getPathTracing(),
+                  comparisonMilliseconds: budget.value === 'time' ? 1000 : 0,
+                }),
+              ),
+            { signal: fieldEvents.signal },
+          )
+          label.append(budget)
+          renderer.append(label)
+          fields.set('comparisonBudget', { input: budget })
+          slider(
+            renderer,
+            'comparisonSamples',
+            'Samples / method',
+            '对比采样预算',
+            1,
+            4096,
+            1,
+            (value) =>
+              adapter.setPathTracing({ ...adapter.getPathTracing(), comparisonSamples: value }),
+          )
+          slider(
+            renderer,
+            'comparisonMilliseconds',
+            'Time / method (ms)',
+            '对比时间预算',
+            1,
+            60000,
+            1,
+            (value) =>
+              adapter.setPathTracing({
+                ...adapter.getPathTracing(),
+                comparisonMilliseconds: value,
+              }),
+          )
+        }
+
         const integratorRow = document.createElement('label'),
           integrator = document.createElement('select')
         integratorRow.textContent = 'Integrator'
@@ -516,8 +581,38 @@ export function attachParameterPanel(
       B: light.color[2],
       intensity: light.intensity,
     }
+    const comparing = !!current.comparison
+    legend.style.display = comparing ? 'grid' : 'none'
+    panel.style.top = comparing ? '34px' : ''
+    if (comparing) {
+      legend.replaceChildren(
+        ...(adapter.getComparisonProgress?.() || []).map((p, i) => {
+          const cell = document.createElement('span')
+          cell.style.cssText = 'padding:4px;overflow:hidden'
+          cell.textContent =
+            ['PT', 'BDPT', 'Photon mapping'][i] +
+            ' · ' +
+            p.samples +
+            ' spp · ' +
+            Math.round(p.milliseconds) +
+            ' ms' +
+            (p.complete ? ' · paused' : '')
+          return cell
+        }),
+      )
+    }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (key === 'comparisonBudget') {
+        field.input.value = values.comparisonMilliseconds ? 'time' : 'samples'
+        continue
+      }
+      if (['comparisonSamples', 'comparisonMilliseconds'].includes(key))
+        field.input.closest('label').style.display =
+          (key === 'comparisonMilliseconds') === !!values.comparisonMilliseconds ? '' : 'none'
+      if (['integrator', 'samplesPerFrame', 'denoise', 'lightSampling'].includes(key))
+        field.input.closest('label').style.display = comparing ? 'none' : ''
+
       if (key.startsWith('animation')) {
         const state = adapter.getAnimationState()
         if (key === 'animationClip') field.input.value = state.clip
@@ -578,7 +673,7 @@ export function attachParameterPanel(
       }
       if (key === 'photonsPerIteration' || key === 'photonRadius')
         field.input.closest('label').style.display =
-          adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
+          comparing || adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
       field.input.value = values[key]
       field.output.textContent = Number(values[key]).toFixed(
         key === 'distance' || key === 'resolutionScale' || ['R', 'G', 'B'].includes(key)
