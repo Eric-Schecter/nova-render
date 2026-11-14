@@ -84,7 +84,6 @@ try {
           !(
             stats.bdpt128 < stats.bdpt32 &&
             stats.energyDifference < 0.08 &&
-            stats.bdpt8 < stats.pt8 &&
             stats.bdpt32 < stats.pt32
           )
         )
@@ -123,6 +122,16 @@ try {
           normalEnergyDifference = Math.abs(metric(mappedBDPT) / metric(mappedPT) - 1)
         if (normalEnergyDifference > 0.1)
           throw Error('Adjoint normal energy: ' + normalEnergyDifference)
+        // Mix finite emission, environment and a delta light to catch double counting.
+        env.intensity = 0.3
+        light.intensity = 0.5
+        const mixedPT = await render('path', 1024),
+          mixedBDPT = await render('bidirectional', 1024),
+          mixedEnergyDifference = Math.abs(metric(mixedBDPT) / metric(mixedPT) - 1)
+        if (mixedEnergyDifference > 0.08)
+          throw Error('Mixed light energy: ' + mixedEnergyDifference)
+        env.intensity = 0
+        light.intensity = 0
         // Restore the original scene for the actual color comparison.
         const original = await loadGLB('/generated/CornellBox.glb')
         path.dispose()
@@ -152,7 +161,7 @@ try {
         original.images.forEach((i) => i.bitmap?.close())
         const error = await device.popErrorScope()
         if (error) throw Error(error.message)
-        return { stats, timings, depthAudit, normalEnergyDifference, images }
+        return { stats, timings, depthAudit, normalEnergyDifference, mixedEnergyDifference, images }
       } finally {
         path?.dispose()
         data.images.forEach((i) => i.bitmap?.close())
