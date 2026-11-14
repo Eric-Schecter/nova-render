@@ -69,8 +69,9 @@ export async function loadGLB(url) {
   if (
     !json ||
     !bin ||
-    json.extensionsRequired?.length ||
-    json.extensionsUsed?.length ||
+    [...(json.extensionsRequired || []), ...(json.extensionsUsed || [])].some(
+      (e) => !['KHR_materials_transmission', 'KHR_materials_ior'].includes(e),
+    ) ||
     json.buffers.length !== 1 ||
     json.buffers[0].uri
   )
@@ -126,8 +127,31 @@ export async function loadGLB(url) {
         if ((p.mode ?? 4) !== 4 || p.targets)
           throw Error('Only triangle primitives without morph targets are supported')
         if (materialIndex < 0) materialIndex = p.material
-        if (p.material === undefined || p.material !== materialIndex)
-          throw Error('Initial model loader requires one material')
+        if (p.material === undefined) throw Error('Missing material')
+        const core = (m) =>
+          JSON.stringify(
+            Object.fromEntries(
+              Object.entries(m)
+                .filter(([k]) => !['extensions', 'name'].includes(k))
+                .sort(([a], [b]) => a.localeCompare(b)),
+            ),
+          )
+        if (core(json.materials[p.material]) !== core(json.materials[materialIndex]))
+          throw Error('Materials must share core PBR factors and texture atlas')
+        const extensions = json.materials[p.material].extensions || {},
+          transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
+          ior = extensions.KHR_materials_ior?.ior ?? 1.5
+        if (extensions.KHR_materials_transmission?.transmissionTexture)
+          throw Error('Transmission textures are not yet supported')
+        if (
+          !Number.isFinite(transmission) ||
+          transmission < 0 ||
+          transmission > 1 ||
+          !Number.isFinite(ior) ||
+          ior < 1.01 ||
+          ior > 3
+        )
+          throw Error('Dielectric requires transmission 0..1 and IOR 1.01..3')
         if (
           p.indices !== undefined &&
           ![5121, 5123, 5125].includes(json.accessors[p.indices].componentType)
@@ -172,7 +196,15 @@ export async function loadGLB(url) {
             min[k] = Math.min(min[k], world[k])
             max[k] = Math.max(max[k], world[k])
           }
-          vertices.push(...world, 1, ...n, 0, ...uv, p.attributes.NORMAL === undefined ? 1 : 0, 0)
+          vertices.push(
+            ...world,
+            1,
+            ...n,
+            transmission,
+            ...uv,
+            p.attributes.NORMAL === undefined ? 1 : 0,
+            ior,
+          )
           animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex, normal)
         }
       }

@@ -64,8 +64,29 @@ namespace render::detail
         std::string        errors, warnings;
         if (!loader.LoadBinaryFromFile(&gltf, &errors, &warnings, path.string()))
             throw std::runtime_error("Load GLB: " + path.string() + ": " + errors);
-        if (!gltf.extensionsRequired.empty() || !gltf.extensionsUsed.empty())
-            throw std::runtime_error("Only core glTF GLB without extensions is supported");
+        for (const auto& list : {gltf.extensionsRequired, gltf.extensionsUsed})
+            for (const auto& extension : list)
+                if (extension != "KHR_materials_transmission" && extension != "KHR_materials_ior")
+                    throw std::runtime_error("Unsupported glTF extension: " + extension);
+        auto dielectric = [](const tinygltf::Material& m) {
+            float      transmission = 0, ior = 1.5f;
+            const auto t = m.extensions.find("KHR_materials_transmission");
+            if (t != m.extensions.end())
+            {
+                if (t->second.Has("transmissionTexture"))
+                    throw std::runtime_error("Transmission textures are not yet supported");
+                if (t->second.Has("transmissionFactor"))
+                    transmission = float(t->second.Get("transmissionFactor").GetNumberAsDouble());
+            }
+            const auto i = m.extensions.find("KHR_materials_ior");
+            if (i != m.extensions.end() && i->second.Has("ior"))
+                ior = float(i->second.Get("ior").GetNumberAsDouble());
+            if (
+              !std::isfinite(transmission) || transmission < 0 || transmission > 1 || !std::isfinite(ior) || ior < 1.01f
+              || ior > 3)
+                throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1.01..3");
+            return std::array<float, 2>{transmission, ior};
+        };
         auto              animation     = ReadAnimationData(gltf);
         auto              result        = std::make_shared<ModelData>();
         int               materialIndex = -1;
@@ -106,8 +127,16 @@ namespace render::detail
                         throw std::runtime_error("Only triangle primitives without morph targets are supported");
                     if (materialIndex == -1)
                         materialIndex = p.material;
-                    if (p.material < 0 || materialIndex != p.material)
-                        throw std::runtime_error("The initial GLB loader requires one material");
+                    if (p.material < 0)
+                        throw std::runtime_error("Missing material");
+                    auto common = gltf.materials.at(materialIndex), candidate = gltf.materials.at(p.material);
+                    common.extensions.clear();
+                    candidate.extensions.clear();
+                    common.name.clear();
+                    candidate.name.clear();
+                    if (!(common == candidate))
+                        throw std::runtime_error("Materials must share core PBR factors and texture atlas");
+                    const auto glass    = dielectric(gltf.materials.at(p.material));
                     const int  position = p.attributes.at("POSITION"), uv = p.attributes.at("TEXCOORD_0");
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto count =
@@ -154,7 +183,9 @@ namespace render::detail
                         if (animation)
                             AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix, localNormal);
                         result->vertices.push_back(
-                          {{pos.x, pos.y, pos.z, 1}, {n.x, n.y, n.z, 0}, {t.x, t.y, normal < 0 ? 1.0f : 0.0f, 0}});
+                          {{pos.x, pos.y, pos.z, 1},
+                           {n.x, n.y, n.z, glass[0]},
+                           {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]}});
                     }
                 }
             for (int child : node.children)

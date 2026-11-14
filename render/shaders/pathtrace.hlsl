@@ -390,6 +390,8 @@ struct PathVertex
     float3 beta;
     float  metal;
     float  roughness;
+    float  transmission;
+    float  ior;
     uint   primitive;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
@@ -422,6 +424,8 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     float4 mr   = textureColor(2, uv);
     p.metal     = saturate(mr.b * parameters[6].x);
     p.roughness = clamp(mr.g * parameters[6].y, .06, 1);
+    p.transmission = a.normal.w;
+    p.ior = max(a.uv.w, 1.01);
     p.beta      = 1;
     p.primitive = hit.primitive;
     return p;
@@ -432,6 +436,114 @@ void pathFrame(PathVertex p, float3 v, out float3 n, out float3 g)
     g = dot(p.geometric, v) < 0 ? -p.geometric : p.geometric;
     if (dot(n, v) <= 1e-6)
         n = g;
+}
+// Rough dielectric, NDF sampling and solid-angle PDFs. Radiance transport;
+// reversing v/l supplies the importance kernel for light-subpath walking.
+float dielectricFresnel(float cosine, float eta)
+{
+    float sin2 = max(0, 1 - cosine * cosine) / (eta * eta);
+    if (sin2 >= 1) return 1;
+    float ct = sqrt(1 - sin2);
+    float a = (cosine - eta * ct) / (cosine + eta * ct);
+    float b = (eta * cosine - ct) / (eta * cosine + ct);
+    return .5 * (a*a + b*b);
+}
+float glassD(float nh, float roughness)
+{
+    float a2 = pow(roughness,4), q = nh*nh*(a2-1)+1;
+    return a2 / max(PI*q*q,1e-20);
+}
+float glassG1(float cosine, float roughness)
+{
+    float c2 = cosine*cosine;
+    return 2 / (1 + sqrt(1 + pow(roughness,4)*max(0,1-c2)/max(c2,1e-20)));
+}
+void glassKernel(PathVertex p, float3 v, float3 l, out float value, out float pdf)
+{
+    value=0; pdf=0;
+    float3 n = dot(p.geometric,v)>0 ? p.geometric : -p.geometric;
+    float eta = dot(p.geometric,v)>0 ? p.ior : 1/p.ior;
+    float nv=dot(n,v), nl=dot(n,l);
+    bool reflection=nl>0;
+    float3 h = v + l*(reflection ? 1 : eta);
+    if (dot(h,h)<1e-20 || abs(nl)<1e-7 || nv<1e-7) return;
+    h=normalize(h); if(dot(h,n)<0)h=-h;
+    float vh=dot(v,h), lh=dot(l,h);
+    if(vh<=0 || lh*nl<=0)return;
+    float f=dielectricFresnel(vh,eta), d=glassD(dot(n,h),p.roughness);
+    float g=glassG1(nv,p.roughness)*glassG1(abs(nl),p.roughness);
+    if(reflection) {
+        value=f*d*g/(4*nv*nl);
+        pdf=f*d*dot(n,h)/(4*abs(vh));
+    } else {
+        float denom=lh+vh/eta; denom*=denom;
+        pdf=(1-f)*d*dot(n,h)*abs(lh)/max(denom,1e-20);
+        value=(1-f)*d*g*abs(lh*vh/(nl*nv*max(denom,1e-20)))/(eta*eta);
+    }
+}
+// Radiance BSDF expressed against geometric projected area. Reversing v/l for
+// light walking supplies the adjoint shading-normal correction, without assuming
+// a shading normal equals the geometric normal.
+float3 pathF(PathVertex p, float3 v, float3 l)
+{
+    float glassValue, glassPdf;
+    glassValue=0;glassPdf=0;
+    if(p.transmission>0)glassKernel(p,v,l,glassValue,glassPdf);
+    float3 transmitted = p.transmission * glassValue;
+    float3 n, g;
+    pathFrame(p, v, n, g);
+    float cosine = dot(g, l);
+    if (cosine <= 1e-7 || dot(n, l) <= 0)
+        return transmitted;
+    return transmitted + (1-p.transmission)*brdf(n, v, l, p.base, p.metal, p.roughness) * dot(n, l) / cosine;
+}
+float pathPdf(PathVertex p, float3 v, float3 l)
+{
+    float3 n, g;
+    pathFrame(p, v, n, g);
+    float value=0,pdf=0; if(p.transmission>0)glassKernel(p,v,l,value,pdf);
+    return p.transmission*pdf + (1-p.transmission)*(dot(g,l)>0 ? bsdfPdf(n,v,l,p.metal,p.roughness) : 0);
+}
+float3 cosineDirection(float3 n, inout uint state)
+{
+    float3 t = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)), b = cross(n, t);
+    float  q = random(state), phi = 2 * PI * random(state);
+    return t * (cos(phi) * sqrt(q)) + b * (sin(phi) * sqrt(q)) + n * sqrt(1 - q);
+}
+bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out float pdf)
+{
+    if(p.transmission>0 && random(state)<p.transmission) {
+        float3 n=dot(p.geometric,v)>0?p.geometric:-p.geometric;
+        float eta=dot(p.geometric,v)>0?p.ior:1/p.ior;
+        float3 t=normalize(cross(abs(n.y)<.999?float3(0,1,0):float3(1,0,0),n)), b=cross(n,t);
+        float q=random(state), phi=2*PI*random(state), a2=pow(p.roughness,4);
+        float c=sqrt((1-q)/(1+(a2-1)*q));
+        float3 h=t*cos(phi)*sqrt(max(0,1-c*c))+b*sin(phi)*sqrt(max(0,1-c*c))+n*c;
+        float vh=dot(v,h);
+        if(vh<=0){l=0;pdf=0;return false;}
+        bool reflection=random(state)<dielectricFresnel(vh,eta);
+        l=reflection?reflect(-v,h):refract(-v,h,1/eta);
+        if(dot(l,l)<.5 || (dot(n,l)>0)!=reflection){pdf=0;return false;}
+        pdf=pathPdf(p,v,l);return pdf>0;
+    }
+    float3 n, g;
+    pathFrame(p, v, n, g);
+    float  u = random(state), q = random(state), phi = 2 * PI * random(state);
+    float3 t = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)), b = cross(n, t);
+    if (u < lerp(.25, .9, p.metal))
+    {
+        float  alpha = p.roughness * p.roughness, c = sqrt((1 - q) / (1 + (alpha * alpha - 1) * q));
+        float3 h = t * (cos(phi) * sqrt(max(0, 1 - c * c))) + b * (sin(phi) * sqrt(max(0, 1 - c * c))) + n * c;
+        l        = reflect(-v, h);
+    }
+    else
+        l = t * (cos(phi) * sqrt(q)) + b * (sin(phi) * sqrt(q)) + n * sqrt(1 - q);
+    pdf = pathPdf(p, v, l);
+    return pdf > 0;
+}
+float3 pathOrigin(PathVertex p, float3 direction)
+{
+    return p.position + p.geometric * (dot(p.geometric, direction) < 0 ? -.0006 : .0006);
 }
 float3 path(float3 origin, float3 direction, inout uint state, uint bounces, bool emitters = true)
 {
@@ -465,7 +577,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         {
             Hit shadow;
             if (!trace(position + geometric * .001, light, shadow))
-                sum += weight * brdf(n, v, light, base, metal, roughness) * max(dot(n, light), 0) * parameters[9].rgb
+                sum += weight * pathF(surface,v,light) * abs(dot(surface.geometric,light)) * parameters[9].rgb
                        * parameters[9].w;
         }
         if (useMIS)
@@ -474,39 +586,19 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
             float  pdf, maxDistance;
             float3 nextOrigin = position + geometric * .001;
             if (
-              sampleLight(nextOrigin, state, l, radiance, pdf, maxDistance, emitters) && dot(n, l) > 0
-              && dot(geometric, l) > 0)
+              sampleLight(position, state, l, radiance, pdf, maxDistance, emitters))
             {
                 Hit shadow;
-                if (!traceRay(nextOrigin, l, maxDistance, shadow))
-                    sum += weight * brdf(n, v, l, base, metal, roughness) * dot(n, l) * radiance / pdf
-                           * misWeight(pdf, bsdfPdf(n, v, l, metal, roughness));
+                if (!traceRay(pathOrigin(surface,l), l, maxDistance, shadow))
+                    sum += weight * pathF(surface,v,l) * abs(dot(surface.geometric,l)) * radiance / pdf
+                           * misWeight(pdf, pathPdf(surface,v,l));
             }
         }
-        float3 tangent     = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
-               bitangent   = cross(n, tangent);
-        float  probability = lerp(.25, .9, metal), u = random(state), q = random(state), phi = 2 * PI * random(state);
         float3 l;
-        if (u < probability)
-        {
-            float alpha = roughness * roughness, cosine = sqrt((1 - q) / (1 + (alpha * alpha - 1) * q)),
-                  sine = sqrt(max(0, 1 - cosine * cosine));
-            float3 h   = tangent * (cos(phi) * sine) + bitangent * (sin(phi) * sine) + n * cosine;
-            l          = reflect(-v, h);
-        }
-        else
-        {
-            float radius = sqrt(q);
-            l            = tangent * (cos(phi) * radius) + bitangent * (sin(phi) * radius) + n * sqrt(1 - q);
-        }
-        float nl = dot(n, l);
-        if (nl <= 0 || dot(geometric, l) <= 0)
-            break;
-        float pdf = bsdfPdf(n, v, l, metal, roughness);
-        if (pdf <= 0)
-            break;
-        previousPdf = pdf;
-        weight *= brdf(n, v, l, base, metal, roughness) * nl / pdf;
+        float pdf;
+        if (!walkDirection(surface,v,state,l,pdf)) break;
+        previousPdf=pdf;
+        weight *= pathF(surface,v,l)*abs(dot(surface.geometric,l))/pdf;
         if (depth >= 2)
         {
             float survive = clamp(max(weight.x, max(weight.y, weight.z)), .1, .95);
@@ -515,54 +607,9 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
             weight /= survive;
         }
         direction = l;
-        origin    = position + geometric * .001;
+        origin    = pathOrigin(surface,l);
     }
     return min(max(sum, 0), float3(64, 64, 64));
-}
-// Radiance BSDF expressed against geometric projected area. Reversing v/l for
-// light walking supplies the adjoint shading-normal correction, without assuming
-// a shading normal equals the geometric normal.
-float3 pathF(PathVertex p, float3 v, float3 l)
-{
-    float3 n, g;
-    pathFrame(p, v, n, g);
-    float cosine = dot(g, l);
-    if (cosine <= 1e-7 || dot(n, l) <= 0)
-        return 0;
-    return brdf(n, v, l, p.base, p.metal, p.roughness) * dot(n, l) / cosine;
-}
-float pathPdf(PathVertex p, float3 v, float3 l)
-{
-    float3 n, g;
-    pathFrame(p, v, n, g);
-    return dot(g, l) > 0 ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0;
-}
-float3 cosineDirection(float3 n, inout uint state)
-{
-    float3 t = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)), b = cross(n, t);
-    float  q = random(state), phi = 2 * PI * random(state);
-    return t * (cos(phi) * sqrt(q)) + b * (sin(phi) * sqrt(q)) + n * sqrt(1 - q);
-}
-bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out float pdf)
-{
-    float3 n, g;
-    pathFrame(p, v, n, g);
-    float  u = random(state), q = random(state), phi = 2 * PI * random(state);
-    float3 t = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)), b = cross(n, t);
-    if (u < lerp(.25, .9, p.metal))
-    {
-        float  alpha = p.roughness * p.roughness, c = sqrt((1 - q) / (1 + (alpha * alpha - 1) * q));
-        float3 h = t * (cos(phi) * sqrt(max(0, 1 - c * c))) + b * (sin(phi) * sqrt(max(0, 1 - c * c))) + n * c;
-        l        = reflect(-v, h);
-    }
-    else
-        l = t * (cos(phi) * sqrt(q)) + b * (sin(phi) * sqrt(q)) + n * sqrt(1 - q);
-    pdf = pathPdf(p, v, l);
-    return pdf > 0;
-}
-float3 pathOrigin(PathVertex p, float3 direction)
-{
-    return p.position + p.geometric * (dot(p.geometric, direction) < 0 ? -.0006 : .0006);
 }
 float sourcePdf(PathVertex p)
 {
@@ -808,7 +855,7 @@ void scratchVectorStore(uint at, float3 v)
         if (!trace(origin, direction, hit))
             break;
         PathVertex p = pathVertex(hit, origin, direction);
-        if (depth >= 2)
+        if (depth >= 2 && p.transmission == 0)
         {
             uint slot = id.x * bounces + depth - 1, at = photonRecords() + slot * 16;
             scratchVectorStore(at, p.position);
@@ -876,7 +923,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         if (depth == bounces)
             break;
         float3 v      = -direction;
-        bool   gather = p.metal < .5 && p.roughness > .2;
+        bool   gather = p.transmission == 0 && p.metal < .5 && p.roughness > .2;
         // Pure finite-area NEE; no environment mixture, and no BSDF competitor
         // at a gather vertex because the camera walk stops there.
         uint   h = lightHeader(), record = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));

@@ -3,7 +3,8 @@ import { deflateSync } from 'node:zlib'
 import { writeFile, mkdir } from 'node:fs/promises'
 async function generate(name) {
   const indirect = name === 'CornellIndirect',
-    glossy = name === 'CornellGlossy'
+    glass = name === 'CornellCaustics',
+    glossy = name === 'CornellGlossy' || glass
   const chunks = [],
     views = [],
     accessors = [],
@@ -47,7 +48,7 @@ async function generate(name) {
         const k = x >> 3
         row.push(
           ...(mode === 2
-            ? [255, k === 4 ? 20 : 255, k === 4 ? 255 : 0, 255]
+            ? [255, k === 4 ? (glass ? 32 : 20) : 255, k === 4 && !glass ? 255 : 0, 255]
             : mode === 1
               ? k === 3
                 ? [255, 255, 255, 255]
@@ -123,10 +124,10 @@ async function generate(name) {
   // Slightly below the ceiling, facing into the room.
   quad(
     [
-      [glossy ? -0.5 : -0.35, 0.995, glossy ? 0.15 : -0.45],
-      [glossy ? -0.3 : 0.35, 0.995, glossy ? 0.15 : -0.45],
-      [glossy ? -0.3 : 0.35, 0.995, glossy ? 0.35 : 0.2],
-      [glossy ? -0.5 : -0.35, 0.995, glossy ? 0.35 : 0.2],
+      [glass ? -0.09 : glossy ? -0.5 : -0.35, 0.995, glass ? -0.09 : glossy ? 0.15 : -0.45],
+      [glass ? 0.09 : glossy ? -0.3 : 0.35, 0.995, glass ? -0.09 : glossy ? 0.15 : -0.45],
+      [glass ? 0.09 : glossy ? -0.3 : 0.35, 0.995, glass ? 0.09 : glossy ? 0.35 : 0.2],
+      [glass ? -0.09 : glossy ? -0.5 : -0.35, 0.995, glass ? 0.09 : glossy ? 0.35 : 0.2],
     ],
     [0, -1, 0],
     3,
@@ -200,10 +201,17 @@ async function generate(name) {
       ],
       [0, 1, 0],
     )
+  let glassStart = 0,
+    glassEnd = 0
   if (glossy) {
+    glassStart = indices.length
     const point = (t, p) => [Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)]
     function triangle(ns) {
-      const ps = ns.map((n) => [-0.4 + n[0] * 0.36, -0.64 + n[1] * 0.36, 0.25 + n[2] * 0.36])
+      const ps = ns.map((n) => [
+        (glass ? 0 : -0.4) + n[0] * (glass ? 0.45 : 0.36),
+        (glass ? -0.32 : -0.64) + n[1] * (glass ? 0.45 : 0.36),
+        (glass ? 0 : 0.25) + n[2] * (glass ? 0.45 : 0.36),
+      ])
       const e = ps[1].map((x, k) => x - ps[0][k]),
         f = ps[2].map((x, k) => x - ps[0][k]),
         c = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]]
@@ -231,7 +239,8 @@ async function generate(name) {
         triangle([a, c, d])
       }
   }
-  box(0.35, -0.27, 0.6, 0.6, 1.15, 0.3)
+  glassEnd = indices.length
+  if (!glass) box(0.35, -0.27, 0.6, 0.6, 1.15, 0.3)
   function view(bytes) {
     const size = chunks.reduce((n, b) => n + b.length, 0),
       padding = Buffer.alloc((4 - (size % 4)) % 4)
@@ -307,6 +316,27 @@ async function generate(name) {
     gltf.materials[0].pbrMetallicRoughness.metallicRoughnessTexture = { index: 2 }
     gltf.textures.push({ source: 2 })
     gltf.images.push({ bufferView: mr, mimeType: 'image/png' })
+  }
+  if (glass) {
+    gltf.extensionsUsed = ['KHR_materials_transmission', 'KHR_materials_ior']
+    gltf.extensionsRequired = [...gltf.extensionsUsed]
+    gltf.materials[0].emissiveFactor = [8, 8, 8]
+    gltf.materials.push({
+      ...gltf.materials[0],
+      name: 'Solid glass',
+      extensions: {
+        KHR_materials_transmission: { transmissionFactor: 1 },
+        KHR_materials_ior: { ior: 1.5 },
+      },
+    })
+    const primitive = gltf.meshes[0].primitives[0],
+      original = accessors[index],
+      v = views[original.bufferView]
+    // Both primitives reference the same vertex atlas and disjoint index ranges.
+    accessors.push({ ...original, count: glassStart })
+    primitive.indices = accessors.length - 1
+    accessors.push({ ...original, byteOffset: glassStart * 2, count: glassEnd - glassStart })
+    gltf.meshes[0].primitives.push({ ...primitive, indices: accessors.length - 1, material: 1 })
   }
   let json = Buffer.from(JSON.stringify(gltf))
   json = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 32)])
