@@ -1,5 +1,5 @@
 # 骨骼动画
 
-11 个关节的小机器人，提供 Walk（行走）与 Wave（挥手）两个动画片段。在预览内面板选择片段、播放/暂停、调整速度、循环与时间。
+Fox 提供 Survey（观察）、Walk（行走）和 Run（奔跑）三个动画片段。可在面板中控制播放、速度和时间，并切换环境贴图、环境光与天空盒。
 
 <ClientOnly><ModelPlayground lighting animation /></ClientOnly>

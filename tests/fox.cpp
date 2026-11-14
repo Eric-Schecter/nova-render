@@ -1,5 +1,6 @@
 #include "AnimationData.hpp"
 #include "SkinReference.hpp"
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>

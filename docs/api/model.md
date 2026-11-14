@@ -71,7 +71,7 @@ await renderer.drawFrame()
 
 ## 本阶段范围
 
-支持内嵌资源的单材质、不透明、索引三角形 GLB，要求 POSITION、NORMAL、TEXCOORD_0；首个例子为 Damaged Helmet。骨骼与动画支持见[骨骼动画](./animation)；尚不支持 morph、透明材质、压缩扩展或通用多材质场景。内部将索引展开为统一顶点流。
+支持内嵌资源的单材质、不透明、三角形 GLB，要求 POSITION、TEXCOORD_0；支持索引或非索引数据，NORMAL 缺失时生成绑定法线并在光栅片元中恢复几何平面法线；首个例子为 Damaged Helmet。骨骼与动画支持见[骨骼动画](./animation)；尚不支持 morph、透明材质、压缩扩展或通用多材质场景。内部将索引展开为统一顶点流。
 
 PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光贴图，采用 GGX 直接光照和解析式摄影棚环境近似；加载[环境资源](./environment)后使用 HDR 环境光与预过滤反射；尚无阴影。不是完整 glTF 一致性实现。
 

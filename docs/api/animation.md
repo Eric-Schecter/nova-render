@@ -43,6 +43,19 @@ CPU 负责关键帧采样和骨骼/节点矩阵计算，共享 HLSL 顶点着色
 
 ## GPU 蒙皮验证
 
-运行时不再逐顶点执行 CPU 蒙皮，也不逐帧上传变形顶点。法线使用混合蒙皮矩阵的逆转置变换，支持非均匀缩放。此示例的每帧动画数据由约 25.3 KiB 顶点降为 1.5 KiB 矩阵，播放 API 与 UI 不变。
+运行时不再逐顶点执行 CPU 蒙皮，也不逐帧上传变形顶点。法线使用混合蒙皮矩阵的逆转置变换，支持非均匀缩放。保留的小机器人回归资源每帧动画数据由约 25.3 KiB 顶点降为 1.5 KiB 矩阵；默认 Fox 每帧矩阵为 3.125 KiB，播放 API 与 UI 不变。
 
 独立 CPU 参考计算仅用于测试。可选 Metal 读回工具与网页验证通过共享 `skinVertex` 函数检查位置、法线、混合权重和多个姿态；使用方法见仓库 `tools/gpu_skinning/README.md`。
+
+
+## Fox 与环境设置
+
+第五例默认使用原始 Fox GLB（24 关节、Survey / Walk / Run），小机器人仅保留为蒙皮回归测试资源。三个片段时长不同，时间轴随片段调整。
+
+环境控制与第四例一致：三套 HDR 环境、旋转、环境光强度、天空盒强度和显隐。默认仅用环境光，方向光强度为 0，可在面板中另行添加。隐藏天空盒不会关闭环境照明；切换环境保留动画片段、时间和播放状态。
+
+```sh
+./build/nova_animation assets/Fox/Fox.glb --api metal
+# 可选自定义环境路径，未指定时使用同一 assets 根目录的 Venice Sunset：
+./build/nova_animation assets/Fox/Fox.glb --environment assets/Environment/studio_small_09.nenv
+```

@@ -33,4 +33,9 @@
 
 ## Skinning Robot
 
-第五个骨骼动画例子的机器人、关节、权重、两个动画片段及 PNG 图集均由 Nova 的 `scripts/generate-skinning-demo.mjs` 生成，未使用外部模型或动画素材。说明保存在 `assets/SkinningRobot/README.md`。
+GPU 蒙皮回归测试用的小机器人、关节、权重、两个动画片段及 PNG 图集均由 Nova 的 `scripts/generate-skinning-demo.mjs` 生成，未使用外部模型或动画素材。说明保存在 `assets/SkinningRobot/README.md`。
+
+
+## Fox
+
+第五个骨骼动画例子的默认模型来自 [Khronos glTF Sample Models · Fox](https://github.com/KhronosGroupArchives/glTF-Sample-Models/tree/main/2.0/Fox)。原始低多边形模型由 PixelMannen 提供，采用 [CC0](https://creativecommons.org/publicdomain/zero/1.0/)；绑定与动画由 tomkranis 提供，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，glTF 转换由 AsoboStudio 与 scurest 完成。Nova 未修改 GLB 文件，来源、校验值和上游原文保存在 `assets/Fox/`。
