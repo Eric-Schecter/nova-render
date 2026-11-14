@@ -330,8 +330,7 @@ async function generate(name) {
       },
     })
     const primitive = gltf.meshes[0].primitives[0],
-      original = accessors[index],
-      v = views[original.bufferView]
+      original = accessors[index]
     // Both primitives reference the same vertex atlas and disjoint index ranges.
     accessors.push({ ...original, count: glassStart })
     primitive.indices = accessors.length - 1

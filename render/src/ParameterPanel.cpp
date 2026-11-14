@@ -114,8 +114,11 @@ namespace render::detail
         const auto display = ImGui::GetIO().DisplaySize;
         if (mode == RenderMode::IntegratorComparison)
         {
-            const float side = std::min(display.x / 3, display.y), top = (display.y - side) / 2;
-            const char* names[] = {"PT", "BDPT", "Photon mapping"};
+            const bool  vertical = display.y > display.x;
+            const float side     = vertical ? std::min(display.x, display.y / 3) : std::min(display.x / 3, display.y),
+                        top      = (display.y - side * (vertical ? 3 : 1)) / 2,
+                        left     = (display.x - side * (vertical ? 1 : 3)) / 2;
+            const char* names[]  = {"PT", "BDPT", "Photon mapping"};
             for (size_t i = 0; i < 3; ++i)
             {
                 char label[128];
@@ -128,7 +131,8 @@ namespace render::detail
                   comparison[i].milliseconds,
                   comparison[i].complete ? " | paused" : "");
                 auto*        draw = ImGui::GetBackgroundDrawList();
-                const ImVec2 pos{float(i) * side + 5, std::max(0.f, top - 22)};
+                const ImVec2 pos{
+                  left + (vertical ? 0 : float(i) * side) + 5, std::max(0.f, top + (vertical ? float(i) * side : 0))};
                 draw->AddRectFilled(pos, ImVec2{pos.x + side - 8, pos.y + 21}, IM_COL32(0, 0, 0, 210));
                 draw->AddText(pos, IM_COL32(255, 255, 255, 255), label);
             }
@@ -258,7 +262,9 @@ namespace render::detail
                     ImGui::BeginDisabled(comparing);
                     ImGui::Checkbox("Denoise", &path.denoise);
                     ImGui::EndDisabled();
-                    if (path.integrator != PathIntegrator::PathTracing)
+                    if (comparing)
+                        ImGui::TextUnformatted("PT: MIS enabled; photon density estimate");
+                    else if (path.integrator != PathIntegrator::PathTracing)
                         ImGui::TextUnformatted(
                           path.integrator == PathIntegrator::PhotonMapping ? "Photon density estimate"
                                                                            : "Path-space MIS");

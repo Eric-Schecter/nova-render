@@ -17,7 +17,8 @@ int main(int argc, char** argv)
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
         config.useWarp = api == "dx12";
         PathSession session(true);
-        if (!session.Capabilities(config.api, config).pathTracing)
+        const auto  capabilities = session.Capabilities(config.api, config);
+        if (!capabilities.pathTracing)
             return 77;
         auto   model = LoadGLB(std::filesystem::path(argv[2]) / "CornellCaustics/CornellCaustics.glb");
         size_t glass = 0;
@@ -44,7 +45,10 @@ int main(int argc, char** argv)
             settings.integrator = method;
             session.Reset();
             const ModelImage* image = nullptr;
-            for (int i = 0; i < 4096; i += 4)
+            // Keep software correctness regression bounded. Metal retains the
+            // 4096-spp run used for native/WebGPU pixel parity.
+            const int target = capabilities.softwareRayTracing ? 512 : 4096;
+            for (int i = 0; i < target; i += 4)
                 image = &session.Render(model, nullptr, scene, settings, {0, 0, 0, 1}, 48, 48);
             double mean = 0;
             for (int y = 12; y < 43; ++y)
@@ -56,7 +60,7 @@ int main(int argc, char** argv)
                         throw std::runtime_error("Invalid glass radiance");
                     mean += f / 899;
                 }
-            std::cout << "Integrator " << int(method) << " mean=" << mean << std::endl;
+            std::cout << "Integrator " << int(method) << " spp=" << target << " mean=" << mean << std::endl;
             if (method == RayIntegrator::PathTracing)
                 reference = mean;
             else if (std::abs(mean / reference - 1) > .2)

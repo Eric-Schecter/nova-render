@@ -201,10 +201,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         return comparisonProgress.map((p) => ({ ...p }))
       },
       async drawComparison(camera, width, height, path) {
-        const size = Math.max(1, Math.floor(Math.min(width / 3, height))),
+        const vertical = height > width,
+          size = Math.max(
+            1,
+            Math.floor(vertical ? Math.min(width, height / 3) : Math.min(width / 3, height)),
+          ),
           light = { direction: [0, 1, 0], color: [1, 1, 1], intensity: 0 },
           env = { rotation: 0, intensity: 0, backgroundIntensity: 0, showBackground: false },
-          key = JSON.stringify([camera, size, path])
+          key = JSON.stringify([camera, width, height, path])
         if (comparisonViews.length === 0) {
           try {
             for (let i = 0; i < 3; i++)
@@ -281,7 +285,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         for (let i = 0; i < 3; i++)
           comparisonViews[i].present(
             context,
-            { x: i * size, y: Math.floor((height - size) / 2), width: size, height: size },
+            {
+              x: Math.floor((width - size * (vertical ? 1 : 3)) / 2) + (vertical ? 0 : i * size),
+              y: Math.floor((height - size * (vertical ? 3 : 1)) / 2) + (vertical ? i * size : 0),
+              width: size,
+              height: size,
+            },
             i === 0,
           )
       },

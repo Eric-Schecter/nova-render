@@ -77,7 +77,7 @@ export function attachParameterPanel(
   const legend = document.createElement('div')
   legend.setAttribute('aria-label', '积分器对比结果')
   legend.style.cssText =
-    'position:absolute;top:0;left:0;right:0;display:none;grid-template-columns:repeat(3,minmax(0,1fr));pointer-events:none;z-index:2;color:white;background:#111c;font:12px/1.5 monospace'
+    'position:absolute;top:0;left:0;right:0;display:none;grid-template-columns:repeat(3,minmax(0,1fr));pointer-events:none;z-index:2;color:white;font:12px/1.5 monospace'
   wrapper.append(legend)
   const events = new AbortController(),
     initialCamera = adapter.getCamera(),
@@ -583,12 +583,16 @@ export function attachParameterPanel(
     }
     const comparing = !!current.comparison
     legend.style.display = comparing ? 'grid' : 'none'
+    const vertical = canvas.clientHeight > canvas.clientWidth
+    legend.style.height = vertical ? '100%' : 'auto'
+    legend.style.gridTemplateColumns = vertical ? '1fr' : 'repeat(3,minmax(0,1fr))'
+    legend.style.gridTemplateRows = vertical ? 'repeat(3,minmax(0,1fr))' : 'auto'
     panel.style.top = comparing ? '34px' : ''
     if (comparing) {
       legend.replaceChildren(
         ...(adapter.getComparisonProgress?.() || []).map((p, i) => {
           const cell = document.createElement('span')
-          cell.style.cssText = 'padding:4px;overflow:hidden'
+          cell.style.cssText = 'padding:4px;overflow:hidden;align-self:start;background:#111c'
           cell.textContent =
             ['PT', 'BDPT', 'Photon mapping'][i] +
             ' · ' +
@@ -684,6 +688,11 @@ export function attachParameterPanel(
       )
     }
   }
+  const resizeObserver = new ResizeObserver(() => {
+    if (adapter.getRenderMode() === 'integrator-comparison' && canvas.clientWidth < 520)
+      setCollapsed(true)
+  })
+  resizeObserver.observe(canvas)
   setCollapsed(canvas.getBoundingClientRect().width < 520)
   refresh()
   return {
@@ -693,6 +702,7 @@ export function attachParameterPanel(
       disposed = true
       events.abort()
       fieldEvents.abort()
+      resizeObserver.disconnect()
       if (frame) cancelAnimationFrame(frame)
       wrapper.before(canvas)
       wrapper.remove()

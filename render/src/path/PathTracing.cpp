@@ -72,7 +72,8 @@ namespace render::detail
         scene.environmentParams[2] = 0;
         scene.skyParams[0] = scene.skyParams[1] = 0;
         scene.lightColorIntensity[3]            = 0;
-        const uint32_t              side        = std::max(1u, std::min(width / 3, height));
+        const bool     vertical                 = height > width;
+        const uint32_t side = std::max(1u, vertical ? std::min(width, height / 3) : std::min(width / 3, height));
         const std::array<float, 10> key{
           float(width),
           float(height),
@@ -113,8 +114,8 @@ namespace render::detail
             }
         }
         const uint32_t panel   = std::max(1u, uint32_t(side * settings.resolutionScale));
-        comparisonImage.width  = std::max(panel * 3, uint32_t(width * settings.resolutionScale));
-        comparisonImage.height = std::max(panel, uint32_t(height * settings.resolutionScale));
+        comparisonImage.width  = std::max(panel * (vertical ? 1 : 3), uint32_t(width * settings.resolutionScale));
+        comparisonImage.height = std::max(panel * (vertical ? 3 : 1), uint32_t(height * settings.resolutionScale));
         comparisonImage.pixels.assign(size_t(comparisonImage.width) * comparisonImage.height * 4, 0);
         if (!linearOutput)
             for (size_t a = 3; a < comparisonImage.pixels.size(); a += 4)
@@ -139,10 +140,11 @@ namespace render::detail
                                       : progress.samples >= settings.comparisonSamples;
             }
             const auto& frame = comparisons[i]->image;
-            const auto  top   = (comparisonImage.height - panel) / 2;
+            const auto  top   = (comparisonImage.height - panel * (vertical ? 3 : 1)) / 2 + (vertical ? i * panel : 0);
+            const auto  left  = (comparisonImage.width - panel * (vertical ? 1 : 3)) / 2 + (vertical ? 0 : i * panel);
             for (uint32_t y = 0; y < panel; ++y)
                 std::memcpy(
-                  comparisonImage.pixels.data() + (size_t(y + top) * comparisonImage.width + i * panel) * 4,
+                  comparisonImage.pixels.data() + (size_t(y + top) * comparisonImage.width + left) * 4,
                   frame.pixels.data() + size_t(y) * panel * 4,
                   size_t(panel) * 4);
         }

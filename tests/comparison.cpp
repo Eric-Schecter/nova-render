@@ -99,6 +99,28 @@ int main(int argc, char** argv)
                     throw std::runtime_error("Empty native comparison column");
             }
         }
+        if (argc == 4)
+        {
+            render::detail::PathSession portrait;
+            portrait.Capabilities(config.renderer.api, config.renderer);
+            auto model =
+              render::detail::LoadGLB(std::filesystem::path(argv[2]) / "CornellCaustics/CornellCaustics.glb");
+            auto uniforms = render::detail::MakeSceneUniforms(*model, OrbitCamera{}, 1.f / 3, LightingMode::PBR);
+            settings.comparisonMilliseconds = 0;
+            settings.comparisonSamples      = 1;
+            settings.resolutionScale        = .5f;
+            settings.photonsPerIteration    = 256;
+            const auto& frame               = portrait.RenderComparison(model, uniforms, settings, 96, 288);
+            for (int row = 0; row < 3; ++row)
+            {
+                size_t sum = 0;
+                for (uint32_t y = row * frame.height / 3; y < (row + 1) * frame.height / 3; ++y)
+                    for (uint32_t x = 0; x < frame.width; ++x)
+                        sum += frame.pixels[(size_t(y) * frame.width + x) * 4];
+                if (sum < 50)
+                    throw std::runtime_error("Empty portrait comparison view");
+            }
+        }
         std::cout << "PASS comparison fixed spp, time budgets, freeze, reset and mode restore\n";
     }
     catch (const std::exception& e)
