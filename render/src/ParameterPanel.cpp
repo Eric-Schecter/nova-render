@@ -172,6 +172,11 @@ namespace render::detail
                 }
                 if (mode == RenderMode::PathTracing)
                 {
+                    ImGui::TextUnformatted("Integrator");
+                    ImGui::SetNextItemWidth(-1);
+                    int integrator = path.integrator == PathIntegrator::Bidirectional ? 1 : 0;
+                    if (ImGui::Combo("##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0"))
+                        path.integrator = integrator ? PathIntegrator::Bidirectional : PathIntegrator::PathTracing;
                     int spp = int(path.samplesPerFrame), bounces = int(path.maxBounces);
                     ImGui::TextUnformatted("Samples per frame");
                     ImGui::SetNextItemWidth(-1);
@@ -186,7 +191,10 @@ namespace render::detail
                     ImGui::SliderFloat(
                       "##RenderScale", &path.resolutionScale, .25f, 1, "%.2f", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::Checkbox("Denoise", &path.denoise);
-                    ImGui::Checkbox("Light sampling / MIS", &path.lightSampling);
+                    if (path.integrator == PathIntegrator::Bidirectional)
+                        ImGui::TextUnformatted("Path-space MIS");
+                    else
+                        ImGui::Checkbox("Light sampling / MIS", &path.lightSampling);
                     ImGui::Text("Samples: %u", samples);
                     if (capabilities.softwareRayTracing)
                         ImGui::TextUnformatted("CPU ray tracing");

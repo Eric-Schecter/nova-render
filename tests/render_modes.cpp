@@ -93,6 +93,29 @@ int main(int argc, char** argv)
         draw();
         if (window.GetAccumulatedSamples() != 2)
             throw std::runtime_error("Samples per frame mismatch");
+        auto invalidIntegrator       = path;
+        invalidIntegrator.integrator = static_cast<render::PathIntegrator>(99);
+        bool invalidRejected         = false;
+        try
+        {
+            window.SetPathTracing(invalidIntegrator);
+        }
+        catch (const std::invalid_argument&)
+        {
+            invalidRejected = true;
+        }
+        if (!invalidRejected || window.GetPathTracing().integrator != render::PathIntegrator::PathTracing)
+            throw std::runtime_error("Invalid integrator mutated state");
+        path.integrator = render::PathIntegrator::Bidirectional;
+        window.SetPathTracing(path);
+        if (
+          window.GetPathTracing().integrator != render::PathIntegrator::Bidirectional
+          || window.GetAccumulatedSamples() != 0)
+            throw std::runtime_error("BDPT API/reset mismatch");
+        draw();
+        path.integrator = render::PathIntegrator::PathTracing;
+        window.SetPathTracing(path);
+        draw();
         path.denoise = true;
         window.SetPathTracing(path);
         if (!window.GetPathTracing().denoise || window.GetAccumulatedSamples() != 0)

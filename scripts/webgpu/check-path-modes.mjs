@@ -74,6 +74,7 @@ try {
             { ...saved, samplesPerFrame: 0 },
             { ...saved, maxBounces: 9 },
             { ...saved, resolutionScale: NaN },
+            { ...saved, integrator: 'invalid' },
           ]) {
             let fail = false
             try {

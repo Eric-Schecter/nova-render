@@ -31,7 +31,7 @@ namespace example
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
               "[--frames N] [--spin] [--environment path.nenv] "
               "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|path] [--spp N] "
-              "[--bounces N] [--scale N]");
+              "[--bounces N] [--scale N] [--integrator path|bidirectional]");
         ModelOptions options;
         options.modelPath = argv[1];
         if (defaultEnvironment)
@@ -95,6 +95,16 @@ namespace example
                     options.mode = render::RenderMode::PathTracing;
                 else
                     throw std::invalid_argument("Unknown render mode");
+            }
+            else if (arg == "--integrator" && i + 1 < argc)
+            {
+                const std::string integrator = argv[++i];
+                if (integrator == "path")
+                    options.path.integrator = render::PathIntegrator::PathTracing;
+                else if (integrator == "bidirectional")
+                    options.path.integrator = render::PathIntegrator::Bidirectional;
+                else
+                    throw std::invalid_argument("Unknown path integrator: " + integrator);
             }
             else if ((arg == "--spp" || arg == "--bounces") && i + 1 < argc)
             {

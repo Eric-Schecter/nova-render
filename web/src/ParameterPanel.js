@@ -236,6 +236,31 @@ export function attachParameterPanel(
       renderer.append(label)
       fields.set('renderMode', { input: select })
       if (current.pathTracing) {
+        const integratorRow = document.createElement('label'),
+          integrator = document.createElement('select')
+        integratorRow.textContent = 'Integrator'
+        integrator.setAttribute('aria-label', '路径积分器')
+        for (const [value, title] of [
+          ['path', 'Path tracing'],
+          ['bidirectional', 'Bidirectional'],
+        ]) {
+          const option = document.createElement('option')
+          option.value = value
+          option.textContent = title
+          integrator.append(option)
+        }
+        integratorRow.append(integrator)
+        renderer.append(integratorRow)
+        integrator.addEventListener(
+          'change',
+          () =>
+            change(() =>
+              adapter.setPathTracing({ ...adapter.getPathTracing(), integrator: integrator.value }),
+            ),
+          { signal: fieldEvents.signal },
+        )
+        fields.set('integrator', { input: integrator })
+
         for (const [key, caption, aria, min, max, step] of [
           ['samplesPerFrame', 'Samples per frame', '每帧采样', 1, 4, 1],
           ['maxBounces', 'Max bounces', '反弹次数', 1, 8, 1],
@@ -504,8 +529,17 @@ export function attachParameterPanel(
         }
         continue
       }
+      if (key === 'integrator') {
+        field.input.value = adapter.getPathTracing().integrator
+        continue
+      }
       if (key === 'denoise' || key === 'lightSampling') {
-        field.input.checked = adapter.getPathTracing()[key]
+        field.input.checked =
+          key === 'lightSampling' && adapter.getPathTracing().integrator === 'bidirectional'
+            ? true
+            : adapter.getPathTracing()[key]
+        if (key === 'lightSampling')
+          field.input.disabled = adapter.getPathTracing().integrator === 'bidirectional'
         continue
       }
       if (key === 'renderMode') {

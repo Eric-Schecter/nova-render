@@ -196,6 +196,7 @@ class Renderer {
       ...settings,
       denoise: settings.denoise ?? false,
       lightSampling: settings.lightSampling ?? true,
+      integrator: settings.integrator ?? 'path',
     }
     this.resetAccumulation()
     this.#parameterPanel?.refresh()

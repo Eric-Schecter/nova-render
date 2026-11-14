@@ -8,10 +8,12 @@ export const defaultPathTracing = () => ({
   resolutionScale: 0.5,
   denoise: false,
   lightSampling: true,
+  integrator: 'path',
 })
 export function validatePathTracing(value) {
   if (
     !value ||
+    (value.integrator !== undefined && !['path', 'bidirectional'].includes(value.integrator)) ||
     (value.lightSampling !== undefined && typeof value.lightSampling !== 'boolean') ||
     (value.denoise !== undefined && typeof value.denoise !== 'boolean') ||
     !Number.isInteger(value.samplesPerFrame) ||
@@ -222,8 +224,9 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
             (environment?.backgroundMips || environment?.mips || fallbackEnvironment.mips)[0].size,
             bvh.count,
             (path.denoise ? 1 : 0) |
-              (path.lightSampling !== false ? 2 : 0) |
-              (linearOutput ? 4 : 0),
+              (path.lightSampling !== false || path.integrator === 'bidirectional' ? 2 : 0) |
+              (linearOutput ? 4 : 0) |
+              (path.integrator === 'bidirectional' ? 8 : 0),
           ],
           100,
         )

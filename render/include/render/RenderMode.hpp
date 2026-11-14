@@ -8,13 +8,19 @@ namespace render
         Raster,
         PathTracing
     };
+    enum class PathIntegrator
+    {
+        PathTracing,
+        Bidirectional
+    };
     struct PathTracingSettings
     {
-        uint32_t samplesPerFrame = 1;
-        uint32_t maxBounces      = 3;
-        float    resolutionScale = 0.5f;
-        bool     denoise         = false;
-        bool     lightSampling   = true; // Emissive/HDR next-event estimation with MIS.
+        uint32_t       samplesPerFrame = 1;
+        uint32_t       maxBounces      = 3;
+        float          resolutionScale = 0.5f;
+        bool           denoise         = false;
+        bool           lightSampling   = true; // PT next-event estimation. BDPT always uses MIS.
+        PathIntegrator integrator      = PathIntegrator::PathTracing;
     };
     struct RendererCapabilities
     {

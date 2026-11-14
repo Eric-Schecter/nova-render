@@ -7,6 +7,8 @@ namespace render::detail
 {
     void ValidatePathTracing(const PathTracingSettings& settings)
     {
+        if (settings.integrator != PathIntegrator::PathTracing && settings.integrator != PathIntegrator::Bidirectional)
+            throw std::invalid_argument("Unknown path integrator");
         if (
           settings.samplesPerFrame < 1 || settings.samplesPerFrame > 4 || settings.maxBounces < 1
           || settings.maxBounces > 8 || !std::isfinite(settings.resolutionScale) || settings.resolutionScale < 0.25f
@@ -87,7 +89,9 @@ namespace render::detail
           settings.samplesPerFrame,
           BackgroundMips(environment ? *environment : FallbackEnvironment()).front().size,
           0,
-          (settings.denoise ? 1u : 0u) | (settings.lightSampling ? 2u : 0u) | (linearOutput ? 4u : 0u)};
+          (settings.denoise ? 1u : 0u)
+            | ((settings.lightSampling || settings.integrator == PathIntegrator::Bidirectional) ? 2u : 0u)
+            | (linearOutput ? 4u : 0u) | (settings.integrator == PathIntegrator::Bidirectional ? 8u : 0u)};
         if (std::memcmp(&params, &previous, sizeof(params)) || samples > 1000000)
         {
             samples  = 0;
