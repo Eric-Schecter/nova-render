@@ -43,13 +43,14 @@ renderer.enableParameterPanel({ onError: error => console.error(error) })
 
 ## 模型与环境选择
 
-三个模型例子均可选择 Damaged Helmet、Avocado、BoomBox；天空盒例子还提供三套 HDR 环境。切换保留相机、曝光、灯光和环境参数。
+三个模型例子均可选择 Damaged Helmet、Avocado、BoomBox、Cornell Box；天空盒例子还提供三套 HDR 环境。切换保留相机、曝光、灯光和环境参数。
 
 ```cpp
 render::ParameterPanelConfig panel;
 panel.models = {
     {"Avocado", "assets/Avocado/Avocado.glb"},
-    {"BoomBox", "assets/BoomBox/BoomBox.glb"}
+    {"BoomBox", "assets/BoomBox/BoomBox.glb"},
+    {"Cornell Box", "assets/CornellBox/CornellBox.glb"}
 };
 panel.environments = {
     {"Venice Sunset", "assets/Environment/venice_sunset.nenv"},
@@ -65,6 +66,7 @@ renderer.enableParameterPanel({
   models: [
     { name: 'Avocado', url: '/generated/Avocado.glb' },
     { name: 'BoomBox', url: '/generated/BoomBox.glb' },
+    { name: 'Cornell Box', url: '/generated/CornellBox.glb' },
   ],
   environments: [
     { name: 'Venice Sunset', url: '/generated/venice_sunset.bin' },

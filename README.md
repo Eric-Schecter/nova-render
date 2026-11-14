@@ -295,3 +295,12 @@ cmake --build build --target nova_environment
 C++ `PathTracingSettings::denoise` 与网页 `setPathTracing({ ...settings, denoise: true })` 对应，默认关闭；两个预览面板都提供 Denoise 开关。共用 HLSL 的 5×5 深度/法线/亮度引导空间滤波，独立 GPU pass 只处理显示结果，不修改原始累计。修改开关重新累计，关闭恢复原始输出。无新增依赖，无 AI 或时域历史；低采样下可能保留亮点并柔化细节。详见 `docs/api/render-mode.md`。
 
 降噪验证（2026-11-14）：Metal、Vulkan Lavapipe 和 DX12 WARP 均通过带贴图 Helmet 的实际像素、开关重置与原始输出恢复测试。以 34 次采样为参考，Metal 的 2 次采样模型区域 MSE 从 407.97 降至 194.05，Chrome 从 391.19 降至 214.45；检查天空像素不变。Mac 完整回归 30 项通过、2 项按能力跳过，Ubuntu 三项通过，Windows WARP 15 项通过、硬件探测跳过。浏览器三个例子及手机面板的开关通过；Metal API 校验、安装包独立调用与无 UI 构建通过。日志及原始/降噪截图在 `build/validation/denoise-*`。
+
+
+### Cornell Box 场景
+
+三个模型例子的 Model 列表新增 Cornell Box，原生和网页共用自包含的 GLB：红绿侧墙、白色房间、两个方块和顶部发光面板。支持光栅、路径追踪和降噪。切换保留当前相机与灯光，正面建议 yaw=0、pitch=0、distance=3.6。它是自行生成的示意场景，不是测量数据复刻；当前发光面靠路径反弹采样，可配合方向光或环境光观察。
+
+重建资源：`node scripts/generate-cornell-box.mjs`，无新增依赖。资源说明在 `assets/CornellBox/README.md`；`node scripts/webgpu/check-cornell.mjs` 验证实际墙面颜色、32 次采样与三个例子的列表/模式/降噪切换。
+
+场景验证（2026-11-14）：Metal API 校验下加载并实际追踪康奈尔盒子，检查红绿墙像素与降噪输出；Chrome 同样检查 32 次采样结果，两个实现均生成可查看的截图。Mac 的资源选择、模式切换与路径追踪五项回归通过，网页四个模型 × 三套环境的 12 种组合通过。三个例子在开发及构建后的静态网站中均可选择 Cornell Box 并切换光栅、路径追踪和降噪。日志和截图在 `build/validation/cornell-*`。

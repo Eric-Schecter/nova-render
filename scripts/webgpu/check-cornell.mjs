@@ -80,6 +80,8 @@ try {
     await models.scrollIntoViewIfNeeded()
     await models.selectOption('/generated/CornellBox.glb')
     await page.waitForFunction(() => !document.querySelector('[aria-label="模型选择"]').disabled)
+    if ((await models.inputValue()) !== '/generated/CornellBox.glb')
+      throw Error('Cornell scene selection failed')
     await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('path-tracing')
     await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
     await page.getByRole('checkbox', { name: '降噪', exact: true }).check()
