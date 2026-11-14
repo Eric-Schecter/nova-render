@@ -342,3 +342,19 @@ C++ `PathTracingSettings::lightSampling` 和网页 `lightSampling` 默认开启�
 复现：`ctest --test-dir build -R light-sampling -V`，网页先 `npm run docs:dev` 再 `node scripts/webgpu/check-light-sampling.mjs`。测试同时验证统一开关和累计重置；原始图像与统计输出位于 `build/validation/cornell-*-{bsdf-8,mis-8,mis-32,reference}.png`、`build/validation/mis-web.json`。
 
 后端回归（2026-11-14）：Mac 39 项中 36 项通过、3 项因 MoltenVK 无光追而跳过；Ubuntu Vulkan Lavapipe 7 项全部通过；Windows DX12 WARP 20 项中 19 项通过、硬件光追探测跳过。软件后端的 32×32 Cornell 8 spp MSE 从约 `0.0009896` 降到 `0.00002791`，1024 spp 平均亮度差约 1.55%。Chrome 的原有求交、HDR、降噪、12 组模型/环境和隐藏恢复回归通过；构建后的静态网站、MIS/降噪开关与手机面板通过。另验证了安装包独立调用 Cornell MIS、开关重置和无 UI 构建。日志位于 `build/validation/mis-*`；Windows 真机 GPU 尚未验证。
+
+### 双向路径追踪（BDPT）
+
+C++ 设置 `PathTracingSettings::integrator = PathIntegrator::Bidirectional`，网页设置 `integrator: 'bidirectional'`；默认 `PathTracing` / `'path'`。两个预览面板的 Integrator 提供对应选项，原生模型例子可用 `--mode path --integrator bidirectional`。切换重新累计，兼容现有降噪。继续只维护共享 HLSL，没有新增项目依赖或 GPU 绑定。
+
+实现从发光三角形按面积/亮度分布选取起点，双面余弦发射并沿 diffuse/GGX BSDF 生成光路；与相机路径各前缀连接，检查遮挡，并用同一面积度量下的路径策略概率计算 power heuristic。固定反弹上限内不做 roulette；统一材质/背面法线求值，光路使用伴随法线修正。MIS 通过相邻连接策略的密度比和流式 log-sum-exp 求权重，复用线程私有路径存储，避免反复复制整条路径。当前为相机条件化 BDPT：包含相机命中灯、直接连灯和多个光路顶点连接，不包含向其他像素的相机 splat。HDR 与方向光保留已有 NEE/MIS，有限发光面由 BDPT 独立处理以避免重复计光。原有静态不透明材质、粗糙度下限和路径辐射值上限 64 的限制仍适用。
+
+Cornell（仅顶灯、无环境/方向光、无降噪，48×48，反弹上限 5）：相对 2048 spp PT 参考，8 spp MSE 从 `6.75345e-5` 降为 `1.61813e-5`（约 76%）；32 spp 从 `1.43306e-5` 降为 `4.68205e-6`（约 67%），BDPT 128 spp 为 `1.37182e-6`。2048 spp 的平均亮度差约 0.19%，Metal 和 WebGPU 的统计一致。深度 1、3、8 和带非退化 UV 的法线贴图能量审计通过。每个 BDPT sample 的成本更高；本场景 PT 128 spp MSE `3.10447e-6`，低于耗时相近的 BDPT 32 spp，因此这些数据不证明等耗时一定更优。
+
+复现：`ctest --test-dir build -R bidirectional -V`；网页先启动 `npm run docs:dev`，再运行 `node scripts/webgpu/check-bidirectional.mjs`。记录位于 `build/validation/bdpt-*`，其中 `bdpt-web.json` 包含误差、能量、不同深度审计与 CPU 提交/GPU 完成读回的实际耗时；PNG 为真实 WebGPU 输出。
+
+低分辨率软件后端的测试使用四组互不重叠的随机样本块比较平均 MSE，不要求每一张 8 spp 图都优于 PT。48×48 的四组均值为 PT8 `5.92625e-5` / BDPT8 `1.78599e-5`、PT32 `1.30841e-5` / BDPT32 `4.63983e-6`。混合面光源、环境与方向光的 WebGPU 能量差约 0.11%。
+
+Windows 软件验证使用 [微软 WARP 1.0.22](https://www.nuget.org/packages/Microsoft.Direct3D.WARP/1.0.22)，仅将微软签名的 ARM64 `d3d10warp.dll` 放在隔离测试程序旁。系统自带的 `10.0.26100.9818` 可运行原 PT，但执行本 BDPT 内核会崩溃；更换此测试驱动后同一内核通过。未替换系统 DLL，也未将 WARP 加入项目依赖；实际显卡仍使用其 DX12 驱动。官方更新记录包括复杂控制流与 RayQuery 处理的修复。
+
+最终回归（2026-11-14）：Mac 在 Metal API 校验下 41 项中 37 项通过，4 项因 MoltenVK 无光追而跳过；Ubuntu Vulkan Lavapipe 8 项全部通过，并复核最终降噪入口；Windows WARP 1.0.22 的 21 项中 20 项通过、硬件光追探测跳过。Chrome 的 BDPT 实际像素、多种反弹深度、法线与混合光照能量审计、原 PT/MIS/降噪和 12 组资源回归通过；构建后的静态文档、手机控件、安装包独立 BDPT 调用和无 UI 构建通过。Windows 真机 GPU 尚未验证。四组软件后端的 32 spp 平均 MSE 从约 `1.94909e-5` 降到 `3.90193e-6`；日志和对比图位于 `build/validation/bdpt-*`。

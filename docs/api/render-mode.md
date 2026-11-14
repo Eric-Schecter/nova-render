@@ -41,7 +41,7 @@ window.WaitIdle();
 ```sh
 ./build/nova_environment assets/DamagedHelmet/DamagedHelmet.glb \
   assets/Environment/venice_sunset.nenv --api metal \
-  --mode path --spp 1 --bounces 3 --scale 0.5
+  --mode path --spp 1 --bounces 3 --scale 0.5 --integrator path
 ```
 
 模型加载、光照、天空盒三个原生例子均支持这些选项。Windows 使用 `--api dx12`，Linux 使用 `--api vulkan`；Windows 可追加 `--warp` 验证软件光追。
@@ -87,6 +87,29 @@ renderer.enableParameterPanel()
 发光三角形按面积与发光亮度选择，HDR 环境按亮度与立体角采样，并发射阴影射线检查遮挡。光源采样与原有 diffuse/GGX BSDF 采样通过 power heuristic 合并；直接看见灯或天空的亮度不变。关闭后使用 BSDF 采样，可用于同采样数对比。方向光仍单独采样。
 
 康奈尔盒子建议正面相机、关闭方向光和环境照明，仅靠顶灯观察间接光与阴影；比较时关闭降噪。MIS 减少低采样噪声，但每次反弹增加一次光源采样及可能的阴影射线，不保证每帧更快。
+
+## 双向路径追踪
+
+面板 **Integrator** 可选择 Path tracing / Bidirectional，默认 Path tracing。两端通过 `integrator` 指定，切换会重新累计；降噪和反弹次数仍适用。
+
+```cpp
+auto settings = window.GetPathTracing();
+settings.integrator = render::PathIntegrator::Bidirectional;
+window.SetPathTracing(settings);
+```
+
+```js
+renderer.setPathTracing({ ...renderer.getPathTracing(), integrator: 'bidirectional' })
+// integrator: 'path' 切回单向路径追踪
+```
+
+原生例子也可使用 `--mode path --integrator bidirectional`。BDPT 从发光面生成光路，与相机子路径连接，以面积度量的路径概率和 power heuristic 合并各连接策略。两端共用 HLSL，材质与法线求值一致；BDPT 始终启用 MIS，`lightSampling` 开关仅用于单向 PT。
+
+当前光路起点限于有限面光源；HDR 与方向光保留单向 NEE/MIS，没有面光源时回退到此估计器。不做光路直接投向其他像素的相机 splat；仍只支持静态不透明材质。算法背景可参阅 [PBRT 双向路径追踪](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Bidirectional_Path_Tracing)。
+
+Cornell 测试关闭方向光、环境照明与降噪，48×48、5 次反弹，以 2048 spp PT 为参考：8 spp 线性亮度误差约降低 76%，32 spp 约降低 67%，高采样平均亮度差约 0.19%。BDPT 的光路和连接增加计算量；本场景里 PT 128 spp 的误差低于 BDPT 32 spp，不能仅凭同采样数更干净判断速度更快。
+
+Windows WARP 软件验证使用微软 WARP 1.0.22；测试机器自带的旧 WARP 会在此复杂内核中崩溃。新版驱动仅放在测试程序旁，不修改系统 DLL，不增加项目依赖；实体 GPU 使用其 DX12 驱动。
 
 ## 降噪
 
