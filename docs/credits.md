@@ -30,3 +30,7 @@
 ## Cornell Box
 
 康奈尔盒子风格示意场景由 Nova 的 `scripts/generate-cornell-box.mjs` 生成，几何和两张纹理图集均在项目内构建，未使用外部模型素材。它不是 Cornell 实验室测量场景的复刻。资源说明见仓库 `assets/CornellBox/README.md`。
+
+## Skinning Robot
+
+第五个骨骼动画例子的机器人、关节、权重、两个动画片段及 PNG 图集均由 Nova 的 `scripts/generate-skinning-demo.mjs` 生成，未使用外部模型或动画素材。说明保存在 `assets/SkinningRobot/README.md`。

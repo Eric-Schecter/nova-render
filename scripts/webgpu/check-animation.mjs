@@ -107,8 +107,31 @@ try {
     await playing.uncheck()
     await mkdir('build/validation', { recursive: true })
     await page.locator('.preview').screenshot({ path: 'build/validation/animation-web-panel.png' })
+    await playing.check()
     await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
+    await page.waitForTimeout(100)
+    const hiddenTime = await page.locator('[aria-label="动画时间"]').inputValue()
+    await page.waitForTimeout(250)
+    if ((await page.locator('[aria-label="动画时间"]').inputValue()) !== hiddenTime)
+      throw Error('Hidden animation advanced')
     await page.getByRole('button', { name: '显示预览', exact: true }).click()
+    await page.waitForFunction(
+      (old) => document.querySelector('[aria-label="动画时间"]').value !== old,
+      hiddenTime,
+      { timeout: 10000 },
+    )
+    await playing.uncheck()
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.goto(base + '/examples/skeletal-animation')
+    await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
+    await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
+    await page.getByRole('combobox', { name: '动画片段', exact: true }).selectOption('1')
+    await page.getByRole('checkbox', { name: '播放动画', exact: true }).uncheck()
+    const panel = await page.locator('.nova-panel').boundingBox(),
+      canvas = await page.locator('canvas').boundingBox()
+    if (panel.x < canvas.x || panel.x + panel.width > canvas.x + canvas.width + 1)
+      throw Error('Mobile animation panel overflow')
+
     console.log(
       'PASS fifth example clip selector, playback, speed, seek, capability and preview lifecycle',
     )

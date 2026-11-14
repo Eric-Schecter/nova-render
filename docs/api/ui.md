@@ -79,3 +79,5 @@ renderer.enableParameterPanel({
 网页按需异步加载，期间禁用选择器并保留原画面；失败时恢复原选择，通过 `onError` 报告。`dispose()` 清理资源与事件。
 
 光栅与渐进路径追踪的模式、采样和能力查询接口见[渲染模式](./render-mode)。
+
+第五个例子的 Animation 分组提供片段选择、Playing、Loop、Speed 和 Time，接口见[骨骼动画](./animation)。

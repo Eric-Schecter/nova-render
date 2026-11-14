@@ -304,3 +304,14 @@ C++ `PathTracingSettings::denoise` 与网页 `setPathTracing({ ...settings, deno
 重建资源：`node scripts/generate-cornell-box.mjs`，无新增依赖。资源说明在 `assets/CornellBox/README.md`；`node scripts/webgpu/check-cornell.mjs` 验证实际墙面颜色、32 次采样与三个例子的列表/模式/降噪切换。
 
 场景验证（2026-11-14）：Metal API 校验下加载并实际追踪康奈尔盒子，检查红绿墙像素与降噪输出；Chrome 同样检查 32 次采样结果，两个实现均生成可查看的截图。Mac 的资源选择、模式切换与路径追踪五项回归通过，网页四个模型 × 三套环境的 12 种组合通过。三个例子在开发及构建后的静态网站中均可选择 Cornell Box 并切换光栅、路径追踪和降噪。日志和截图在 `build/validation/cornell-*`。
+
+
+### 05 · 骨骼动画
+
+新增 `nova_animation` 原生例子与网页 `/examples/skeletal-animation`，使用自建 Skinning Robot（11 关节、180 三角形、肘膝混合权重），提供 Walk / Wave 片段。面板控制片段、播放/暂停、循环、速度和时间，相机仍可拖动/缩放。
+
+接口：`GetAnimations()`、`GetAnimationState()`、`SetAnimationState(state)`、`UpdateAnimation(deltaSeconds)`，网页使用对应小写方法。原生窗口循环传入每帧秒数；网页自动播放并在预览隐藏时暂停。首版 CPU 采样/线性蒙皮，仅更新顶点缓冲，不重建纹理；支持 glTF TRS LINEAR / STEP，不支持 CUBICSPLINE、morph 或动画混合，动画模型暂限光栅。没有新增依赖，原静态模型的路径追踪保持可用。
+
+运行：`./build/nova_animation assets/SkinningRobot/SkinningRobot.glb --api metal`；Windows 使用 `--api dx12`，软件验证追加 `--warp`，Linux 使用 `--api vulkan`。资源可用 `node scripts/generate-skinning-demo.mjs` 重建。接口说明见 `docs/api/animation.md`。
+
+动画验证（2026-11-14）：原生与网页在 Walk 0.5 秒的完整顶点/法线数据最大差约 `1.2e-7`；检查了混合权重、不同片段、暂停、速度、时间定位、非循环结尾与非法参数。Mac 完整回归 33 项通过、2 项按能力跳过；Ubuntu Vulkan 的动画、数据及原有路径追踪五项通过；Windows DX12 WARP 17 项通过、硬件探测跳过。Chrome 验证实际蒙皮像素、静态站点第五例、控件、隐藏暂停恢复和手机布局；原生窗口截图检查后修正了控件标签裁切。另验证了从静态路径追踪切换到动画时清空累计、安装包独立调用及无 UI 构建。日志与截图在 `build/validation/animation-*`。

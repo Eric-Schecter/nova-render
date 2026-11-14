@@ -35,6 +35,7 @@ export default defineConfig({
           { text: 'Window', link: '/api/window' },
           { text: 'Nova Web', link: '/api/web' },
           { text: '模型与相机', link: '/api/model' },
+          { text: '骨骼动画', link: '/api/animation' },
           { text: '天空盒与环境光', link: '/api/environment' },
           { text: '渲染模式', link: '/api/render-mode' },
           { text: '参数面板', link: '/api/ui' },
