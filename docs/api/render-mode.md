@@ -1,6 +1,6 @@
 # 渲染模式
 
-原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）、Ray tracing（光追）或 Integrator comparison（三栏对比）；光追模式内再通过 **Integrator** 选择 PT、BDPT 或光子映射。
+原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）、Ray tracing（光追）或 Integrator comparison（四栏对比）；光追模式内再通过 **Integrator** 选择 PT、BDPT、光子映射或 MLT。
 
 ```cpp
 render::Window window;
@@ -180,8 +180,40 @@ renderer.setRenderMode('integrator-comparison')
 const progress = renderer.getComparisonProgress()
 ```
 
-固定采样预算范围 `1–65536`；时间预算 `0–60000` 毫秒，非零时优先使用时间预算。每栏每轮 1 个相机样本，预热不计入预算；暂停后保留结果。时间包含各方法的 CPU 提交与 GPU 完成，原生还包括现有回读流程，不计等待其他栏的时间；最后一轮可能超过时间预算，三栏串行执行，所以不是整个页面的墙钟预算。两端的绝对耗时不适合直接比较。
+固定采样预算范围 `1–65536`；时间预算 `0–60000` 毫秒，非零时优先使用时间预算。每栏每轮 1 spp；MLT 为 1 mutation/pixel，预热不计入预算；暂停后保留结果。时间包含各方法的 CPU 提交与 GPU 完成，原生还包括现有回读流程，不计等待其他栏的时间；最后一轮可能超过时间预算，四栏串行执行，所以不是整个页面的墙钟预算。两端的绝对耗时不适合直接比较。
 
-返回三项 `ComparisonProgress`，顺序 PT、BDPT、光子映射，各含 `integrator`、`samples`、`milliseconds`、`complete`。相机、模型、尺寸、预算或有效采样参数变化会重跑，`ResetAccumulation()` / `resetAccumulation()` 也会重跑。切回普通光追会继续使用原有场景配置。
+返回四项 `ComparisonProgress`，顺序 PT、BDPT、光子映射、MLT，各含 `integrator`、`samples`、`milliseconds`、`complete`。相机、模型、尺寸、预算或有效采样参数变化会重跑，`ResetAccumulation()` / `resetAccumulation()` 也会重跑。切回普通光追会继续使用原有场景配置。
 
 对比模式固定正方形视图，宽窗口横排、竖窗口上下排列，强制关闭外部光照、天空背景和显示降噪，PT 启用 MIS。每轮光子预算仍独立计数：光子发射路径总数 = 光子映射相机 spp × `photonsPerIteration`。使用带发光面的场景；无发光面的模型在此模式下可能全黑。专用[积分器例子](../examples/integrators)提供玻璃焦散场景。
+
+## 梅特波利斯光传输（MLT）
+
+```cpp
+auto settings = window.GetRayTracing();
+settings.integrator = render::RayIntegrator::Metropolis;
+settings.maxBounces = 8;
+settings.mltBootstrapSamples = 262144;
+settings.mltLargeStepProbability = 0.3f;
+settings.mltMutationScale = 0.01f;
+settings.mltSeed = 1;
+window.SetRayTracing(settings);
+window.SetRenderMode(render::RenderMode::RayTracing);
+```
+
+```js
+renderer.setRayTracing({ ...renderer.getRayTracing(), integrator: 'mlt',
+  maxBounces: 8, mltBootstrapSamples: 262144,
+  mltLargeStepProbability: 0.3, mltMutationScale: 0.01, mltSeed: 1 })
+renderer.setRenderMode('ray-tracing')
+```
+
+- `mltBootstrapSamples`：归一化预采样数，默认 `262144`，范围 `256–1048576`。
+- `mltLargeStepProbability`：全维均匀大步概率，默认 `0.3`，范围 `0.05–1`。
+- `mltMutationScale`：对称环绕均匀小步的最大幅度，默认 `0.01`，范围 `0.0001–0.25`。
+- `mltSeed`：随机种子，默认 `1`，范围为无符号 32 位整数；更换后重新初始化。
+
+当前实现是 **PSSMLT**：在 BDPT 的主采样空间中做 Metropolis–Hastings 变异；直接照明单独估计，链追踪两次及以上散射。bootstrap 估计间接贡献的平均亮度，再按亮度重采样初始化最多 1024 条链，每链预热 16 次。接受／拒绝均做加权 splat，拒绝时保留完整主采样向量。不是 MMLT，也没有原始路径空间的专门变异策略，背景见 [PBRT MLT](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Metropolis_Light_Transport)。
+
+`GetAccumulatedSamples()` / `getAccumulatedSamples()` 在 MLT 下返回平均 mutations/pixel；`samplesPerFrame` 控制每帧的这一预算。它不是独立相机 spp。四栏的 `samples` 字段采用各自单位；MLT 的预采样与预热不计入 mpp，但包含在首轮计时内。首轮可能超过时间预算。
+
+MLT 有相关噪声和初始化开销；固定 bootstrap 的归一化误差不会随 mpp 增长自动消失，应提高预采样数或更换种子复核亮度。面板可调前三项，种子通过 API 设置。所有参数、相机与场景变化会重新初始化；原有显示降噪仍可使用，对比模式固定关闭。共享 HLSL 使用双 32 位整数实现固定点累加与进位，不依赖浏览器浮点原子操作；仍为 8 个存储绑定，无新增依赖。

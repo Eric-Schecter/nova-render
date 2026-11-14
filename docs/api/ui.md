@@ -82,4 +82,4 @@ renderer.enableParameterPanel({
 
 第五个例子的 Animation 分组提供片段选择、Playing、Loop、Speed 和 Time，接口见[骨骼动画](./animation)。
 
-专用 `Integrator comparison` 模式提供固定采样数／每种方法活跃时间预算，到达预算自动暂停；顶部显示 PT、BDPT、光子映射各自的 spp 与耗时。它固定关闭外部光照和降噪，面板仅保留有效参数，见[第六例子](../examples/integrators)。
+专用 `Integrator comparison` 模式提供固定采样数／每种方法活跃时间预算，到达预算自动暂停；顶部显示 PT、BDPT、光子映射、MLT 各自的 spp 与耗时。它固定关闭外部光照和降噪，面板仅保留有效参数，见[第六例子](../examples/integrators)。

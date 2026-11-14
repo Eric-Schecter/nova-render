@@ -375,7 +375,7 @@ Windows 软件验证使用 [微软 WARP 1.0.22](https://www.nuget.org/packages/M
 
 ### 玻璃焦散与积分器对比
 
-新增 `nova_comparison` / 网页第六例子：`IntegratorComparison`（网页 `'integrator-comparison'`）并排显示 PT、BDPT、光子映射，同相机、仅面光源、无显示降噪；固定 spp 或每种方法的活跃时间预算用完后暂停。`comparisonSamples` 默认 64，`comparisonMilliseconds` 默认 0（非零使用时间预算）；通过 `GetComparisonProgress()` / `getComparisonProgress()` 读取各栏采样、毫秒和完成状态。预热不计入预算，每轮每栏 1 个相机样本；最后一轮可能超过时间预算。光子总路径数另计，三栏串行执行。
+新增 `nova_comparison` / 网页第六例子：`IntegratorComparison`（网页 `'integrator-comparison'`）并排显示 PT、BDPT、光子映射、MLT，同相机、仅面光源、无显示降噪；固定 spp 或每种方法的活跃时间预算用完后暂停。`comparisonSamples` 默认 64，`comparisonMilliseconds` 默认 0（非零使用时间预算）；通过 `GetComparisonProgress()` / `getComparisonProgress()` 读取各栏采样、毫秒和完成状态。预热不计入预算，每轮每栏 1 个相机样本；最后一轮可能超过时间预算。光子总路径数另计，四栏串行执行。
 
 `assets/CornellCaustics` 为原创小顶灯、悬空玻璃球和地面焦散场景。C++ 与网页加载同一 GLB，共享 HLSL 粗糙介质 Fresnel、Snell 折射、全反射、BSDF/PDF 与重要性传输。支持 transmission factor 与 IOR；不同材质共用核心 PBR 因子和纹理图集。当前仅空气/玻璃界面，不含嵌套介质、吸收、色散或透射纹理；光栅保留不透明回退。无新增项目依赖。
 
@@ -387,6 +387,24 @@ node scripts/webgpu/check-glass.mjs
 node scripts/webgpu/check-comparison.mjs
 ```
 
-Metal / WebGPU 的玻璃场景 4096 spp 室内平均亮度，PT / BDPT / 光子映射约为 0.011264 / 0.011163 / 0.011125。WebGPU 独立 BSDF 探针检验入射、出射辐亮度能量与全反射；实际三栏像素、预算暂停、非整批 spp、相机重置和模式恢复均有验证。截图和日志位于 `build/validation/comparison-*`、`glass-*`。
+Metal / WebGPU 的玻璃场景 4096 spp 室内平均亮度，PT / BDPT / 光子映射约为 0.011264 / 0.011163 / 0.011125。WebGPU 独立 BSDF 探针检验入射、出射辐亮度能量与全反射；实际对比像素、预算暂停、非整批 spp、相机重置和模式恢复均有验证。截图和日志位于 `build/validation/comparison-*`、`glass-*`。
 
-最终回归：Mac 45 项中 40 项通过、5 项因 MoltenVK 缺少光追跳过；Ubuntu Vulkan Lavapipe 的对比、玻璃、模式、光子映射 4 项通过；Windows DX12 WARP 1.0.22 同样 4 项通过。Windows 首轮 4096 spp 玻璃 BDPT 超过 900 秒，软件后端正确性回归改用 512 spp 后通过；Metal/WebGPU 保留 4096 spp 能量和像素检查。原生实际读回像素确认横向／纵向三栏均非空、暂停图像保持不变；Chrome 静态文档、代码页签与手机上下布局通过。Windows 真机 GPU 尚未验证。
+最终回归：Mac 45 项中 40 项通过、5 项因 MoltenVK 缺少光追跳过；Ubuntu Vulkan Lavapipe 的对比、玻璃、模式、光子映射 4 项通过；Windows DX12 WARP 1.0.22 同样 4 项通过。Windows 首轮 4096 spp 玻璃 BDPT 超过 900 秒，软件后端正确性回归改用 512 spp 后通过；Metal/WebGPU 保留 4096 spp 能量和像素检查。原生实际读回像素确认横向／纵向对比均非空、暂停图像保持不变；Chrome 静态文档、代码页签与手机上下布局通过。Windows 真机 GPU 尚未验证。
+
+### PSSMLT
+
+共享 HLSL 新增 `RayIntegrator::Metropolis` / 网页 `'mlt'`，四栏对比顺序为 PT、BDPT、光子映射、MLT。保留单独直接照明估计；间接 BDPT 主采样向量进行对称大小步变异、Metropolis–Hastings 接受拒绝和加权 splat。bootstrap 用于归一化及链初始化，主向量有 160 个维度、最多 1024 条链，拒绝时完整保留状态；每链预热 16 次。固定点 RGB 通过双 32 位原子加与进位累加，8 个存储绑定和 512 字节参数布局保持不变，无新增依赖。
+
+参数默认值：`mltBootstrapSamples=262144`、`mltLargeStepProbability=0.3`、`mltMutationScale=0.01`、`mltSeed=1`。小步为环绕均匀扰动；`samplesPerFrame` / 累计计数在 MLT 下表示 mutations/pixel。预采样和预热不计入 mpp，但计入四栏首轮活跃时间；首轮可超过时间预算。不是 MMLT，不包含原始路径空间变异策略。
+
+验证涵盖解析目标的归一化、接受拒绝、分批一致性、玻璃焦散收敛、三个种子、混合照明的维度上限和原生/网页能量一致性。32×32、8 次反弹、8192 spp BDPT 参考下，网页区域 MSE 从 32 mpp 的约 `1.23e-5` 降为 2048 mpp 的 `9.51e-7`；区域平均亮度差约 0.18%。当前低预算对比中 MLT 成本更高；固定 bootstrap 的归一化误差不会随 mpp 自动消失。
+
+```sh
+./build/nova_comparison assets/CornellCaustics/CornellCaustics.glb --api metal
+ctest --test-dir build -R mlt -V
+node scripts/webgpu/check-mlt.mjs
+```
+
+公开参数和使用方法见 `docs/api/render-mode.md`，实际四栏截图与说明见 `docs/guide/integrator-comparison.md`。
+
+最终 MLT 回归：Mac 46 项中 41 项通过、5 项因 MoltenVK 缺少光追而跳过；Ubuntu 的相关 4 项及修复后 MLT 复验通过；Windows WARP 1.0.22 的 MLT 与四栏测试通过，原模式和 BDPT 回归也通过。补充 GPU bootstrap CDF 索引边界检查，修复链初始化误读材质缓冲区及模式专属 scratch 的潜在越界。Chrome 解析目标、三种子、分批一致性、玻璃收敛、原生/网页能量一致性与四栏像素检查通过。安装后的独立竖向窗口调用、无 UI 构建和静态文档通过；Windows 真机 GPU 尚未验证。

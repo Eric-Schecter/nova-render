@@ -1,0 +1,173 @@
+[
+  {
+    "case": "bootstrap-cdf-indices",
+    "indices": [
+      0,
+      64,
+      128,
+      192,
+      255
+    ]
+  },
+  {
+    "case": "analytic",
+    "probability": 0.3,
+    "mpp": 256,
+    "mse": 0.006565140231114464,
+    "mean": 0.5649496041587554,
+    "stats": {
+      "normalization": 0.5649495720863342,
+      "accepted": 61532,
+      "proposals": 65536,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.003035689704120159,
+      "positiveBootstrap": 4096
+    }
+  },
+  {
+    "case": "analytic",
+    "probability": 0.3,
+    "mpp": 2048,
+    "mse": 0.0008992552229798047,
+    "mean": 0.5649496053811163,
+    "stats": {
+      "normalization": 0.5649495720863342,
+      "accepted": 491533,
+      "proposals": 524288,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.003035689704120159,
+      "positiveBootstrap": 4096
+    }
+  },
+  {
+    "case": "analytic",
+    "probability": 1,
+    "mpp": 256,
+    "mse": 0.0014195308334110917,
+    "mean": 0.5649495929246768,
+    "stats": {
+      "normalization": 0.5649495720863342,
+      "accepted": 53022,
+      "proposals": 65536,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.003035689704120159,
+      "positiveBootstrap": 4096
+    }
+  },
+  {
+    "case": "analytic",
+    "probability": 1,
+    "mpp": 2048,
+    "mse": 0.00020692210399827186,
+    "mean": 0.5649495988618582,
+    "stats": {
+      "normalization": 0.5649495720863342,
+      "accepted": 424081,
+      "proposals": 524288,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.003035689704120159,
+      "positiveBootstrap": 4096
+    }
+  },
+  {
+    "case": "batch-invariance",
+    "passed": true
+  },
+  {
+    "case": "glass",
+    "mpp": 32,
+    "mean": 0.010814293098935321,
+    "refMean": 0.010932196752678255,
+    "mse": 1.22653163660212e-05,
+    "all": 0.014535924032132996,
+    "refAll": 0.01576761297678786,
+    "directMean": 0.011683915261826081,
+    "stats": {
+      "normalization": 0.004117995034903288,
+      "accepted": 16235,
+      "proposals": 32768,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.00018258602358400822,
+      "positiveBootstrap": 189740
+    }
+  },
+  {
+    "case": "glass",
+    "mpp": 256,
+    "mean": 0.010844849269709649,
+    "refMean": 0.010932196752678255,
+    "mse": 5.628986964645296e-06,
+    "all": 0.015686672276956415,
+    "refAll": 0.01576761297678786,
+    "directMean": 0.011683915261826081,
+    "stats": {
+      "normalization": 0.004117995034903288,
+      "accepted": 128183,
+      "proposals": 262144,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.00018258602358400822,
+      "positiveBootstrap": 189740
+    }
+  },
+  {
+    "case": "glass",
+    "mpp": 2048,
+    "mean": 0.010912259884866058,
+    "refMean": 0.010932196752678255,
+    "mse": 9.50506143913838e-07,
+    "all": 0.01580191056388003,
+    "refAll": 0.01576761297678786,
+    "directMean": 0.011683915261826081,
+    "stats": {
+      "normalization": 0.004117995034903288,
+      "accepted": 1039921,
+      "proposals": 2097152,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.00018258602358400822,
+      "positiveBootstrap": 189740
+    }
+  },
+  {
+    "case": "bootstrap-audit",
+    "seed": 2,
+    "expectedIndirect": 0.004083697714961778,
+    "stats": {
+      "normalization": 0.0038958422373980284,
+      "accepted": 530,
+      "proposals": 1024,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.00016507506370544434,
+      "positiveBootstrap": 189966
+    }
+  },
+  {
+    "case": "bootstrap-audit",
+    "seed": 3,
+    "expectedIndirect": 0.004083697714961778,
+    "stats": {
+      "normalization": 0.0038390730042010546,
+      "accepted": 544,
+      "proposals": 1024,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.00015731621533632278,
+      "positiveBootstrap": 189570
+    }
+  },
+  {
+    "case": "mixed-light-dimensions",
+    "stats": {
+      "normalization": 0.019033819437026978,
+      "accepted": 540,
+      "proposals": 1024,
+      "dimensionOverflow": 0,
+      "normalizationSE": 0.0011821837397292256,
+      "positiveBootstrap": 3078
+    }
+  },
+  {
+    "case": "native-energy-parity",
+    "meanNative": 0.01580208482323542,
+    "meanWeb": 0.01580191056388003,
+    "relativeDifference": 1.1027739632130107e-05
+  }
+]
