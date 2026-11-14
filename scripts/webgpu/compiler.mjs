@@ -42,6 +42,7 @@ export async function compile(
           // DXC LICM hoists storage pointers across nested MIS/BVH loops.
           // Naga cannot spill those pointers into WGSL function variables.
           ...(compute ? ['-DNOVA_WEB_BVH=1', '-Od'] : []),
+          ...(computeEntry === 'DenoiseMain' ? ['-DNOVA_DENOISE_ONLY=1'] : []),
           '-T',
           profile,
           '-E',

@@ -5,15 +5,17 @@ endif()
 foreach(_kernel IN ITEMS pathtrace denoise)
     if(_kernel STREQUAL "pathtrace")
         set(_entry CSMain)
+        set(_path_defines)
     else()
         set(_entry DenoiseMain)
+        set(_path_defines -DNOVA_DENOISE_ONLY=1)
     endif()
     set(_path_source "${PROJECT_SOURCE_DIR}/render/shaders/pathtrace.hlsl")
     if(NOVA_ENABLE_VULKAN OR APPLE)
         set(_path_spv "${SHADER_OUTPUT_DIR}/${_kernel}.compute.spv")
         add_custom_command(OUTPUT "${_path_spv}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
-            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2 -T cs_6_5 -E ${_entry} "${_path_source}" -Fo "${_path_spv}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2 -T cs_6_5 -E ${_entry} ${_path_defines} "${_path_source}" -Fo "${_path_spv}"
             DEPENDS "${_path_source}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         if(NOVA_ENABLE_VULKAN)
             list(APPEND SHADER_OUTPUTS "${_path_spv}")
@@ -31,7 +33,7 @@ foreach(_kernel IN ITEMS pathtrace denoise)
         set(_path_dxil "${SHADER_OUTPUT_DIR}/${_kernel}.compute.dxil")
         add_custom_command(OUTPUT "${_path_dxil}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
-            COMMAND "${NOVA_DXC_EXECUTABLE}" -T cs_6_5 -E ${_entry} "${_path_source}" -Fo "${_path_dxil}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -T cs_6_5 -E ${_entry} ${_path_defines} "${_path_source}" -Fo "${_path_dxil}"
             DEPENDS "${_path_source}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${_path_dxil}")
     endif()

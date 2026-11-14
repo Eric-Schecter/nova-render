@@ -104,7 +104,7 @@ struct Hit
     uint   primitive;
     float2 bary;
 };
-#ifndef NOVA_WEB_BVH
+#if !defined(NOVA_WEB_BVH) && !defined(NOVA_DENOISE_ONLY)
 // All traversals finish before the next begins. A shader-private query avoids
 // reserving a traversal object for every inlined eye/light/shadow call site.
 static RayQuery<RAY_FLAG_NONE> query;
@@ -178,6 +178,11 @@ bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit)
     ray.Direction = direction;
     ray.TMin      = .0005;
     ray.TMax      = maxDistance;
+#ifdef NOVA_DENOISE_ONLY
+    // Keep the unused traversal helper parseable without a shader-wide query
+    // initializer; older DXIL validators otherwise retain a stale DXR flag.
+    RayQuery<RAY_FLAG_NONE> query;
+#endif
     query.TraceRayInline(scene, RAY_FLAG_NONE, 255, ray);
     while (query.Proceed())
     {
