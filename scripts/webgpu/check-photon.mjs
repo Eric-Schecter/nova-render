@@ -1,6 +1,6 @@
 import { chromium } from 'playwright'
 import { resolve } from 'node:path'
-import { writeFile } from 'node:fs/promises'
+import { writeFile, readFile } from 'node:fs/promises'
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
@@ -46,6 +46,7 @@ try {
         }
         const reference = await render('path', 4096),
           records = []
+        let photon512 = []
         function metric(p, error) {
           let s = 0,
             n = 0
@@ -60,6 +61,7 @@ try {
         for (const integrator of ['path', 'bidirectional', 'photon-mapping'])
           for (const spp of [8, 32, 128, 512]) {
             const r = await render(integrator, spp)
+            if (integrator === 'photon-mapping' && spp === 512) photon512 = Array.from(r.values)
             records.push({
               integrator,
               spp,
@@ -70,7 +72,7 @@ try {
           }
         const error = await device.popErrorScope()
         if (error) throw Error(error.message)
-        return { records, referenceMean: metric(reference.values, false) }
+        return { records, referenceMean: metric(reference.values, false), photon512 }
       } finally {
         path.dispose()
         data.images.forEach((i) => i.bitmap?.close())
@@ -79,6 +81,24 @@ try {
     },
     '/@fs' + resolve('web/src'),
   )
+  const native = await readFile('build/photon-native-raw.bin')
+  if (
+    native.readUInt32LE(0) !== 48 ||
+    native.readUInt32LE(4) !== 48 ||
+    result.photon512.length !== 48 * 48
+  )
+    throw Error('Native parity image missing')
+  let sum = 0,
+    max = 0
+  for (let i = 0; i < 48 * 48; i++) {
+    const d = result.photon512[i] - native.readFloatLE(8 + i * 4)
+    sum += d * d
+    max = Math.max(max, Math.abs(d))
+  }
+  result.nativeParity = { rms: Math.sqrt(sum / (48 * 48)), max }
+  if (result.nativeParity.rms > 2e-4)
+    throw Error('Native/Web photon mismatch: ' + JSON.stringify(result.nativeParity))
+  delete result.photon512
   await writeFile('build/validation/photon-web.json', JSON.stringify(result, null, 2))
   console.log(result)
   for (const slug of ['damaged-helmet', 'lighting', 'environment']) {

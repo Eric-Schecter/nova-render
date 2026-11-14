@@ -267,7 +267,7 @@ namespace render::detail
                 slider("Pitch", camera.pitch, -85, 85, "%.1f");
                 slider("Distance", camera.distance, 1.5f, 100, "%.2f");
                 if (lighting == LightingMode::PBR || hasEnvironment || mode == RenderMode::PathTracing)
-                    slider("Exposure", camera.exposure, 0.1f, 3, "%.1f");
+                    slider("Exposure", camera.exposure, 0.1f, 16, "%.1f");
                 if (ImGui::Button("Reset camera"))
                     camera = initialCamera;
             }

@@ -208,14 +208,15 @@ async function generate(name) {
         f = ps[2].map((x, k) => x - ps[0][k]),
         c = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]]
       if (Math.hypot(...c) < 1e-8) return
-      if (c.reduce((sum, x, k) => sum + x * ns[0][k], 0) < 0) {
+      const flip = c.reduce((sum, x, k) => sum + x * ns[0][k], 0) < 0
+      if (flip) {
         ;[ps[1], ps[2]] = [ps[2], ps[1]]
         ;[ns[1], ns[2]] = [ns[2], ns[1]]
       }
       const start = positions.length / 3
       for (let i = 0; i < 3; i++) {
         positions.push(...ps[i])
-        normals.push(...c.map((x) => x / Math.hypot(...c)))
+        normals.push(...c.map((x) => (x / Math.hypot(...c)) * (flip ? -1 : 1)))
         uvs.push(4.5 / 5, 0.5)
       }
       indices.push(start, start + 1, start + 2)

@@ -3,6 +3,10 @@
 #include <limits>
 #include <render/Window.hpp>
 #include <stdexcept>
+// Preserve source compatibility for the original six-field aggregate form.
+static_assert(
+  render::PathTracingSettings{1, 3, .5f, false, true, render::PathIntegrator::Bidirectional}.integrator
+  == render::PathIntegrator::Bidirectional);
 int main(int argc, char** argv)
 {
     try

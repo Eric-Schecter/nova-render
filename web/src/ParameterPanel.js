@@ -418,7 +418,7 @@ export function attachParameterPanel(
           adapter.setCamera({ ...adapter.getCamera(), [key]: value }),
         )
       if (current.lighting || current.environment)
-        slider(camera, 'exposure', 'Exposure', '曝光', 0.1, 3, 0.1, (value) =>
+        slider(camera, 'exposure', 'Exposure', '曝光', 0.1, 16, 0.1, (value) =>
           adapter.setCamera({ ...adapter.getCamera(), exposure: value }),
         )
       reset(camera, '重置相机', () => adapter.setCamera(initialCamera))

@@ -22,9 +22,9 @@ namespace render
         float          resolutionScale     = 0.5f;
         bool           denoise             = false;
         bool           lightSampling       = true; // PT next-event estimation. BDPT always uses MIS.
+        PathIntegrator integrator          = PathIntegrator::PathTracing;
         uint32_t       photonsPerIteration = 8192;
         float          photonRadius        = .16f;
-        PathIntegrator integrator          = PathIntegrator::PathTracing;
     };
     using RayTracingSettings = PathTracingSettings;
     using RayIntegrator      = PathIntegrator;
