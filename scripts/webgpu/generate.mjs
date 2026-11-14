@@ -45,3 +45,9 @@ const denoise = await compile(await readFile('render/shaders/pathtrace.hlsl', 'u
   computeEntry: 'DenoiseMain',
 })
 await writeFile('docs/public/generated/denoise.json', JSON.stringify(denoise))
+
+const skinning = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), {
+  compute: true,
+  computeEntry: 'SkinningCSMain',
+})
+await writeFile('docs/public/generated/skinning.json', JSON.stringify(skinning))

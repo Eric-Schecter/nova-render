@@ -9,7 +9,7 @@ struct ModelTexture
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkImageView    view   = VK_NULL_HANDLE;
 };
-ModelBuffer                 modelVertices, modelUniform, modelStaging;
+ModelBuffer                 modelVertices, modelUniform, modelStaging, modelSkin, modelJoints;
 std::array<ModelTexture, 5> modelTextures;
 ModelTexture                modelDepth, environmentCube, backgroundCube, pathDisplay;
 uint32_t                    pathWidth = 0, pathHeight = 0;
@@ -184,6 +184,16 @@ void uploadModel()
       std::max(sizeof(ModelVertex), model->vertices.size() * sizeof(ModelVertex)),
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       model->vertices.empty() ? nullptr : model->vertices.data());
+    modelBuffer(
+      modelSkin,
+      std::max(size_t(64), model->skinInputs.size() * sizeof(SkinInput)),
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      model->skinInputs.empty() ? nullptr : model->skinInputs.data());
+    modelBuffer(
+      modelJoints,
+      std::max(size_t(64), model->jointMatrices.size() * sizeof(JointMatrix)),
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      model->jointMatrices.empty() ? nullptr : model->jointMatrices.data());
     modelBuffer(modelUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     for (size_t i = 0; i < 5; ++i)
     {
@@ -254,26 +264,26 @@ void uploadModel()
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler.maxLod = float(std::max(env.mips.size(), BackgroundMips(env).size()) - 1);
     check(vkCreateSampler(device, &sampler, nullptr, &modelSampler), "Create model sampler");
-    std::array<VkDescriptorSetLayoutBinding, 11> bindings{};
-    for (uint32_t i = 0; i < 11; ++i)
+    std::array<VkDescriptorSetLayoutBinding, 13> bindings{};
+    for (uint32_t i = 0; i < 13; ++i)
     {
         bindings[i].binding         = i;
         bindings[i].descriptorCount = 1;
-        bindings[i].descriptorType  = i == 0   ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                      : i == 1 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-                                      : i == 7 ? VK_DESCRIPTOR_TYPE_SAMPLER
-                                               : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        bindings[i].stageFlags      = i == 0   ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                                      : i == 1 ? VK_SHADER_STAGE_VERTEX_BIT
-                                               : VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[i].descriptorType  = i == 0                ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                      : (i == 1 || i >= 11) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                      : i == 7              ? VK_DESCRIPTOR_TYPE_SAMPLER
+                                                            : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        bindings[i].stageFlags      = i == 0                ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+                                      : (i == 1 || i >= 11) ? VK_SHADER_STAGE_VERTEX_BIT
+                                                            : VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 11;
+    layoutInfo.bindingCount = 13;
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
       {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -287,10 +297,13 @@ void uploadModel()
     alloc.pSetLayouts        = &modelSetLayout;
     check(vkAllocateDescriptorSets(device, &alloc, &modelSet), "Allocate model descriptors");
     VkDescriptorBufferInfo bufferInfo[] = {
-      {modelUniform.buffer, 0, sizeof(SceneUniforms)}, {modelVertices.buffer, 0, VK_WHOLE_SIZE}};
+      {modelUniform.buffer, 0, sizeof(SceneUniforms)},
+      {modelVertices.buffer, 0, VK_WHOLE_SIZE},
+      {modelSkin.buffer, 0, VK_WHOLE_SIZE},
+      {modelJoints.buffer, 0, VK_WHOLE_SIZE}};
     std::array<VkDescriptorImageInfo, 9> images{};
-    std::array<VkWriteDescriptorSet, 11> writes{};
-    for (uint32_t i = 0; i < 11; ++i)
+    std::array<VkWriteDescriptorSet, 13> writes{};
+    for (uint32_t i = 0; i < 13; ++i)
     {
         auto& w           = writes[i];
         w.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -300,6 +313,8 @@ void uploadModel()
         w.descriptorType  = bindings[i].descriptorType;
         if (i < 2)
             w.pBufferInfo = &bufferInfo[i];
+        else if (i >= 11)
+            w.pBufferInfo = &bufferInfo[i - 9];
         else
         {
             auto& image       = images[i - 2];
@@ -314,7 +329,7 @@ void uploadModel()
             w.pImageInfo = &image;
         }
     }
-    vkUpdateDescriptorSets(device, 11, writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(device, 13, writes.data(), 0, nullptr);
     modelReady = true;
 }
 void LoadModel(std::shared_ptr<const ModelData> data) override
@@ -349,6 +364,8 @@ void destroyModel()
     destroyModelTexture(pathDisplay);
     pathWidth = pathHeight = 0;
     destroyModelBuffer(modelVertices);
+    destroyModelBuffer(modelSkin);
+    destroyModelBuffer(modelJoints);
     destroyModelBuffer(modelUniform);
     destroyModelBuffer(modelStaging);
     modelReady = false;

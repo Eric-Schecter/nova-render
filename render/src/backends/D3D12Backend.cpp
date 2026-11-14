@@ -203,9 +203,9 @@ namespace render::detail
             {
                 void*       mapped;
                 D3D12_RANGE empty{0, 0};
-                checkHR(modelVertices->Map(0, &empty, &mapped), "Map animated vertices");
-                std::memcpy(mapped, model->vertices.data(), model->vertices.size() * sizeof(ModelVertex));
-                modelVertices->Unmap(0, nullptr);
+                checkHR(modelJoints->Map(0, &empty, &mapped), "Map joint matrices");
+                std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
+                modelJoints->Unmap(0, nullptr);
             }
             const auto* path = DrawPathFrame(width, height);
             if (path)
@@ -256,6 +256,8 @@ namespace render::detail
                 commands->SetDescriptorHeaps(1, heaps);
                 commands->SetGraphicsRootConstantBufferView(0, modelUniform->GetGPUVirtualAddress());
                 commands->SetGraphicsRootShaderResourceView(1, modelVertices->GetGPUVirtualAddress());
+                commands->SetGraphicsRootShaderResourceView(3, modelSkin->GetGPUVirtualAddress());
+                commands->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
                 commands->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
             }
             D3D12_VIEWPORT viewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};

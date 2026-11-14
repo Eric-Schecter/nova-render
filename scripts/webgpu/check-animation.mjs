@@ -17,25 +17,35 @@ try {
     await page.goto(base + '/')
     console.log(
       await page.evaluate(
-        async ({ root, native }) => {
+        async ({ root, native, probeURL }) => {
           const { loadGLB } = await import(root + '/ModelData.js'),
             { createAnimationPlayer } = await import(root + '/AnimationData.js'),
-            Nova = await import(root + '/Nova.js')
+            Nova = await import(root + '/Nova.js'),
+            { createSkinReadback } = await import(probeURL)
           const data = await loadGLB('/generated/SkinningRobot.glb')
+          const device = await (await navigator.gpu.requestAdapter()).requestDevice()
+          device.pushErrorScope('validation')
           try {
-            const player = createAnimationPlayer(data)
+            const bind = data.vertices.slice(),
+              player = createAnimationPlayer(data)
+            const readSkin = await createSkinReadback(device)
             if (player.clips.length !== 2) throw Error('Clips missing')
             player.set({ ...player.state, time: 0.5, playing: false })
+            const gpu = await readSkin(data)
             let maximum = 0
             for (let i = 0; i < native.length; i++)
-              maximum = Math.max(maximum, Math.abs(data.vertices[i] - native[i]))
-            if (data.vertices.length !== native.length || maximum > 3e-5)
+              maximum = Math.max(maximum, Math.abs(gpu[i] - native[i]))
+            if (gpu.length !== native.length || maximum > 3e-5)
               throw Error('Native/web pose mismatch ' + maximum)
-            const snapshot = data.vertices.slice()
+            if (data.vertices.some((v, i) => v !== bind[i]))
+              throw Error('CPU changed bind vertices')
+            const snapshot = gpu
             player.update(0.5)
-            if (data.vertices.some((v, i) => v !== snapshot[i])) throw Error('Paused pose advanced')
+            const pausedGpu = await readSkin(data)
+            if (pausedGpu.some((v, i) => v !== snapshot[i])) throw Error('Paused pose advanced')
             player.set({ ...player.state, clip: 1 })
-            if (!data.vertices.some((v, i) => Math.abs(v - snapshot[i]) > 0.01))
+            const wave = await readSkin(data)
+            if (!wave.some((v, i) => Math.abs(v - snapshot[i]) > 0.01))
               throw Error('Clips identical')
             let rejected = false
             try {
@@ -59,8 +69,22 @@ try {
             r.setAnimationState({ ...r.getAnimationState(), playing: false })
             await r.drawFrame()
             const first = canvas.toDataURL()
+            const writes = [],
+              originalWrite = GPUQueue.prototype.writeBuffer
+            GPUQueue.prototype.writeBuffer = function (buffer, ...args) {
+              writes.push({ label: buffer.label, bytes: args[1]?.byteLength })
+              return originalWrite.call(this, buffer, ...args)
+            }
             r.setAnimationState({ ...r.getAnimationState(), time: 0.5 })
             await r.drawFrame()
+            GPUQueue.prototype.writeBuffer = originalWrite
+            if (
+              writes.some(
+                (w) => w.label === 'Nova bind vertices' || w.label === 'Nova skin inputs',
+              ) ||
+              !writes.some((w) => w.label === 'Nova joint palette')
+            )
+              throw Error('Per-frame uploads must update only joint palette and uniforms')
             if (canvas.toDataURL() === first) throw Error('Skinned GPU pixels did not move')
             if (r.getCapabilities().pathTracing)
               throw Error('Animated path mode must report unsupported')
@@ -72,18 +96,25 @@ try {
             const paused = r.getAnimationState().time
             await new Promise((resolve) => setTimeout(resolve, 100))
             if (r.getAnimationState().time !== paused) throw Error('Pause failed')
+            const error = await device.popErrorScope()
+            if (error) throw Error(error.message)
             r.dispose()
             host.remove()
             return (
-              'PASS native/web pose parity (max error ' +
+              'PASS GPU readback/native reference parity (max error ' +
               maximum +
               '), clip switch, skin pixels, playback/pause, invalid state and raster capability'
             )
           } finally {
+            device.destroy()
             data.images.forEach((i) => i.bitmap?.close())
           }
         },
-        { root: '/@fs' + resolve('web/src'), native },
+        {
+          root: '/@fs' + resolve('web/src'),
+          native,
+          probeURL: '/@fs' + resolve('scripts/webgpu/skin-readback.js'),
+        },
       ),
     )
   }

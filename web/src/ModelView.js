@@ -41,8 +41,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     const response = await fetch(shaderURL)
     if (!response.ok) throw Error('Missing model shader package: ' + shaderURL)
     const shader = await response.json()
-    const makeBuffer = (bytes, usage) => {
+    const makeBuffer = (bytes, usage, label) => {
       const buffer = device.createBuffer({
+        label,
         size: Math.max(48, bytes.byteLength),
         usage: usage | GPUBufferUsage.COPY_DST,
       })
@@ -50,8 +51,18 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       if (bytes.byteLength) device.queue.writeBuffer(buffer, 0, bytes)
       return buffer
     }
-    const vertices = makeBuffer(data.vertices, GPUBufferUsage.STORAGE),
-      uniform = makeBuffer(new Float32Array(96), GPUBufferUsage.UNIFORM),
+    const vertices = makeBuffer(data.vertices, GPUBufferUsage.STORAGE, 'Nova bind vertices'),
+      uniform = makeBuffer(new Float32Array(96), GPUBufferUsage.UNIFORM, 'Nova scene uniforms'),
+      skin = makeBuffer(
+        data.skinInputs || new Uint8Array(64),
+        GPUBufferUsage.STORAGE,
+        'Nova skin inputs',
+      ),
+      joints = makeBuffer(
+        data.jointMatrices || new Float32Array(16),
+        GPUBufferUsage.STORAGE,
+        'Nova joint palette',
+      ),
       textures = []
     for (const image of data.images) {
       const texture = device.createTexture({
@@ -103,6 +114,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           texture: { sampleType: 'float', viewDimension: 'cube' },
         },
         { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 11, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+        { binding: 12, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
       ],
     })
     const sampler = device.createSampler({
@@ -123,6 +136,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 8, resource: texture.createView({ dimension: 'cube' }) },
           { binding: 9, resource: background.createView({ dimension: 'cube' }) },
           { binding: 10, resource: textures[0].createView() },
+          { binding: 11, resource: { buffer: skin } },
+          { binding: 12, resource: { buffer: joints } },
         ],
       })
     let bindGroup = group(cube, backgroundCube)
@@ -239,7 +254,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')
-        if (data.animation) device.queue.writeBuffer(vertices, 0, data.vertices)
+        if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         if (!depth || depth.width !== width || depth.height !== height) {
           depth?.destroy()
           depth = device.createTexture({

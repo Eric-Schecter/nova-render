@@ -164,7 +164,9 @@ namespace render::detail
 #endif
                 if (model && model->animation)
                     std::memcpy(
-                      vertices.contents, model->vertices.data(), model->vertices.size() * sizeof(ModelVertex));
+                      jointPalette.contents,
+                      model->jointMatrices.data(),
+                      model->jointMatrices.size() * sizeof(JointMatrix));
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
                 const auto* path                    = DrawPathFrame(width, height);
@@ -190,6 +192,8 @@ namespace render::detail
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setVertexBuffer:vertices offset:0 atIndex:1];
+                    [encoder setVertexBuffer:skinInputs offset:0 atIndex:11];
+                    [encoder setVertexBuffer:jointPalette offset:0 atIndex:12];
                     for (NSUInteger i = 0; i < 5; ++i)
                         [encoder setFragmentTexture:modelTextures[i] atIndex:2 + i];
                     [encoder setFragmentSamplerState:modelSampler atIndex:7];
@@ -243,6 +247,7 @@ namespace render::detail
         bool uiRenderer = false;
 #endif
         RendererConfig                         settings;
+        id<MTLBuffer>                          skinInputs, jointPalette;
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLTexture>                         environmentTexture, backgroundTexture, pathDisplay;
@@ -301,6 +306,21 @@ namespace render::detail
                                               options:MTLResourceStorageModeShared];
             if (!vertices)
                 throw std::runtime_error("Create model vertex buffer failed");
+            skinInputs = [device newBufferWithLength:std::max(size_t(64), model->skinInputs.size() * sizeof(SkinInput))
+                                             options:MTLResourceStorageModeShared];
+            jointPalette =
+              [device newBufferWithLength:std::max(size_t(64), model->jointMatrices.size() * sizeof(JointMatrix))
+                                  options:MTLResourceStorageModeShared];
+            if (!skinInputs || !jointPalette)
+                throw std::runtime_error("Create GPU skin buffers failed");
+            if (!model->skinInputs.empty())
+                std::memcpy(
+                  skinInputs.contents, model->skinInputs.data(), model->skinInputs.size() * sizeof(SkinInput));
+            if (!model->jointMatrices.empty())
+                std::memcpy(
+                  jointPalette.contents,
+                  model->jointMatrices.data(),
+                  model->jointMatrices.size() * sizeof(JointMatrix));
             for (size_t i = 0; i < 5; ++i)
             {
                 const auto&           image = model->images[i];

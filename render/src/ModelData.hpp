@@ -19,12 +19,22 @@ namespace render::detail
         uint32_t                   width = 1, height = 1;
         std::vector<unsigned char> pixels;
     };
+    struct SkinInput
+    {
+        std::array<float, 4>    position{}, normal{};
+        std::array<uint32_t, 4> joints{};
+        std::array<float, 4>    weights{1, 0, 0, 0};
+    };
+    static_assert(sizeof(SkinInput) == 64, "HLSL skin input layout");
+    using JointMatrix = std::array<float, 16>;
     struct AnimationData;
     struct ModelData
     {
         std::shared_ptr<const AnimationData> animation;
         uint64_t                             revision = 0;
         std::vector<ModelVertex>             vertices;
+        std::vector<SkinInput>               skinInputs;
+        std::vector<JointMatrix>             jointMatrices;
         // Base color, normal, metallic/roughness, occlusion, emissive.
         std::array<ModelImage, 5> images;
         std::array<float, 4>      baseColor{1, 1, 1, 1};

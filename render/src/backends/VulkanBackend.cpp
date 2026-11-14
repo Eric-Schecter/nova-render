@@ -550,10 +550,10 @@ namespace render::detail
                 void* mapped;
                 check(
                   vkMapMemory(
-                    device, modelVertices.memory, 0, model->vertices.size() * sizeof(ModelVertex), 0, &mapped),
-                  "Map animated vertices");
-                std::memcpy(mapped, model->vertices.data(), model->vertices.size() * sizeof(ModelVertex));
-                vkUnmapMemory(device, modelVertices.memory);
+                    device, modelJoints.memory, 0, model->jointMatrices.size() * sizeof(JointMatrix), 0, &mapped),
+                  "Map joint matrices");
+                std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
+                vkUnmapMemory(device, modelJoints.memory);
             }
             const auto* path = DrawPathFrame(extent.width, extent.height);
             if (path)

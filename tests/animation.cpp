@@ -1,4 +1,5 @@
 #include "AnimationData.hpp"
+#include "SkinReference.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -21,9 +22,21 @@ int main(int argc, char** argv)
             throw std::runtime_error("No blended skin vertices");
         render::detail::AnimationPlayer player;
         player.Load(model);
-        const auto first = player.Model()->vertices;
+        const auto immutable = player.Model()->vertices;
+        const auto first     = ReferenceSkin(*player.Model());
         player.Seek(.5f);
-        const auto moved = player.Model()->vertices;
+        const auto moved = ReferenceSkin(*player.Model());
+        if (
+          std::memcmp(immutable.data(), player.Model()->vertices.data(), immutable.size() * sizeof(immutable[0])) != 0)
+            throw std::runtime_error("CPU modified bind vertices");
+        if (
+          player.Model()->jointMatrices.size() * sizeof(render::detail::JointMatrix)
+          >= immutable.size() * sizeof(immutable[0]))
+            throw std::runtime_error("Palette did not reduce per-frame upload");
+        std::ofstream palette(std::string(argv[2]) + ".palette.bin", std::ios::binary);
+        palette.write(
+          reinterpret_cast<const char*>(player.Model()->jointMatrices.data()),
+          player.Model()->jointMatrices.size() * sizeof(render::detail::JointMatrix));
         if (std::memcmp(first.data(), moved.data(), first.size() * sizeof(first[0])) == 0)
             throw std::runtime_error("Bones did not deform mesh");
         std::ofstream output(argv[2], std::ios::binary);
@@ -51,7 +64,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Speed failed");
         player.Select(1);
         player.Seek(.5);
-        if (std::memcmp(moved.data(), player.Model()->vertices.data(), moved.size() * sizeof(moved[0])) == 0)
+        if (std::memcmp(moved.data(), ReferenceSkin(*player.Model()).data(), moved.size() * sizeof(moved[0])) == 0)
             throw std::runtime_error("Clips identical");
         player.state.loop = false;
         player.Update(3);
@@ -68,8 +81,8 @@ int main(int argc, char** argv)
         }
         if (!rejected)
             throw std::runtime_error("Invalid seek accepted");
-        std::cout
-          << "PASS 11-joint glTF skin, distinct clips, deformation, normals, pause, speed, seek and nonloop end\n";
+        std::cout << "PASS 11-joint GPU palette, immutable bind vertices, test reference deformation, normals and "
+                     "animation controls\n";
     }
     catch (const std::exception& e)
     {

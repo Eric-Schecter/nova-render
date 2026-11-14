@@ -308,27 +308,49 @@ namespace render::detail
             ready[i]          = true;
             return world[i];
         };
-        for (size_t i = 0; i < a.vertices.size(); ++i)
+        std::vector<uint32_t> offsets;
+        size_t                count = 0;
+        for (const auto& skin : a.skins)
         {
-            const auto& v      = a.vertices[i];
-            glm::mat4   matrix = v.node >= 0 ? global(v.node) : v.matrix;
-            if (v.skin >= 0)
+            offsets.push_back(uint32_t(count));
+            count += skin.joints.size();
+        }
+        const auto nodeOffset = uint32_t(count);
+        count += nodes.size();
+        if (posed->skinInputs.empty())
+        {
+            posed->skinInputs.reserve(a.vertices.size());
+            for (const auto& v : a.vertices)
             {
-                matrix           = glm::mat4(0);
-                const auto& skin = a.skins[v.skin];
+                SkinInput input;
+                input.position = {v.position.x, v.position.y, v.position.z, 1};
+                input.normal   = {v.normal.x, v.normal.y, v.normal.z, 0};
                 for (int k = 0; k < 4; ++k)
-                    matrix += v.weights[k] * global(skin.joints[v.joints[k]]) * skin.inverseBind[v.joints[k]];
-            }
-            const auto pos = (glm::vec3(matrix * glm::vec4(v.position, 1)) - a.center) * a.scale;
-            const auto n   = glm::normalize(glm::transpose(glm::inverse(glm::mat3(matrix))) * v.normal);
-            for (int k = 0; k < 3; ++k)
-            {
-                if (!std::isfinite(pos[k]) || !std::isfinite(n[k]))
-                    throw std::runtime_error("Degenerate animated transform");
-                posed->vertices[i].position[k] = pos[k];
-                posed->vertices[i].normal[k]   = n[k];
+                {
+                    input.joints[k]  = v.skin >= 0 ? offsets[v.skin] + v.joints[k] : nodeOffset + uint32_t(v.node);
+                    input.weights[k] = v.skin >= 0 ? v.weights[k] : (k == 0 ? 1.f : 0.f);
+                }
+                posed->skinInputs.push_back(input);
             }
         }
+        glm::mat4 normalize = glm::scale(glm::mat4(1), glm::vec3(a.scale));
+        normalize[3]        = glm::vec4(-a.center * a.scale, 1);
+        std::vector<JointMatrix> matrices;
+        matrices.reserve(count);
+        auto append = [&](const glm::mat4& matrix) {
+            JointMatrix value;
+            std::memcpy(value.data(), glm::value_ptr(matrix), 64);
+            for (float x : value)
+                if (!std::isfinite(x))
+                    throw std::runtime_error("Non-finite joint matrix");
+            matrices.push_back(value);
+        };
+        for (const auto& skin : a.skins)
+            for (size_t i = 0; i < skin.joints.size(); ++i)
+                append(normalize * global(skin.joints[i]) * skin.inverseBind[i]);
+        for (size_t i = 0; i < nodes.size(); ++i)
+            append(normalize * global(int(i)));
+        posed->jointMatrices = std::move(matrices);
         ++posed->revision;
     }
 } // namespace render::detail

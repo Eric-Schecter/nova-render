@@ -288,6 +288,7 @@ namespace render::detail
         result.environmentParams[3] = environment ? float(environment->mips.size() - 1) : 0;
         result.skyParams[0]         = settings.backgroundIntensity;
         result.skyParams[1]         = settings.showBackground ? 1.0f : 0.0f;
+        result.skyParams[3]         = data.animation ? 1.0f : 0.0f;
         if (environment)
             for (int k = 0; k < 9; ++k)
                 std::copy(environment->irradiance[k].begin(), environment->irradiance[k].end(), result.irradiance[k]);

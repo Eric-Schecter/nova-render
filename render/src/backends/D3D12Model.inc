@@ -4,7 +4,7 @@ std::shared_ptr<const EnvironmentData> gpuEnvironment;
 ComPtr<ID3D12Resource>                environmentCube, environmentUpload, backgroundCube, backgroundUpload, pathDisplay;
 uint32_t                              pathWidth = 0, pathHeight = 0;
 ComPtr<ID3D12PipelineState>           skyPipeline;
-ComPtr<ID3D12Resource>                modelVertices, modelUniform, modelDepth;
+ComPtr<ID3D12Resource>                modelVertices, modelUniform, modelDepth, modelSkin, modelJoints;
 std::array<ComPtr<ID3D12Resource>, 5> modelTextures, modelUploads;
 ComPtr<ID3D12DescriptorHeap>          modelHeap, modelDepthHeap;
 ComPtr<ID3D12RootSignature>           modelRoot;
@@ -111,6 +111,13 @@ void UploadModel()
     modelVertices = uploadBuffer(
       std::max(sizeof(ModelVertex), model->vertices.size() * sizeof(ModelVertex)),
       model->vertices.empty() ? nullptr : model->vertices.data());
+    modelSkin = uploadBuffer(
+      std::max(size_t(64), model->skinInputs.size() * sizeof(SkinInput)),
+      model->skinInputs.empty() ? nullptr : model->skinInputs.data());
+    modelJoints = uploadBuffer(
+      std::max(size_t(64), model->jointMatrices.size() * sizeof(JointMatrix)),
+      model->jointMatrices.empty() ? nullptr : model->jointMatrices.data());
+
     modelUniform = uploadBuffer(512);
     D3D12_DESCRIPTOR_HEAP_DESC heap{};
     heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -203,7 +210,7 @@ void UploadModel()
     range.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors     = 8;
     range.BaseShaderRegister = 1;
-    D3D12_ROOT_PARAMETER params[3]{};
+    D3D12_ROOT_PARAMETER params[5]{};
     params[0].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[0].Descriptor.ShaderRegister           = 0;
     params[0].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
@@ -214,6 +221,12 @@ void UploadModel()
     params[2].DescriptorTable.NumDescriptorRanges = 1;
     params[2].DescriptorTable.pDescriptorRanges   = &range;
     params[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
+    for (UINT i = 0; i < 2; ++i)
+    {
+        params[3 + i].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_SRV;
+        params[3 + i].Descriptor.ShaderRegister = 9 + i;
+        params[3 + i].ShaderVisibility          = D3D12_SHADER_VISIBILITY_VERTEX;
+    }
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter   = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -222,7 +235,7 @@ void UploadModel()
     sampler.MaxLOD                                         = D3D12_FLOAT32_MAX;
     sampler.ShaderVisibility                               = D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-    rootDesc.NumParameters     = 3;
+    rootDesc.NumParameters     = 5;
     rootDesc.pParameters       = params;
     rootDesc.NumStaticSamplers = 1;
     rootDesc.pStaticSamplers   = &sampler;

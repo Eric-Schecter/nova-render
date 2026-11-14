@@ -30,7 +30,51 @@ struct Vertex
 [[vk::binding(8, 0)]] TextureCube<float4>      environmentTexture : register(t6);
 [[vk::binding(9, 0)]] TextureCube<float4>      backgroundTexture : register(t7);
 [[vk::binding(10, 0)]] Texture2D<float4>       pathTexture : register(t8);
-struct VertexOut
+// Column-major matrices and immutable local-space vertices, shared by every backend.
+struct SkinInput
+{
+    float4 position;
+    float4 normal;
+    uint4  joints;
+    float4 weights;
+};
+struct JointMatrix
+{
+    float4 c0, c1, c2, c3;
+};
+[[vk::binding(11, 0)]] StructuredBuffer<SkinInput>   skinInputs : register(t9);
+[[vk::binding(12, 0)]] StructuredBuffer<JointMatrix> jointMatrices : register(t10);
+float4x4                                             jointMatrix(uint index)
+{
+    JointMatrix m = jointMatrices[index];
+    return transpose(float4x4(m.c0, m.c1, m.c2, m.c3));
+}
+Vertex skinVertex(uint id)
+{
+    Vertex v = vertices[id];
+    if (skyParams.w > .5)
+    {
+        SkinInput input = skinInputs[id];
+        float4x4  m     = jointMatrix(input.joints.x) * input.weights.x + jointMatrix(input.joints.y) * input.weights.y
+                     + jointMatrix(input.joints.z) * input.weights.z + jointMatrix(input.joints.w) * input.weights.w;
+        v.position = float4(mul(m, input.position).xyz, 1);
+        float3 a   = float3(m[0][0], m[1][0], m[2][0]);
+        float3 b   = float3(m[0][1], m[1][1], m[2][1]);
+        float3 c   = float3(m[0][2], m[1][2], m[2][2]);
+        float3 co0 = cross(b, c), co1 = cross(c, a), co2 = cross(a, b);
+        float  det = dot(a, co0);
+        float3 n   = co0 * input.normal.x + co1 * input.normal.y + co2 * input.normal.z;
+        v.normal   = float4(abs(det) > 1e-8 ? normalize(n / det) : input.normal.xyz, 0);
+    }
+    return v;
+}
+// Validation readback uses the exact function called by the production vertex shader.
+[[vk::binding(13, 0)]] RWStructuredBuffer<Vertex> skinOutput : register(u0);
+[numthreads(64, 1, 1)] void                       SkinningCSMain(uint3 id : SV_DispatchThreadID) {
+    uint count = uint(skyParams.z); // Validation dispatch count; unused by the vertex stage.
+    if (id.x < count)
+        skinOutput[id.x] = skinVertex(id.x);
+} struct VertexOut
 {
     float4 position : SV_Position;
     float3 worldPosition : TEXCOORD0;
@@ -39,7 +83,7 @@ struct VertexOut
 };
 VertexOut VSMain(uint id : SV_VertexID)
 {
-    Vertex    v = vertices[id];
+    Vertex    v = skinVertex(id);
     VertexOut o;
     o.position      = mul(viewProjection, v.position);
     o.worldPosition = v.position.xyz;

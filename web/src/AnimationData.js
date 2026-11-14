@@ -166,6 +166,28 @@ export function readAnimation(json, bin) {
 export function createAnimationPlayer(data) {
   let state = { clip: 0, time: 0, speed: 1, playing: true, loop: true }
   const a = data.animation
+  const offsets = []
+  let paletteCount = 0
+  for (const skin of a?.skins || []) {
+    offsets.push(paletteCount)
+    paletteCount += skin.joints.length
+  }
+  const nodeOffset = paletteCount
+  paletteCount += a?.nodes.length || 0
+  if (a) {
+    const bytes = new ArrayBuffer(a.vertices.length * 64),
+      floats = new Float32Array(bytes),
+      words = new Uint32Array(bytes)
+    a.vertices.forEach((v, i) => {
+      floats.set([...v.position, 1, ...v.normal, 0], i * 16)
+      for (let k = 0; k < 4; k++) {
+        words[i * 16 + 8 + k] = v.skin >= 0 ? offsets[v.skin] + v.joints[k] : nodeOffset + v.node
+        floats[i * 16 + 12 + k] = v.skin >= 0 ? v.weights[k] : k === 0 ? 1 : 0
+      }
+    })
+    data.skinInputs = new Uint8Array(bytes)
+    data.jointMatrices = new Float32Array(paletteCount * 16)
+  }
   function apply() {
     if (!a) return
     const nodes = a.nodes.map((n) => ({
@@ -194,47 +216,19 @@ export function createAnimationPlayer(data) {
         local = nodeMatrix(n)
       return (world[i] = n.parent >= 0 ? multiply(global(n.parent), local) : local)
     }
-    a.vertices.forEach((v, i) => {
-      let m = v.node !== undefined ? global(v.node) : v.matrix
-      if (v.skin >= 0) {
-        m = Array(16).fill(0)
-        const skin = a.skins[v.skin]
-        for (let k = 0; k < 4; k++) {
-          const matrix = multiply(global(skin.joints[v.joints[k]]), skin.inverseBind[v.joints[k]])
-          for (let c = 0; c < 16; c++) m[c] += matrix[c] * v.weights[k]
-        }
-      }
-      const cross = (a, b) => [
-          a[1] * b[2] - a[2] * b[1],
-          a[2] * b[0] - a[0] * b[2],
-          a[0] * b[1] - a[1] * b[0],
-        ],
-        cof = [
-          cross(m.slice(4, 7), m.slice(8, 11)),
-          cross(m.slice(8, 11), m.slice(0, 3)),
-          cross(m.slice(0, 3), m.slice(4, 7)),
-        ],
-        det = m[0] * cof[0][0] + m[1] * cof[0][1] + m[2] * cof[0][2]
-      if (Math.abs(det) < 1e-10) throw Error('Degenerate animated transform')
-      const n = normalize(
-        [0, 1, 2].map(
-          (k) =>
-            (cof[0][k] * v.normal[0] + cof[1][k] * v.normal[1] + cof[2][k] * v.normal[2]) / det,
-        ),
-      )
-      for (let k = 0; k < 3; k++) {
-        const p =
-          (m[k] * v.position[0] +
-            m[4 + k] * v.position[1] +
-            m[8 + k] * v.position[2] +
-            m[12 + k] -
-            a.center[k]) *
-          a.scale
-        if (!Number.isFinite(p)) throw Error('Non-finite pose')
-        data.vertices[i * 12 + k] = p
-        data.vertices[i * 12 + 4 + k] = n[k]
-      }
-    })
+    const normalization = identity()
+    for (const i of [0, 5, 10]) normalization[i] = a.scale
+    for (let k = 0; k < 3; k++) normalization[12 + k] = -a.center[k] * a.scale
+    let index = 0
+    const append = (matrix) => {
+      const value = multiply(normalization, matrix)
+      if (!value.every(Number.isFinite)) throw Error('Non-finite joint matrix')
+      data.jointMatrices.set(value, index * 16)
+      index++
+    }
+    for (const skin of a.skins)
+      skin.joints.forEach((joint, i) => append(multiply(global(joint), skin.inverseBind[i])))
+    a.nodes.forEach((_, i) => append(global(i)))
   }
   apply()
   return {
