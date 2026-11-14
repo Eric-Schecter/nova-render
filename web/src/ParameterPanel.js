@@ -260,6 +260,26 @@ export function attachParameterPanel(
           { signal: fieldEvents.signal },
         )
         fields.set('denoise', { input: denoise })
+        const samplingRow = document.createElement('label'),
+          sampling = document.createElement('input')
+        samplingRow.className = 'nova-panel-check'
+        sampling.type = 'checkbox'
+        sampling.setAttribute('aria-label', '光源采样与 MIS')
+        samplingRow.append(sampling, 'Light sampling / MIS')
+        renderer.append(samplingRow)
+        sampling.addEventListener(
+          'change',
+          () =>
+            change(() =>
+              adapter.setPathTracing({
+                ...adapter.getPathTracing(),
+                lightSampling: sampling.checked,
+              }),
+            ),
+          { signal: fieldEvents.signal },
+        )
+        fields.set('lightSampling', { input: sampling })
+
         const samples = document.createElement('div')
         samples.setAttribute('aria-label', '累计采样')
         renderer.append(samples)
@@ -484,8 +504,8 @@ export function attachParameterPanel(
         }
         continue
       }
-      if (key === 'denoise') {
-        field.input.checked = adapter.getPathTracing().denoise
+      if (key === 'denoise' || key === 'lightSampling') {
+        field.input.checked = adapter.getPathTracing()[key]
         continue
       }
       if (key === 'renderMode') {

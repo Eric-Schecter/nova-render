@@ -104,10 +104,10 @@ struct Hit
     uint   primitive;
     float2 bary;
 };
-bool trace(float3 origin, float3 direction, out Hit hit)
+bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit)
 {
 #ifdef NOVA_WEB_BVH
-    hit.distance  = 10000;
+    hit.distance  = maxDistance;
     hit.primitive = 0;
     hit.bary      = 0;
     bool found    = false;
@@ -172,7 +172,7 @@ bool trace(float3 origin, float3 direction, out Hit hit)
     ray.Origin    = origin;
     ray.Direction = direction;
     ray.TMin      = .0005;
-    ray.TMax      = 10000;
+    ray.TMax      = maxDistance;
     RayQuery<RAY_FLAG_NONE> query;
     query.TraceRayInline(scene, RAY_FLAG_NONE, 255, ray);
     while (query.Proceed())
@@ -184,6 +184,10 @@ bool trace(float3 origin, float3 direction, out Hit hit)
     hit.bary      = found ? query.CommittedTriangleBarycentrics() : float2(0, 0);
     return found;
 #endif
+}
+bool trace(float3 origin, float3 direction, out Hit hit)
+{
+    return traceRay(origin, direction, 10000, hit);
 }
 float3 fresnel(float cosine, float3 f0)
 {
@@ -204,9 +208,166 @@ float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughn
     float3 f  = fresnel(dot(v, h), lerp(float3(.04, .04, .04), base, metal));
     return (1 - f) * (1 - metal) * base / PI + distribution(nh, roughness) * g * f / max(4 * nv * nl, 1e-5);
 }
+// Power heuristic for one sample from each strategy; scale first to avoid overflow.
+float misWeight(float a, float b)
+{
+    float scale = max(a, b);
+    if (scale <= 0)
+        return 1;
+    a /= scale;
+    b /= scale;
+    return a * a / (a * a + b * b);
+}
+uint lightHeader()
+{
+    return asuint(parameters[27]).w;
+}
+float areaProbability()
+{
+    uint  h = lightHeader();
+    float a = asfloat(texels[h + 5]), e = asfloat(texels[h + 6]) * max(parameters[13].z, 0);
+    if (a <= 0)
+        return 0;
+    if (e <= 0 || texels[h + 4] == 0)
+        return 1;
+    return clamp(a / (a + e), .05, .95);
+}
+uint selectCDF(uint offset, uint count, uint stride, float u)
+{
+    uint lo = 0, hi = count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2;
+        if (asfloat(texels[offset + mid * stride]) <= u)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return min(lo, count - 1);
+}
+void cubeCoordinates(float3 d, out uint face, out float2 uv)
+{
+    float3 a = abs(d);
+    if (a.x >= a.y && a.x >= a.z)
+    {
+        face = d.x > 0 ? 0 : 1;
+        uv   = float2(d.x > 0 ? -d.z : d.z, -d.y) / a.x;
+    }
+    else if (a.y >= a.z)
+    {
+        face = d.y > 0 ? 2 : 3;
+        uv   = float2(d.x, d.y > 0 ? d.z : -d.z) / a.y;
+    }
+    else
+    {
+        face = d.z > 0 ? 4 : 5;
+        uv   = float2(d.z > 0 ? d.x : -d.x, -d.y) / a.z;
+    }
+}
+float3 cubeDirection(uint face, float2 uv)
+{
+    if (face == 0)
+        return normalize(float3(1, -uv.y, -uv.x));
+    if (face == 1)
+        return normalize(float3(-1, -uv.y, uv.x));
+    if (face == 2)
+        return normalize(float3(uv.x, 1, uv.y));
+    if (face == 3)
+        return normalize(float3(uv.x, -1, -uv.y));
+    if (face == 4)
+        return normalize(float3(uv.x, -uv.y, 1));
+    return normalize(float3(-uv.x, -uv.y, -1));
+}
+float environmentPdf(float3 direction)
+{
+    uint h = lightHeader(), grid = texels[h + 4];
+    if (grid == 0 || parameters[13].z <= 0)
+        return 0;
+    float2 rotation = parameters[13].xy;
+    float3 d        = float3(
+      rotation.y * direction.x + rotation.x * direction.z,
+      direction.y,
+      -rotation.x * direction.x + rotation.y * direction.z);
+    uint   face;
+    float2 uv;
+    cubeCoordinates(d, face, uv);
+    uint2 p = min(uint2(saturate(uv * .5 + .5) * grid), grid - 1);
+    uint  i = (face * grid + p.y) * grid + p.x, offset = texels[h + 3];
+    float pmf = asfloat(texels[offset + i]) - (i ? asfloat(texels[offset + i - 1]) : 0);
+    return (1 - areaProbability()) * pmf * grid * grid * .25 * pow(1 + dot(uv, uv), 1.5);
+}
+float emitterPdf(uint primitive, float3 origin, float3 position)
+{
+    uint  h   = lightHeader();
+    float pmf = asfloat(texels[texels[h + 2] + primitive]);
+    if (pmf <= 0)
+        return 0;
+    float3 a = vertices[primitive * 3].position.xyz, b = vertices[primitive * 3 + 1].position.xyz,
+           c            = vertices[primitive * 3 + 2].position.xyz;
+    float3 crossProduct = cross(b - a, c - a), delta = position - origin;
+    float  area = .5 * length(crossProduct), distance2 = dot(delta, delta);
+    float  cosine = abs(dot(normalize(crossProduct), -normalize(delta)));
+    return cosine > 1e-8 ? areaProbability() * pmf * distance2 / (area * cosine) : 0;
+}
+float bsdfPdf(float3 n, float3 v, float3 l, float metal, float roughness)
+{
+    float nl = dot(n, l);
+    if (nl <= 0)
+        return 0;
+    float  probability = lerp(.25, .9, metal);
+    float3 h           = normalize(v + l);
+    float  nh          = saturate(dot(n, h));
+    return (1 - probability) * nl / PI
+           + probability * distribution(nh, roughness) * nh / max(4 * abs(dot(v, h)), 1e-20);
+}
+bool sampleLight(
+  float3 origin, inout uint state, out float3 direction, out float3 radiance, out float pdf, out float maxDistance)
+{
+    uint  h     = lightHeader();
+    float pArea = areaProbability();
+    direction   = 0;
+    radiance    = 0;
+    pdf         = 0;
+    maxDistance = 10000;
+    if (random(state) < pArea)
+    {
+        uint   record    = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));
+        uint   primitive = texels[record + 2];
+        Vertex a = vertices[primitive * 3], b = vertices[primitive * 3 + 1], c = vertices[primitive * 3 + 2];
+        float  r = sqrt(random(state)), s = random(state);
+        float3 bary     = float3(1 - r, r * (1 - s), r * s);
+        float3 position = a.position.xyz * bary.x + b.position.xyz * bary.y + c.position.xyz * bary.z;
+        float2 uv       = a.uv.xy * bary.x + b.uv.xy * bary.y + c.uv.xy * bary.z;
+        float3 delta    = position - origin;
+        float  distance = length(delta);
+        if (distance <= .002)
+            return false;
+        direction   = delta / distance;
+        maxDistance = distance - .001;
+        pdf         = emitterPdf(primitive, origin, position);
+        radiance    = pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb;
+    }
+    else
+    {
+        uint grid = texels[h + 4];
+        if (grid == 0 || parameters[13].z <= 0)
+            return false;
+        uint   i    = selectCDF(texels[h + 3], 6 * grid * grid, 1, random(state));
+        uint   face = i / (grid * grid), cell = i % (grid * grid);
+        float2 uv       = (float2(cell % grid, cell / grid) + float2(random(state), random(state))) / grid * 2 - 1;
+        float3 d        = cubeDirection(face, uv);
+        float2 rotation = parameters[13].xy;
+        direction       = float3(rotation.y * d.x - rotation.x * d.z, d.y, rotation.x * d.x + rotation.y * d.z);
+        pdf             = environmentPdf(direction);
+        radiance        = sky(direction) * parameters[13].z;
+    }
+    return pdf > 0;
+}
 float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
 {
     float3 sum = 0, weight = 1;
+    float  previousPdf = 0;
+    bool   useMIS      = (asuint(parameters[25]).w & 2u) != 0;
     for (uint depth = 0; depth <= bounces; ++depth)
     {
         Hit hit;
@@ -215,7 +376,8 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
             if (depth == 0 && parameters[14].y < .5)
                 sum += weight * parameters[26].rgb;
             else
-                sum += weight * sky(direction) * (depth == 0 ? parameters[14].x : parameters[13].z);
+                sum += weight * sky(direction) * (depth == 0 ? parameters[14].x : parameters[13].z)
+                       * (useMIS && depth > 0 ? misWeight(previousPdf, environmentPdf(direction)) : 1);
             break;
         }
         Vertex a = vertices[hit.primitive * 3], b = vertices[hit.primitive * 3 + 1],
@@ -223,7 +385,9 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
         float3 weights = float3(1 - hit.bary.x - hit.bary.y, hit.bary);
         float2 uv      = a.uv.xy * weights.x + b.uv.xy * weights.y + c.uv.xy * weights.z;
         float3 base    = pow(max(textureColor(0, uv).rgb, 0), 2.2) * parameters[5].rgb;
-        sum += weight * pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb;
+        sum +=
+          weight * pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb
+          * (useMIS && depth > 0 ? misWeight(previousPdf, emitterPdf(hit.primitive, origin, origin + direction * hit.distance)) : 1);
         if (depth == bounces)
             break;
         float3 v = -direction, edge1 = b.position.xyz - a.position.xyz, edge2 = c.position.xyz - a.position.xyz;
@@ -244,15 +408,30 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
             normal.xy *= parameters[6].z;
             n = normalize(t * normal.x + bit * normal.y + n * normal.z);
         }
+        if (dot(n, v) <= 0)
+            n = geometric;
         float4 mr    = textureColor(2, uv);
         float  metal = saturate(mr.b * parameters[6].x), roughness = clamp(mr.g * parameters[6].y, .06, 1);
         float3 position = origin + direction * hit.distance, light = parameters[8].xyz;
-        if (parameters[9].w > 0 && dot(n, light) > 0)
+        if (parameters[9].w > 0 && dot(n, light) > 0 && dot(geometric, light) > 0)
         {
             Hit shadow;
             if (!trace(position + geometric * .001, light, shadow))
                 sum += weight * brdf(n, v, light, base, metal, roughness) * max(dot(n, light), 0) * parameters[9].rgb
                        * parameters[9].w;
+        }
+        if (useMIS)
+        {
+            float3 l, radiance;
+            float  pdf, maxDistance;
+            float3 nextOrigin = position + geometric * .001;
+            if (sampleLight(nextOrigin, state, l, radiance, pdf, maxDistance) && dot(n, l) > 0 && dot(geometric, l) > 0)
+            {
+                Hit shadow;
+                if (!traceRay(nextOrigin, l, maxDistance, shadow))
+                    sum += weight * brdf(n, v, l, base, metal, roughness) * dot(n, l) * radiance / pdf
+                           * misWeight(pdf, bsdfPdf(n, v, l, metal, roughness));
+            }
         }
         float3 tangent     = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
                bitangent   = cross(n, tangent);
@@ -273,11 +452,11 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
         float nl = dot(n, l);
         if (nl <= 0 || dot(geometric, l) <= 0)
             break;
-        float3 halfVector = normalize(v + l);
-        float  pdf        = (1 - probability) * nl / PI
-                    + probability * distribution(saturate(dot(n, halfVector)), roughness) * saturate(dot(n, halfVector))
-                        / max(4 * abs(dot(v, halfVector)), 1e-6);
-        weight *= brdf(n, v, l, base, metal, roughness) * nl / max(pdf, 1e-6);
+        float pdf = bsdfPdf(n, v, l, metal, roughness);
+        if (pdf <= 0)
+            break;
+        previousPdf = pdf;
+        weight *= brdf(n, v, l, base, metal, roughness) * nl / pdf;
         if (depth >= 2)
         {
             float survive = clamp(max(weight.x, max(weight.y, weight.z)), .1, .95);
@@ -295,7 +474,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
     if (id.x >= frame.y || id.y >= frame.z)
         return;
     uint index = id.y * frame.y + id.x;
-    if (options.w != 0)
+    if ((options.w & 1u) != 0)
     {
         float2 p         = (float2(id.xy) + .5) / float2(frame.yz) * 2 - 1;
         float3 direction = normalize(
@@ -325,9 +504,14 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
         sum += path(parameters[4].xyz, direction, state, frame.w);
     }
     accumulation[index] = float4(sum, 1);
-    float3 color        = 1 - exp(-sum / float(frame.x + options.x) * parameters[4].w);
-    uint3  encoded      = uint3(saturate(pow(max(color, 0), 1 / 2.2)) * 255 + .5);
-    outputImage[index]  = encoded.x | (encoded.y << 8) | (encoded.z << 16) | 0xff000000u;
+    if ((options.w & 4u) != 0)
+    {
+        outputImage[index] = asuint(dot(sum / float(frame.x + options.x), float3(.2126, .7152, .0722)));
+        return;
+    }
+    float3 color       = 1 - exp(-sum / float(frame.x + options.x) * parameters[4].w);
+    uint3  encoded     = uint3(saturate(pow(max(color, 0), 1 / 2.2)) * 255 + .5);
+    outputImage[index] = encoded.x | (encoded.y << 8) | (encoded.z << 16) | 0xff000000u;
 }
 
   // Display-only joint bilateral filter. Raw progressive radiance is never modified.
@@ -337,7 +521,9 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces)
     uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
     if (id.x >= frame.y || id.y >= frame.z)
         return;
-    uint   index       = id.y * frame.y + id.x;
+    uint index = id.y * frame.y + id.x;
+    if ((options.w & 4u) != 0)
+        return;
     float4 centerGuide = guides[index];
     if (centerGuide.w < 0)
         return;

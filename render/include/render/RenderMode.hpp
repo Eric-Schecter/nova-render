@@ -14,6 +14,7 @@ namespace render
         uint32_t maxBounces      = 3;
         float    resolutionScale = 0.5f;
         bool     denoise         = false;
+        bool     lightSampling   = true; // Emissive/HDR next-event estimation with MIS.
     };
     struct RendererCapabilities
     {

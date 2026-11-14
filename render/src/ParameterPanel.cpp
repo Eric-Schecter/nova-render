@@ -186,6 +186,7 @@ namespace render::detail
                     ImGui::SliderFloat(
                       "##RenderScale", &path.resolutionScale, .25f, 1, "%.2f", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::Checkbox("Denoise", &path.denoise);
+                    ImGui::Checkbox("Light sampling / MIS", &path.lightSampling);
                     ImGui::Text("Samples: %u", samples);
                     if (capabilities.softwareRayTracing)
                         ImGui::TextUnformatted("CPU ray tracing");

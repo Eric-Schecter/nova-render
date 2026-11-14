@@ -192,7 +192,11 @@ class Renderer {
   setPathTracing(settings) {
     this.#check()
     validatePathTracing(settings)
-    this.#pathSettings = { ...settings, denoise: settings.denoise ?? false }
+    this.#pathSettings = {
+      ...settings,
+      denoise: settings.denoise ?? false,
+      lightSampling: settings.lightSampling ?? true,
+    }
     this.resetAccumulation()
     this.#parameterPanel?.refresh()
   }

@@ -60,5 +60,10 @@ export function buildBVH(vertices) {
   })
   const reordered = new Float32Array(vertices.length)
   ordered.forEach((id, i) => reordered.set(vertices.subarray(id * 36, id * 36 + 36), i * 36))
-  return { nodes: new Uint8Array(bytes), vertices: reordered, count: nodes.length }
+  return {
+    nodes: new Uint8Array(bytes),
+    vertices: reordered,
+    count: nodes.length,
+    originalIds: ordered,
+  }
 }

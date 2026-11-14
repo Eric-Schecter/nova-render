@@ -154,7 +154,7 @@ namespace render::detail
                 [encoder setBuffer:guides offset:0 atIndex:7];
                 [encoder dispatchThreads:MTLSizeMake(width, height, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
                 [encoder endEncoding];
-                if (uniforms.options[3])
+                if (uniforms.options[3] & 1u)
                 {
                     auto filter = [command computeCommandEncoder];
                     [filter setComputePipelineState:denoisePipeline];

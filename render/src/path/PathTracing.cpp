@@ -65,6 +65,7 @@ namespace render::detail
                 data.images[i]      = {uint32_t(data.texels.size() / 4), texture.width, texture.height, 0};
                 data.texels.insert(data.texels.end(), texture.pixels.begin(), texture.pixels.end());
             }
+            PrepareLightSampling(data, bool(environment));
             device->SetScene(data);
             imageInfo          = data.images;
             currentModel       = model;
@@ -86,7 +87,7 @@ namespace render::detail
           settings.samplesPerFrame,
           BackgroundMips(environment ? *environment : FallbackEnvironment()).front().size,
           0,
-          settings.denoise ? 1u : 0u};
+          (settings.denoise ? 1u : 0u) | (settings.lightSampling ? 2u : 0u) | (linearOutput ? 4u : 0u)};
         if (std::memcmp(&params, &previous, sizeof(params)) || samples > 1000000)
         {
             samples  = 0;

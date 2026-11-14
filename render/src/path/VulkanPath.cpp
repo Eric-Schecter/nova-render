@@ -764,7 +764,7 @@ namespace render::detail
                 c.api.vkCmdBindDescriptorSets(
                   cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipelineLayout, 0, 1, &set, 0, nullptr);
                 c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
-                if (uniforms.options[3])
+                if (uniforms.options[3] & 1u)
                 {
                     c.api.vkCmdPipelineBarrier(
                       cmd,

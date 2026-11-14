@@ -1,3 +1,4 @@
+import { buildLightSampling } from './LightSampling.js'
 import { buildBVH } from './BVH.js'
 import { sceneUniforms } from './ModelData.js'
 import { fallbackEnvironment } from './EnvironmentData.js'
@@ -6,10 +7,12 @@ export const defaultPathTracing = () => ({
   maxBounces: 3,
   resolutionScale: 0.5,
   denoise: false,
+  lightSampling: true,
 })
 export function validatePathTracing(value) {
   if (
     !value ||
+    (value.lightSampling !== undefined && typeof value.lightSampling !== 'boolean') ||
     (value.denoise !== undefined && typeof value.denoise !== 'boolean') ||
     !Number.isInteger(value.samplesPerFrame) ||
     value.samplesPerFrame < 1 ||
@@ -23,7 +26,7 @@ export function validatePathTracing(value) {
   )
     throw Error('Path tracing requires samples 1..4, bounces 1..8 and scale 0.25..1')
 }
-export async function createPathView(device, data, shaderDirectory) {
+export async function createPathView(device, data, shaderDirectory, { linearOutput = false } = {}) {
   const resources = new Set()
   let guides,
     accumulation,
@@ -74,12 +77,17 @@ export async function createPathView(device, data, shaderDirectory) {
       images.push(pixels)
       total += pixels.byteLength
     }
-    const texels = new Uint8Array(total)
+    const lights = buildLightSampling(data, images, bvh.vertices, bvh.originalIds)
+    metadata[3] = total / 4
+    // Distribution offsets are absolute words in the existing material buffer.
+    for (const i of [1, 2, 3]) lights.words[i] += total / 4
+    const texels = new Uint8Array(total + lights.words.byteLength)
     let offset = 0
     for (const bytes of images) {
       texels.set(bytes, offset)
       offset += bytes.byteLength
     }
+    texels.set(new Uint8Array(lights.words.buffer), total)
     const material = buffer(texels)
     async function shader(name) {
       const response = await fetch(shaderDirectory.replace(/\/?$/, '/') + name + '.json')
@@ -138,6 +146,11 @@ export async function createPathView(device, data, shaderDirectory) {
     function updateEnvironment(environment) {
       if (skyBuffer && skySource === environment) return
       const sky = (environment?.backgroundMips || environment?.mips || fallbackEnvironment.mips)[0]
+      // Temporarily restore relative offsets for the CPU builder.
+      for (const i of [1, 2, 3]) lights.words[i] -= total / 4
+      lights.updateEnvironment(sky, !!environment)
+      for (const i of [1, 2, 3]) lights.words[i] += total / 4
+      device.queue.writeBuffer(material, total, lights.words)
       const next = buffer(sky.pixels)
       release(skyBuffer)
       skyBuffer = next
@@ -208,7 +221,9 @@ export async function createPathView(device, data, shaderDirectory) {
             path.samplesPerFrame,
             (environment?.backgroundMips || environment?.mips || fallbackEnvironment.mips)[0].size,
             bvh.count,
-            path.denoise ? 1 : 0,
+            (path.denoise ? 1 : 0) |
+              (path.lightSampling !== false ? 2 : 0) |
+              (linearOutput ? 4 : 0),
           ],
           100,
         )

@@ -19,6 +19,7 @@ namespace render::detail
         std::vector<unsigned char>             texels;
         std::array<std::array<uint32_t, 4>, 5> images{};
     };
+    void PrepareLightSampling(PathScene&, bool hdr);
     class PathDevice
     {
       public:
@@ -34,6 +35,10 @@ namespace render::detail
     class PathSession
     {
       public:
+        explicit PathSession(bool linearOutput = false)
+          : linearOutput(linearOutput)
+        {
+        }
         RendererCapabilities Capabilities(GraphicsAPI api, const RendererConfig& config);
         const ModelImage&    Render(
              std::shared_ptr<const ModelData>       model,
@@ -49,7 +54,8 @@ namespace render::detail
       private:
         std::unique_ptr<PathDevice>            device;
         RendererCapabilities                   capabilities;
-        bool                                   queried = false;
+        bool                                   queried      = false;
+        bool                                   linearOutput = false;
         std::shared_ptr<const ModelData>       currentModel;
         std::shared_ptr<const EnvironmentData> currentEnvironment;
         std::array<std::array<uint32_t, 4>, 5> imageInfo{};

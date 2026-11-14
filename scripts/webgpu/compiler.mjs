@@ -39,7 +39,9 @@ export async function compile(
           '-spirv',
           '-fspv-target-env=vulkan1.0',
           ...(model ? ['-DNOVA_WEB_OUTPUT=1'] : []),
-          ...(compute ? ['-DNOVA_WEB_BVH=1'] : []),
+          // DXC LICM hoists storage pointers across nested MIS/BVH loops.
+          // Naga cannot spill those pointers into WGSL function variables.
+          ...(compute ? ['-DNOVA_WEB_BVH=1', '-Od'] : []),
           '-T',
           profile,
           '-E',

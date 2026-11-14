@@ -282,7 +282,7 @@ namespace render::detail
                 commands->SetComputeRootUnorderedAccessView(6, output->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(7, guides->GetGPUVirtualAddress());
                 commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
-                if (uniforms.options[3])
+                if (uniforms.options[3] & 1u)
                 {
                     Barrier(accumulation.Get());
                     Barrier(guides.Get());
