@@ -75,10 +75,14 @@ namespace render::detail
             {
                 if (t->second.Has("transmissionTexture"))
                     throw std::runtime_error("Transmission textures are not yet supported");
+                if (t->second.Has("transmissionFactor") && !t->second.Get("transmissionFactor").IsNumber())
+                    throw std::runtime_error("Transmission factor must be numeric");
                 if (t->second.Has("transmissionFactor"))
                     transmission = float(t->second.Get("transmissionFactor").GetNumberAsDouble());
             }
             const auto i = m.extensions.find("KHR_materials_ior");
+            if (i != m.extensions.end() && i->second.Has("ior") && !i->second.Get("ior").IsNumber())
+                throw std::runtime_error("IOR must be numeric");
             if (i != m.extensions.end() && i->second.Has("ior"))
                 ior = float(i->second.Get("ior").GetNumberAsDouble());
             if (

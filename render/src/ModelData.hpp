@@ -11,8 +11,8 @@ namespace render::detail
     struct ModelVertex
     {
         float position[4];
-        float normal[4];
-        float uv[4];
+        float normal[4]; // xyz: normal; w: dielectric transmission fraction.
+        float uv[4];     // xy: UV; z: generated flat-normal flag; w: dielectric IOR.
     };
     struct ModelImage
     {

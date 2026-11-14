@@ -280,7 +280,7 @@ export function attachParameterPanel(
             'Samples / method',
             '对比采样预算',
             1,
-            4096,
+            65536,
             1,
             (value) =>
               adapter.setPathTracing({ ...adapter.getPathTracing(), comparisonSamples: value }),
@@ -488,7 +488,7 @@ export function attachParameterPanel(
         )
       reset(camera, '重置相机', () => adapter.setCamera(initialCamera))
     }
-    if (current.environment) {
+    if (current.environment && !current.comparison) {
       const environment = group('Environment'),
         checkboxRow = document.createElement('label'),
         checkbox = document.createElement('input')
@@ -530,7 +530,7 @@ export function attachParameterPanel(
         )
       reset(environment, '重置环境', () => adapter.setEnvironment(initialEnvironment))
     }
-    if (current.lighting) {
+    if (current.lighting && !current.comparison) {
       const lamp = group('Main light')
       slider(lamp, 'azimuth', 'Azimuth', '光源方位', -180, 180, 0.1, (value) =>
         direction('azimuth', value),
@@ -666,7 +666,7 @@ export function attachParameterPanel(
         continue
       }
       if (key === 'background') {
-        field.input.disabled = current.environment && environment.showBackground
+        field.input.disabled = comparing || (current.environment && environment.showBackground)
         field.input.title = field.input.disabled ? 'Used when skybox is hidden' : ''
         field.input.value = adapter.getClear()[0] > 0.5 ? 'light' : 'dark'
         continue

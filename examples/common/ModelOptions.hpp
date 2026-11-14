@@ -125,7 +125,9 @@ namespace example
             else if ((arg == "--compare-samples" || arg == "--compare-ms") && i + 1 < argc)
             {
                 const float value = number(argv[++i]);
-                if (!std::isfinite(value) || value < 1 || value > 60000 || std::floor(value) != value)
+                if (
+                  !std::isfinite(value) || value < 1 || value > (arg == "--compare-ms" ? 60000 : 65536)
+                  || std::floor(value) != value)
                     throw std::invalid_argument("Invalid comparison budget");
                 if (arg == "--compare-ms")
                     options.path.comparisonMilliseconds = uint32_t(value);

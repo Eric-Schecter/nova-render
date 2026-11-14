@@ -110,6 +110,18 @@ try {
     },
     { root: '/@fs' + resolve('web/src'), probe },
   )
+  try {
+    const native = await readFile('build/glass-native.bin'),
+      values = new Float32Array(native.buffer, native.byteOffset, native.byteLength / 4)
+    if (values.length !== result.nativeParity.length) throw Error('Native glass size mismatch')
+    const rms = Math.sqrt(
+      values.reduce((sum, x, i) => sum + (x - result.nativeParity[i]) ** 2, 0) / values.length,
+    )
+    if (rms > 1e-4) throw Error('Native/WebGPU glass RMS ' + rms)
+    result.nativeRMS = rms
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
   await writeFile('build/validation/glass-web.json', JSON.stringify(result, null, 2))
   console.log(
     'PASS dielectric energy, inside/outside, total internal reflection and Cornell PT/BDPT/photon',

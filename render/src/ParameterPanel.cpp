@@ -218,7 +218,7 @@ namespace render::detail
                         else
                         {
                             int n = int(path.comparisonSamples);
-                            if (ImGui::SliderInt("Samples / method", &n, 1, 4096))
+                            if (ImGui::SliderInt("Samples / method", &n, 1, 65536))
                                 path.comparisonSamples = uint32_t(n);
                         }
                     }
@@ -302,7 +302,8 @@ namespace render::detail
                 int background = clear[0] > 0.5f ? 1 : 0;
                 ImGui::TextUnformatted("Background");
                 ImGui::SetNextItemWidth(-1);
-                ImGui::BeginDisabled(hasEnvironment && environment.showBackground);
+                ImGui::BeginDisabled(
+                  mode == RenderMode::IntegratorComparison || (hasEnvironment && environment.showBackground));
                 if (ImGui::Combo("##Background", &background, "Dark\0Light\0"))
                     clear = background ? std::array<float, 4>{0.8f, 0.85f, 0.95f, 1}
                                        : std::array<float, 4>{0.025f, 0.035f, 0.055f, 1};
@@ -327,7 +328,9 @@ namespace render::detail
                 if (ImGui::Button("Reset camera"))
                     camera = initialCamera;
             }
-            if (hasEnvironment && ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
+            if (
+              mode != RenderMode::IntegratorComparison && hasEnvironment
+              && ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 chooseAsset("Map", assets.config.environments, assets.environmentPath, assets.requestedEnvironment);
                 ImGui::Checkbox("Skybox", &environment.showBackground);
@@ -340,7 +343,8 @@ namespace render::detail
                 ImGui::PopID();
             }
             if (
-              model && (lighting == LightingMode::PBR || mode != RenderMode::Raster)
+              mode != RenderMode::IntegratorComparison && model
+              && (lighting == LightingMode::PBR || mode != RenderMode::Raster)
               && ImGui::CollapsingHeader("Main light", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 constexpr float degrees = 57.2957795131f;

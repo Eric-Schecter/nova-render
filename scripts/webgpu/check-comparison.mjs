@@ -49,6 +49,7 @@ try {
   await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
   await page.screenshot({ path: 'build/validation/comparison-web.png' })
   const png = await page.locator('canvas').screenshot()
+  await writeFile('build/validation/comparison-canvas.png', png)
   const columns = await page.evaluate(async (base64) => {
     const image = new Image()
     image.src = 'data:image/png;base64,' + base64
