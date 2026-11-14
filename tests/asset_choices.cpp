@@ -25,7 +25,7 @@ int main(int argc, char** argv)
         render::Window               window(config);
         const std::filesystem::path  root = argv[2];
         render::ParameterPanelConfig panel;
-        for (const auto* name : {"DamagedHelmet", "Avocado", "BoomBox"})
+        for (const auto* name : {"DamagedHelmet", "Avocado", "BoomBox", "CornellBox"})
             panel.models.push_back({name, root / name / (std::string(name) + ".glb")});
         for (const auto* name : {"venice_sunset", "kloppenheim_06", "studio_small_09"})
             panel.environments.push_back({name, root / "Environment" / (std::string(name) + ".nenv")});
@@ -90,7 +90,7 @@ int main(int argc, char** argv)
         window.WaitIdle();
         if (window.ValidationErrorCount())
             throw std::runtime_error("GPU validation errors");
-        std::cout << "PASS nine model/environment combinations, preserved parameters and panel lifecycle\n";
+        std::cout << "PASS twelve model/environment combinations, preserved parameters and panel lifecycle\n";
     }
     catch (const std::exception& error)
     {

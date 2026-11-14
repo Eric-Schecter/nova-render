@@ -113,7 +113,7 @@ int main(int argc, char** argv)
         draw();
         if (window.GetAccumulatedSamples() != 2)
             throw std::runtime_error("Path re-entry failed");
-        for (const auto* name : {"DamagedHelmet", "Avocado", "BoomBox"})
+        for (const auto* name : {"DamagedHelmet", "Avocado", "BoomBox", "CornellBox"})
         {
             window.LoadModel(root / name / (std::string(name) + ".glb"));
             for (const auto* map : {"venice_sunset", "kloppenheim_06", "studio_small_09"})

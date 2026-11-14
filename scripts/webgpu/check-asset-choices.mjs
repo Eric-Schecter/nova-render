@@ -31,19 +31,19 @@ try {
     const models = page.getByRole('combobox', { name: '模型选择', exact: true }),
       initial = await hash(),
       hashes = new Set()
-    if ((await models.locator('option').count()) !== 3) throw Error('Missing model choices')
-    for (const name of ['Avocado', 'BoomBox', 'DamagedHelmet']) {
+    if ((await models.locator('option').count()) !== 4) throw Error('Missing model choices')
+    for (const name of ['Avocado', 'BoomBox', 'CornellBox', 'DamagedHelmet']) {
       await choose(models, '/generated/' + name + '.glb')
       hashes.add(await hash())
       if ((await page.getByRole('slider', { name: '水平角', exact: true }).inputValue()) !== '20')
         throw Error('Camera reset on model switch')
     }
-    if (hashes.size !== 3 || (await hash()) !== initial)
+    if (hashes.size !== 4 || (await hash()) !== initial)
       throw Error('Model choices did not change/restore GPU pixels')
     if (slug === 'environment') {
       const maps = page.getByRole('combobox', { name: '环境贴图', exact: true })
       if ((await maps.locator('option').count()) !== 3) throw Error('Missing environment choices')
-      for (const model of ['Avocado', 'BoomBox', 'DamagedHelmet']) {
+      for (const model of ['Avocado', 'BoomBox', 'CornellBox', 'DamagedHelmet']) {
         await choose(models, '/generated/' + model + '.glb')
         const outputs = new Set()
         for (const name of ['kloppenheim_06', 'studio_small_09', 'venice_sunset']) {
@@ -104,7 +104,7 @@ try {
   })
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS three model pages, nine model/environment combinations, GPU pixels, restored state, failed-choice recovery and mobile layout',
+    'PASS three model pages, twelve model/environment combinations, GPU pixels, restored state, failed-choice recovery and mobile layout',
   )
 } finally {
   await browser.close()

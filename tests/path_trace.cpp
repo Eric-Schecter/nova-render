@@ -133,6 +133,35 @@ int main(int argc, char** argv)
         const auto restored = session.Render(model, sky, uniforms, settings, {0, 0, 0, 1}, 320, 240);
         if (restored.pixels != early)
             throw std::runtime_error("Disabling denoise did not restore raw output");
+        auto cornell = render::detail::LoadGLB(assets / "CornellBox/CornellBox.glb");
+        if (cornell->vertices.size() != 96)
+            throw std::runtime_error("Cornell triangle count");
+        camera.yaw      = 0;
+        camera.pitch    = 0;
+        light.direction = {0, 1, 2};
+        light.intensity = 3;
+        uniforms        = render::detail::MakeSceneUniforms(
+          *cornell, camera, 1, render::LightingMode::PBR, light, nullptr, environment);
+        settings.samplesPerFrame = 4;
+        settings.maxBounces      = 5;
+        settings.denoise         = true;
+        for (int i = 0; i < 8; ++i)
+            session.Render(cornell, nullptr, uniforms, settings, {.025f, .035f, .055f, 1}, 256, 256);
+        const auto cornellImage =
+          session.Render(cornell, nullptr, uniforms, settings, {.025f, .035f, .055f, 1}, 256, 256);
+        size_t redCount = 0, greenCount = 0;
+        for (size_t i = 0; i < cornellImage.pixels.size(); i += 4)
+        {
+            const auto r = cornellImage.pixels[i], g = cornellImage.pixels[i + 1], b = cornellImage.pixels[i + 2];
+            if (r > g * 1.6 && r > b * 1.6 && r > 40)
+                ++redCount;
+            if (g > r * 1.6 && g > b * 1.3 && g > 40)
+                ++greenCount;
+        }
+        if (redCount < 500 || greenCount < 500)
+            throw std::runtime_error("Cornell red/green walls missing");
+        const auto cornellPath = std::filesystem::path(argv[3]) / ("cornell-" + api + ".png");
+        stbi_write_png(cornellPath.string().c_str(), 256, 256, 4, cornellImage.pixels.data(), 256 * 4);
         std::cout << "PASS red triangle pixels, accumulation, automatic/manual reset and textured HDR model at "
                   << session.Samples() << " samples\n";
     }

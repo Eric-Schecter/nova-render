@@ -1,11 +1,15 @@
 // Example resources. The renderer itself has no built-in asset paths.
 export function modelChoices(modelURL) {
   const directory = modelURL.slice(0, modelURL.lastIndexOf('/') + 1)
-  return [
-    { name: 'Damaged Helmet', url: modelURL },
+  const choices = [
+    { name: 'Damaged Helmet', url: directory + 'DamagedHelmet.glb' },
     { name: 'Avocado', url: directory + 'Avocado.glb' },
     { name: 'BoomBox', url: directory + 'BoomBox.glb' },
+    { name: 'Cornell Box', url: directory + 'CornellBox.glb' },
   ]
+  if (!choices.some((choice) => choice.url === modelURL))
+    choices.unshift({ name: 'Custom', url: modelURL })
+  return choices
 }
 export function environmentChoices(environmentURL) {
   const directory = environmentURL.slice(0, environmentURL.lastIndexOf('/') + 1)

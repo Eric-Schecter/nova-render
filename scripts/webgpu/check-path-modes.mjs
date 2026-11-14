@@ -84,7 +84,7 @@ try {
             if (!fail || JSON.stringify(r.getPathTracing()) !== JSON.stringify(saved))
               throw Error('Invalid settings changed state')
           }
-          for (const model of ['DamagedHelmet', 'Avocado', 'BoomBox']) {
+          for (const model of ['DamagedHelmet', 'Avocado', 'BoomBox', 'CornellBox']) {
             await r.loadModel('/generated/' + model + '.glb')
             for (const environment of ['venice_sunset', 'kloppenheim_06', 'studio_small_09']) {
               await r.loadEnvironment('/generated/' + environment + '.bin')
@@ -113,7 +113,7 @@ try {
           await r.waitIdle()
           r.dispose()
           host.remove()
-          return 'PASS API parity, settings validation, progressive frames, parameter resets, 9 asset combinations, exact raster restoration, hidden pause/resume and dispose'
+          return 'PASS API parity, settings validation, progressive frames, parameter resets, 12 asset combinations, exact raster restoration, hidden pause/resume and dispose'
         },
         '/@fs' + resolve('web/src/Nova.js'),
       ),
