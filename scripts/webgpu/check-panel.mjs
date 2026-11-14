@@ -11,7 +11,14 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   for (const width of [1400, 390]) {
     await page.setViewportSize({ width, height: 1000 })
-    for (const slug of ['triangle', 'damaged-helmet', 'lighting', 'environment']) {
+    for (const slug of [
+      'triangle',
+      'damaged-helmet',
+      'lighting',
+      'environment',
+      'skeletal-animation',
+      'integrators',
+    ]) {
       await page.goto('http://127.0.0.1:5173/examples/' + slug)
       await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
       const panel = page.getByRole('region', { name: '参数面板', exact: true }),
@@ -21,19 +28,21 @@ try {
       if (await open.count()) await open.click()
       if (slug !== 'triangle') {
         const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
-        if ((await mode.inputValue()) !== 'raster') throw Error('Web default mode changed')
-        if (await mode.locator('option[value="ray-tracing"]').isDisabled())
+        if (
+          (await mode.inputValue()) !==
+          (slug === 'integrators' ? 'integrator-comparison' : 'raster')
+        )
+          throw Error('Web default mode changed')
+        if (
+          slug !== 'skeletal-animation' &&
+          (await mode.locator('option[value="ray-tracing"]').isDisabled())
+        )
           throw Error('Web BVH path tracing should be selectable')
       }
       const a = await panel.boundingBox(),
         b = await canvas.boundingBox()
-      if (
-        a.x < b.x ||
-        a.y < b.y ||
-        a.x + a.width > b.x + b.width + 1 ||
-        a.y + a.height > b.y + b.height + 1
-      )
-        throw Error('Panel outside render area')
+      if (a.x < b.x || a.y < b.y + b.height + 8 || a.x + a.width > b.x + b.width + 1)
+        throw Error('Panel overlaps render surface or exceeds preview width')
       const controls = await page
         .locator('input[type=range],select')
         .evaluateAll((elements) => elements.every((e) => e.closest('.nova-panel')))
@@ -82,8 +91,10 @@ try {
       await panel.waitFor({ state: 'visible' })
       if ((await page.evaluate(() => document.documentElement.scrollWidth)) > width)
         throw Error('Page overflow')
-      if (slug === 'lighting')
-        await page.locator('.nova-viewport').screenshot({ path: `build/webgpu/panel-${width}.png` })
+      if (slug === 'lighting' || slug === 'integrators')
+        await page
+          .locator('.nova-viewport')
+          .screenshot({ path: `build/webgpu/panel-${slug}-${width}.png` })
     }
   }
   await page.evaluate(
@@ -115,7 +126,7 @@ try {
   )
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS all in-preview panels, desktop/mobile bounds, collapse, real pointer/wheel isolation, scene drag, reset, hide/show and enable/disable/dispose',
+    'PASS all six panels below render surfaces, desktop/mobile bounds, collapse, real pointer/wheel isolation, scene drag, reset, hide/show and enable/disable/dispose',
   )
 } finally {
   await browser.close()
