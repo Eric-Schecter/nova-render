@@ -7,8 +7,14 @@ namespace render::detail
 {
     void ValidatePathTracing(const PathTracingSettings& settings)
     {
-        if (settings.integrator != PathIntegrator::PathTracing && settings.integrator != PathIntegrator::Bidirectional)
+        if (
+          settings.integrator != PathIntegrator::PathTracing && settings.integrator != PathIntegrator::Bidirectional
+          && settings.integrator != PathIntegrator::PhotonMapping)
             throw std::invalid_argument("Unknown path integrator");
+        if (
+          settings.photonsPerIteration < 256 || settings.photonsPerIteration > 65536
+          || !std::isfinite(settings.photonRadius) || settings.photonRadius < .03f || settings.photonRadius > .5f)
+            throw std::invalid_argument("Photon mapping requires 256..65536 photons and radius .03...5");
         if (
           settings.samplesPerFrame < 1 || settings.samplesPerFrame > 4 || settings.maxBounces < 1
           || settings.maxBounces > 8 || !std::isfinite(settings.resolutionScale) || settings.resolutionScale < 0.25f
@@ -53,6 +59,7 @@ namespace render::detail
       uint32_t                               width,
       uint32_t                               height)
     {
+        ValidatePathTracing(settings);
         if (!device || !capabilities.pathTracing)
             throw std::runtime_error("Path tracing device unavailable");
         if (!model || model->vertices.empty())
@@ -90,8 +97,11 @@ namespace render::detail
           BackgroundMips(environment ? *environment : FallbackEnvironment()).front().size,
           0,
           (settings.denoise ? 1u : 0u)
-            | ((settings.lightSampling || settings.integrator == PathIntegrator::Bidirectional) ? 2u : 0u)
-            | (linearOutput ? 4u : 0u) | (settings.integrator == PathIntegrator::Bidirectional ? 8u : 0u)};
+            | ((settings.lightSampling || settings.integrator != PathIntegrator::PathTracing) ? 2u : 0u)
+            | (linearOutput ? 4u : 0u) | (settings.integrator == PathIntegrator::Bidirectional ? 8u : 0u)
+            | (settings.integrator == PathIntegrator::PhotonMapping ? 16u : 0u)};
+        std::memcpy(&params.images[1][3], &settings.photonRadius, 4);
+        params.images[2][3] = settings.photonsPerIteration;
         if (std::memcmp(&params, &previous, sizeof(params)) || samples > 1000000)
         {
             samples  = 0;

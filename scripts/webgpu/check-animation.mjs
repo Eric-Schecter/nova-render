@@ -184,7 +184,7 @@ try {
     await time.fill('.5')
     await page.getByRole('slider', { name: '动画速度', exact: true }).fill('1.5')
     const mode = page.getByRole('combobox', { name: '渲染模式', exact: true })
-    if (!(await mode.locator('option[value="path-tracing"]').isDisabled()))
+    if (!(await mode.locator('option[value="ray-tracing"]').isDisabled()))
       throw Error('Animated path mode enabled')
     await playing.check()
     await page.waitForTimeout(150)

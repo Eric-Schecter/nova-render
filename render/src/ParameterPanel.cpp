@@ -158,12 +158,12 @@ namespace render::detail
             {
                 ImGui::TextUnformatted("Mode");
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::BeginCombo("##RenderMode", mode == RenderMode::Raster ? "Raster" : "Path tracing"))
+                if (ImGui::BeginCombo("##RenderMode", mode == RenderMode::Raster ? "Raster" : "Ray tracing"))
                 {
                     if (ImGui::Selectable("Raster", mode == RenderMode::Raster))
                         assets.requestedMode = RenderMode::Raster;
                     ImGui::BeginDisabled(!capabilities.pathTracing);
-                    if (ImGui::Selectable("Path tracing", mode == RenderMode::PathTracing))
+                    if (ImGui::Selectable("Ray tracing", mode == RenderMode::PathTracing))
                         assets.requestedMode = RenderMode::PathTracing;
                     if (!capabilities.pathTracing && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                         ImGui::SetTooltip("%s", capabilities.reason.c_str());
@@ -174,9 +174,9 @@ namespace render::detail
                 {
                     ImGui::TextUnformatted("Integrator");
                     ImGui::SetNextItemWidth(-1);
-                    int integrator = path.integrator == PathIntegrator::Bidirectional ? 1 : 0;
-                    if (ImGui::Combo("##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0"))
-                        path.integrator = integrator ? PathIntegrator::Bidirectional : PathIntegrator::PathTracing;
+                    int integrator = static_cast<int>(path.integrator);
+                    if (ImGui::Combo("##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0Photon mapping\0"))
+                        path.integrator = static_cast<PathIntegrator>(integrator);
                     int spp = int(path.samplesPerFrame), bounces = int(path.maxBounces);
                     ImGui::TextUnformatted("Samples per frame");
                     ImGui::SetNextItemWidth(-1);
@@ -190,9 +190,22 @@ namespace render::detail
                     ImGui::SetNextItemWidth(-1);
                     ImGui::SliderFloat(
                       "##RenderScale", &path.resolutionScale, .25f, 1, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+                    if (path.integrator == PathIntegrator::PhotonMapping)
+                    {
+                        int photons = int(path.photonsPerIteration);
+                        ImGui::TextUnformatted("Photons per iteration");
+                        ImGui::SetNextItemWidth(-1);
+                        if (ImGui::SliderInt("##Photons", &photons, 256, 65536))
+                            path.photonsPerIteration = uint32_t(photons);
+                        ImGui::TextUnformatted("Initial gather radius");
+                        ImGui::SetNextItemWidth(-1);
+                        ImGui::SliderFloat("##PhotonRadius", &path.photonRadius, .03f, .5f, "%.3f");
+                    }
                     ImGui::Checkbox("Denoise", &path.denoise);
-                    if (path.integrator == PathIntegrator::Bidirectional)
-                        ImGui::TextUnformatted("Path-space MIS");
+                    if (path.integrator != PathIntegrator::PathTracing)
+                        ImGui::TextUnformatted(
+                          path.integrator == PathIntegrator::PhotonMapping ? "Photon density estimate"
+                                                                           : "Path-space MIS");
                     else
                         ImGui::Checkbox("Light sampling / MIS", &path.lightSampling);
                     ImGui::Text("Samples: %u", samples);

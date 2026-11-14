@@ -9,13 +9,24 @@ export const defaultPathTracing = () => ({
   denoise: false,
   lightSampling: true,
   integrator: 'path',
+  photonsPerIteration: 8192,
+  photonRadius: 0.16,
 })
 export function validatePathTracing(value) {
   if (
     !value ||
-    (value.integrator !== undefined && !['path', 'bidirectional'].includes(value.integrator)) ||
+    (value.integrator !== undefined &&
+      !['path', 'bidirectional', 'photon-mapping'].includes(value.integrator)) ||
     (value.lightSampling !== undefined && typeof value.lightSampling !== 'boolean') ||
     (value.denoise !== undefined && typeof value.denoise !== 'boolean') ||
+    (value.photonsPerIteration !== undefined &&
+      (!Number.isInteger(value.photonsPerIteration) ||
+        value.photonsPerIteration < 256 ||
+        value.photonsPerIteration > 65536)) ||
+    (value.photonRadius !== undefined &&
+      (!Number.isFinite(value.photonRadius) ||
+        value.photonRadius < 0.03 ||
+        value.photonRadius > 0.5)) ||
     !Number.isInteger(value.samplesPerFrame) ||
     value.samplesPerFrame < 1 ||
     value.samplesPerFrame > 4 ||
@@ -35,6 +46,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     output,
     computeGroup,
     presentGroup,
+    scratchSize = 0,
     width = 0,
     height = 0,
     samples = 0,
@@ -96,10 +108,12 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       if (!response.ok) throw Error('Missing path shader package: ' + name)
       return response.json()
     }
-    const [kernel, presentation, filter] = await Promise.all([
+    const [kernel, presentation, filter, clearPhotons, tracePhotons] = await Promise.all([
       shader('pathtrace'),
       shader('pathpresent'),
       shader('denoise'),
+      shader('photon-clear'),
+      shader('photon-trace'),
     ])
     async function module(code) {
       const m = device.createShaderModule({ code })
@@ -123,6 +137,17 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: await module(filter.compute), entryPoint: 'DenoiseMain' },
     })
+    const photonPipelines = []
+    for (const [shader, entryPoint] of [
+      [clearPhotons, 'PhotonClear'],
+      [tracePhotons, 'PhotonMain'],
+    ])
+      photonPipelines.push(
+        await device.createComputePipelineAsync({
+          layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
+          compute: { module: await module(shader.compute), entryPoint },
+        }),
+      )
     const presentLayout = device.createBindGroupLayout({
       entries: [0, 1].map((binding) => ({
         binding,
@@ -185,13 +210,24 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           h = Math.max(1, Math.round(fullHeight * path.resolutionScale))
         if (w * h > 16000000 || w * h * 16 > device.limits.maxStorageBufferBindingSize)
           throw Error('Path resolution exceeds WebGPU buffer limit')
-        if (w !== width || h !== height) {
+        const photonCount = path.photonsPerIteration ?? 8192
+        const requiredScratch =
+          w * h * 16 +
+          (path.integrator === 'photon-mapping'
+            ? (32768 + photonCount * path.maxBounces * 16) * 4
+            : 0)
+        if (requiredScratch > device.limits.maxStorageBufferBindingSize)
+          throw Error(
+            'Photon map exceeds storage buffer limit; reduce photon count or render scale',
+          )
+        if (w !== width || h !== height || requiredScratch !== scratchSize) {
+          scratchSize = requiredScratch
           const nextAcc = buffer(new Uint8Array(w * h * 16)),
             nextOutput = buffer(
               new Uint8Array(w * h * 4),
               GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             )
-          const nextGuide = buffer(new Uint8Array(w * h * 16))
+          const nextGuide = buffer(new Uint8Array(requiredScratch))
           release(guides)
           guides = nextGuide
           release(accumulation)
@@ -224,14 +260,20 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
             (environment?.backgroundMips || environment?.mips || fallbackEnvironment.mips)[0].size,
             bvh.count,
             (path.denoise ? 1 : 0) |
-              (path.lightSampling !== false || path.integrator === 'bidirectional' ? 2 : 0) |
+              (path.lightSampling !== false ||
+              (path.integrator !== 'path' && path.integrator !== undefined)
+                ? 2
+                : 0) |
               (linearOutput ? 4 : 0) |
-              (path.integrator === 'bidirectional' ? 8 : 0),
+              (path.integrator === 'bidirectional' ? 8 : 0) |
+              (path.integrator === 'photon-mapping' ? 16 : 0),
           ],
           100,
         )
         values.set(clear, 104)
         words.set(metadata, 108)
+        values[115] = path.photonRadius ?? 0.16
+        words[119] = photonCount
         const signature = Array.from(words).join(',')
         if (signature !== previous || samples > 1000000) {
           samples = 0
@@ -252,8 +294,17 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           ])
           presentGroup = group(presentLayout, [output, params])
         }
-        const encoder = device.createCommandEncoder(),
-          pass = encoder.beginComputePass()
+        const encoder = device.createCommandEncoder()
+        if (path.integrator === 'photon-mapping') {
+          for (let i = 0; i < 2; i++) {
+            const photonPass = encoder.beginComputePass()
+            photonPass.setPipeline(photonPipelines[i])
+            photonPass.setBindGroup(0, computeGroup)
+            photonPass.dispatchWorkgroups(i === 0 ? 512 : Math.ceil(photonCount / 64))
+            photonPass.end()
+          }
+        }
+        const pass = encoder.beginComputePass()
         pass.setPipeline(compute)
         pass.setBindGroup(0, computeGroup)
         pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))

@@ -132,12 +132,14 @@ class Renderer {
     this.#check()
     if (this.#model?.skinned)
       return {
+        rayTracing: false,
         pathTracing: false,
         softwareRayTracing: false,
         rayTracingDevice: '',
         reason: 'Animated models currently use raster rendering',
       }
     return {
+      rayTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       softwareRayTracing: true,
       rayTracingDevice: 'WebGPU compute BVH',
@@ -153,8 +155,9 @@ class Renderer {
   }
   setRenderMode(mode) {
     this.#check()
-    if (mode !== 'raster' && mode !== 'path-tracing') throw Error('Invalid render mode')
-    if (mode === 'path-tracing') {
+    if (mode === 'path-tracing') mode = 'ray-tracing'
+    if (mode !== 'raster' && mode !== 'ray-tracing') throw Error('Invalid render mode')
+    if (mode === 'ray-tracing') {
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
       if (!this.#model?.triangles) throw Error('Path tracing requires a loaded model')
     }
@@ -189,6 +192,12 @@ class Renderer {
   #animationPlaying() {
     return !!this.#model?.animations.length && this.#model.animationState.playing
   }
+  getRayTracing() {
+    return this.getPathTracing()
+  }
+  setRayTracing(settings) {
+    this.setPathTracing(settings)
+  }
   setPathTracing(settings) {
     this.#check()
     validatePathTracing(settings)
@@ -197,6 +206,8 @@ class Renderer {
       denoise: settings.denoise ?? false,
       lightSampling: settings.lightSampling ?? true,
       integrator: settings.integrator ?? 'path',
+      photonsPerIteration: settings.photonsPerIteration ?? 8192,
+      photonRadius: settings.photonRadius ?? 0.16,
     }
     this.resetAccumulation()
     this.#parameterPanel?.refresh()
@@ -219,13 +230,13 @@ class Renderer {
     if (
       this.#disposed ||
       this.#pathError ||
-      (this.#renderMode !== 'path-tracing' && !this.#animationPlaying()) ||
+      (this.#renderMode !== 'ray-tracing' && !this.#animationPlaying()) ||
       this.#pathFrame
     )
       return
     this.#pathFrame = requestAnimationFrame((timestamp) => {
       this.#pathFrame = 0
-      if (this.#disposed || (this.#renderMode !== 'path-tracing' && !this.#animationPlaying()))
+      if (this.#disposed || (this.#renderMode !== 'ray-tracing' && !this.#animationPlaying()))
         return
       const rect = this.#canvas.getBoundingClientRect()
       if (
@@ -321,8 +332,8 @@ class Renderer {
           camera: !!this.#model,
           environment: !!this.#environment,
           lighting:
-            !!this.#model && (this.#lighting === 'pbr' || this.#renderMode === 'path-tracing'),
-          pathTracing: this.#renderMode === 'path-tracing',
+            !!this.#model && (this.#lighting === 'pbr' || this.#renderMode === 'ray-tracing'),
+          pathTracing: this.#renderMode === 'ray-tracing',
           animation: this.getAnimations()
             .map((c) => c.name)
             .join('|'),
@@ -464,7 +475,7 @@ class Renderer {
     let failure
     try {
       if (this.#model) {
-        if (this.#renderMode === 'path-tracing')
+        if (this.#renderMode === 'ray-tracing')
           await this.#model.drawPath(
             this.#camera,
             this.#clear,

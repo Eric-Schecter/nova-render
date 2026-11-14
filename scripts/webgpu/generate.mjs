@@ -20,7 +20,15 @@ const sky = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), {
 await writeFile('docs/public/generated/skybox.json', JSON.stringify(sky))
 console.log('Skybox HLSL and prefiltered HDR environment generated')
 
-for (const name of ['Avocado', 'BoomBox', 'CornellBox', 'SkinningRobot', 'Fox']) {
+for (const name of [
+  'Avocado',
+  'BoomBox',
+  'CornellBox',
+  'CornellIndirect',
+  'CornellGlossy',
+  'SkinningRobot',
+  'Fox',
+]) {
   await writeFile(`docs/public/generated/${name}.glb`, await readFile(`assets/${name}/${name}.glb`))
 }
 // Standard binary MIME avoids on-demand text/Brotli compression in static preview.
@@ -51,3 +59,14 @@ const skinning = await compile(await readFile('render/shaders/model.hlsl', 'utf8
   computeEntry: 'SkinningCSMain',
 })
 await writeFile('docs/public/generated/skinning.json', JSON.stringify(skinning))
+
+for (const [name, entry] of [
+  ['photon-clear', 'PhotonClear'],
+  ['photon-trace', 'PhotonMain'],
+]) {
+  const shader = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
+    compute: true,
+    computeEntry: entry,
+  })
+  await writeFile(`docs/public/generated/${name}.json`, JSON.stringify(shader))
+}

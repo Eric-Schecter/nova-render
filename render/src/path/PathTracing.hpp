@@ -12,6 +12,11 @@ namespace render::detail
         std::array<std::array<uint32_t, 4>, 5> images{}; // texel offset, width, height
     };
     static_assert(sizeof(PathUniforms) == 512, "HLSL path parameter layout");
+    inline size_t PathScratchBytes(const PathUniforms& p)
+    {
+        return size_t(p.frame[1]) * p.frame[2] * 16
+               + ((p.options[3] & 16u) ? (size_t(32768) + size_t(p.images[2][3]) * p.frame[3] * 16) * 4 : 0);
+    }
     struct PathScene
     {
         const ModelData&                       model;

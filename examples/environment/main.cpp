@@ -17,7 +17,7 @@ int main(int argc, char** argv)
         camera.yaw   = 20;
         camera.pitch = 5;
         window.SetCamera(camera);
-        window.SetPathTracing(options.path);
+        window.SetRayTracing(options.path);
         window.SetRenderMode(options.mode);
         window.EnableOrbitControls();
         render::ParameterPanelConfig panel;

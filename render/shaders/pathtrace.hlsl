@@ -23,7 +23,7 @@ struct BVHNode
 [[vk::binding(4, 0)]] StructuredBuffer<uint2>    skyTexels : register(t4);
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> accumulation : register(u0);
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint>   outputImage : register(u1);
-[[vk::binding(7, 0)]] RWStructuredBuffer<float4> guides : register(u2);
+[[vk::binding(7, 0)]] RWStructuredBuffer<uint>   work : register(u2);
 static const float                               PI = 3.14159265;
 uint                                             randomBits(inout uint state)
 {
@@ -738,6 +738,186 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     return min(max(result, 0), float3(64, 64, 64));
 }
 
+// Photon records and 32³ toroidal grid share the existing scratch binding.
+// Adjacent 3³ cells always have distinct buckets; distant collisions are filtered
+// by distance. Linked lists have one preallocated slot per emitted path/bounce.
+uint photonCount()
+{
+    return asuint(parameters[29]).w;
+}
+uint photonHeads()
+{
+    uint4 f = asuint(parameters[24]);
+    return f.y * f.z * 4;
+}
+uint photonRecords()
+{
+    return photonHeads() + 32768;
+}
+float photonRadius()
+{
+    float iteration = float(asuint(parameters[24]).x) / float(asuint(parameters[25]).x);
+    return parameters[28].w * pow(1 + iteration, -1.0 / 6.0);
+}
+uint photonBucket(int3 cell)
+{
+    uint3 c = uint3(cell) & 31u;
+    return c.x + c.y * 32 + c.z * 1024;
+}
+float3 scratchVector(uint at)
+{
+    return asfloat(uint3(work[at], work[at + 1], work[at + 2]));
+}
+void scratchVectorStore(uint at, float3 v)
+{
+    uint3 b      = asuint(v);
+    work[at]     = b.x;
+    work[at + 1] = b.y;
+    work[at + 2] = b.z;
+}
+[numthreads(64, 1, 1)] void PhotonClear(uint3 id : SV_DispatchThreadID) {
+    if (id.x < 32768)
+        work[photonHeads() + id.x] = 0;
+}[numthreads(64, 1, 1)] void PhotonMain(uint3 id : SV_DispatchThreadID)
+{
+    uint count = photonCount(), h = lightHeader(), bounces = asuint(parameters[24]).w;
+    if (id.x >= count || texels[h] == 0)
+        return;
+    uint state = id.x * 1973u + asuint(parameters[24]).x * 9277u + 0x68bc21ebu;
+    randomBits(state);
+    uint   record    = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));
+    uint   primitive = texels[record + 2];
+    float  r = sqrt(random(state)), s = random(state);
+    float3 bary     = float3(1 - r, r * (1 - s), r * s);
+    float3 position = vertices[primitive * 3].position.xyz * bary.x + vertices[primitive * 3 + 1].position.xyz * bary.y
+                      + vertices[primitive * 3 + 2].position.xyz * bary.z;
+    Hit source;
+    source.primitive   = primitive;
+    source.bary        = bary.yz;
+    source.distance    = 0;
+    PathVertex emitter = pathVertex(source, position, float3(0, 0, 1));
+    float      pdf     = sourcePdf(emitter);
+    if (pdf <= 0 || !any(emitter.emission > 0))
+        return;
+    float3 n         = random(state) < .5 ? emitter.geometric : -emitter.geometric;
+    float3 direction = cosineDirection(n, state), origin = pathOrigin(emitter, direction),
+           beta = emitter.emission * (2 * PI / pdf);
+    for (uint depth = 1; depth <= bounces; ++depth)
+    {
+        Hit hit;
+        if (!trace(origin, direction, hit))
+            break;
+        PathVertex p = pathVertex(hit, origin, direction);
+        if (depth >= 2)
+        {
+            uint slot = id.x * bounces + depth - 1, at = photonRecords() + slot * 16;
+            scratchVectorStore(at, p.position);
+            scratchVectorStore(at + 3, -direction);
+            scratchVectorStore(at + 6, beta);
+            scratchVectorStore(at + 9, dot(p.geometric, -direction) < 0 ? -p.geometric : p.geometric);
+            work[at + 13] = depth;
+            uint previous;
+            InterlockedExchange(
+              work[photonHeads() + photonBucket(int3(floor(p.position / photonRadius())))], slot + 1, previous);
+            work[at + 12] = previous;
+        }
+        if (depth == bounces)
+            break;
+        float3 l;
+        float  pdfDirection;
+        if (!walkDirection(p, -direction, state, l, pdfDirection))
+            break;
+        beta *= pathF(p, l, -direction) * abs(dot(p.geometric, l)) / pdfDirection;
+        if (!any(beta > 0))
+            break;
+        origin    = pathOrigin(p, l);
+        direction = l;
+    }
+}
+float3 gatherPhotons(PathVertex p, float3 v, uint remaining)
+{
+    float  radius = photonRadius(), r2 = radius * radius;
+    float3 n, g;
+    pathFrame(p, v, n, g);
+    int3   cell = int3(floor(p.position / radius));
+    float3 flux = 0;
+    for (int z = -1; z <= 1; ++z)
+        for (int y = -1; y <= 1; ++y)
+            for (int x = -1; x <= 1; ++x)
+            {
+                uint link = work[photonHeads() + photonBucket(cell + int3(x, y, z))];
+                while (link != 0)
+                {
+                    uint   at    = photonRecords() + (link - 1) * 16;
+                    float3 delta = scratchVector(at) - p.position;
+                    float  d2    = dot(delta, delta);
+                    if (
+                      work[at + 13] <= remaining && d2 < r2 && abs(dot(delta, g)) < radius * .1
+                      && dot(g, scratchVector(at + 9)) > .9)
+                        flux += pathF(p, v, scratchVector(at + 3)) * scratchVector(at + 6) * (1 - d2 / r2);
+                    link = work[at + 12];
+                }
+            }
+    // Epanechnikov disk kernel integrates to one in surface-area measure.
+    return flux * (2 / (PI * r2 * float(photonCount())));
+}
+float3 photonCamera(float3 origin, float3 direction, inout uint state, uint bounces)
+{
+    float3 result = 0, beta = 1;
+    float  previousPdf = 0;
+    for (uint depth = 0; depth <= bounces; ++depth)
+    {
+        Hit hit;
+        if (!trace(origin, direction, hit))
+            break;
+        PathVertex p      = pathVertex(hit, origin, direction);
+        float      pdfHit = emitterPdf(hit.primitive, origin, p.position) / max(areaProbability(), 1e-20);
+        result += beta * p.emission * (depth == 0 ? 1 : misWeight(previousPdf, pdfHit));
+        if (depth == bounces)
+            break;
+        float3 v      = -direction;
+        bool   gather = p.metal < .5 && p.roughness > .2;
+        // Pure finite-area NEE; no environment mixture, and no BSDF competitor
+        // at a gather vertex because the camera walk stops there.
+        uint   h = lightHeader(), record = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));
+        uint   primitive = texels[record + 2];
+        float  r = sqrt(random(state)), s = random(state);
+        float3 bary = float3(1 - r, r * (1 - s), r * s);
+        Hit    lightHit;
+        lightHit.primitive = primitive;
+        lightHit.bary      = bary.yz;
+        lightHit.distance  = 0;
+        float3 lp = vertices[primitive * 3].position.xyz * bary.x + vertices[primitive * 3 + 1].position.xyz * bary.y
+                    + vertices[primitive * 3 + 2].position.xyz * bary.z;
+        PathVertex light = pathVertex(lightHit, lp, float3(0, 0, 1));
+        float3     delta = lp - p.position, l = normalize(delta);
+        float      cosine = abs(dot(light.geometric, -l));
+        float      pdf    = cosine > 1e-8 ? sourcePdf(light) * dot(delta, delta) / cosine : 0;
+        float3     f      = pathF(p, v, l);
+        if (pdf > 0 && any(f > 0))
+        {
+            float3 start = pathOrigin(p, l), segment = pathOrigin(light, -l) - start;
+            Hit    shadow;
+            if (!traceRay(start, normalize(segment), length(segment) - .0006, shadow))
+                result += beta * f * abs(dot(p.geometric, l)) * light.emission / pdf
+                          * (gather ? 1 : misWeight(pdf, pathPdf(p, v, l)));
+        }
+        if (gather)
+        {
+            result += beta * gatherPhotons(p, v, bounces - depth);
+            break;
+        }
+        float pdfDirection;
+        if (!walkDirection(p, v, state, l, pdfDirection))
+            break;
+        beta *= pathF(p, v, l) * abs(dot(p.geometric, l)) / pdfDirection;
+        previousPdf = pdfDirection;
+        origin      = pathOrigin(p, l);
+        direction   = l;
+    }
+    return min(max(result, 0), float3(64, 64, 64));
+}
+
 [numthreads(8, 8, 1)] void CSMain(uint3 id : SV_DispatchThreadID) {
     uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
     if (id.x >= frame.y || id.y >= frame.z)
@@ -759,7 +939,11 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             guide          = float4(
               normalize(a.normal.xyz * weights.x + b.normal.xyz * weights.y + c.normal.xyz * weights.z), hit.distance);
         }
-        guides[index] = guide;
+        uint4 bits          = asuint(guide);
+        work[index * 4]     = bits.x;
+        work[index * 4 + 1] = bits.y;
+        work[index * 4 + 2] = bits.z;
+        work[index * 4 + 3] = bits.w;
     }
     float3 sum = frame.x ? accumulation[index].rgb : float3(0, 0, 0);
     for (uint sampleIndex = 0; sampleIndex < options.x; ++sampleIndex)
@@ -771,9 +955,12 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
           parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz
           - p.y * parameters[11].w * parameters[11].xyz);
         bool   connectLightPaths = (options.w & 8u) != 0 && texels[lightHeader()] > 0;
-        float3 value             = path(parameters[4].xyz, direction, state, frame.w, !connectLightPaths);
+        bool   usePhotons        = (options.w & 16u) != 0 && texels[lightHeader()] > 0;
+        float3 value = path(parameters[4].xyz, direction, state, frame.w, !connectLightPaths && !usePhotons);
         if (connectLightPaths)
             value += bidirectional(parameters[4].xyz, direction, state, frame.w);
+        if (usePhotons)
+            value += photonCamera(parameters[4].xyz, direction, state, frame.w);
         sum += min(max(value, 0), float3(64, 64, 64));
     }
     accumulation[index] = float4(sum, 1);
@@ -797,7 +984,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     uint index = id.y * frame.y + id.x;
     if ((options.w & 4u) != 0)
         return;
-    float4 centerGuide = guides[index];
+    float4 centerGuide = asfloat(uint4(work[index * 4], work[index * 4 + 1], work[index * 4 + 2], work[index * 4 + 3]));
     if (centerGuide.w < 0)
         return;
     float  count      = float(frame.x + options.x);
@@ -812,7 +999,8 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             if (any(pixel < 0) || pixel.x >= int(frame.y) || pixel.y >= int(frame.z))
                 continue;
             uint   neighbor = uint(pixel.y) * frame.y + uint(pixel.x);
-            float4 guide    = guides[neighbor];
+            float4 guide    = asfloat(
+              uint4(work[neighbor * 4], work[neighbor * 4 + 1], work[neighbor * 4 + 2], work[neighbor * 4 + 3]));
             if (guide.w < 0)
                 continue;
             float3 value  = accumulation[neighbor].rgb / count;

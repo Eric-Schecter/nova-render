@@ -31,7 +31,7 @@ try {
           window.pathCanvas = canvas
           let rejected = false
           try {
-            r.setRenderMode('path-tracing')
+            r.setRenderMode('ray-tracing')
           } catch {
             rejected = true
           }
@@ -48,7 +48,7 @@ try {
           await r.drawFrame()
           const raster = canvas.toDataURL()
           r.setPathTracing({ samplesPerFrame: 2, maxBounces: 3, resolutionScale: 0.25 })
-          r.setRenderMode('path-tracing')
+          r.setRenderMode('ray-tracing')
           await r.drawFrame()
           if (r.getAccumulatedSamples() !== 2) throw Error('Initial sample count')
           await r.drawFrame()
@@ -69,6 +69,10 @@ try {
           }
           r.resetAccumulation()
           if (r.getAccumulatedSamples() !== 0) throw Error('Manual reset')
+          r.setRenderMode('path-tracing')
+          if (r.getRenderMode() !== 'ray-tracing' || !r.getCapabilities().rayTracing)
+            throw Error('Ray tracing compatibility alias')
+          r.setRayTracing(r.getRayTracing())
           const saved = r.getPathTracing()
           for (const settings of [
             { ...saved, samplesPerFrame: 0 },
@@ -102,7 +106,7 @@ try {
           r.setRenderMode('raster')
           await r.drawFrame()
           if (canvas.toDataURL() !== raster) throw Error('Raster pixels not restored')
-          r.setRenderMode('path-tracing')
+          r.setRenderMode('ray-tracing')
           await r.drawFrame()
           const count = r.getAccumulatedSamples()
           await new Promise((resolve) => setTimeout(resolve, 150))
@@ -126,7 +130,7 @@ try {
     const panel = page.getByRole('region', { name: '参数面板', exact: true })
     await panel.scrollIntoViewIfNeeded()
     const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
-    await mode.selectOption('path-tracing')
+    await mode.selectOption('ray-tracing')
     await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
     await page.getByRole('slider', { name: '反弹次数', exact: true }).fill('2')
     const samples = page.locator('[aria-label="累计采样"]')
@@ -150,7 +154,7 @@ try {
     await page.getByRole('button', { name: '重置累计', exact: true }).click()
     await mode.selectOption('raster')
     if (await samples.count()) throw Error('Path controls remain in raster mode')
-    await mode.selectOption('path-tracing')
+    await mode.selectOption('ray-tracing')
     await page.waitForFunction(
       () =>
         Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 8,
@@ -179,7 +183,7 @@ try {
   await page.goto(base + '/examples/environment')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
   await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
-  await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('path-tracing')
+  await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
   await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
   await page.waitForFunction(
     () => Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 2,

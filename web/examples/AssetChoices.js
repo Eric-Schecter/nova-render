@@ -6,6 +6,8 @@ export function modelChoices(modelURL) {
     { name: 'Avocado', url: directory + 'Avocado.glb' },
     { name: 'BoomBox', url: directory + 'BoomBox.glb' },
     { name: 'Cornell Box', url: directory + 'CornellBox.glb' },
+    { name: 'Cornell Indirect', url: directory + 'CornellIndirect.glb' },
+    { name: 'Cornell Glossy', url: directory + 'CornellGlossy.glb' },
   ]
   if (!choices.some((choice) => choice.url === modelURL))
     choices.unshift({ name: 'Custom', url: modelURL })

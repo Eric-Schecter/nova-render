@@ -211,6 +211,8 @@ namespace render::detail
             VkPipelineLayout                        pipelineLayout{};
             VkPipeline                              pipeline{}, denoisePipeline{};
             VkShaderModule                          shader{}, denoiseShader{};
+            std::array<VkShaderModule, 2>           photonShaders{};
+            std::array<VkPipeline, 2>               photonPipelines{};
             std::vector<Buffer>                     buffers;
             std::vector<VkAccelerationStructureKHR> structures;
             ~Context()
@@ -218,6 +220,12 @@ namespace render::detail
                 if (device)
                 {
                     api.vkDeviceWaitIdle(device);
+                    for (auto p : photonPipelines)
+                        if (p)
+                            api.vkDestroyPipeline(device, p, nullptr);
+                    for (auto m : photonShaders)
+                        if (m)
+                            api.vkDestroyShaderModule(device, m, nullptr);
                     if (pipeline)
                         api.vkDestroyPipeline(device, pipeline, nullptr);
                     if (denoisePipeline)
@@ -329,6 +337,7 @@ namespace render::detail
             VkDescriptorSet            set{};
             std::array<Buffer, 7>      data{};
             uint32_t                   width = 0, height = 0;
+            size_t                     scratchBytes = 0;
             void                       Init()
             {
                 context          = std::make_unique<Context>();
@@ -535,6 +544,21 @@ namespace render::detail
                 pipeline.stage.pName  = "DenoiseMain";
                 Check(
                   c.api.vkCreateComputePipelines(c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.denoisePipeline));
+                const char* files[]   = {"photon-clear.compute.spv", "photon-trace.compute.spv"};
+                const char* entries[] = {"PhotonClear", "PhotonMain"};
+                for (size_t i = 0; i < 2; i++)
+                {
+                    const auto            bytes = LoadShader(config.shaderDirectory, files[i]);
+                    std::vector<uint32_t> code(bytes.size() / 4);
+                    std::memcpy(code.data(), bytes.data(), bytes.size());
+                    module.codeSize = bytes.size();
+                    module.pCode    = code.data();
+                    Check(c.api.vkCreateShaderModule(c.device, &module, nullptr, &c.photonShaders[i]));
+                    pipeline.stage.module = c.photonShaders[i];
+                    pipeline.stage.pName  = entries[i];
+                    Check(c.api.vkCreateComputePipelines(
+                      c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.photonPipelines[i]));
+                }
             }
             void Submit()
             {
@@ -704,16 +728,19 @@ namespace render::detail
             std::vector<unsigned char> Trace(const PathUniforms& uniforms) override
             {
                 auto& c = *context;
-                if (width != uniforms.frame[1] || height != uniforms.frame[2])
+                if (
+                  width != uniforms.frame[1] || height != uniforms.frame[2]
+                  || scratchBytes != PathScratchBytes(uniforms))
                 {
                     ReleaseImageBuffer(data[4]);
                     ReleaseImageBuffer(data[5]);
                     ReleaseImageBuffer(data[6]);
-                    width   = uniforms.frame[1];
-                    height  = uniforms.frame[2];
-                    data[4] = c.MakeBuffer(size_t(width) * height * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-                    data[5] = c.MakeBuffer(size_t(width) * height * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-                    data[6] = c.MakeBuffer(size_t(width) * height * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                    scratchBytes = PathScratchBytes(uniforms);
+                    width        = uniforms.frame[1];
+                    height       = uniforms.frame[2];
+                    data[4]      = c.MakeBuffer(size_t(width) * height * 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                    data[5]      = c.MakeBuffer(size_t(width) * height * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+                    data[6]      = c.MakeBuffer(scratchBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
                 }
                 VkWriteDescriptorSetAccelerationStructureKHR writeAS{
                   VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
@@ -763,6 +790,36 @@ namespace render::detail
                 c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipeline);
                 c.api.vkCmdBindDescriptorSets(
                   cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipelineLayout, 0, 1, &set, 0, nullptr);
+                if (uniforms.options[3] & 16u)
+                {
+                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.photonPipelines[0]);
+                    c.api.vkCmdDispatch(cmd, 512, 1, 1);
+                    c.api.vkCmdPipelineBarrier(
+                      cmd,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      0,
+                      1,
+                      &barrier,
+                      0,
+                      nullptr,
+                      0,
+                      nullptr);
+                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.photonPipelines[1]);
+                    c.api.vkCmdDispatch(cmd, (uniforms.images[2][3] + 63) / 64, 1, 1);
+                    c.api.vkCmdPipelineBarrier(
+                      cmd,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      0,
+                      1,
+                      &barrier,
+                      0,
+                      nullptr,
+                      0,
+                      nullptr);
+                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipeline);
+                }
                 c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
                 if (uniforms.options[3] & 1u)
                 {

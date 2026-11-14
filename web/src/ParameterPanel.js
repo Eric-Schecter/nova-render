@@ -216,12 +216,12 @@ export function attachParameterPanel(
       const capabilities = adapter.getCapabilities()
       for (const [value, text] of [
         ['raster', 'Raster'],
-        ['path-tracing', 'Path tracing'],
+        ['ray-tracing', 'Ray tracing'],
       ]) {
         const option = document.createElement('option')
         option.value = value
         option.textContent = text
-        if (value === 'path-tracing' && !capabilities.pathTracing) {
+        if (value === 'ray-tracing' && !capabilities.pathTracing) {
           option.disabled = true
           option.title = capabilities.reason
         }
@@ -243,6 +243,7 @@ export function attachParameterPanel(
         for (const [value, title] of [
           ['path', 'Path tracing'],
           ['bidirectional', 'Bidirectional'],
+          ['photon-mapping', 'Photon mapping'],
         ]) {
           const option = document.createElement('option')
           option.value = value
@@ -265,6 +266,8 @@ export function attachParameterPanel(
           ['samplesPerFrame', 'Samples per frame', '每帧采样', 1, 4, 1],
           ['maxBounces', 'Max bounces', '反弹次数', 1, 8, 1],
           ['resolutionScale', 'Render scale', '渲染比例', 0.25, 1, 0.05],
+          ['photonsPerIteration', 'Photons per iteration', '每轮光子数', 256, 65536, 256],
+          ['photonRadius', 'Initial gather radius', '光子聚集半径', 0.03, 0.5, 0.005],
         ])
           slider(renderer, key, caption, aria, min, max, step, (value) =>
             adapter.setPathTracing({ ...adapter.getPathTracing(), [key]: value }),
@@ -535,11 +538,11 @@ export function attachParameterPanel(
       }
       if (key === 'denoise' || key === 'lightSampling') {
         field.input.checked =
-          key === 'lightSampling' && adapter.getPathTracing().integrator === 'bidirectional'
+          key === 'lightSampling' && adapter.getPathTracing().integrator !== 'path'
             ? true
             : adapter.getPathTracing()[key]
         if (key === 'lightSampling')
-          field.input.disabled = adapter.getPathTracing().integrator === 'bidirectional'
+          field.input.disabled = adapter.getPathTracing().integrator !== 'path'
         continue
       }
       if (key === 'renderMode') {
@@ -573,11 +576,14 @@ export function attachParameterPanel(
         field.input.value = adapter.getClear()[0] > 0.5 ? 'light' : 'dark'
         continue
       }
+      if (key === 'photonsPerIteration' || key === 'photonRadius')
+        field.input.closest('label').style.display =
+          adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
       field.input.value = values[key]
       field.output.textContent = Number(values[key]).toFixed(
         key === 'distance' || key === 'resolutionScale' || ['R', 'G', 'B'].includes(key)
           ? 2
-          : ['samplesPerFrame', 'maxBounces'].includes(key)
+          : ['samplesPerFrame', 'maxBounces', 'photonsPerIteration'].includes(key)
             ? 0
             : 1,
       )

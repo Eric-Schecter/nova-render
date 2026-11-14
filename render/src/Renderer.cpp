@@ -92,7 +92,9 @@ namespace render
     Renderer::~Renderer() = default;
     RendererCapabilities Renderer::GetCapabilities() const
     {
-        return impl_->backend->GetCapabilities();
+        auto caps       = impl_->backend->GetCapabilities();
+        caps.rayTracing = caps.pathTracing;
+        return caps;
     }
     void Renderer::SetRenderMode(RenderMode mode)
     {

@@ -185,7 +185,7 @@ try {
       .getByRole('combobox', { name: '模型选择', exact: true })
       .selectOption('/generated/CornellBox.glb')
     await page.waitForFunction(() => !document.querySelector('[aria-label="模型选择"]').disabled)
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('path-tracing')
+    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
     const selector = page.getByRole('combobox', { name: '路径积分器', exact: true })
     if ((await selector.inputValue()) !== 'path') throw Error('Default integrator changed')
     await selector.selectOption('bidirectional')

@@ -66,6 +66,8 @@ namespace render
         RenderMode                 GetRenderMode() const;
         void                       SetPathTracing(const PathTracingSettings& settings);
         PathTracingSettings        GetPathTracing() const;
+        void                       SetRayTracing(const RayTracingSettings& settings) { SetPathTracing(settings); }
+        RayTracingSettings         GetRayTracing() const { return GetPathTracing(); }
         void                       ResetAccumulation();
         uint32_t                   GetAccumulatedSamples() const;
         void                       LoadEnvironment(const std::filesystem::path& path);

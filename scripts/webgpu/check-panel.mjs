@@ -22,7 +22,7 @@ try {
       if (slug !== 'triangle') {
         const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
         if ((await mode.inputValue()) !== 'raster') throw Error('Web default mode changed')
-        if (await mode.locator('option[value="path-tracing"]').isDisabled())
+        if (await mode.locator('option[value="ray-tracing"]').isDisabled())
           throw Error('Web BVH path tracing should be selectable')
       }
       const a = await panel.boundingBox(),

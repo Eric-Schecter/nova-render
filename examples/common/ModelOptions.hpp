@@ -30,8 +30,8 @@ namespace example
             throw std::invalid_argument(
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
               "[--frames N] [--spin] [--environment path.nenv] "
-              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|path] [--spp N] "
-              "[--bounces N] [--scale N] [--integrator path|bidirectional]");
+              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray] [--spp N] "
+              "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping]");
         ModelOptions options;
         options.modelPath = argv[1];
         if (defaultEnvironment)
@@ -91,7 +91,7 @@ namespace example
                 const std::string mode = argv[++i];
                 if (mode == "raster")
                     options.mode = render::RenderMode::Raster;
-                else if (mode == "path")
+                else if (mode == "ray" || mode == "path")
                     options.mode = render::RenderMode::PathTracing;
                 else
                     throw std::invalid_argument("Unknown render mode");
@@ -103,6 +103,8 @@ namespace example
                     options.path.integrator = render::PathIntegrator::PathTracing;
                 else if (integrator == "bidirectional")
                     options.path.integrator = render::PathIntegrator::Bidirectional;
+                else if (integrator == "photon-mapping")
+                    options.path.integrator = render::PathIntegrator::PhotonMapping;
                 else
                     throw std::invalid_argument("Unknown path integrator: " + integrator);
             }

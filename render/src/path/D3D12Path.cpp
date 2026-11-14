@@ -27,12 +27,13 @@ namespace render::detail
             ComPtr<ID3D12GraphicsCommandList4> commands;
             ComPtr<ID3D12Fence>                fence;
             ComPtr<ID3D12RootSignature>        root;
-            ComPtr<ID3D12PipelineState>        pipeline, denoisePipeline;
+            ComPtr<ID3D12PipelineState>        pipeline, denoisePipeline, photonClearPipeline, photonPipeline;
             ComPtr<ID3D12Resource> params, vertices, texels, sky, blas, tlas, instances, scratch, accumulation, output,
               readback, guides;
             uint64_t               signal = 0;
             uint32_t               width = 0, height = 0;
-            bool                   copied = false;
+            bool                   copied       = false;
+            size_t                 scratchBytes = 0;
             ComPtr<ID3D12Resource> Buffer(
               UINT64                size,
               D3D12_HEAP_TYPE       type,
@@ -167,6 +168,12 @@ namespace render::detail
                 const auto filterCode = LoadShader(config.shaderDirectory, "denoise.compute.dxil");
                 pso.CS                = {filterCode.data(), filterCode.size()};
                 Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&denoisePipeline)));
+                const auto clearCode = LoadShader(config.shaderDirectory, "photon-clear.compute.dxil");
+                pso.CS               = {clearCode.data(), clearCode.size()};
+                Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&photonClearPipeline)));
+                const auto photonCode = LoadShader(config.shaderDirectory, "photon-trace.compute.dxil");
+                pso.CS                = {photonCode.data(), photonCode.size()};
+                Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&photonPipeline)));
                 const PathUniforms zero{};
                 params = Upload(&zero, sizeof(zero));
             }
@@ -231,8 +238,11 @@ namespace render::detail
             }
             std::vector<unsigned char> Trace(const PathUniforms& uniforms) override
             {
-                if (width != uniforms.frame[1] || height != uniforms.frame[2])
+                if (
+                  width != uniforms.frame[1] || height != uniforms.frame[2]
+                  || scratchBytes != PathScratchBytes(uniforms))
                 {
+                    scratchBytes = PathScratchBytes(uniforms);
                     width        = uniforms.frame[1];
                     height       = uniforms.frame[2];
                     copied       = false;
@@ -247,7 +257,7 @@ namespace render::detail
                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
                     guides = Buffer(
-                      size_t(width) * height * 16,
+                      scratchBytes,
                       D3D12_HEAP_TYPE_DEFAULT,
                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
@@ -281,6 +291,16 @@ namespace render::detail
                 commands->SetComputeRootUnorderedAccessView(5, accumulation->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(6, output->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(7, guides->GetGPUVirtualAddress());
+                if (uniforms.options[3] & 16u)
+                {
+                    commands->SetPipelineState(photonClearPipeline.Get());
+                    commands->Dispatch(512, 1, 1);
+                    Barrier(guides.Get());
+                    commands->SetPipelineState(photonPipeline.Get());
+                    commands->Dispatch((uniforms.images[2][3] + 63) / 64, 1, 1);
+                    Barrier(guides.Get());
+                    commands->SetPipelineState(pipeline.Get());
+                }
                 commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
                 if (uniforms.options[3] & 1u)
                 {

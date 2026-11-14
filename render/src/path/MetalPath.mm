@@ -20,10 +20,11 @@ namespace render::detail
         {
             id<MTLDevice>                device;
             id<MTLCommandQueue>          queue;
-            id<MTLComputePipelineState>  pipeline, denoisePipeline;
+            id<MTLComputePipelineState>  pipeline, denoisePipeline, photonClearPipeline, photonPipeline;
             id<MTLAccelerationStructure> blas, tlas;
             id<MTLBuffer>                vertices, texels, sky, params, accumulation, output, guides;
             uint32_t                     width = 0, height = 0;
+            size_t                       scratchBytes = 0;
             id<MTLBuffer>                Buffer(const void* data, size_t size)
             {
                 id<MTLBuffer> result = [device newBufferWithBytes:data
@@ -53,6 +54,25 @@ namespace render::detail
                 return result;
             }
 
+            id<MTLComputePipelineState> Pipeline(const RendererConfig& config, const char* file, NSString* entry)
+            {
+                const auto      bytes = LoadShader(config.shaderDirectory, file);
+                NSData*         data  = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+                dispatch_data_t blob =
+                  dispatch_data_create(data.bytes, data.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                    (void)data;
+                  });
+                NSError* error   = nil;
+                auto     library = [device newLibraryWithData:blob error:&error];
+                if (!library)
+                    throw std::runtime_error(error.localizedDescription.UTF8String);
+                auto result = [device newComputePipelineStateWithFunction:[library newFunctionWithName:entry]
+                                                                    error:&error];
+                if (!result)
+                    throw std::runtime_error(error.localizedDescription.UTF8String);
+                return result;
+            }
+
           public:
             explicit MetalPath(const RendererConfig& config)
             {
@@ -65,37 +85,10 @@ namespace render::detail
                 params = [device newBufferWithLength:sizeof(PathUniforms) options:MTLResourceStorageModeShared];
                 if (!params)
                     throw std::runtime_error("Metal path parameters allocation failed");
-                const auto      bytes = LoadShader(config.shaderDirectory, "pathtrace.metallib");
-                NSData*         data  = [NSData dataWithBytes:bytes.data() length:bytes.size()];
-                dispatch_data_t blob =
-                  dispatch_data_create(data.bytes, data.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
-                    (void)data;
-                  });
-                NSError* error   = nil;
-                auto     library = [device newLibraryWithData:blob error:&error];
-                if (!library)
-                    throw std::runtime_error(error.localizedDescription.UTF8String);
-                pipeline = [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"CSMain"]
-                                                                 error:&error];
-                if (!pipeline)
-                    throw std::runtime_error(error.localizedDescription.UTF8String);
-                {
-                    const auto      bytes = LoadShader(config.shaderDirectory, "denoise.metallib");
-                    NSData*         data  = [NSData dataWithBytes:bytes.data() length:bytes.size()];
-                    dispatch_data_t blob =
-                      dispatch_data_create(data.bytes, data.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
-                        (void)data;
-                      });
-                    NSError* error   = nil;
-                    auto     library = [device newLibraryWithData:blob error:&error];
-                    if (!library)
-                        throw std::runtime_error(error.localizedDescription.UTF8String);
-                    denoisePipeline =
-                      [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"DenoiseMain"]
-                                                            error:&error];
-                    if (!denoisePipeline)
-                        throw std::runtime_error(error.localizedDescription.UTF8String);
-                }
+                pipeline            = Pipeline(config, "pathtrace.metallib", @"CSMain");
+                denoisePipeline     = Pipeline(config, "denoise.metallib", @"DenoiseMain");
+                photonClearPipeline = Pipeline(config, "photon-clear.metallib", @"PhotonClear");
+                photonPipeline      = Pipeline(config, "photon-trace.metallib", @"PhotonMain");
             }
             void SetScene(const PathScene& scene) override
             {
@@ -126,16 +119,18 @@ namespace render::detail
             }
             std::vector<unsigned char> Trace(const PathUniforms& uniforms) override
             {
-                if (width != uniforms.frame[1] || height != uniforms.frame[2])
+                if (
+                  width != uniforms.frame[1] || height != uniforms.frame[2]
+                  || scratchBytes != PathScratchBytes(uniforms))
                 {
+                    scratchBytes = PathScratchBytes(uniforms);
                     width        = uniforms.frame[1];
                     height       = uniforms.frame[2];
                     accumulation = [device newBufferWithLength:size_t(width) * height * 16
                                                        options:MTLResourceStorageModePrivate];
                     output       = [device newBufferWithLength:size_t(width) * height * 4
                                                  options:MTLResourceStorageModeShared];
-                    guides       = [device newBufferWithLength:size_t(width) * height * 16
-                                                 options:MTLResourceStorageModePrivate];
+                    guides       = [device newBufferWithLength:scratchBytes options:MTLResourceStorageModePrivate];
                     if (!accumulation || !output || !guides)
                         throw std::runtime_error("Metal path image allocation failed");
                 }
@@ -152,6 +147,17 @@ namespace render::detail
                 [encoder setBuffer:accumulation offset:0 atIndex:5];
                 [encoder setBuffer:output offset:0 atIndex:6];
                 [encoder setBuffer:guides offset:0 atIndex:7];
+                if (uniforms.options[3] & 16u)
+                {
+                    [encoder setComputePipelineState:photonClearPipeline];
+                    [encoder dispatchThreads:MTLSizeMake(32768, 1, 1) threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+                    [encoder setComputePipelineState:photonPipeline];
+                    [encoder dispatchThreads:MTLSizeMake(uniforms.images[2][3], 1, 1)
+                       threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+                    [encoder setComputePipelineState:pipeline];
+                }
                 [encoder dispatchThreads:MTLSizeMake(width, height, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
                 [encoder endEncoding];
                 if (uniforms.options[3] & 1u)
