@@ -90,3 +90,9 @@ PBR 模式使用基础颜色、法线、金属度/粗糙度、遮蔽与自发光
 模型加载、光照和天空盒三个例子均可选择 Damaged Helmet、Avocado、BoomBox 或 Cornell Box，切换保留相机与灯光参数。自定义资源列表见[参数面板](./ui#模型与环境选择)。
 
 Cornell Box 为项目生成的康奈尔盒子风格场景，包含红绿墙、两个方块和顶部发光面板。正面查看建议 `yaw=0`、`pitch=0`、`distance=3.6`。场景沿用当前灯光与环境；发光面照明依靠路径反弹采样，不是测量数据的校准复刻。
+
+## 光追玻璃
+
+光追加载器接受 `KHR_materials_transmission.transmissionFactor`（0–1）与 `KHR_materials_ior.ior`（1.01–3，默认 1.5）。目前支持共用核心 PBR 因子与纹理图集、仅这两个扩展参数不同的多个材质；不支持透射纹理。粗糙度沿用金属度/粗糙度纹理，玻璃粗糙度下限为 0.06。
+
+使用闭合、朝外绕序的几何表示玻璃实体，追踪空气/玻璃界面；Fresnel、Snell 折射、全反射及辐亮度/重要性传输修正共用 HLSL。当前无嵌套介质、吸收和色散；光栅模式使用不透明回退。示例见 `assets/CornellCaustics`，原理参阅 [PBRT Dielectric BSDF](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF)。

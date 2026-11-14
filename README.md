@@ -372,3 +372,21 @@ Windows 软件验证使用 [微软 WARP 1.0.22](https://www.nuget.org/packages/M
 复现：`ctest --test-dir build -R photon-mapping -V`；网页先启动文档，再运行 `node scripts/webgpu/check-photon.mjs` 和 `node scripts/webgpu/benchmark-integrators.mjs`。绘图工具单独安装 matplotlib 后可运行 `scripts/plot-integrator-benchmark.py`，不属于项目运行依赖。验证记录位于 `build/validation/photon-*`、`integrator-benchmark.json`；原生 Metal 与网页基础光子图逐像素 RMS 差约 `5.7e-7`。
 
 本阶段回归：Mac 43 项中 38 项通过、5 项因 MoltenVK 缺少光追能力跳过；Ubuntu Vulkan Lavapipe 9 项全部通过；Windows WARP 1.0.22 的 22 项中 21 项通过、硬件光追探测跳过。Chrome 光子映射像素、三例子面板、原 PT 模式生命周期回归通过；安装后的独立 C++ 调用与关闭 UI 的库构建通过。Windows 真机显卡尚未验证。
+
+### 玻璃焦散与积分器对比
+
+新增 `nova_comparison` / 网页第六例子：`IntegratorComparison`（网页 `'integrator-comparison'`）并排显示 PT、BDPT、光子映射，同相机、仅面光源、无显示降噪；固定 spp 或每种方法的活跃时间预算用完后暂停。`comparisonSamples` 默认 64，`comparisonMilliseconds` 默认 0（非零使用时间预算）；通过 `GetComparisonProgress()` / `getComparisonProgress()` 读取各栏采样、毫秒和完成状态。预热不计入预算，每轮每栏 1 个相机样本；最后一轮可能超过时间预算。光子总路径数另计，三栏串行执行。
+
+`assets/CornellCaustics` 为原创小顶灯、悬空玻璃球和地面焦散场景。C++ 与网页加载同一 GLB，共享 HLSL 粗糙介质 Fresnel、Snell 折射、全反射、BSDF/PDF 与重要性传输。支持 transmission factor 与 IOR；不同材质共用核心 PBR 因子和纹理图集。当前仅空气/玻璃界面，不含嵌套介质、吸收、色散或透射纹理；光栅保留不透明回退。无新增项目依赖。
+
+```sh
+./build/nova_comparison assets/CornellCaustics/CornellCaustics.glb --api metal --compare-samples 64
+./build/nova_comparison assets/CornellCaustics/CornellCaustics.glb --api metal --compare-ms 1000
+ctest --test-dir build -R 'glass|comparison' -V
+node scripts/webgpu/check-glass.mjs
+node scripts/webgpu/check-comparison.mjs
+```
+
+Metal / WebGPU 的玻璃场景 4096 spp 室内平均亮度，PT / BDPT / 光子映射约为 0.011264 / 0.011163 / 0.011125。WebGPU 独立 BSDF 探针检验入射、出射辐亮度能量与全反射；实际三栏像素、预算暂停、非整批 spp、相机重置和模式恢复均有验证。截图和日志位于 `build/validation/comparison-*`、`glass-*`。
+
+最终回归：Mac 45 项中 40 项通过、5 项因 MoltenVK 缺少光追跳过；Ubuntu Vulkan Lavapipe 的对比、玻璃、模式、光子映射 4 项通过；Windows DX12 WARP 1.0.22 同样 4 项通过。Windows 首轮 4096 spp 玻璃 BDPT 超过 900 秒，软件后端正确性回归改用 512 spp 后通过；Metal/WebGPU 保留 4096 spp 能量和像素检查。原生实际读回像素确认横向／纵向三栏均非空、暂停图像保持不变；Chrome 静态文档、代码页签与手机上下布局通过。Windows 真机 GPU 尚未验证。

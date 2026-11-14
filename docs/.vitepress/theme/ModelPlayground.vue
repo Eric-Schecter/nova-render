@@ -2,6 +2,10 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import { showComparison } from '../../../web/examples/comparison.js'
+import comparisonJS from '../../../web/examples/comparison.js?raw'
+import comparisonCPP from '../../../examples/comparison/main.cpp?raw'
+import rayHlslSource from '../../../render/shaders/pathtrace.hlsl?raw'
 import { showAnimation } from '../../../web/examples/animation.js'
 import animationJS from '../../../web/examples/animation.js?raw'
 import animationCPP from '../../../examples/animation/main.cpp?raw'
@@ -15,28 +19,39 @@ import lightingCPP from '../../../examples/lighting/main.cpp?raw'
 import helmetJS from '../../../web/examples/helmet.js?raw'
 import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
-const props = defineProps({ lighting: Boolean, environment: Boolean, animation: Boolean })
-const jsSource = props.animation
-  ? animationJS
-  : props.environment
-    ? environmentJS
-    : props.lighting
-      ? lightingJS
-      : helmetJS
-const cppSource = props.animation
-  ? animationCPP
-  : props.environment
-    ? environmentCPP
-    : props.lighting
-      ? lightingCPP
-      : helmetCPP
-const showExample = props.animation
-  ? showAnimation
-  : props.environment
-    ? showEnvironment
-    : props.lighting
-      ? showLighting
-      : showHelmet
+const props = defineProps({
+  lighting: Boolean,
+  environment: Boolean,
+  animation: Boolean,
+  comparison: Boolean,
+})
+const jsSource = props.comparison
+  ? comparisonJS
+  : props.animation
+    ? animationJS
+    : props.environment
+      ? environmentJS
+      : props.lighting
+        ? lightingJS
+        : helmetJS
+const cppSource = props.comparison
+  ? comparisonCPP
+  : props.animation
+    ? animationCPP
+    : props.environment
+      ? environmentCPP
+      : props.lighting
+        ? lightingCPP
+        : helmetCPP
+const showExample = props.comparison
+  ? showComparison
+  : props.animation
+    ? showAnimation
+    : props.environment
+      ? showEnvironment
+      : props.lighting
+        ? showLighting
+        : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('加载模型…'),
@@ -75,13 +90,19 @@ onMounted(async () => {
   try {
     const next = await showExample(
       canvas.value,
-      withBase(props.animation ? '/generated/Fox.glb' : '/generated/DamagedHelmet.glb'),
+      withBase(
+        props.comparison
+          ? '/generated/CornellCaustics.glb'
+          : props.animation
+            ? '/generated/Fox.glb'
+            : '/generated/DamagedHelmet.glb',
+      ),
       withBase('/generated/'),
       {
-        yaw: props.animation ? 65 : 20,
-        pitch: props.animation ? 10 : 5,
+        yaw: props.comparison ? 0 : props.animation ? 65 : 20,
+        pitch: props.comparison ? 0 : props.animation ? 10 : 5,
         distance: props.animation ? 3 : 3.6,
-        exposure: 1,
+        exposure: props.comparison ? 3 : 1,
       },
       {
         environmentURL: withBase('/generated/venice_sunset.bin'),
@@ -117,7 +138,15 @@ onBeforeUnmount(() => {
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
       <strong>{{
-        animation ? '骨骼动画' : environment ? '天空盒与环境光' : lighting ? 'PBR 光照' : '模型加载'
+        comparison
+          ? '积分器对比'
+          : animation
+            ? '骨骼动画'
+            : environment
+              ? '天空盒与环境光'
+              : lighting
+                ? 'PBR 光照'
+                : '模型加载'
       }}</strong>
       <div>
         <button
@@ -148,7 +177,7 @@ onBeforeUnmount(() => {
         language="javascript"
         readonly
       />
-      <HlslEditor v-else :model-value="hlslSource" readonly />
+      <HlslEditor v-else :model-value="props.comparison ? rayHlslSource : hlslSource" readonly />
     </div>
     <div
       id="helmet-preview"
@@ -159,6 +188,8 @@ onBeforeUnmount(() => {
     >
       <span class="hint">拖动旋转 · 滚轮缩放</span
       ><canvas
+        :class="{ comparison: props.comparison }"
+        :style="props.comparison ? { aspectRatio: '3 / 1' } : {}"
         ref="canvas"
         width="800"
         height="650"
@@ -244,5 +275,10 @@ canvas {
 p {
   padding: 0 16px;
   font-size: 13px;
+}
+@media (max-width: 600px) {
+  canvas.comparison {
+    aspect-ratio: 1/3 !important;
+  }
 }
 </style>

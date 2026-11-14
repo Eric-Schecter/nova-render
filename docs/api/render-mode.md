@@ -1,6 +1,6 @@
 # 渲染模式
 
-原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）或 Ray tracing（光追）；光追模式内再通过 **Integrator** 选择 PT、BDPT 或光子映射。
+原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）、Ray tracing（光追）或 Integrator comparison（三栏对比）；光追模式内再通过 **Integrator** 选择 PT、BDPT 或光子映射。
 
 ```cpp
 render::Window window;
@@ -29,7 +29,7 @@ window.WaitIdle();
 ## 接口
 
 - `GetCapabilities()`：返回 `rayTracing`、`softwareRayTracing`、设备名称 `rayTracingDevice` 和不可用原因 `reason`。
-- `SetRenderMode(RenderMode::Raster / RayTracing)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
+- `SetRenderMode(RenderMode::Raster / RayTracing / IntegratorComparison)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
 - `SetRayTracing(settings)` / `GetRayTracing()`：每帧采样数 `1–4`、最大反弹次数 `1–8`、内部渲染比例 `0.25–1`。非法参数抛异常。
 - `GetAccumulatedSamples()`：读取当前累计采样数。
 - `ResetAccumulation()`：清空累计采样；下一帧重新开始。
@@ -50,7 +50,7 @@ window.WaitIdle();
 
 DX12 使用 DXR 1.1 inline ray query；Vulkan 使用 acceleration structure 与 ray query 扩展；Metal 使用原生加速结构与 ray query。内核只维护 HLSL，由 DXC 生成 DXIL / SPIR-V，再由 SPIRV-Cross 生成 Metal shader。没有新增第三方依赖。
 
-当前实现支持静态不透明模型、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。支持可选空间降噪与光源重要性采样 / MIS；尚无透明材质、蒙皮和多材质支持；为减少亮点，单条路径辐射值上限为 64。
+当前实现支持静态模型与有限的粗糙玻璃材质、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。支持可选空间降噪与光源重要性采样 / MIS；尚无吸收、色散、嵌套介质与光追蒙皮；不同材质需共用核心 PBR 因子和纹理图集；为减少亮点，单条路径辐射值上限为 64。
 
 原生当前为功能验证版本：计算结果每帧回读 CPU，再上传到显示后端，存在传输与同步开销。网页的计算与显示直接留在 GPU，不需要逐帧回读。
 
@@ -159,3 +159,29 @@ await renderer.drawFrame()
 这是轻量空间降噪，不使用 AI 或时域历史，没有新增依赖。极低采样下仍可能有亮点，细小纹理也可能变软；仍建议保持渐进累计。它不会补足较低内部渲染比例丢失的细节。
 
 骨骼动画模型目前仅用光栅渲染，能力查询和面板会明确报告；动画接口见[骨骼动画](./animation)。
+
+## 专用积分器对比
+
+```cpp
+auto settings = window.GetRayTracing();
+settings.maxBounces = 8;
+settings.photonRadius = 0.1f;
+settings.comparisonSamples = 64;
+settings.comparisonMilliseconds = 0; // 改为 1000：每种方法约 1 秒活跃渲染时间
+window.SetRayTracing(settings);
+window.SetRenderMode(render::RenderMode::IntegratorComparison);
+const auto progress = window.GetComparisonProgress();
+```
+
+```js
+renderer.setRayTracing({ ...renderer.getRayTracing(), maxBounces: 8,
+  photonRadius: 0.1, comparisonSamples: 64, comparisonMilliseconds: 0 })
+renderer.setRenderMode('integrator-comparison')
+const progress = renderer.getComparisonProgress()
+```
+
+固定采样预算范围 `1–65536`；时间预算 `0–60000` 毫秒，非零时优先使用时间预算。每栏每轮 1 个相机样本，预热不计入预算；暂停后保留结果。时间包含各方法的 CPU 提交与 GPU 完成，原生还包括现有回读流程，不计等待其他栏的时间；最后一轮可能超过时间预算，三栏串行执行，所以不是整个页面的墙钟预算。两端的绝对耗时不适合直接比较。
+
+返回三项 `ComparisonProgress`，顺序 PT、BDPT、光子映射，各含 `integrator`、`samples`、`milliseconds`、`complete`。相机、模型、尺寸、预算或有效采样参数变化会重跑，`ResetAccumulation()` / `resetAccumulation()` 也会重跑。切回普通光追会继续使用原有场景配置。
+
+对比模式固定正方形视图，宽窗口横排、竖窗口上下排列，强制关闭外部光照、天空背景和显示降噪，PT 启用 MIS。每轮光子预算仍独立计数：光子发射路径总数 = 光子映射相机 spp × `photonsPerIteration`。使用带发光面的场景；无发光面的模型在此模式下可能全黑。专用[积分器例子](../examples/integrators)提供玻璃焦散场景。

@@ -29,7 +29,7 @@
 
 ## Cornell 场景
 
-康奈尔盒子风格示意场景由 Nova 的 `scripts/generate-cornell-box.mjs` 生成，基础、间接照明和金属反射三个场景的几何与纹理图集均在项目内构建，未使用外部模型素材。它不是 Cornell 实验室测量场景的复刻。资源说明见仓库 `assets/CornellBox/README.md`、`assets/CornellIndirect/README.md` 和 `assets/CornellGlossy/README.md`。
+康奈尔盒子风格示意场景由 Nova 的 `scripts/generate-cornell-box.mjs` 生成，基础、间接照明、金属反射和玻璃焦散四个场景的几何与纹理图集均在项目内构建，未使用外部模型素材。它不是 Cornell 实验室测量场景的复刻。资源说明见仓库 `assets/CornellBox/README.md`、`assets/CornellIndirect/README.md` 、`assets/CornellGlossy/README.md` 和 `assets/CornellCaustics/README.md`。
 
 ## Skinning Robot
 

@@ -5,11 +5,13 @@
 - **Cornell Indirect**：顶灯下增加挡板，房间下部主要依靠多次反弹照明。
 - **Cornell Glossy**：小面积顶灯与粗糙金属球，观察反射焦散及其地面接收区域。
 
-经典光子映射演示也常用玻璃球产生折射焦散，见 [Jensen 的 Cornell 示例](https://www-graphics.stanford.edu/~henrik/images/cbox.html)。当前 Nova 材质支持粗糙金属反射；玻璃需要另外补充折射材质。
+经典光子映射演示也常用玻璃球产生折射焦散，见 [Jensen 的 Cornell 示例](https://www-graphics.stanford.edu/~henrik/images/cbox.html)。Nova 另外提供 **Cornell Caustics**：悬空闭合玻璃球、小顶灯和中央地面接收区，支持粗糙介质折射。
 
 ## 在线试验
 
-打开[天空盒与环境光例子](/examples/environment)，选择模型和 **Ray tracing → Integrator**。相机设置为 yaw=0、pitch=0、distance=3.6；关闭方向光、环境照明、天空背景与降噪。基础、间接光、金属球场景的截图曝光分别为 3、12、16，同一行的各积分器曝光一致。
+优先打开[专用积分器对比例子](/examples/integrators)，可按固定时间或采样预算自动暂停。它默认使用玻璃焦散场景，三栏相机和照明条件一致。
+
+也可打开[天空盒与环境光例子](/examples/environment)，选择模型和 **Ray tracing → Integrator**。相机设置为 yaw=0、pitch=0、distance=3.6；关闭方向光、环境照明、天空背景与降噪。基础、间接光、金属球场景的截图曝光分别为 3、12、16，同一行的各积分器曝光一致。
 
 光子映射默认每轮 8192 条光子路径，初始半径 0.16。本轮相机样本共用光子图；同相机 spp 并不代表相同工作量。有限半径会平滑照明并产生偏差，逐轮缩小半径后继续累计。
 
@@ -28,3 +30,11 @@
 本次约 1 秒预算下，金属球场景的地面归一化 MSE 为 PT `0.0258`、BDPT `0.00716`、光子映射 `0.000849`；基础场景则由 BDPT 更低。数据仅代表本机与当前参数。
 
 复现：启动 `npm run docs:dev` 后运行 `node scripts/webgpu/benchmark-integrators.mjs`。[完整测量数据](/benchmarks/integrator-benchmark.json)包含实际相机 spp、光子发射预算、时间和误差；算法接口见[渲染模式](/api/render-mode)。
+
+## 玻璃焦散
+
+下图来自专用对比模式，三栏均为 64 spp、8 次反弹、曝光 3，光子映射每轮 8192 条光子路径、初始半径 0.1。中央地面的聚光区域可观察到亮点噪声、连接采样与密度估计的区别；相同 spp 的成本不同，图中耗时只是这次截图的记录。
+
+![玻璃焦散三栏实际渲染](/benchmarks/glass-comparison.png)
+
+玻璃采用粗糙介质表面模型，不包含吸收、色散和嵌套介质。光子映射更平滑也有有限半径偏差；需要更严格测量时，应使用更高采样参考图，并报告接收区域误差与实际时间。
