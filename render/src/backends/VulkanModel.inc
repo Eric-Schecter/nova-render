@@ -322,7 +322,7 @@ void LoadModel(std::shared_ptr<const ModelData> data) override
     WaitIdle();
     destroySwapchain();
     destroyModel();
-    model   = std::move(data);
+    Backend::LoadModel(std::move(data));
     resized = true;
 }
 void destroyModel()

@@ -1,4 +1,5 @@
 #pragma once
+#include "Animation.hpp"
 #include "Model.hpp"
 #include "ParameterPanel.hpp"
 #include "RenderMode.hpp"
@@ -52,23 +53,27 @@ namespace render
 
         // Supply framebuffer pixels before the first frame and after size changes.
         // Zero dimensions suspend rendering. Rebuilds happen inside DrawFrame().
-        void                 Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
-        FrameResult          DrawFrame();
-        void                 WaitIdle();
-        void                 LoadModel(const std::filesystem::path& glbPath);
-        RendererCapabilities GetCapabilities() const;
-        void                 SetRenderMode(RenderMode mode);
-        RenderMode           GetRenderMode() const;
-        void                 SetPathTracing(const PathTracingSettings& settings);
-        PathTracingSettings  GetPathTracing() const;
-        void                 ResetAccumulation();
-        uint32_t             GetAccumulatedSamples() const;
-        void                 LoadEnvironment(const std::filesystem::path& path);
-        void                 SetEnvironment(const EnvironmentSettings& settings);
-        EnvironmentSettings  GetEnvironment() const;
-        void                 SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight     GetDirectionalLight() const;
-        void                 SetLighting(LightingMode mode);
+        void                       Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
+        FrameResult                DrawFrame();
+        void                       WaitIdle();
+        std::vector<AnimationClip> GetAnimations() const;
+        AnimationState             GetAnimationState() const;
+        void                       SetAnimationState(const AnimationState& state);
+        void                       UpdateAnimation(float deltaSeconds);
+        void                       LoadModel(const std::filesystem::path& glbPath);
+        RendererCapabilities       GetCapabilities() const;
+        void                       SetRenderMode(RenderMode mode);
+        RenderMode                 GetRenderMode() const;
+        void                       SetPathTracing(const PathTracingSettings& settings);
+        PathTracingSettings        GetPathTracing() const;
+        void                       ResetAccumulation();
+        uint32_t                   GetAccumulatedSamples() const;
+        void                       LoadEnvironment(const std::filesystem::path& path);
+        void                       SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings        GetEnvironment() const;
+        void                       SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight           GetDirectionalLight() const;
+        void                       SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
         bool                 EnableParameterPanel(const ParameterPanelConfig& config);

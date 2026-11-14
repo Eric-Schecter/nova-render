@@ -27,6 +27,7 @@ class Renderer {
   #pathSettings = defaultPathTracing()
   #pathFrame = 0
   #pathError
+  #animationLastTime
   #configured = false
   #disposed = false
   #lost
@@ -90,6 +91,8 @@ class Renderer {
       }
       this.#model?.dispose()
       this.#model = next
+      this.#animationLastTime = undefined
+      if (next.skinned) this.#renderMode = 'raster'
       this.#modelURL = url
       this.#parameterPanel?.refresh()
       return { triangles: next.triangles }
@@ -127,6 +130,13 @@ class Renderer {
   }
   getCapabilities() {
     this.#check()
+    if (this.#model?.skinned)
+      return {
+        pathTracing: false,
+        softwareRayTracing: false,
+        rayTracingDevice: '',
+        reason: 'Animated models currently use raster rendering',
+      }
     return {
       pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       softwareRayTracing: true,
@@ -155,6 +165,30 @@ class Renderer {
     this.#pathFrame = 0
     this.#parameterPanel?.refresh()
   }
+  getAnimations() {
+    this.#check()
+    return this.#model?.animations || []
+  }
+  getAnimationState() {
+    this.#check()
+    return this.#model?.animationState || { clip: 0, time: 0, speed: 1, playing: true, loop: true }
+  }
+  setAnimationState(value) {
+    this.#check()
+    if (!this.#model?.animations.length) throw Error('No animation clips loaded')
+    this.#model.setAnimationState(value)
+    this.#animationLastTime = undefined
+    this.#parameterPanel?.refresh()
+    this.#continuePathTracing()
+  }
+  updateAnimation(delta) {
+    this.#check()
+    if (!Number.isFinite(delta) || delta < 0) throw Error('Invalid animation delta')
+    this.#model?.updateAnimation(delta)
+  }
+  #animationPlaying() {
+    return !!this.#model?.animations.length && this.#model.animationState.playing
+  }
   setPathTracing(settings) {
     this.#check()
     validatePathTracing(settings)
@@ -177,11 +211,17 @@ class Renderer {
   }
   // Only one scheduled frame, requested after the previous GPU submission finishes.
   #continuePathTracing() {
-    if (this.#disposed || this.#pathError || this.#renderMode !== 'path-tracing' || this.#pathFrame)
+    if (
+      this.#disposed ||
+      this.#pathError ||
+      (this.#renderMode !== 'path-tracing' && !this.#animationPlaying()) ||
+      this.#pathFrame
+    )
       return
-    this.#pathFrame = requestAnimationFrame(() => {
+    this.#pathFrame = requestAnimationFrame((timestamp) => {
       this.#pathFrame = 0
-      if (this.#disposed || this.#renderMode !== 'path-tracing') return
+      if (this.#disposed || (this.#renderMode !== 'path-tracing' && !this.#animationPlaying()))
+        return
       const rect = this.#canvas.getBoundingClientRect()
       if (
         document.hidden ||
@@ -191,8 +231,17 @@ class Renderer {
         rect.bottom < 0 ||
         rect.top > innerHeight
       ) {
+        this.#animationLastTime = undefined
         this.#continuePathTracing()
         return
+      }
+      if (this.#animationPlaying()) {
+        const delta =
+          this.#animationLastTime === undefined
+            ? 0
+            : Math.min(0.1, (timestamp - this.#animationLastTime) / 1000)
+        this.#animationLastTime = timestamp
+        this.updateAnimation(delta)
       }
       this.drawFrame().catch((error) => {
         this.#pathError = error
@@ -245,6 +294,9 @@ class Renderer {
         getCapabilities: () => this.getCapabilities(),
         getRenderMode: () => this.getRenderMode(),
         setRenderMode: (mode) => this.setRenderMode(mode),
+        getAnimations: () => this.getAnimations(),
+        getAnimationState: () => this.getAnimationState(),
+        setAnimationState: (value) => this.setAnimationState(value),
         getPathTracing: () => this.getPathTracing(),
         setPathTracing: (settings) => this.setPathTracing(settings),
         getAccumulatedSamples: () => this.getAccumulatedSamples(),
@@ -266,6 +318,9 @@ class Renderer {
           lighting:
             !!this.#model && (this.#lighting === 'pbr' || this.#renderMode === 'path-tracing'),
           pathTracing: this.#renderMode === 'path-tracing',
+          animation: this.getAnimations()
+            .map((c) => c.name)
+            .join('|'),
         }),
         drawFrame: () => this.drawFrame(),
       },

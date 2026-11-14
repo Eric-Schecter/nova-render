@@ -1,9 +1,11 @@
 #pragma once
+#include "AnimationData.hpp"
 #include "Color.hpp"
 #include "ModelData.hpp"
 #include "ParameterPanel.hpp"
 #include "path/PathTracing.hpp"
 #include "render/Renderer.hpp"
+#include <cmath>
 #include <stdexcept>
 
 namespace render::detail
@@ -17,8 +19,25 @@ namespace render::detail
             pathAPI    = api;
             pathConfig = config;
         }
-        RendererCapabilities GetCapabilities() { return pathSession.Capabilities(pathAPI, pathConfig); }
-        void                 SetRenderMode(RenderMode value)
+        RendererCapabilities GetCapabilities()
+        {
+            if (model && model->animation)
+                return {false, false, "", "Animated models currently use raster rendering"};
+            return pathSession.Capabilities(pathAPI, pathConfig);
+        }
+        AnimationPlayer animation;
+        void            SetAnimationState(const AnimationState& state)
+        {
+            const auto clips = animation.Clips();
+            if (
+              state.clip >= clips.size() || !std::isfinite(state.time) || state.time < 0
+              || state.time > clips[state.clip].duration || !std::isfinite(state.speed) || state.speed < .1f
+              || state.speed > 4)
+                throw std::invalid_argument("Invalid animation state");
+            animation.state = state;
+            animation.Apply();
+        }
+        void SetRenderMode(RenderMode value)
         {
             if (value != RenderMode::Raster && value != RenderMode::PathTracing)
                 throw std::invalid_argument("Invalid render mode");
@@ -50,8 +69,17 @@ namespace render::detail
         virtual void        Resize(uint32_t width, uint32_t height) = 0;
         virtual FrameResult DrawFrame()                             = 0;
         virtual void        WaitIdle()                              = 0;
-        virtual void        LoadModel(std::shared_ptr<const ModelData> data) { model = std::move(data); }
-        virtual void        LoadEnvironment(std::shared_ptr<const EnvironmentData> data)
+        virtual void        LoadModel(std::shared_ptr<const ModelData> data)
+        {
+            if (data != model)
+            {
+                animation.Load(std::move(data));
+                model = animation.Model();
+            }
+            if (model && model->animation)
+                mode = RenderMode::Raster;
+        }
+        virtual void LoadEnvironment(std::shared_ptr<const EnvironmentData> data)
         {
             environment = std::move(data);
             LoadModel(model ? model : EmptyModelData());
@@ -144,6 +172,7 @@ namespace render::detail
         bool                            panelEnabled = false;
         void                            DrawParameterPanel()
         {
+            const auto previous = animation.state;
             parameterPanel->Draw(
               bool(model),
               lighting,
@@ -156,7 +185,11 @@ namespace render::detail
               mode,
               model && !model->vertices.empty() ? GetCapabilities() : RendererCapabilities{},
               pathSettings,
-              pathSession.Samples());
+              pathSession.Samples(),
+              animation.Clips(),
+              animation.state);
+            if (previous.clip != animation.state.clip || previous.time != animation.state.time)
+                animation.Apply();
         }
 #endif
         std::shared_ptr<const EnvironmentData> environment;

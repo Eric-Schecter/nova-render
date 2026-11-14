@@ -545,6 +545,16 @@ namespace render::detail
                 DrawParameterPanel();
             }
 #endif
+            if (model && model->animation)
+            {
+                void* mapped;
+                check(
+                  vkMapMemory(
+                    device, modelVertices.memory, 0, model->vertices.size() * sizeof(ModelVertex), 0, &mapped),
+                  "Map animated vertices");
+                std::memcpy(mapped, model->vertices.data(), model->vertices.size() * sizeof(ModelVertex));
+                vkUnmapMemory(device, modelVertices.memory);
+            }
             const auto* path = DrawPathFrame(extent.width, extent.height);
             if (path)
                 UploadPathImage(*path);

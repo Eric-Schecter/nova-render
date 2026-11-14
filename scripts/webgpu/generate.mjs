@@ -20,7 +20,7 @@ const sky = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), {
 await writeFile('docs/public/generated/skybox.json', JSON.stringify(sky))
 console.log('Skybox HLSL and prefiltered HDR environment generated')
 
-for (const name of ['Avocado', 'BoomBox', 'CornellBox']) {
+for (const name of ['Avocado', 'BoomBox', 'CornellBox', 'SkinningRobot']) {
   await writeFile(`docs/public/generated/${name}.glb`, await readFile(`assets/${name}/${name}.glb`))
 }
 // Standard binary MIME avoids on-demand text/Brotli compression in static preview.

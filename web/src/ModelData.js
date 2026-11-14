@@ -1,3 +1,4 @@
+import { readAnimation } from './AnimationData.js'
 import { defaultEnvironment } from './EnvironmentData.js'
 import { defaultDirectionalLight } from './Lighting.js'
 const identity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -19,7 +20,7 @@ const normalize = (a) => {
   if (!n) throw Error('Degenerate model normal')
   return a.map((x) => x / n)
 }
-function nodeMatrix(n) {
+export function nodeMatrix(n) {
   if (n.matrix) return n.matrix
   const [x, y, z, w] = n.rotation || [0, 0, 0, 1],
     s = n.scale || [1, 1, 1],
@@ -70,12 +71,11 @@ export async function loadGLB(url) {
     !bin ||
     json.extensionsRequired?.length ||
     json.extensionsUsed?.length ||
-    json.skins?.length ||
-    json.animations?.length ||
     json.buffers.length !== 1 ||
     json.buffers[0].uri
   )
-    throw Error('Only static core GLB with embedded data is supported')
+    throw Error('Only core GLB with embedded data and no extensions is supported')
+  const animation = readAnimation(json, bin)
   const raw = new DataView(bin)
   function element(index, i, type, components) {
     const a = json.accessors[index],
@@ -112,6 +112,7 @@ export async function loadGLB(url) {
   function visit(index, parent) {
     if (!json.nodes[index] || active.has(index)) throw Error('Invalid scene graph')
     active.add(index)
+    const meshNodeIndex = index
     const node = json.nodes[index],
       m = multiply(parent, nodeMatrix(node)),
       a = m.slice(0, 3),
@@ -152,6 +153,7 @@ export async function loadGLB(url) {
             max[k] = Math.max(max[k], world[k])
           }
           vertices.push(...world, 1, ...n, 0, ...uv, 0, 0)
+          animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex)
         }
       }
     for (const child of node.children || []) visit(child, m)
@@ -163,6 +165,10 @@ export async function loadGLB(url) {
   for (let i = 0; i < vertices.length; i += 12)
     for (let k = 0; k < 3; k++)
       vertices[i + k] = ((vertices[i + k] - (min[k] + max[k]) * 0.5) * 2) / size
+  if (animation) {
+    animation.center = min.map((v, k) => (v + max[k]) * 0.5)
+    animation.scale = 2 / size
+  }
   const material = json.materials[materialIndex],
     pbr = material.pbrMetallicRoughness || {}
   if ((material.alphaMode || 'OPAQUE') !== 'OPAQUE')
@@ -205,6 +211,7 @@ export async function loadGLB(url) {
       images.push({ width: bitmap.width, height: bitmap.height, bitmap })
     }
     return {
+      animation,
       vertices: new Float32Array(vertices),
       images,
       baseColor: pbr.baseColorFactor || [1, 1, 1, 1],

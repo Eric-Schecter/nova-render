@@ -19,9 +19,12 @@ namespace render::detail
         uint32_t                   width = 1, height = 1;
         std::vector<unsigned char> pixels;
     };
+    struct AnimationData;
     struct ModelData
     {
-        std::vector<ModelVertex> vertices;
+        std::shared_ptr<const AnimationData> animation;
+        uint64_t                             revision = 0;
+        std::vector<ModelVertex>             vertices;
         // Base color, normal, metallic/roughness, occlusion, emissive.
         std::array<ModelImage, 5> images;
         std::array<float, 4>      baseColor{1, 1, 1, 1};

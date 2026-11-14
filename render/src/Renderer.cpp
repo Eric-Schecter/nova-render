@@ -159,6 +159,22 @@ namespace render
         apply(assets.requestedEnvironment, [&](const auto& path) { LoadEnvironment(path); });
         return impl_->backend->DrawFrame();
     }
+    std::vector<AnimationClip> Renderer::GetAnimations() const
+    {
+        return impl_->backend->animation.Clips();
+    }
+    AnimationState Renderer::GetAnimationState() const
+    {
+        return impl_->backend->animation.state;
+    }
+    void Renderer::SetAnimationState(const AnimationState& value)
+    {
+        impl_->backend->SetAnimationState(value);
+    }
+    void Renderer::UpdateAnimation(float delta)
+    {
+        impl_->backend->animation.Update(delta);
+    }
     void Renderer::LoadModel(const std::filesystem::path& path)
     {
         auto data = detail::LoadGLB(path);

@@ -1,3 +1,4 @@
+import { createAnimationPlayer } from './AnimationData.js'
 import { createPathView } from './PathView.js'
 import { loadGLB, sceneUniforms } from './ModelData.js'
 import { fallbackEnvironment } from './EnvironmentData.js'
@@ -36,6 +37,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     skyPipeline,
     pathView
   try {
+    const animator = createAnimationPlayer(data)
     const response = await fetch(shaderURL)
     if (!response.ok) throw Error('Missing model shader package: ' + shaderURL)
     const shader = await response.json()
@@ -151,6 +153,21 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     const pipeline = await pipelineFor(shader)
     return {
       triangles: data.vertices.length / 36,
+      get skinned() {
+        return !!data.animation
+      },
+      get animations() {
+        return animator.clips
+      },
+      get animationState() {
+        return animator.state
+      },
+      setAnimationState(value) {
+        animator.set(value)
+      },
+      updateAnimation(delta) {
+        animator.update(delta)
+      },
       get accumulatedSamples() {
         return pathView?.samples || 0
       },
@@ -222,6 +239,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')
+        if (data.animation) device.queue.writeBuffer(vertices, 0, data.vertices)
         if (!depth || depth.width !== width || depth.height !== height) {
           depth?.destroy()
           depth = device.createTexture({

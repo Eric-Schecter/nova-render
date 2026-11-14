@@ -1,6 +1,6 @@
 #include "../Backend.hpp"
-#include "../path/D3D12Debug.hpp"
 #include "../ShaderData.hpp"
+#include "../path/D3D12Debug.hpp"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -199,6 +199,14 @@ namespace render::detail
                 DrawParameterPanel();
             }
 #endif
+            if (model && model->animation)
+            {
+                void*       mapped;
+                D3D12_RANGE empty{0, 0};
+                checkHR(modelVertices->Map(0, &empty, &mapped), "Map animated vertices");
+                std::memcpy(mapped, model->vertices.data(), model->vertices.size() * sizeof(ModelVertex));
+                modelVertices->Unmap(0, nullptr);
+            }
             const auto* path = DrawPathFrame(width, height);
             if (path)
                 UploadPathImage(*path);

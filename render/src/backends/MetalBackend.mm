@@ -162,6 +162,9 @@ namespace render::detail
                     DrawParameterPanel();
                 }
 #endif
+                if (model && model->animation)
+                    std::memcpy(
+                      vertices.contents, model->vertices.data(), model->vertices.size() * sizeof(ModelVertex));
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
                 const auto* path                    = DrawPathFrame(width, height);

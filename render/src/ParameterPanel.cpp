@@ -92,18 +92,20 @@ namespace render::detail
         return ImGui::GetIO().WantCaptureKeyboard;
     }
     void ParameterPanel::Draw(
-      bool                        model,
-      LightingMode                lighting,
-      OrbitCamera&                camera,
-      DirectionalLight&           light,
-      std::array<float, 4>&       clear,
-      bool                        hasEnvironment,
-      EnvironmentSettings&        environment,
-      PanelAssets&                assets,
-      RenderMode                  mode,
-      const RendererCapabilities& capabilities,
-      PathTracingSettings&        path,
-      uint32_t                    samples)
+      bool                              model,
+      LightingMode                      lighting,
+      OrbitCamera&                      camera,
+      DirectionalLight&                 light,
+      std::array<float, 4>&             clear,
+      bool                              hasEnvironment,
+      EnvironmentSettings&              environment,
+      PanelAssets&                      assets,
+      RenderMode                        mode,
+      const RendererCapabilities&       capabilities,
+      PathTracingSettings&              path,
+      uint32_t                          samples,
+      const std::vector<AnimationClip>& clips,
+      AnimationState&                   animation)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -190,6 +192,23 @@ namespace render::detail
                     if (ImGui::Button("Reset accumulation"))
                         assets.requestedReset = true;
                 }
+            }
+            if (!clips.empty() && ImGui::CollapsingHeader("Animation", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                if (ImGui::BeginCombo("Clip", clips.at(animation.clip).name.c_str()))
+                {
+                    for (size_t i = 0; i < clips.size(); ++i)
+                        if (ImGui::Selectable(clips[i].name.c_str(), animation.clip == i))
+                        {
+                            animation.clip = uint32_t(i);
+                            animation.time = 0;
+                        }
+                    ImGui::EndCombo();
+                }
+                ImGui::Checkbox("Playing", &animation.playing);
+                ImGui::Checkbox("Loop", &animation.loop);
+                ImGui::SliderFloat("Speed", &animation.speed, .1f, 4, "%.2f");
+                ImGui::SliderFloat("Time", &animation.time, 0, clips.at(animation.clip).duration, "%.2f s");
             }
             chooseAsset("Model", assets.config.models, assets.modelPath, assets.requestedModel);
             if (!assets.error.empty())

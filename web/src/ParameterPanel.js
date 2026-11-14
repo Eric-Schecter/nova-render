@@ -270,6 +270,69 @@ export function attachParameterPanel(
         reset(renderer, '重置累计', () => adapter.resetAccumulation())
       }
     }
+    const clips = adapter.getAnimations()
+    if (clips.length) {
+      const animation = group('Animation'),
+        label = document.createElement('label'),
+        select = document.createElement('select')
+      label.textContent = 'Clip'
+      select.setAttribute('aria-label', '动画片段')
+      clips.forEach((clip, i) => {
+        const option = document.createElement('option')
+        option.value = i
+        option.textContent = clip.name
+        select.append(option)
+      })
+      select.addEventListener(
+        'change',
+        () =>
+          change(() =>
+            adapter.setAnimationState({
+              ...adapter.getAnimationState(),
+              clip: Number(select.value),
+              time: 0,
+            }),
+          ),
+        { signal: fieldEvents.signal },
+      )
+      label.append(select)
+      animation.append(label)
+      fields.set('animationClip', { input: select })
+      for (const [key, text, aria] of [
+        ['playing', 'Playing', '播放动画'],
+        ['loop', 'Loop', '循环动画'],
+      ]) {
+        const row = document.createElement('label'),
+          input = document.createElement('input')
+        row.className = 'nova-panel-check'
+        input.type = 'checkbox'
+        input.setAttribute('aria-label', aria)
+        input.addEventListener(
+          'change',
+          () =>
+            change(() =>
+              adapter.setAnimationState({ ...adapter.getAnimationState(), [key]: input.checked }),
+            ),
+          { signal: fieldEvents.signal },
+        )
+        row.append(input, text)
+        animation.append(row)
+        fields.set('animation_' + key, { input })
+      }
+      slider(animation, 'animationSpeed', 'Speed', '动画速度', 0.1, 4, 0.1, (value) =>
+        adapter.setAnimationState({ ...adapter.getAnimationState(), speed: value }),
+      )
+      slider(
+        animation,
+        'animationTime',
+        'Time',
+        '动画时间',
+        0,
+        clips[adapter.getAnimationState().clip].duration,
+        0.01,
+        (value) => adapter.setAnimationState({ ...adapter.getAnimationState(), time: value }),
+      )
+    }
     if (models.length) {
       const assets = group('Model')
       assetSelect(assets, 'model', 'Model', '模型选择', models, adapter.loadModel)
@@ -407,6 +470,20 @@ export function attachParameterPanel(
     }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (key.startsWith('animation')) {
+        const state = adapter.getAnimationState()
+        if (key === 'animationClip') field.input.value = state.clip
+        else if (key === 'animation_playing' || key === 'animation_loop')
+          field.input.checked = state[key.slice(10)]
+        else {
+          const value = key === 'animationSpeed' ? state.speed : state.time
+          field.input.value = value
+          field.output.textContent = value.toFixed(2)
+          if (key === 'animationTime')
+            field.input.max = adapter.getAnimations()[state.clip].duration
+        }
+        continue
+      }
       if (key === 'denoise') {
         field.input.checked = adapter.getPathTracing().denoise
         continue

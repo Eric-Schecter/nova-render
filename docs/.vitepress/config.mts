@@ -25,6 +25,7 @@ export default defineConfig({
           { text: '02 · 模型加载', link: '/examples/damaged-helmet' },
           { text: '03 · 光照', link: '/examples/lighting' },
           { text: '04 · 天空盒与环境光', link: '/examples/environment' },
+          { text: '05 · 骨骼动画', link: '/examples/skeletal-animation' },
         ],
       },
       {

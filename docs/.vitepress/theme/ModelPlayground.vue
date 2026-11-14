@@ -2,6 +2,9 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import { showAnimation } from '../../../web/examples/animation.js'
+import animationJS from '../../../web/examples/animation.js?raw'
+import animationCPP from '../../../examples/animation/main.cpp?raw'
 import { showHelmet } from '../../../web/examples/helmet.js'
 import { showEnvironment } from '../../../web/examples/environment.js'
 import environmentJS from '../../../web/examples/environment.js?raw'
@@ -12,13 +15,31 @@ import lightingCPP from '../../../examples/lighting/main.cpp?raw'
 import helmetJS from '../../../web/examples/helmet.js?raw'
 import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
-const props = defineProps({ lighting: Boolean, environment: Boolean })
-const jsSource = props.environment ? environmentJS : props.lighting ? lightingJS : helmetJS
-const cppSource = props.environment ? environmentCPP : props.lighting ? lightingCPP : helmetCPP
-const showExample = props.environment ? showEnvironment : props.lighting ? showLighting : showHelmet
+const props = defineProps({ lighting: Boolean, environment: Boolean, animation: Boolean })
+const jsSource = props.animation
+  ? animationJS
+  : props.environment
+    ? environmentJS
+    : props.lighting
+      ? lightingJS
+      : helmetJS
+const cppSource = props.animation
+  ? animationCPP
+  : props.environment
+    ? environmentCPP
+    : props.lighting
+      ? lightingCPP
+      : helmetCPP
+const showExample = props.animation
+  ? showAnimation
+  : props.environment
+    ? showEnvironment
+    : props.lighting
+      ? showLighting
+      : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
-  message = ref('加载 Damaged Helmet…'),
+  message = ref('加载模型…'),
   ready = ref(false),
   visible = ref(true)
 let renderer,
@@ -54,9 +75,9 @@ onMounted(async () => {
   try {
     const next = await showExample(
       canvas.value,
-      withBase('/generated/DamagedHelmet.glb'),
+      withBase(props.animation ? '/generated/SkinningRobot.glb' : '/generated/DamagedHelmet.glb'),
       withBase('/generated/'),
-      { yaw: 20, pitch: 5, distance: 3.6, exposure: 1 },
+      { yaw: props.animation ? 15 : 20, pitch: 5, distance: 3.6, exposure: 1 },
       {
         environmentURL: withBase('/generated/venice_sunset.bin'),
         onError(error) {
@@ -90,7 +111,9 @@ onBeforeUnmount(() => {
 <template>
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
-      <strong>{{ environment ? '天空盒与环境光' : lighting ? 'PBR 光照' : '模型加载' }}</strong>
+      <strong>{{
+        animation ? '骨骼动画' : environment ? '天空盒与环境光' : lighting ? 'PBR 光照' : '模型加载'
+      }}</strong>
       <div>
         <button
           :disabled="!ready"
@@ -130,7 +153,12 @@ onBeforeUnmount(() => {
       :inert="!visible"
     >
       <span class="hint">拖动旋转 · 滚轮缩放</span
-      ><canvas ref="canvas" width="800" height="650" aria-label="Damaged Helmet 模型预览" />
+      ><canvas
+        ref="canvas"
+        width="800"
+        height="650"
+        :aria-label="animation ? '骨骼动画预览' : 'Damaged Helmet 模型预览'"
+      />
     </div>
   </div>
 </template>

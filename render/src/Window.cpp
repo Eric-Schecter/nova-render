@@ -132,6 +132,22 @@ namespace render
             glfwWaitEventsTimeout(0.01);
         return result;
     }
+    std::vector<AnimationClip> Window::GetAnimations() const
+    {
+        return impl_->renderer->GetAnimations();
+    }
+    AnimationState Window::GetAnimationState() const
+    {
+        return impl_->renderer->GetAnimationState();
+    }
+    void Window::SetAnimationState(const AnimationState& value)
+    {
+        impl_->renderer->SetAnimationState(value);
+    }
+    void Window::UpdateAnimation(float delta)
+    {
+        impl_->renderer->UpdateAnimation(delta);
+    }
     void Window::LoadModel(const std::filesystem::path& path)
     {
         impl_->renderer->LoadModel(path);

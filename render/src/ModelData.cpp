@@ -1,9 +1,9 @@
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "ModelData.hpp"
+#include "AnimationData.hpp"
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <tiny_gltf.h>
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -15,12 +15,13 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <tiny_gltf.h>
 
 namespace render::detail
 {
     namespace
     {
-        // The initial loader deliberately supports static, opaque, single-material GLBs.
+        // The initial loader deliberately supports opaque, single-material GLBs.
         const unsigned char* element(
           const tinygltf::Model& model, int accessorIndex, size_t index, int type, int component)
         {
@@ -63,10 +64,9 @@ namespace render::detail
         std::string        errors, warnings;
         if (!loader.LoadBinaryFromFile(&gltf, &errors, &warnings, path.string()))
             throw std::runtime_error("Load GLB: " + path.string() + ": " + errors);
-        if (
-          !gltf.extensionsRequired.empty() || !gltf.extensionsUsed.empty() || !gltf.skins.empty()
-          || !gltf.animations.empty())
-            throw std::runtime_error("Only static core glTF GLB is supported");
+        if (!gltf.extensionsRequired.empty() || !gltf.extensionsUsed.empty())
+            throw std::runtime_error("Only core glTF GLB without extensions is supported");
+        auto              animation     = ReadAnimationData(gltf);
         auto              result        = std::make_shared<ModelData>();
         int               materialIndex = -1;
         glm::vec3         minimum(std::numeric_limits<float>::max()), maximum(-std::numeric_limits<float>::max());
@@ -135,6 +135,8 @@ namespace render::detail
                             throw std::runtime_error("Non-finite texture coordinates");
                         minimum = glm::min(minimum, pos);
                         maximum = glm::max(maximum, pos);
+                        if (animation)
+                            AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix);
                         result->vertices.push_back({{pos.x, pos.y, pos.z, 1}, {n.x, n.y, n.z, 0}, {t.x, t.y, 0, 0}});
                     }
                 }
@@ -155,6 +157,12 @@ namespace render::detail
         for (auto& v : result->vertices)
             for (int k = 0; k < 3; ++k)
                 v.position[k] = (v.position[k] - center[k]) * 2.0f / size;
+        if (animation)
+        {
+            animation->center = center;
+            animation->scale  = 2.0f / size;
+            result->animation = animation;
+        }
         const auto& mat = gltf.materials.at(materialIndex);
         const auto& pbr = mat.pbrMetallicRoughness;
         if (mat.alphaMode != "OPAQUE")
