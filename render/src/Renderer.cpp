@@ -116,7 +116,7 @@ namespace render
     {
         impl_->backend->ResetAccumulation();
     }
-    std::array<ComparisonProgress, 3> Renderer::GetComparisonProgress() const
+    std::array<ComparisonProgress, 4> Renderer::GetComparisonProgress() const
     {
         return impl_->backend->GetComparisonProgress();
     }

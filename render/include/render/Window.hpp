@@ -40,7 +40,7 @@ namespace render
         RayTracingSettings         GetRayTracing() const { return GetPathTracing(); }
         void                       ResetAccumulation();
         uint32_t                   GetAccumulatedSamples() const;
-        std::array<ComparisonProgress, 3> GetComparisonProgress() const;
+        std::array<ComparisonProgress, 4> GetComparisonProgress() const;
         void                              LoadEnvironment(const std::filesystem::path& path);
         void                              SetEnvironment(const EnvironmentSettings& settings);
         EnvironmentSettings               GetEnvironment() const;

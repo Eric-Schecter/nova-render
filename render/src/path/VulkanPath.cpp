@@ -213,6 +213,8 @@ namespace render::detail
             VkShaderModule                          shader{}, denoiseShader{};
             std::array<VkShaderModule, 2>           photonShaders{};
             std::array<VkPipeline, 2>               photonPipelines{};
+            std::array<VkShaderModule, 3>           mltShaders{};
+            std::array<VkPipeline, 3>               mltPipelines{};
             std::vector<Buffer>                     buffers;
             std::vector<VkAccelerationStructureKHR> structures;
             ~Context()
@@ -220,6 +222,12 @@ namespace render::detail
                 if (device)
                 {
                     api.vkDeviceWaitIdle(device);
+                    for (auto p : mltPipelines)
+                        if (p)
+                            api.vkDestroyPipeline(device, p, nullptr);
+                    for (auto m : mltShaders)
+                        if (m)
+                            api.vkDestroyShaderModule(device, m, nullptr);
                     for (auto p : photonPipelines)
                         if (p)
                             api.vkDestroyPipeline(device, p, nullptr);
@@ -559,6 +567,22 @@ namespace render::detail
                     Check(c.api.vkCreateComputePipelines(
                       c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.photonPipelines[i]));
                 }
+                const char* mltFiles[] = {
+                  "mlt-bootstrap.compute.spv", "mlt-reduce.compute.spv", "mlt-mutate.compute.spv"};
+                const char* mltEntries[] = {"MLTBootstrap", "MLTReduce", "MLTMutate"};
+                for (size_t i = 0; i < 3; i++)
+                {
+                    const auto            bytes = LoadShader(config.shaderDirectory, mltFiles[i]);
+                    std::vector<uint32_t> code(bytes.size() / 4);
+                    std::memcpy(code.data(), bytes.data(), bytes.size());
+                    module.codeSize = bytes.size();
+                    module.pCode    = code.data();
+                    Check(c.api.vkCreateShaderModule(c.device, &module, nullptr, &c.mltShaders[i]));
+                    pipeline.stage.module = c.mltShaders[i];
+                    pipeline.stage.pName  = mltEntries[i];
+                    Check(c.api.vkCreateComputePipelines(
+                      c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.mltPipelines[i]));
+                }
             }
             void Submit()
             {
@@ -790,6 +814,31 @@ namespace render::detail
                 c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipeline);
                 c.api.vkCmdBindDescriptorSets(
                   cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipelineLayout, 0, 1, &set, 0, nullptr);
+                if (uniforms.options[3] & 32u)
+                {
+                    uint32_t boot;
+                    std::memcpy(&boot, &uniforms.clear[3], 4);
+                    for (int stage = uniforms.frame[0] ? 2 : 0; stage < 3; stage++)
+                    {
+                        c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.mltPipelines[stage]);
+                        const uint32_t count = stage == 0   ? std::max(width * height, boot)
+                                               : stage == 1 ? 1
+                                                            : std::min(1024u, width * height);
+                        c.api.vkCmdDispatch(cmd, stage==0?std::min((count+63)/64,1024u):stage == 1 ? 1 : (count + 63) / 64, stage==0?(count+65535)/65536:1, 1);
+                        c.api.vkCmdPipelineBarrier(
+                          cmd,
+                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                          0,
+                          1,
+                          &barrier,
+                          0,
+                          nullptr,
+                          0,
+                          nullptr);
+                    }
+                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipeline);
+                }
                 if (uniforms.options[3] & 16u)
                 {
                     c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.photonPipelines[0]);

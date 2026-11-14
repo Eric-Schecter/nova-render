@@ -209,6 +209,10 @@ class Renderer {
       integrator: settings.integrator ?? 'path',
       photonsPerIteration: settings.photonsPerIteration ?? 8192,
       photonRadius: settings.photonRadius ?? 0.16,
+      mltBootstrapSamples: settings.mltBootstrapSamples ?? 262144,
+      mltLargeStepProbability: settings.mltLargeStepProbability ?? 0.3,
+      mltMutationScale: settings.mltMutationScale ?? 0.01,
+      mltSeed: settings.mltSeed ?? 1,
       comparisonSamples: settings.comparisonSamples ?? 64,
       comparisonMilliseconds: settings.comparisonMilliseconds ?? 0,
     }
@@ -236,7 +240,7 @@ class Renderer {
   #continuePathTracing() {
     if (
       this.#renderMode === 'integrator-comparison' &&
-      this.getComparisonProgress().length === 3 &&
+      this.getComparisonProgress().length === 4 &&
       this.getComparisonProgress().every((p) => p.complete)
     )
       return

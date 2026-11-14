@@ -19,7 +19,7 @@ const styles = `
 .nova-panel select{width:100%;background:#25324b;padding:4px;border:1px solid #465776;border-radius:4px}
 .nova-panel .nova-panel-check{flex-direction:row;align-items:center;gap:6px}
 .nova-panel select:disabled{opacity:.5}
-.nova-panel .nova-panel-rgb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.nova-panel .nova-panel-rgb{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
 `
 const degrees = (value) => (value * 180) / Math.PI
 const angles = (direction) => ({
@@ -77,7 +77,7 @@ export function attachParameterPanel(
   const legend = document.createElement('div')
   legend.setAttribute('aria-label', '积分器对比结果')
   legend.style.cssText =
-    'position:absolute;top:0;left:0;right:0;display:none;grid-template-columns:repeat(3,minmax(0,1fr));pointer-events:none;z-index:2;color:white;font:12px/1.5 monospace'
+    'position:absolute;top:0;left:0;right:0;display:none;grid-template-columns:repeat(4,minmax(0,1fr));pointer-events:none;z-index:2;color:white;font:12px/1.5 monospace'
   wrapper.append(legend)
   const events = new AbortController(),
     initialCamera = adapter.getCamera(),
@@ -244,7 +244,7 @@ export function attachParameterPanel(
       if (current.pathTracing) {
         if (current.comparison) {
           const note = document.createElement('div')
-          note.textContent = 'Emitter-only · no denoising · 1 camera sample / iteration'
+          note.textContent = 'Emitter-only · no denoising · 1 spp / mpp per iteration'
           renderer.append(note)
           const label = document.createElement('label'),
             budget = document.createElement('select')
@@ -309,6 +309,7 @@ export function attachParameterPanel(
           ['path', 'Path tracing'],
           ['bidirectional', 'Bidirectional'],
           ['photon-mapping', 'Photon mapping'],
+          ['mlt', 'MLT'],
         ]) {
           const option = document.createElement('option')
           option.value = value
@@ -331,6 +332,9 @@ export function attachParameterPanel(
           ['samplesPerFrame', 'Samples per frame', '每帧采样', 1, 4, 1],
           ['maxBounces', 'Max bounces', '反弹次数', 1, 8, 1],
           ['resolutionScale', 'Render scale', '渲染比例', 0.25, 1, 0.05],
+          ['mltBootstrapSamples', 'MLT bootstrap samples', 'MLT 预采样数', 256, 1048576, 256],
+          ['mltLargeStepProbability', 'MLT large-step probability', 'MLT 大步概率', 0.05, 1, 0.01],
+          ['mltMutationScale', 'MLT mutation scale', 'MLT 小步幅度', 0.0001, 0.25, 0.0001],
           ['photonsPerIteration', 'Photons per iteration', '每轮光子数', 256, 65536, 256],
           ['photonRadius', 'Initial gather radius', '光子聚集半径', 0.03, 0.5, 0.005],
         ])
@@ -585,8 +589,8 @@ export function attachParameterPanel(
     legend.style.display = comparing ? 'grid' : 'none'
     const vertical = canvas.clientHeight > canvas.clientWidth
     legend.style.height = vertical ? '100%' : 'auto'
-    legend.style.gridTemplateColumns = vertical ? '1fr' : 'repeat(3,minmax(0,1fr))'
-    legend.style.gridTemplateRows = vertical ? 'repeat(3,minmax(0,1fr))' : 'auto'
+    legend.style.gridTemplateColumns = vertical ? '1fr' : 'repeat(4,minmax(0,1fr))'
+    legend.style.gridTemplateRows = vertical ? 'repeat(4,minmax(0,1fr))' : 'auto'
     panel.style.top = comparing ? '34px' : ''
     if (comparing) {
       legend.replaceChildren(
@@ -594,10 +598,10 @@ export function attachParameterPanel(
           const cell = document.createElement('span')
           cell.style.cssText = 'padding:4px;overflow:hidden;align-self:start;background:#111c'
           cell.textContent =
-            ['PT', 'BDPT', 'Photon mapping'][i] +
+            ['PT', 'BDPT', 'Photon mapping', 'MLT'][i] +
             ' · ' +
             p.samples +
-            ' spp · ' +
+            (i === 3 ? ' mpp · ' : ' spp · ') +
             Math.round(p.milliseconds) +
             ' ms' +
             (p.complete ? ' · paused' : '')
@@ -649,7 +653,9 @@ export function attachParameterPanel(
         continue
       }
       if (key === 'samples') {
-        field.output.textContent = 'Samples: ' + adapter.getAccumulatedSamples()
+        field.output.textContent =
+          (adapter.getPathTracing().integrator === 'mlt' ? 'Mutations/pixel: ' : 'Samples: ') +
+          adapter.getAccumulatedSamples()
         continue
       }
       if (field.asset) {
@@ -675,6 +681,9 @@ export function attachParameterPanel(
         field.input.value = adapter.getClear()[0] > 0.5 ? 'light' : 'dark'
         continue
       }
+      if (key.startsWith('mlt'))
+        field.input.closest('label').style.display =
+          comparing || adapter.getPathTracing().integrator === 'mlt' ? '' : 'none'
       if (key === 'photonsPerIteration' || key === 'photonRadius')
         field.input.closest('label').style.display =
           comparing || adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
@@ -682,7 +691,12 @@ export function attachParameterPanel(
       field.output.textContent = Number(values[key]).toFixed(
         key === 'distance' || key === 'resolutionScale' || ['R', 'G', 'B'].includes(key)
           ? 2
-          : ['samplesPerFrame', 'maxBounces', 'photonsPerIteration'].includes(key)
+          : [
+                'samplesPerFrame',
+                'maxBounces',
+                'photonsPerIteration',
+                'mltBootstrapSamples',
+              ].includes(key)
             ? 0
             : 1,
       )

@@ -15,7 +15,7 @@ try {
     async (root) => {
       const Nova = await import(root + '/Nova.js'),
         canvas = document.createElement('canvas')
-      canvas.style.cssText = 'width:1380px;height:460px'
+      canvas.style.cssText = 'width:1380px;height:345px'
       document.body.replaceChildren(canvas)
       const renderer = await Nova.createRenderer({ canvas })
       window.testRenderer = renderer
@@ -37,7 +37,7 @@ try {
   )
   await page.waitForFunction(
     () =>
-      window.testRenderer.getComparisonProgress().length === 3 &&
+      window.testRenderer.getComparisonProgress().length === 4 &&
       window.testRenderer.getComparisonProgress().every((p) => p.complete),
     { timeout: 120000 },
   )
@@ -60,13 +60,13 @@ try {
     const ctx = c.getContext('2d')
     ctx.drawImage(image, 0, 0)
     const p = ctx.getImageData(0, 0, c.width, c.height).data
-    return [0, 1, 2].map((column) => {
+    return [0, 1, 2, 3].map((column) => {
       let sum = 0,
         n = 0
       for (let y = 40; y < c.height; y++)
         for (
-          let x = Math.floor((column * c.width) / 3) + 10;
-          x < ((column + 1) * c.width) / 3 - 10;
+          let x = Math.floor((column * c.width) / 4) + 10;
+          x < ((column + 1) * c.width) / 4 - 10;
           x++
         ) {
           sum +=
@@ -76,7 +76,8 @@ try {
       return sum / n
     })
   }, png.toString('base64'))
-  if (columns.some((v) => v < 5)) throw Error('Blank comparison column ' + columns)
+  if (columns.some((v) => !Number.isFinite(v) || v < 5))
+    throw Error('Blank comparison column ' + columns)
   await page.evaluate(async () => {
     const r = window.testRenderer
     r.setRayTracing({ ...r.getRayTracing(), comparisonSamples: 3, comparisonMilliseconds: 0 })

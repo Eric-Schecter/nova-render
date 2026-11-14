@@ -14,8 +14,15 @@ namespace render::detail
             throw std::invalid_argument("Comparison requires 1..65536 spp or 1..60000 ms");
         if (
           settings.integrator != PathIntegrator::PathTracing && settings.integrator != PathIntegrator::Bidirectional
-          && settings.integrator != PathIntegrator::PhotonMapping)
+          && settings.integrator != PathIntegrator::PhotonMapping && settings.integrator != PathIntegrator::Metropolis)
             throw std::invalid_argument("Unknown path integrator");
+        if (
+          settings.mltBootstrapSamples < 256 || settings.mltBootstrapSamples > 1048576
+          || !std::isfinite(settings.mltLargeStepProbability) || settings.mltLargeStepProbability < .05f
+          || settings.mltLargeStepProbability > 1 || !std::isfinite(settings.mltMutationScale)
+          || settings.mltMutationScale < .0001f || settings.mltMutationScale > .25f)
+            throw std::invalid_argument(
+              "MLT requires bootstrap 256..1048576, large-step probability .05..1 and mutation scale .0001...25");
         if (
           settings.photonsPerIteration < 256 || settings.photonsPerIteration > 65536
           || !std::isfinite(settings.photonRadius) || settings.photonRadius < .03f || settings.photonRadius > .5f)
@@ -73,8 +80,8 @@ namespace render::detail
         scene.skyParams[0] = scene.skyParams[1] = 0;
         scene.lightColorIntensity[3]            = 0;
         const bool     vertical                 = height > width;
-        const uint32_t side = std::max(1u, vertical ? std::min(width, height / 3) : std::min(width / 3, height));
-        const std::array<float, 10> key{
+        const uint32_t side = std::max(1u, vertical ? std::min(width, height / 4) : std::min(width / 4, height));
+        const std::array<float, 14> key{
           float(width),
           float(height),
           float(side),
@@ -84,7 +91,11 @@ namespace render::detail
           float(settings.photonsPerIteration),
           settings.photonRadius,
           float(settings.comparisonSamples),
-          float(settings.comparisonMilliseconds)};
+          float(settings.comparisonMilliseconds),
+          float(settings.mltBootstrapSamples),
+          settings.mltLargeStepProbability,
+          settings.mltMutationScale,
+          float(settings.mltSeed)};
         if (
           comparisonDirty || comparisonModel != model.get() || key != comparisonKey
           || std::memcmp(&scene, &comparisonScene, sizeof(scene)))
@@ -93,7 +104,7 @@ namespace render::detail
             comparisonModel = model.get();
             comparisonKey   = key;
             comparisonScene = scene;
-            for (size_t i = 0; i < 3; ++i)
+            for (size_t i = 0; i < 4; ++i)
             {
                 if (!comparisons[i])
                 {
@@ -114,13 +125,13 @@ namespace render::detail
             }
         }
         const uint32_t panel   = std::max(1u, uint32_t(side * settings.resolutionScale));
-        comparisonImage.width  = std::max(panel * (vertical ? 1 : 3), uint32_t(width * settings.resolutionScale));
-        comparisonImage.height = std::max(panel * (vertical ? 3 : 1), uint32_t(height * settings.resolutionScale));
+        comparisonImage.width  = std::max(panel * (vertical ? 1 : 4), uint32_t(width * settings.resolutionScale));
+        comparisonImage.height = std::max(panel * (vertical ? 4 : 1), uint32_t(height * settings.resolutionScale));
         comparisonImage.pixels.assign(size_t(comparisonImage.width) * comparisonImage.height * 4, 0);
         if (!linearOutput)
             for (size_t a = 3; a < comparisonImage.pixels.size(); a += 4)
                 comparisonImage.pixels[a] = 255;
-        for (size_t i = 0; i < 3; ++i)
+        for (size_t i = 0; i < 4; ++i)
         {
             auto& progress       = comparisonProgress[i];
             auto  next           = settings;
@@ -140,16 +151,19 @@ namespace render::detail
                                       : progress.samples >= settings.comparisonSamples;
             }
             const auto& frame = comparisons[i]->image;
-            const auto  top   = (comparisonImage.height - panel * (vertical ? 3 : 1)) / 2 + (vertical ? i * panel : 0);
-            const auto  left  = (comparisonImage.width - panel * (vertical ? 1 : 3)) / 2 + (vertical ? 0 : i * panel);
+            const auto  top   = (comparisonImage.height - panel * (vertical ? 4 : 1)) / 2 + (vertical ? i * panel : 0);
+            const auto  left  = (comparisonImage.width - panel * (vertical ? 1 : 4)) / 2 + (vertical ? 0 : i * panel);
             for (uint32_t y = 0; y < panel; ++y)
                 std::memcpy(
                   comparisonImage.pixels.data() + (size_t(y + top) * comparisonImage.width + left) * 4,
                   frame.pixels.data() + size_t(y) * panel * 4,
                   size_t(panel) * 4);
         }
-        samples =
-          std::min({comparisonProgress[0].samples, comparisonProgress[1].samples, comparisonProgress[2].samples});
+        samples = std::min(
+          {comparisonProgress[0].samples,
+           comparisonProgress[1].samples,
+           comparisonProgress[2].samples,
+           comparisonProgress[3].samples});
         return comparisonImage;
     }
     const ModelImage& PathSession::Render(
@@ -201,9 +215,17 @@ namespace render::detail
           (settings.denoise ? 1u : 0u)
             | ((settings.lightSampling || settings.integrator != PathIntegrator::PathTracing) ? 2u : 0u)
             | (linearOutput ? 4u : 0u) | (settings.integrator == PathIntegrator::Bidirectional ? 8u : 0u)
-            | (settings.integrator == PathIntegrator::PhotonMapping ? 16u : 0u)};
+            | (settings.integrator == PathIntegrator::PhotonMapping ? 16u : 0u)
+            | (settings.integrator == PathIntegrator::Metropolis ? 32u : 0u)};
         std::memcpy(&params.images[1][3], &settings.photonRadius, 4);
         params.images[2][3] = settings.photonsPerIteration;
+        if (settings.integrator == PathIntegrator::Metropolis)
+        {
+            std::memcpy(&params.clear[3], &settings.mltBootstrapSamples, 4);
+            std::memcpy(&params.scene.skyParams[2], &settings.mltSeed, 4);
+            std::memcpy(&params.images[3][3], &settings.mltLargeStepProbability, 4);
+            std::memcpy(&params.images[4][3], &settings.mltMutationScale, 4);
+        }
         if (std::memcmp(&params, &previous, sizeof(params)) || samples > 1000000)
         {
             samples  = 0;

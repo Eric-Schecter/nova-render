@@ -27,6 +27,7 @@ namespace render::detail
             ComPtr<ID3D12GraphicsCommandList4> commands;
             ComPtr<ID3D12Fence>                fence;
             ComPtr<ID3D12RootSignature>        root;
+            ComPtr<ID3D12PipelineState>        mltPipelines[3];
             ComPtr<ID3D12PipelineState>        pipeline, denoisePipeline, photonClearPipeline, photonPipeline;
             ComPtr<ID3D12Resource> params, vertices, texels, sky, blas, tlas, instances, scratch, accumulation, output,
               readback, guides;
@@ -174,6 +175,15 @@ namespace render::detail
                 const auto photonCode = LoadShader(config.shaderDirectory, "photon-trace.compute.dxil");
                 pso.CS                = {photonCode.data(), photonCode.size()};
                 Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&photonPipeline)));
+                const char* mltFiles[] = {
+                  "mlt-bootstrap.compute.dxil", "mlt-reduce.compute.dxil", "mlt-mutate.compute.dxil"};
+                for (int i = 0; i < 3; i++)
+                {
+                    const auto bytes = LoadShader(config.shaderDirectory, mltFiles[i]);
+                    pso.CS           = {bytes.data(), bytes.size()};
+                    Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&mltPipelines[i])));
+                }
+
                 const PathUniforms zero{};
                 params = Upload(&zero, sizeof(zero));
             }
@@ -291,6 +301,21 @@ namespace render::detail
                 commands->SetComputeRootUnorderedAccessView(5, accumulation->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(6, output->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(7, guides->GetGPUVirtualAddress());
+                if (uniforms.options[3] & 32u)
+                {
+                    uint32_t boot;
+                    std::memcpy(&boot, &uniforms.clear[3], 4);
+                    for (int stage = uniforms.frame[0] ? 2 : 0; stage < 3; stage++)
+                    {
+                        commands->SetPipelineState(mltPipelines[stage].Get());
+                        const uint32_t count = stage == 0   ? std::max(width * height, boot)
+                                               : stage == 1 ? 1
+                                                            : std::min(1024u, width * height);
+                        commands->Dispatch(stage==0?std::min((count+63)/64,1024u):stage == 1 ? 1 : (count + 63) / 64, stage==0?(count+65535)/65536:1, 1);
+                        Barrier(guides.Get());
+                    }
+                    commands->SetPipelineState(pipeline.Get());
+                }
                 if (uniforms.options[3] & 16u)
                 {
                     commands->SetPipelineState(photonClearPipeline.Get());

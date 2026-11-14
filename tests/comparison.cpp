@@ -41,7 +41,7 @@ int main(int argc, char** argv)
                 throw std::runtime_error("Sample budget did not freeze exactly");
         window.DrawFrame();
         auto frozen = window.GetComparisonProgress();
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 4; ++i)
             if (frozen[i].milliseconds != progress[i].milliseconds)
                 throw std::runtime_error("Frozen comparison still rendering");
         auto camera = window.GetCamera();
@@ -89,11 +89,11 @@ int main(int argc, char** argv)
             const auto paused = frame->pixels;
             if (capture.RenderComparison(model, uniforms, settings, 1440, 480).pixels != paused)
                 throw std::runtime_error("Frozen comparison pixels changed");
-            for (int column = 0; column < 3; ++column)
+            for (int column = 0; column < 4; ++column)
             {
                 double sum = 0;
                 for (uint32_t y = 0; y < frame->height; ++y)
-                    for (uint32_t x = column * frame->width / 3; x < (column + 1) * frame->width / 3; ++x)
+                    for (uint32_t x = column * frame->width / 4; x < (column + 1) * frame->width / 4; ++x)
                         sum += frame->pixels[(size_t(y) * frame->width + x) * 4];
                 if (sum < 100)
                     throw std::runtime_error("Empty native comparison column");
@@ -111,10 +111,10 @@ int main(int argc, char** argv)
             settings.resolutionScale        = .5f;
             settings.photonsPerIteration    = 256;
             const auto& frame               = portrait.RenderComparison(model, uniforms, settings, 96, 288);
-            for (int row = 0; row < 3; ++row)
+            for (int row = 0; row < 4; ++row)
             {
                 size_t sum = 0;
-                for (uint32_t y = row * frame.height / 3; y < (row + 1) * frame.height / 3; ++y)
+                for (uint32_t y = row * frame.height / 4; y < (row + 1) * frame.height / 4; ++y)
                     for (uint32_t x = 0; x < frame.width; ++x)
                         sum += frame.pixels[(size_t(y) * frame.width + x) * 4];
                 if (sum < 50)

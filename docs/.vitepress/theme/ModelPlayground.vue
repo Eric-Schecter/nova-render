@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
       <span class="hint">拖动旋转 · 滚轮缩放</span
       ><canvas
         :class="{ comparison: props.comparison }"
-        :style="props.comparison ? { aspectRatio: '3 / 1' } : {}"
+        :style="props.comparison ? { aspectRatio: '4 / 1' } : {}"
         ref="canvas"
         width="800"
         height="650"
@@ -278,7 +278,7 @@ p {
 }
 @media (max-width: 600px) {
   canvas.comparison {
-    aspect-ratio: 1/3 !important;
+    aspect-ratio: 1/4 !important;
   }
 }
 </style>

@@ -31,8 +31,35 @@ uint                                             randomBits(inout uint state)
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
 }
+// Eager primary sample vectors make unused dimensions and rejected proposals
+// well-defined across all path-length changes (maximum 8 bounces).
+static uint mltMode=0, mltDimension=0, mltSeed=0, mltAddress=0;
+static bool mltLarge=false;
+static const uint MLT_DIMENSIONS=160, MLT_MAX_CHAINS=1024;
+uint mltHash(uint value){value^=value>>16;value*=0x7feb352du;value^=value>>15;value*=0x846ca68bu;return value^(value>>16);}
+float mltUniform(uint seed,uint dimension){return (mltHash(seed+dimension*0x9e3779b9u)>>8)*0.000000059604644775390625;}
+uint mltPixels(){uint4 f=asuint(parameters[24]);return f.y*f.z;}
+uint mltHeader(){return mltPixels()*14;}
+uint mltBootstrapCount(){return asuint(parameters[26]).w;}
+uint mltBootstrapOffset(){return mltHeader()+16;}
+uint mltChainOffset(){return mltBootstrapOffset()+2*mltBootstrapCount();}
+uint mltChainCount(){return min(MLT_MAX_CHAINS,mltPixels());}
+float mltPrimary(uint dimension){
+    if(mltMode==1 || mltLarge)return mltUniform(mltSeed,dimension);
+    float current=asfloat(work[mltAddress+dimension]);
+    if(mltMode==3)return current;
+    uint bits=mltHash(mltSeed+dimension*0x9e3779b9u);
+    float magnitude=(float(bits>>9)+.5)*0.00000011920928955078125;
+    float delta=magnitude*asfloat(asuint(parameters[31]).w)*((bits&1u)!=0?1:-1);
+    return frac(current+delta);
+}
 float random(inout uint state)
 {
+    if(mltMode!=0){
+        uint dimension=mltDimension++;
+        if(dimension>=MLT_DIMENSIONS){uint ignored;InterlockedAdd(work[mltHeader()+3],1,ignored);return .5;}
+        return mltPrimary(dimension);
+    }
     return (randomBits(state) >> 8) * 0.000000059604644775390625;
 }
 float4 unpackColor(uint value)
@@ -545,7 +572,7 @@ float3 pathOrigin(PathVertex p, float3 direction)
 {
     return p.position + p.geometric * (dot(p.geometric, direction) < 0 ? -.0006 : .0006);
 }
-float3 path(float3 origin, float3 direction, inout uint state, uint bounces, bool emitters = true)
+float3 path(float3 origin, float3 direction, inout uint state, uint bounces, bool emitters = true, uint minScatters = 0)
 {
     float3 sum = 0, weight = 1;
     float  previousPdf = 0;
@@ -555,6 +582,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         Hit hit;
         if (!trace(origin, direction, hit))
         {
+            if(depth<minScatters)break;
             if (depth == 0 && parameters[14].y < .5)
                 sum += weight * parameters[26].rgb;
             else
@@ -565,7 +593,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         PathVertex surface = pathVertex(hit, origin, direction);
         float3     base    = surface.base;
         sum +=
-          (emitters ? 1 : 0) * weight * surface.emission
+          (emitters && depth>=minScatters ? 1 : 0) * weight * surface.emission
           * (useMIS && depth > 0 ? misWeight(previousPdf, emitterPdf(hit.primitive, origin, surface.position)) : 1);
         if (depth == bounces || (!emitters && parameters[13].z <= 0 && parameters[9].w <= 0))
             break;
@@ -573,14 +601,14 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         pathFrame(surface, v, n, geometric);
         float  metal = surface.metal, roughness = surface.roughness;
         float3 position = origin + direction * hit.distance, light = parameters[8].xyz;
-        if (parameters[9].w > 0 && dot(n, light) > 0 && dot(geometric, light) > 0)
+        if (depth+1>=minScatters && parameters[9].w > 0 && dot(n, light) > 0 && dot(geometric, light) > 0)
         {
             Hit shadow;
             if (!trace(position + geometric * .001, light, shadow))
                 sum += weight * pathF(surface,v,light) * abs(dot(surface.geometric,light)) * parameters[9].rgb
                        * parameters[9].w;
         }
-        if (useMIS)
+        if (useMIS && depth+1>=minScatters)
         {
             float3 l, radiance;
             float  pdf, maxDistance;
@@ -680,7 +708,7 @@ float connectionWeight(uint eyeCount, uint lightCount)
     }
     return exp2(chosen - maximum) / total;
 }
-float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bounces)
+float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bounces, uint minScatters = 0)
 {
     // This estimator contains finite emitters only; CSMain separately evaluates
     // environment/delta lights with the shared camera-path estimator.
@@ -751,7 +779,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     }
     for (uint e = 0; e < eyeCount; ++e)
     {
-        if (any(eyeVertices[e].emission > 0))
+        if (e>=minScatters && any(eyeVertices[e].emission > 0))
             result += eyeVertices[e].beta * eyeVertices[e].emission * connectionWeight(e + 1, 0);
         if (e >= bounces)
             continue;
@@ -760,6 +788,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             v = normalize(eyeVertices[e - 1].position - eyeVertices[e].position);
         for (uint l = 0; l < lightCount && e + l + 1 <= bounces; ++l)
         {
+            if(e+l+1<minScatters)continue;
             float3 delta     = lightVertices[l].position - eyeVertices[e].position;
             float  distance2 = dot(delta, delta);
             if (distance2 <= .000016)
@@ -965,6 +994,93 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
     return min(max(result, 0), float3(64, 64, 64));
 }
 
+// Global PSSMLT film. The indirect target is BDPT luminance; the independent
+// one-scatter estimator is added in CSMain. All work uses the existing binding.
+float3 mltEvaluate(out uint pixel){
+    mltDimension=0; uint state=0;
+    float2 uv=float2(random(state),random(state));
+    uint2 size=asuint(parameters[24]).yz;
+    uint2 location=min(uint2(uv*float2(size)),size-1);pixel=location.y*size.x+location.x;
+    float2 p=uv*2-1;
+    float3 direction=normalize(parameters[12].xyz+p.x*parameters[10].w*parameters[10].xyz-p.y*parameters[11].w*parameters[11].xyz);
+    bool connect=texels[lightHeader()]>0;
+    float3 value=path(parameters[4].xyz,direction,state,asuint(parameters[24]).w,!connect,2);
+    if(connect)value+=bidirectional(parameters[4].xyz,direction,state,asuint(parameters[24]).w,2);
+    return min(max(value,0),float3(64,64,64));
+}
+float mltIntensity(float3 value){return dot(value,float3(.2126,.7152,.0722));}
+// 64-bit fixed-point RGB splats using only core 32-bit atomics. The low
+// word has 16 fractional bits; carry is recorded separately after atomic add.
+void mltAtomicAdd(uint offset,float value){
+    uint increment=uint(max(value,0)*65536+.5),previous;
+    InterlockedAdd(work[offset],increment,previous);
+    if(previous>0xffffffffu-increment){uint ignored;InterlockedAdd(work[offset+1],1,ignored);}
+}
+float mltFilmChannel(uint offset){return (float(work[offset+1])*4294967296.0+float(work[offset]))/65536;}
+void mltSplat(uint pixel,float3 value,float intensity,float weight){
+    if(intensity<=0 || weight<=0)return;
+    float3 contribution=value*(weight/intensity);
+    uint address=mltPixels()*4+pixel*6;
+    mltAtomicAdd(address,contribution.x);mltAtomicAdd(address+2,contribution.y);mltAtomicAdd(address+4,contribution.z);
+}
+[numthreads(64,1,1)] void MLTBootstrap(uint3 id:SV_DispatchThreadID){
+    uint i=id.x+id.y*65536u;
+    if(i<mltPixels()){
+        for(uint k=0;k<6;k++)work[mltPixels()*4+i*6+k]=0;
+        for(uint k=0;k<4;k++)work[mltPixels()*10+i*4+k]=0;
+    }
+    if(i>=mltBootstrapCount())return;
+    mltMode=1;mltLarge=true;mltSeed=mltHash(i+asuint(parameters[14]).z*0x68bc21ebu+12345u);
+    uint pixel;float3 value=mltEvaluate(pixel);
+    work[mltBootstrapOffset()+i*2]=mltSeed;
+    work[mltBootstrapOffset()+i*2+1]=asuint(mltIntensity(value));
+}
+[numthreads(1,1,1)] void MLTReduce(uint3 id:SV_DispatchThreadID){
+    float sum=0,square=0,compensation=0;uint positive=0;
+    for(uint i=0;i<mltBootstrapCount();i++){
+        uint at=mltBootstrapOffset()+i*2+1;float weight=asfloat(work[at]);
+        float corrected=weight-compensation,next=sum+corrected;compensation=(next-sum)-corrected;sum=next;square+=weight*weight;positive+=weight>0?1:0;work[at]=asuint(sum);
+    }
+    float mean=sum/float(mltBootstrapCount());
+    work[mltHeader()]=asuint(mean);work[mltHeader()+1]=0;work[mltHeader()+2]=0;work[mltHeader()+3]=0;
+    work[mltHeader()+4]=asuint(sqrt(max(0,square/float(mltBootstrapCount())-mean*mean)/float(mltBootstrapCount()-1)));
+    work[mltHeader()+5]=positive;
+}
+void mltTransition(inout uint rng,inout float3 value,inout float intensity,inout uint pixel,bool deposit){
+    mltSeed=randomBits(rng);mltMode=2;
+    mltLarge=mltUniform(mltSeed,MLT_DIMENSIONS*2+1)<asfloat(asuint(parameters[30]).w);
+    uint proposedPixel;float3 proposed=mltEvaluate(proposedPixel);float candidate=mltIntensity(proposed);
+    float accept=intensity>0?min(1,candidate/intensity):1;
+    if(deposit){mltSplat(pixel,value,intensity,1-accept);mltSplat(proposedPixel,proposed,candidate,accept);}
+    bool accepted=mltUniform(mltSeed,MLT_DIMENSIONS*2+2)<accept;
+    if(accepted){
+        for(uint d=0;d<MLT_DIMENSIONS;d++)work[mltAddress+d]=asuint(mltPrimary(d));
+        value=proposed;intensity=candidate;pixel=proposedPixel;
+    }
+    if(deposit){uint ignored;InterlockedAdd(work[mltHeader()+2],1,ignored);if(accepted)InterlockedAdd(work[mltHeader()+1],1,ignored);}
+}
+[numthreads(64,1,1)] void MLTMutate(uint3 id:SV_DispatchThreadID){
+    uint chain=id.x;if(chain>=mltChainCount())return;
+    mltAddress=mltChainOffset()+chain*(MLT_DIMENSIONS+8);
+    uint record=mltAddress+MLT_DIMENSIONS,frame=asuint(parameters[24]).x;
+    uint rng;float3 value;float intensity;uint pixel;
+    if(frame==0){
+        rng=mltHash(chain+asuint(parameters[14]).z*0x1234567u+0x95a827bu);
+        float total=asfloat(work[mltHeader()])*float(mltBootstrapCount());
+        uint index=selectCDF(mltBootstrapOffset()+1,mltBootstrapCount(),2,mltUniform(rng,0)*total);
+        mltMode=1;mltLarge=true;mltSeed=work[mltBootstrapOffset()+index*2];
+        for(uint d=0;d<MLT_DIMENSIONS;d++)work[mltAddress+d]=asuint(mltUniform(mltSeed,d));
+        value=mltEvaluate(pixel);intensity=mltIntensity(value);
+        for(uint burn=0;burn<16;burn++)mltTransition(rng,value,intensity,pixel,false);
+    }else{
+        value=asfloat(uint3(work[record],work[record+1],work[record+2]));intensity=asfloat(work[record+3]);pixel=work[record+4];rng=work[record+5];
+    }
+    uint count=mltPixels()*asuint(parameters[25]).x;
+    uint iterations=count/mltChainCount()+(chain<count%mltChainCount()?1:0);
+    if(asfloat(work[mltHeader()])>0)for(uint j=0;j<iterations;j++)mltTransition(rng,value,intensity,pixel,true);
+    work[record]=asuint(value.x);work[record+1]=asuint(value.y);work[record+2]=asuint(value.z);work[record+3]=asuint(intensity);work[record+4]=pixel;work[record+5]=rng;
+}
+
 [numthreads(8, 8, 1)] void CSMain(uint3 id : SV_DispatchThreadID) {
     uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
     if (id.x >= frame.y || id.y >= frame.z)
@@ -992,7 +1108,9 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         work[index * 4 + 2] = bits.z;
         work[index * 4 + 3] = bits.w;
     }
-    float3 sum = frame.x ? accumulation[index].rgb : float3(0, 0, 0);
+    bool useMLT=(options.w&32u)!=0;
+    uint directOffset=mltPixels()*10+index*4;
+    float3 sum=frame.x ? (useMLT?asfloat(uint3(work[directOffset],work[directOffset+1],work[directOffset+2])):accumulation[index].rgb):float3(0,0,0);
     for (uint sampleIndex = 0; sampleIndex < options.x; ++sampleIndex)
     {
         uint state = index * 1973u + (frame.x + sampleIndex) * 9277u + 89173u;
@@ -1001,6 +1119,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         float3 direction = normalize(
           parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz
           - p.y * parameters[11].w * parameters[11].xyz);
+        if(useMLT){sum+=path(parameters[4].xyz,direction,state,1);continue;}
         bool   connectLightPaths = (options.w & 8u) != 0 && texels[lightHeader()] > 0;
         bool   usePhotons        = (options.w & 16u) != 0 && texels[lightHeader()] > 0;
         float3 value = path(parameters[4].xyz, direction, state, frame.w, !connectLightPaths && !usePhotons);
@@ -1009,6 +1128,11 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         if (usePhotons)
             value += photonCamera(parameters[4].xyz, direction, state, frame.w);
         sum += min(max(value, 0), float3(64, 64, 64));
+    }
+    if(useMLT){
+        work[directOffset]=asuint(sum.x);work[directOffset+1]=asuint(sum.y);work[directOffset+2]=asuint(sum.z);
+        uint at=mltPixels()*4+index*6;
+        sum+=float3(mltFilmChannel(at),mltFilmChannel(at+2),mltFilmChannel(at+4))*asfloat(work[mltHeader()]);
     }
     accumulation[index] = float4(sum, 1);
     if ((options.w & 4u) != 0)

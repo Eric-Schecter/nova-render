@@ -11,12 +11,30 @@ export const defaultPathTracing = () => ({
   integrator: 'path',
   photonsPerIteration: 8192,
   photonRadius: 0.16,
+  mltBootstrapSamples: 262144,
+  mltLargeStepProbability: 0.3,
+  mltMutationScale: 0.01,
+  mltSeed: 1,
   comparisonSamples: 64,
   comparisonMilliseconds: 0,
 })
 export function validatePathTracing(value) {
   if (
     !value ||
+    (value.mltBootstrapSamples !== undefined &&
+      (!Number.isInteger(value.mltBootstrapSamples) ||
+        value.mltBootstrapSamples < 256 ||
+        value.mltBootstrapSamples > 1048576)) ||
+    (value.mltLargeStepProbability !== undefined &&
+      (!Number.isFinite(value.mltLargeStepProbability) ||
+        value.mltLargeStepProbability < 0.05 ||
+        value.mltLargeStepProbability > 1)) ||
+    (value.mltMutationScale !== undefined &&
+      (!Number.isFinite(value.mltMutationScale) ||
+        value.mltMutationScale < 0.0001 ||
+        value.mltMutationScale > 0.25)) ||
+    (value.mltSeed !== undefined &&
+      (!Number.isInteger(value.mltSeed) || value.mltSeed < 0 || value.mltSeed > 4294967295)) ||
     (value.comparisonSamples !== undefined &&
       (!Number.isInteger(value.comparisonSamples) ||
         value.comparisonSamples < 1 ||
@@ -26,7 +44,7 @@ export function validatePathTracing(value) {
         value.comparisonMilliseconds < 0 ||
         value.comparisonMilliseconds > 60000)) ||
     (value.integrator !== undefined &&
-      !['path', 'bidirectional', 'photon-mapping'].includes(value.integrator)) ||
+      !['path', 'bidirectional', 'photon-mapping', 'mlt'].includes(value.integrator)) ||
     (value.lightSampling !== undefined && typeof value.lightSampling !== 'boolean') ||
     (value.denoise !== undefined && typeof value.denoise !== 'boolean') ||
     (value.photonsPerIteration !== undefined &&
@@ -118,12 +136,24 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       if (!response.ok) throw Error('Missing path shader package: ' + name)
       return response.json()
     }
-    const [kernel, presentation, filter, clearPhotons, tracePhotons] = await Promise.all([
+    const [
+      kernel,
+      presentation,
+      filter,
+      clearPhotons,
+      tracePhotons,
+      bootstrapMLT,
+      reduceMLT,
+      mutateMLT,
+    ] = await Promise.all([
       shader('pathtrace'),
       shader('pathpresent'),
       shader('denoise'),
       shader('photon-clear'),
       shader('photon-trace'),
+      shader('mlt-bootstrap'),
+      shader('mlt-reduce'),
+      shader('mlt-mutate'),
     ])
     async function module(code) {
       const m = device.createShaderModule({ code })
@@ -153,6 +183,18 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       [tracePhotons, 'PhotonMain'],
     ])
       photonPipelines.push(
+        await device.createComputePipelineAsync({
+          layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
+          compute: { module: await module(shader.compute), entryPoint },
+        }),
+      )
+    const mltPipelines = []
+    for (const [shader, entryPoint] of [
+      [bootstrapMLT, 'MLTBootstrap'],
+      [reduceMLT, 'MLTReduce'],
+      [mutateMLT, 'MLTMutate'],
+    ])
+      mltPipelines.push(
         await device.createComputePipelineAsync({
           layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
           compute: { module: await module(shader.compute), entryPoint },
@@ -222,10 +264,16 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           throw Error('Path resolution exceeds WebGPU buffer limit')
         const photonCount = path.photonsPerIteration ?? 8192
         const requiredScratch =
-          w * h * 16 +
-          (path.integrator === 'photon-mapping'
-            ? (32768 + photonCount * path.maxBounces * 16) * 4
-            : 0)
+          path.integrator === 'mlt'
+            ? (14 * w * h +
+                16 +
+                (path.mltBootstrapSamples ?? 262144) * 2 +
+                Math.min(1024, w * h) * 168) *
+              4
+            : w * h * 16 +
+              (path.integrator === 'photon-mapping'
+                ? (32768 + photonCount * path.maxBounces * 16) * 4
+                : 0)
         if (requiredScratch > device.limits.maxStorageBufferBindingSize)
           throw Error(
             'Photon map exceeds storage buffer limit; reduce photon count or render scale',
@@ -237,7 +285,10 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
               new Uint8Array(w * h * 4),
               GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             )
-          const nextGuide = buffer(new Uint8Array(requiredScratch))
+          const nextGuide = buffer(
+            new Uint8Array(requiredScratch),
+            GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+          )
           release(guides)
           guides = nextGuide
           release(accumulation)
@@ -276,7 +327,8 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
                 : 0) |
               (linearOutput ? 4 : 0) |
               (path.integrator === 'bidirectional' ? 8 : 0) |
-              (path.integrator === 'photon-mapping' ? 16 : 0),
+              (path.integrator === 'photon-mapping' ? 16 : 0) |
+              (path.integrator === 'mlt' ? 32 : 0),
           ],
           100,
         )
@@ -284,6 +336,12 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
         words.set(metadata, 108)
         values[115] = path.photonRadius ?? 0.16
         words[119] = photonCount
+        if (path.integrator === 'mlt') {
+          words[107] = path.mltBootstrapSamples ?? 262144
+          words[58] = path.mltSeed ?? 1
+          values[123] = path.mltLargeStepProbability ?? 0.3
+          values[127] = path.mltMutationScale ?? 0.01
+        }
         const signature = Array.from(words).join(',')
         if (signature !== previous || samples > 1000000) {
           samples = 0
@@ -305,6 +363,28 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           presentGroup = group(presentLayout, [output, params])
         }
         const encoder = device.createCommandEncoder()
+        if (path.integrator === 'mlt') {
+          for (let stage = samples ? 2 : 0; stage < 3; stage++) {
+            const mltPass = encoder.beginComputePass()
+            mltPass.setPipeline(mltPipelines[stage])
+            mltPass.setBindGroup(0, computeGroup)
+            const count =
+              stage === 0
+                ? Math.max(w * h, path.mltBootstrapSamples ?? 262144)
+                : stage === 1
+                  ? 1
+                  : Math.min(1024, w * h)
+            mltPass.dispatchWorkgroups(
+              stage === 0
+                ? Math.min(Math.ceil(count / 64), 1024)
+                : stage === 1
+                  ? 1
+                  : Math.ceil(count / 64),
+              stage === 0 ? Math.ceil(count / 65536) : 1,
+            )
+            mltPass.end()
+          }
+        }
         if (path.integrator === 'photon-mapping') {
           for (let i = 0; i < 2; i++) {
             const photonPass = encoder.beginComputePass()
@@ -364,6 +444,31 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
         pass.draw(3)
         pass.end()
         device.queue.submit([encoder.finish()])
+      },
+      async readMLTStatistics() {
+        const read = device.createBuffer({
+          size: 32,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        })
+        try {
+          const encoder = device.createCommandEncoder()
+          encoder.copyBufferToBuffer(guides, width * height * 14 * 4, read, 0, 32)
+          device.queue.submit([encoder.finish()])
+          await read.mapAsync(GPUMapMode.READ)
+          const mapped = read.getMappedRange(),
+            u = new Uint32Array(mapped),
+            f = new Float32Array(mapped)
+          return {
+            normalization: f[0],
+            accepted: u[1],
+            proposals: u[2],
+            dimensionOverflow: u[3],
+            normalizationSE: f[4],
+            positiveBootstrap: u[5],
+          }
+        } finally {
+          read.destroy()
+        }
       },
       async readPixels() {
         const read = device.createBuffer({

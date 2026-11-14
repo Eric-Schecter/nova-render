@@ -67,7 +67,7 @@ namespace render::detail
         PathTracingSettings               GetPathTracing() const { return pathSettings; }
         void                              ResetAccumulation() { pathSession.Reset(); }
         uint32_t                          GetAccumulatedSamples() const { return pathSession.Samples(); }
-        std::array<ComparisonProgress, 3> GetComparisonProgress() const { return pathSession.Comparison(); }
+        std::array<ComparisonProgress, 4> GetComparisonProgress() const { return pathSession.Comparison(); }
         virtual ~Backend()                                          = default;
         virtual void        Resize(uint32_t width, uint32_t height) = 0;
         virtual FrameResult DrawFrame()                             = 0;

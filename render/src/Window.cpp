@@ -209,7 +209,7 @@ namespace render
     {
         impl_->renderer->ResetAccumulation();
     }
-    std::array<ComparisonProgress, 3> Window::GetComparisonProgress() const
+    std::array<ComparisonProgress, 4> Window::GetComparisonProgress() const
     {
         return impl_->renderer->GetComparisonProgress();
     }

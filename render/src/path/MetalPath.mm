@@ -21,6 +21,7 @@ namespace render::detail
             id<MTLDevice>                device;
             id<MTLCommandQueue>          queue;
             id<MTLComputePipelineState>  pipeline, denoisePipeline, photonClearPipeline, photonPipeline;
+            id<MTLComputePipelineState>  mltPipelines[3];
             id<MTLAccelerationStructure> blas, tlas;
             id<MTLBuffer>                vertices, texels, sky, params, accumulation, output, guides;
             uint32_t                     width = 0, height = 0;
@@ -89,6 +90,9 @@ namespace render::detail
                 denoisePipeline     = Pipeline(config, "denoise.metallib", @"DenoiseMain");
                 photonClearPipeline = Pipeline(config, "photon-clear.metallib", @"PhotonClear");
                 photonPipeline      = Pipeline(config, "photon-trace.metallib", @"PhotonMain");
+                mltPipelines[0]     = Pipeline(config, "mlt-bootstrap.metallib", @"MLTBootstrap");
+                mltPipelines[1]     = Pipeline(config, "mlt-reduce.metallib", @"MLTReduce");
+                mltPipelines[2]     = Pipeline(config, "mlt-mutate.metallib", @"MLTMutate");
             }
             void SetScene(const PathScene& scene) override
             {
@@ -147,6 +151,22 @@ namespace render::detail
                 [encoder setBuffer:accumulation offset:0 atIndex:5];
                 [encoder setBuffer:output offset:0 atIndex:6];
                 [encoder setBuffer:guides offset:0 atIndex:7];
+                if (uniforms.options[3] & 32u)
+                {
+                    uint32_t boot;
+                    std::memcpy(&boot, &uniforms.clear[3], 4);
+                    for (int stage = uniforms.frame[0] ? 2 : 0; stage < 3; stage++)
+                    {
+                        [encoder setComputePipelineState:mltPipelines[stage]];
+                        const uint32_t count = stage == 0   ? std::max(width * height, boot)
+                                               : stage == 1 ? 1
+                                                            : std::min(1024u, width * height);
+                        [encoder dispatchThreads:MTLSizeMake(stage==0?std::min(count,65536u):count,stage==0?(count+65535)/65536:1,1)
+                           threadsPerThreadgroup:MTLSizeMake(stage == 1 ? 1 : 64, 1, 1)];
+                        [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+                    }
+                    [encoder setComputePipelineState:pipeline];
+                }
                 if (uniforms.options[3] & 16u)
                 {
                     [encoder setComputePipelineState:photonClearPipeline];

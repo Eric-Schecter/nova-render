@@ -45,7 +45,7 @@ namespace render::detail
           const RendererCapabilities&              capabilities,
           PathTracingSettings&                     path,
           uint32_t                                 samples,
-          const std::array<ComparisonProgress, 3>& comparison,
+          const std::array<ComparisonProgress, 4>& comparison,
           const std::vector<AnimationClip>&        clips,
           AnimationState&                          animation);
         bool WantsMouse() const;

@@ -1,6 +1,8 @@
 #pragma once
 #include "ModelData.hpp"
 #include "render/Renderer.hpp"
+#include <algorithm>
+#include <cstring>
 namespace render::detail
 {
     struct PathUniforms
@@ -14,6 +16,13 @@ namespace render::detail
     static_assert(sizeof(PathUniforms) == 512, "HLSL path parameter layout");
     inline size_t PathScratchBytes(const PathUniforms& p)
     {
+        if (p.options[3] & 32u)
+        {
+            uint32_t bootstrap;
+            std::memcpy(&bootstrap, &p.clear[3], 4);
+            const size_t pixels = size_t(p.frame[1]) * p.frame[2];
+            return (14 * pixels + 16 + size_t(bootstrap) * 2 + std::min(size_t(1024), pixels) * 168) * 4;
+        }
         return size_t(p.frame[1]) * p.frame[2] * 16
                + ((p.options[3] & 16u) ? (size_t(32768) + size_t(p.images[2][3]) * p.frame[3] * 16) * 4 : 0);
     }
@@ -62,7 +71,7 @@ namespace render::detail
           const PathTracingSettings&,
           uint32_t width,
           uint32_t height);
-        std::array<ComparisonProgress, 3> Comparison() const { return comparisonProgress; }
+        std::array<ComparisonProgress, 4> Comparison() const { return comparisonProgress; }
         void                              Reset()
         {
             samples         = 0;
@@ -71,10 +80,10 @@ namespace render::detail
         uint32_t Samples() const { return samples; }
 
       private:
-        std::array<std::unique_ptr<PathSession>, 3> comparisons;
-        std::array<ComparisonProgress, 3>           comparisonProgress{};
+        std::array<std::unique_ptr<PathSession>, 4> comparisons;
+        std::array<ComparisonProgress, 4>           comparisonProgress{};
         SceneUniforms                               comparisonScene{};
-        std::array<float, 10>                       comparisonKey{};
+        std::array<float, 14>                       comparisonKey{};
         const ModelData*                            comparisonModel = nullptr;
         bool                                        comparisonDirty = true;
         ModelImage                                  comparisonImage;

@@ -6,7 +6,7 @@ int main(int argc, char** argv)
     try
     {
         auto options          = example::ParseModelOptions(argc, argv, "Nova | Integrator comparison");
-        options.window.width  = 1440;
+        options.window.width  = 1600;
         options.window.height = 600;
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
@@ -30,8 +30,9 @@ int main(int argc, char** argv)
         }
         window.WaitIdle();
         for (const auto& progress : window.GetComparisonProgress())
-            std::cout << int(progress.integrator) << ": " << progress.samples << " spp, " << progress.milliseconds
-                      << " ms, paused=" << progress.complete << '\n';
+            std::cout << int(progress.integrator) << ": " << progress.samples
+                      << (progress.integrator == render::RayIntegrator::Metropolis ? " mpp, " : " spp, ")
+                      << progress.milliseconds << " ms, paused=" << progress.complete << '\n';
         return window.ValidationErrorCount() ? 1 : 0;
     }
     catch (const std::exception& e)

@@ -32,7 +32,7 @@ namespace example
               "[--frames N] [--spin] [--environment path.nenv] "
               "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray|compare] "
               "[--spp N] "
-              "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping] [--compare-samples N | "
+              "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping|mlt] [--compare-samples N | "
               "--compare-ms N]");
         ModelOptions options;
         options.modelPath = argv[1];
@@ -107,6 +107,8 @@ namespace example
                     options.path.integrator = render::PathIntegrator::PathTracing;
                 else if (integrator == "bidirectional")
                     options.path.integrator = render::PathIntegrator::Bidirectional;
+                else if (integrator == "mlt")
+                    options.path.integrator = render::PathIntegrator::Metropolis;
                 else if (integrator == "photon-mapping")
                     options.path.integrator = render::PathIntegrator::PhotonMapping;
                 else

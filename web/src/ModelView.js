@@ -204,14 +204,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         const vertical = height > width,
           size = Math.max(
             1,
-            Math.floor(vertical ? Math.min(width, height / 3) : Math.min(width / 3, height)),
+            Math.floor(vertical ? Math.min(width, height / 4) : Math.min(width / 4, height)),
           ),
           light = { direction: [0, 1, 0], color: [1, 1, 1], intensity: 0 },
           env = { rotation: 0, intensity: 0, backgroundIntensity: 0, showBackground: false },
           key = JSON.stringify([camera, width, height, path])
         if (comparisonViews.length === 0) {
           try {
-            for (let i = 0; i < 3; i++)
+            for (let i = 0; i < 4; i++)
               comparisonViews.push(
                 await createPathView(
                   device,
@@ -228,15 +228,17 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (key !== comparisonKey) {
           comparisonKey = key
           comparisonViews.forEach((v) => v.reset())
-          comparisonProgress = ['path', 'bidirectional', 'photon-mapping'].map((integrator) => ({
-            integrator,
-            samples: 0,
-            milliseconds: 0,
-            complete: false,
-          }))
+          comparisonProgress = ['path', 'bidirectional', 'photon-mapping', 'mlt'].map(
+            (integrator) => ({
+              integrator,
+              samples: 0,
+              milliseconds: 0,
+              complete: false,
+            }),
+          )
         }
         if (comparisonProgress.every((p) => p.samples === 0)) {
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 4; i++) {
             comparisonViews[i].draw(
               null,
               camera,
@@ -259,7 +261,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             comparisonViews[i].reset()
           }
         }
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
           const progress = comparisonProgress[i],
             view = comparisonViews[i]
           if (!progress.complete) {
@@ -282,12 +284,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         }
         // Present all columns in one uninterrupted turn: awaiting GPU completion
         // between columns would let the browser swap the canvas texture.
-        for (let i = 0; i < 3; i++)
+        for (let i = 0; i < 4; i++)
           comparisonViews[i].present(
             context,
             {
-              x: Math.floor((width - size * (vertical ? 1 : 3)) / 2) + (vertical ? 0 : i * size),
-              y: Math.floor((height - size * (vertical ? 3 : 1)) / 2) + (vertical ? i * size : 0),
+              x: Math.floor((width - size * (vertical ? 1 : 4)) / 2) + (vertical ? 0 : i * size),
+              y: Math.floor((height - size * (vertical ? 4 : 1)) / 2) + (vertical ? i * size : 0),
               width: size,
               height: size,
             },

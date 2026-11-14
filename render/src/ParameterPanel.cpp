@@ -104,7 +104,7 @@ namespace render::detail
       const RendererCapabilities&              capabilities,
       PathTracingSettings&                     path,
       uint32_t                                 samples,
-      const std::array<ComparisonProgress, 3>& comparison,
+      const std::array<ComparisonProgress, 4>& comparison,
       const std::vector<AnimationClip>&        clips,
       AnimationState&                          animation)
     {
@@ -115,19 +115,20 @@ namespace render::detail
         if (mode == RenderMode::IntegratorComparison)
         {
             const bool  vertical = display.y > display.x;
-            const float side     = vertical ? std::min(display.x, display.y / 3) : std::min(display.x / 3, display.y),
-                        top      = (display.y - side * (vertical ? 3 : 1)) / 2,
-                        left     = (display.x - side * (vertical ? 1 : 3)) / 2;
-            const char* names[]  = {"PT", "BDPT", "Photon mapping"};
-            for (size_t i = 0; i < 3; ++i)
+            const float side     = vertical ? std::min(display.x, display.y / 4) : std::min(display.x / 4, display.y),
+                        top      = (display.y - side * (vertical ? 4 : 1)) / 2,
+                        left     = (display.x - side * (vertical ? 1 : 4)) / 2;
+            const char* names[]  = {"PT", "BDPT", "Photon mapping", "MLT"};
+            for (size_t i = 0; i < 4; ++i)
             {
                 char label[128];
                 std::snprintf(
                   label,
                   sizeof(label),
-                  "%s | %u spp | %.0f ms%s",
+                  "%s | %u %s | %.0f ms%s",
                   names[i],
                   comparison[i].samples,
+                  i == 3 ? "mpp" : "spp",
                   comparison[i].milliseconds,
                   comparison[i].complete ? " | paused" : "");
                 auto*        draw = ImGui::GetBackgroundDrawList();
@@ -208,7 +209,8 @@ namespace render::detail
                     if (comparing)
                     {
                         ImGui::TextWrapped(
-                          "Emitter-only lighting; no denoising. PT | BDPT | Photon mapping. One camera sample per "
+                          "Emitter-only lighting; no denoising. PT | BDPT | Photon mapping | MLT. One camera sample "
+                          "per "
                           "iteration.");
                         int budget = path.comparisonMilliseconds ? 1 : 0;
                         if (ImGui::Combo("Budget", &budget, "Fixed samples\0Fixed time\0"))
@@ -230,7 +232,8 @@ namespace render::detail
                     ImGui::TextUnformatted("Integrator");
                     ImGui::SetNextItemWidth(-1);
                     int integrator = static_cast<int>(path.integrator);
-                    if (ImGui::Combo("##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0Photon mapping\0"))
+                    if (ImGui::Combo(
+                          "##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0Photon mapping\0MLT\0"))
                         path.integrator = static_cast<PathIntegrator>(integrator);
                     ImGui::EndDisabled();
                     int spp = int(path.samplesPerFrame), bounces = int(path.maxBounces);
@@ -259,6 +262,21 @@ namespace render::detail
                         ImGui::SetNextItemWidth(-1);
                         ImGui::SliderFloat("##PhotonRadius", &path.photonRadius, .03f, .5f, "%.3f");
                     }
+                    if (comparing || path.integrator == PathIntegrator::Metropolis)
+                    {
+                        int bootstrap = int(path.mltBootstrapSamples);
+                        ImGui::TextUnformatted("MLT bootstrap samples");
+                        ImGui::SetNextItemWidth(-1);
+                        if (ImGui::SliderInt("##MLTBootstrap", &bootstrap, 256, 1048576))
+                            path.mltBootstrapSamples = uint32_t(bootstrap);
+                        ImGui::TextUnformatted("MLT large-step probability");
+                        ImGui::SetNextItemWidth(-1);
+                        ImGui::SliderFloat("##MLTLarge", &path.mltLargeStepProbability, .05f, 1, "%.2f");
+                        ImGui::TextUnformatted("MLT mutation scale");
+                        ImGui::SetNextItemWidth(-1);
+                        ImGui::SliderFloat(
+                          "##MLTScale", &path.mltMutationScale, .0001f, .25f, "%.4f", ImGuiSliderFlags_Logarithmic);
+                    }
                     ImGui::BeginDisabled(comparing);
                     ImGui::Checkbox("Denoise", &path.denoise);
                     ImGui::EndDisabled();
@@ -270,7 +288,8 @@ namespace render::detail
                                                                            : "Path-space MIS");
                     else
                         ImGui::Checkbox("Light sampling / MIS", &path.lightSampling);
-                    ImGui::Text("Samples: %u", samples);
+                    ImGui::Text(
+                      "%s: %u", path.integrator == PathIntegrator::Metropolis ? "Mutations/pixel" : "Samples", samples);
                     if (capabilities.softwareRayTracing)
                         ImGui::TextUnformatted("CPU ray tracing");
                     if (ImGui::Button("Reset accumulation"))

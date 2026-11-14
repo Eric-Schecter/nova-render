@@ -64,6 +64,9 @@ await writeFile('docs/public/generated/skinning.json', JSON.stringify(skinning))
 for (const [name, entry] of [
   ['photon-clear', 'PhotonClear'],
   ['photon-trace', 'PhotonMain'],
+  ['mlt-bootstrap', 'MLTBootstrap'],
+  ['mlt-reduce', 'MLTReduce'],
+  ['mlt-mutate', 'MLTMutate'],
 ]) {
   const shader = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
     compute: true,
