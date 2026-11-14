@@ -13,6 +13,13 @@ const analytic =
  return float3(uv.x<.25?2:.25,.25+.5*uv.y,.8);
 }\n` +
   original.slice(end)
+const cdfProbe = await compile(
+  original +
+    `
+[numthreads(1,1,1)] void MLTCDFProbe(uint3 id:SV_DispatchThreadID){outputImage[id.x]=mltSelectCDF(id.x==4?.999:float(id.x)*.25);}
+`,
+  { compute: true, computeEntry: 'MLTCDFProbe' },
+)
 const folder = 'build/validation/mlt-analytic'
 await mkdir(folder, { recursive: true })
 for (const [name, entry] of [
@@ -35,7 +42,7 @@ try {
   const page = await browser.newPage()
   await page.goto('http://127.0.0.1:5173/')
   const result = await page.evaluate(
-    async ({ root, analyticDirectory }) => {
+    async ({ root, analyticDirectory, cdfProbe }) => {
       const { createPathView, defaultPathTracing } = await import(root + '/PathView.js'),
         { emptyModelData, loadGLB } = await import(root + '/ModelData.js')
       const device = await (await navigator.gpu.requestAdapter()).requestDevice()
@@ -51,8 +58,62 @@ try {
         mltBootstrapSamples: 4096,
         integrator: 'mlt',
       }
+      const cdfParams = new Float32Array(128),
+        cdfWords = new Uint32Array(cdfParams.buffer),
+        cdfWork = new Uint32Array(600),
+        cdfFloats = new Float32Array(cdfWork.buffer)
+      cdfWords.set([0, 1, 1, 8], 96)
+      cdfWords[107] = 256
+      for (let i = 0; i < 256; i++) cdfFloats[31 + i * 2] = (i + 1) / 256
+      const cdfResources = []
+      function cdfBuffer(bytes, usage) {
+        const b = device.createBuffer({
+          size: bytes.byteLength,
+          usage: usage | GPUBufferUsage.COPY_DST,
+        })
+        device.queue.writeBuffer(b, 0, bytes)
+        cdfResources.push(b)
+        return b
+      }
+      const cdfInput = cdfBuffer(cdfParams, GPUBufferUsage.STORAGE),
+        cdfScratch = cdfBuffer(cdfWork, GPUBufferUsage.STORAGE),
+        cdfOutput = cdfBuffer(new Uint32Array(8), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
+        cdfRead = device.createBuffer({
+          size: 32,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        })
+      cdfResources.push(cdfRead)
+      const cdfPipeline = await device.createComputePipelineAsync({
+          layout: 'auto',
+          compute: {
+            module: device.createShaderModule({ code: cdfProbe.compute }),
+            entryPoint: 'MLTCDFProbe',
+          },
+        }),
+        cdfGroup = device.createBindGroup({
+          layout: cdfPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 1, resource: { buffer: cdfInput } },
+            { binding: 6, resource: { buffer: cdfOutput } },
+            { binding: 7, resource: { buffer: cdfScratch } },
+          ],
+        })
+      const cdfEncoder = device.createCommandEncoder(),
+        cdfPass = cdfEncoder.beginComputePass()
+      cdfPass.setPipeline(cdfPipeline)
+      cdfPass.setBindGroup(0, cdfGroup)
+      cdfPass.dispatchWorkgroups(5)
+      cdfPass.end()
+      cdfEncoder.copyBufferToBuffer(cdfOutput, 0, cdfRead, 0, 32)
+      device.queue.submit([cdfEncoder.finish()])
+      await cdfRead.mapAsync(GPUMapMode.READ)
+      const indices = Array.from(new Uint32Array(cdfRead.getMappedRange()).slice(0, 5))
+      cdfRead.unmap()
+      cdfResources.forEach((b) => b.destroy())
+      if (indices.some((x, i) => x !== [0, 64, 128, 192, 255][i]))
+        throw Error('Bootstrap CDF buffer/index regression ' + indices)
       let view, data, firstAnalytic
-      const records = []
+      const records = [{ case: 'bootstrap-cdf-indices', indices }]
       async function image(integrator, spp, size, extra = {}) {
         view.reset()
         Object.assign(settings, { integrator }, extra)
@@ -187,7 +248,11 @@ try {
       if (error) throw Error(error.message)
       return records
     },
-    { root: '/@fs' + resolve('web/src'), analyticDirectory: '/@fs' + resolve(folder) + '/' },
+    {
+      root: '/@fs' + resolve('web/src'),
+      analyticDirectory: '/@fs' + resolve(folder) + '/',
+      cdfProbe,
+    },
   )
   try {
     const raw = await readFile('build/validation/mlt-native.bin'),

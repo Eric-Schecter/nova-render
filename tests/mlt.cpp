@@ -37,9 +37,14 @@ int main(int argc, char** argv)
         auto run                     = [&](RayIntegrator method, uint32_t count) {
             settings.integrator = method;
             session.Reset();
+            std::cout << "Running integrator " << int(method) << ", " << count << " steps, size " << size << std::endl;
             const ModelImage* image = nullptr;
             for (uint32_t i = 0; i < count; ++i)
+            {
                 image = &session.Render(model, nullptr, scene, settings, {0, 0, 0, 1}, size, size);
+                if (i == 0)
+                    std::cout << "First step completed" << std::endl;
+            }
             std::vector<float> values(size * size);
             std::memcpy(values.data(), image->pixels.data(), image->pixels.size());
             for (float x : values)

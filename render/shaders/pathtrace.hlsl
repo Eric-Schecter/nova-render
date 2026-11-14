@@ -33,31 +33,69 @@ uint                                             randomBits(inout uint state)
 }
 // Eager primary sample vectors make unused dimensions and rejected proposals
 // well-defined across all path-length changes (maximum 8 bounces).
-static uint mltMode=0, mltDimension=0, mltSeed=0, mltAddress=0;
-static bool mltLarge=false;
-static const uint MLT_DIMENSIONS=160, MLT_MAX_CHAINS=1024;
-uint mltHash(uint value){value^=value>>16;value*=0x7feb352du;value^=value>>15;value*=0x846ca68bu;return value^(value>>16);}
-float mltUniform(uint seed,uint dimension){return (mltHash(seed+dimension*0x9e3779b9u)>>8)*0.000000059604644775390625;}
-uint mltPixels(){uint4 f=asuint(parameters[24]);return f.y*f.z;}
-uint mltHeader(){return mltPixels()*14;}
-uint mltBootstrapCount(){return asuint(parameters[26]).w;}
-uint mltBootstrapOffset(){return mltHeader()+16;}
-uint mltChainOffset(){return mltBootstrapOffset()+2*mltBootstrapCount();}
-uint mltChainCount(){return min(MLT_MAX_CHAINS,mltPixels());}
-float mltPrimary(uint dimension){
-    if(mltMode==1 || mltLarge)return mltUniform(mltSeed,dimension);
-    float current=asfloat(work[mltAddress+dimension]);
-    if(mltMode==3)return current;
-    uint bits=mltHash(mltSeed+dimension*0x9e3779b9u);
-    float magnitude=(float(bits>>9)+.5)*0.00000011920928955078125;
-    float delta=magnitude*asfloat(asuint(parameters[31]).w)*((bits&1u)!=0?1:-1);
-    return frac(current+delta);
+static uint       mltMode = 0, mltDimension = 0, mltSeed = 0, mltAddress = 0;
+static bool       mltLarge       = false;
+static const uint MLT_DIMENSIONS = 160, MLT_MAX_CHAINS = 1024;
+uint              mltHash(uint value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+float mltUniform(uint seed, uint dimension)
+{
+    return (mltHash(seed + dimension * 0x9e3779b9u) >> 8) * 0.000000059604644775390625;
+}
+uint mltPixels()
+{
+    uint4 f = asuint(parameters[24]);
+    return f.y * f.z;
+}
+uint mltHeader()
+{
+    return mltPixels() * 14;
+}
+uint mltBootstrapCount()
+{
+    return asuint(parameters[26]).w;
+}
+uint mltBootstrapOffset()
+{
+    return mltHeader() + 16;
+}
+uint mltChainOffset()
+{
+    return mltBootstrapOffset() + 2 * mltBootstrapCount();
+}
+uint mltChainCount()
+{
+    return min(MLT_MAX_CHAINS, mltPixels());
+}
+float mltPrimary(uint dimension)
+{
+    if (mltMode == 1 || mltLarge)
+        return mltUniform(mltSeed, dimension);
+    float current = asfloat(work[mltAddress + dimension]);
+    if (mltMode == 3)
+        return current;
+    uint  bits      = mltHash(mltSeed + dimension * 0x9e3779b9u);
+    float magnitude = (float(bits >> 9) + .5) * 0.00000011920928955078125;
+    float delta     = magnitude * asfloat(asuint(parameters[31]).w) * ((bits & 1u) != 0 ? 1 : -1);
+    return frac(current + delta);
 }
 float random(inout uint state)
 {
-    if(mltMode!=0){
-        uint dimension=mltDimension++;
-        if(dimension>=MLT_DIMENSIONS){uint ignored;InterlockedAdd(work[mltHeader()+3],1,ignored);return .5;}
+    if (mltMode != 0)
+    {
+        uint dimension = mltDimension++;
+        if (dimension >= MLT_DIMENSIONS)
+        {
+            uint ignored;
+            InterlockedAdd(work[mltHeader() + 3], 1, ignored);
+            return .5;
+        }
         return mltPrimary(dimension);
     }
     return (randomBits(state) >> 8) * 0.000000059604644775390625;
@@ -268,7 +306,7 @@ float areaProbability()
         return 1;
     return clamp(a / (a + e), .05, .95);
 }
-uint selectCDF(uint offset, uint count, uint stride, float u)
+uint selectLightCDF(uint offset, uint count, uint stride, float u)
 {
     uint lo = 0, hi = count;
     while (lo < hi)
@@ -373,7 +411,7 @@ bool sampleLight(
     maxDistance = 10000;
     if (random(state) < pArea)
     {
-        uint   record    = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));
+        uint   record    = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
         uint   primitive = texels[record + 2];
         Vertex a = vertices[primitive * 3], b = vertices[primitive * 3 + 1], c = vertices[primitive * 3 + 2];
         float  r = sqrt(random(state)), s = random(state);
@@ -394,7 +432,7 @@ bool sampleLight(
         uint grid = texels[h + 4];
         if (grid == 0 || parameters[13].z <= 0)
             return false;
-        uint   i    = selectCDF(texels[h + 3], 6 * grid * grid, 1, random(state));
+        uint   i    = selectLightCDF(texels[h + 3], 6 * grid * grid, 1, random(state));
         uint   face = i / (grid * grid), cell = i % (grid * grid);
         float2 uv       = (float2(cell % grid, cell / grid) + float2(random(state), random(state))) / grid * 2 - 1;
         float3 d        = cubeDirection(face, uv);
@@ -446,15 +484,15 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
         mapped.xy *= parameters[6].z;
         p.normal = normalize(t * mapped.x + bit * mapped.y + p.normal * mapped.z);
     }
-    p.base      = pow(max(textureColor(0, uv).rgb, 0), 2.2) * parameters[5].rgb;
-    p.emission  = pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb;
-    float4 mr   = textureColor(2, uv);
-    p.metal     = saturate(mr.b * parameters[6].x);
-    p.roughness = clamp(mr.g * parameters[6].y, .06, 1);
+    p.base         = pow(max(textureColor(0, uv).rgb, 0), 2.2) * parameters[5].rgb;
+    p.emission     = pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb;
+    float4 mr      = textureColor(2, uv);
+    p.metal        = saturate(mr.b * parameters[6].x);
+    p.roughness    = clamp(mr.g * parameters[6].y, .06, 1);
     p.transmission = a.normal.w;
-    p.ior = max(a.uv.w, 1.01);
-    p.beta      = 1;
-    p.primitive = hit.primitive;
+    p.ior          = max(a.uv.w, 1.01);
+    p.beta         = 1;
+    p.primitive    = hit.primitive;
     return p;
 }
 void pathFrame(PathVertex p, float3 v, out float3 n, out float3 g)
@@ -469,43 +507,53 @@ void pathFrame(PathVertex p, float3 v, out float3 n, out float3 g)
 float dielectricFresnel(float cosine, float eta)
 {
     float sin2 = max(0, 1 - cosine * cosine) / (eta * eta);
-    if (sin2 >= 1) return 1;
+    if (sin2 >= 1)
+        return 1;
     float ct = sqrt(1 - sin2);
-    float a = (cosine - eta * ct) / (cosine + eta * ct);
-    float b = (eta * cosine - ct) / (eta * cosine + ct);
-    return .5 * (a*a + b*b);
+    float a  = (cosine - eta * ct) / (cosine + eta * ct);
+    float b  = (eta * cosine - ct) / (eta * cosine + ct);
+    return .5 * (a * a + b * b);
 }
 float glassD(float nh, float roughness)
 {
-    float a2 = pow(roughness,4), q = nh*nh*(a2-1)+1;
-    return a2 / max(PI*q*q,1e-20);
+    float a2 = pow(roughness, 4), q = nh * nh * (a2 - 1) + 1;
+    return a2 / max(PI * q * q, 1e-20);
 }
 float glassG1(float cosine, float roughness)
 {
-    float c2 = cosine*cosine;
-    return 2 / (1 + sqrt(1 + pow(roughness,4)*max(0,1-c2)/max(c2,1e-20)));
+    float c2 = cosine * cosine;
+    return 2 / (1 + sqrt(1 + pow(roughness, 4) * max(0, 1 - c2) / max(c2, 1e-20)));
 }
 void glassKernel(PathVertex p, float3 v, float3 l, out float value, out float pdf)
 {
-    value=0; pdf=0;
-    float3 n = dot(p.geometric,v)>0 ? p.geometric : -p.geometric;
-    float eta = dot(p.geometric,v)>0 ? p.ior : 1/p.ior;
-    float nv=dot(n,v), nl=dot(n,l);
-    bool reflection=nl>0;
-    float3 h = v + l*(reflection ? 1 : eta);
-    if (dot(h,h)<1e-20 || abs(nl)<1e-7 || nv<1e-7) return;
-    h=normalize(h); if(dot(h,n)<0)h=-h;
-    float vh=dot(v,h), lh=dot(l,h);
-    if(vh<=0 || lh*nl<=0)return;
-    float f=dielectricFresnel(vh,eta), d=glassD(dot(n,h),p.roughness);
-    float g=glassG1(nv,p.roughness)*glassG1(abs(nl),p.roughness);
-    if(reflection) {
-        value=f*d*g/(4*nv*nl);
-        pdf=f*d*dot(n,h)/(4*abs(vh));
-    } else {
-        float denom=lh+vh/eta; denom*=denom;
-        pdf=(1-f)*d*dot(n,h)*abs(lh)/max(denom,1e-20);
-        value=(1-f)*d*g*abs(lh*vh/(nl*nv*max(denom,1e-20)))/(eta*eta);
+    value      = 0;
+    pdf        = 0;
+    float3 n   = dot(p.geometric, v) > 0 ? p.geometric : -p.geometric;
+    float  eta = dot(p.geometric, v) > 0 ? p.ior : 1 / p.ior;
+    float  nv = dot(n, v), nl = dot(n, l);
+    bool   reflection = nl > 0;
+    float3 h          = v + l * (reflection ? 1 : eta);
+    if (dot(h, h) < 1e-20 || abs(nl) < 1e-7 || nv < 1e-7)
+        return;
+    h = normalize(h);
+    if (dot(h, n) < 0)
+        h = -h;
+    float vh = dot(v, h), lh = dot(l, h);
+    if (vh <= 0 || lh * nl <= 0)
+        return;
+    float f = dielectricFresnel(vh, eta), d = glassD(dot(n, h), p.roughness);
+    float g = glassG1(nv, p.roughness) * glassG1(abs(nl), p.roughness);
+    if (reflection)
+    {
+        value = f * d * g / (4 * nv * nl);
+        pdf   = f * d * dot(n, h) / (4 * abs(vh));
+    }
+    else
+    {
+        float denom = lh + vh / eta;
+        denom *= denom;
+        pdf   = (1 - f) * d * dot(n, h) * abs(lh) / max(denom, 1e-20);
+        value = (1 - f) * d * g * abs(lh * vh / (nl * nv * max(denom, 1e-20))) / (eta * eta);
     }
 }
 // Radiance BSDF expressed against geometric projected area. Reversing v/l for
@@ -514,22 +562,26 @@ void glassKernel(PathVertex p, float3 v, float3 l, out float value, out float pd
 float3 pathF(PathVertex p, float3 v, float3 l)
 {
     float glassValue, glassPdf;
-    glassValue=0;glassPdf=0;
-    if(p.transmission>0)glassKernel(p,v,l,glassValue,glassPdf);
+    glassValue = 0;
+    glassPdf   = 0;
+    if (p.transmission > 0)
+        glassKernel(p, v, l, glassValue, glassPdf);
     float3 transmitted = p.transmission * glassValue;
     float3 n, g;
     pathFrame(p, v, n, g);
     float cosine = dot(g, l);
     if (cosine <= 1e-7 || dot(n, l) <= 0)
         return transmitted;
-    return transmitted + (1-p.transmission)*brdf(n, v, l, p.base, p.metal, p.roughness) * dot(n, l) / cosine;
+    return transmitted + (1 - p.transmission) * brdf(n, v, l, p.base, p.metal, p.roughness) * dot(n, l) / cosine;
 }
 float pathPdf(PathVertex p, float3 v, float3 l)
 {
     float3 n, g;
     pathFrame(p, v, n, g);
-    float value=0,pdf=0; if(p.transmission>0)glassKernel(p,v,l,value,pdf);
-    return p.transmission*pdf + (1-p.transmission)*(dot(g,l)>0 ? bsdfPdf(n,v,l,p.metal,p.roughness) : 0);
+    float value = 0, pdf = 0;
+    if (p.transmission > 0)
+        glassKernel(p, v, l, value, pdf);
+    return p.transmission * pdf + (1 - p.transmission) * (dot(g, l) > 0 ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0);
 }
 float3 cosineDirection(float3 n, inout uint state)
 {
@@ -539,19 +591,30 @@ float3 cosineDirection(float3 n, inout uint state)
 }
 bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out float pdf)
 {
-    if(p.transmission>0 && random(state)<p.transmission) {
-        float3 n=dot(p.geometric,v)>0?p.geometric:-p.geometric;
-        float eta=dot(p.geometric,v)>0?p.ior:1/p.ior;
-        float3 t=normalize(cross(abs(n.y)<.999?float3(0,1,0):float3(1,0,0),n)), b=cross(n,t);
-        float q=random(state), phi=2*PI*random(state), a2=pow(p.roughness,4);
-        float c=sqrt((1-q)/(1+(a2-1)*q));
-        float3 h=t*cos(phi)*sqrt(max(0,1-c*c))+b*sin(phi)*sqrt(max(0,1-c*c))+n*c;
-        float vh=dot(v,h);
-        if(vh<=0){l=0;pdf=0;return false;}
-        bool reflection=random(state)<dielectricFresnel(vh,eta);
-        l=reflection?reflect(-v,h):refract(-v,h,1/eta);
-        if(dot(l,l)<.5 || (dot(n,l)>0)!=reflection){pdf=0;return false;}
-        pdf=pathPdf(p,v,l);return pdf>0;
+    if (p.transmission > 0 && random(state) < p.transmission)
+    {
+        float3 n   = dot(p.geometric, v) > 0 ? p.geometric : -p.geometric;
+        float  eta = dot(p.geometric, v) > 0 ? p.ior : 1 / p.ior;
+        float3 t = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)), b = cross(n, t);
+        float  q = random(state), phi = 2 * PI * random(state), a2 = pow(p.roughness, 4);
+        float  c  = sqrt((1 - q) / (1 + (a2 - 1) * q));
+        float3 h  = t * cos(phi) * sqrt(max(0, 1 - c * c)) + b * sin(phi) * sqrt(max(0, 1 - c * c)) + n * c;
+        float  vh = dot(v, h);
+        if (vh <= 0)
+        {
+            l   = 0;
+            pdf = 0;
+            return false;
+        }
+        bool reflection = random(state) < dielectricFresnel(vh, eta);
+        l               = reflection ? reflect(-v, h) : refract(-v, h, 1 / eta);
+        if (dot(l, l) < .5 || (dot(n, l) > 0) != reflection)
+        {
+            pdf = 0;
+            return false;
+        }
+        pdf = pathPdf(p, v, l);
+        return pdf > 0;
     }
     float3 n, g;
     pathFrame(p, v, n, g);
@@ -582,7 +645,8 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         Hit hit;
         if (!trace(origin, direction, hit))
         {
-            if(depth<minScatters)break;
+            if (depth < minScatters)
+                break;
             if (depth == 0 && parameters[14].y < .5)
                 sum += weight * parameters[26].rgb;
             else
@@ -593,7 +657,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         PathVertex surface = pathVertex(hit, origin, direction);
         float3     base    = surface.base;
         sum +=
-          (emitters && depth>=minScatters ? 1 : 0) * weight * surface.emission
+          (emitters && depth >= minScatters ? 1 : 0) * weight * surface.emission
           * (useMIS && depth > 0 ? misWeight(previousPdf, emitterPdf(hit.primitive, origin, surface.position)) : 1);
         if (depth == bounces || (!emitters && parameters[13].z <= 0 && parameters[9].w <= 0))
             break;
@@ -601,32 +665,32 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         pathFrame(surface, v, n, geometric);
         float  metal = surface.metal, roughness = surface.roughness;
         float3 position = origin + direction * hit.distance, light = parameters[8].xyz;
-        if (depth+1>=minScatters && parameters[9].w > 0 && dot(n, light) > 0 && dot(geometric, light) > 0)
+        if (depth + 1 >= minScatters && parameters[9].w > 0 && dot(n, light) > 0 && dot(geometric, light) > 0)
         {
             Hit shadow;
             if (!trace(position + geometric * .001, light, shadow))
-                sum += weight * pathF(surface,v,light) * abs(dot(surface.geometric,light)) * parameters[9].rgb
+                sum += weight * pathF(surface, v, light) * abs(dot(surface.geometric, light)) * parameters[9].rgb
                        * parameters[9].w;
         }
-        if (useMIS && depth+1>=minScatters)
+        if (useMIS && depth + 1 >= minScatters)
         {
             float3 l, radiance;
             float  pdf, maxDistance;
             float3 nextOrigin = position + geometric * .001;
-            if (
-              sampleLight(position, state, l, radiance, pdf, maxDistance, emitters))
+            if (sampleLight(position, state, l, radiance, pdf, maxDistance, emitters))
             {
                 Hit shadow;
-                if (!traceRay(pathOrigin(surface,l), l, maxDistance, shadow))
-                    sum += weight * pathF(surface,v,l) * abs(dot(surface.geometric,l)) * radiance / pdf
-                           * misWeight(pdf, pathPdf(surface,v,l));
+                if (!traceRay(pathOrigin(surface, l), l, maxDistance, shadow))
+                    sum += weight * pathF(surface, v, l) * abs(dot(surface.geometric, l)) * radiance / pdf
+                           * misWeight(pdf, pathPdf(surface, v, l));
             }
         }
         float3 l;
-        float pdf;
-        if (!walkDirection(surface,v,state,l,pdf)) break;
-        previousPdf=pdf;
-        weight *= pathF(surface,v,l)*abs(dot(surface.geometric,l))/pdf;
+        float  pdf;
+        if (!walkDirection(surface, v, state, l, pdf))
+            break;
+        previousPdf = pdf;
+        weight *= pathF(surface, v, l) * abs(dot(surface.geometric, l)) / pdf;
         if (depth >= 2)
         {
             float survive = clamp(max(weight.x, max(weight.y, weight.z)), .1, .95);
@@ -635,7 +699,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
             weight /= survive;
         }
         direction = l;
-        origin    = pathOrigin(surface,l);
+        origin    = pathOrigin(surface, l);
     }
     return min(max(sum, 0), float3(64, 64, 64));
 }
@@ -737,7 +801,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     }
     // The source position is independent of the eye path. Its area PMF is the
     // same table as PT NEE, but is not multiplied by the environment mixture.
-    uint   record    = texels[header + 1] + 4 * selectCDF(texels[header + 1], texels[header], 4, random(state));
+    uint   record    = texels[header + 1] + 4 * selectLightCDF(texels[header + 1], texels[header], 4, random(state));
     uint   primitive = texels[record + 2];
     float  r = sqrt(random(state)), s = random(state);
     float3 bary = float3(1 - r, r * (1 - s), r * s);
@@ -779,7 +843,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     }
     for (uint e = 0; e < eyeCount; ++e)
     {
-        if (e>=minScatters && any(eyeVertices[e].emission > 0))
+        if (e >= minScatters && any(eyeVertices[e].emission > 0))
             result += eyeVertices[e].beta * eyeVertices[e].emission * connectionWeight(e + 1, 0);
         if (e >= bounces)
             continue;
@@ -788,7 +852,8 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             v = normalize(eyeVertices[e - 1].position - eyeVertices[e].position);
         for (uint l = 0; l < lightCount && e + l + 1 <= bounces; ++l)
         {
-            if(e+l+1<minScatters)continue;
+            if (e + l + 1 < minScatters)
+                continue;
             float3 delta     = lightVertices[l].position - eyeVertices[e].position;
             float  distance2 = dot(delta, delta);
             if (distance2 <= .000016)
@@ -861,7 +926,7 @@ void scratchVectorStore(uint at, float3 v)
         return;
     uint state = id.x * 1973u + asuint(parameters[24]).x * 9277u + 0x68bc21ebu;
     randomBits(state);
-    uint   record    = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));
+    uint   record    = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
     uint   primitive = texels[record + 2];
     float  r = sqrt(random(state)), s = random(state);
     float3 bary     = float3(1 - r, r * (1 - s), r * s);
@@ -955,7 +1020,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         bool   gather = p.transmission == 0 && p.metal < .5 && p.roughness > .2;
         // Pure finite-area NEE; no environment mixture, and no BSDF competitor
         // at a gather vertex because the camera walk stops there.
-        uint   h = lightHeader(), record = texels[h + 1] + 4 * selectCDF(texels[h + 1], texels[h], 4, random(state));
+        uint   h = lightHeader(), record = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
         uint   primitive = texels[record + 2];
         float  r = sqrt(random(state)), s = random(state);
         float3 bary = float3(1 - r, r * (1 - s), r * s);
@@ -996,92 +1061,188 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
 
 // Global PSSMLT film. The indirect target is BDPT luminance; the independent
 // one-scatter estimator is added in CSMain. All work uses the existing binding.
-float3 mltEvaluate(out uint pixel){
-    mltDimension=0; uint state=0;
-    float2 uv=float2(random(state),random(state));
-    uint2 size=asuint(parameters[24]).yz;
-    uint2 location=min(uint2(uv*float2(size)),size-1);pixel=location.y*size.x+location.x;
-    float2 p=uv*2-1;
-    float3 direction=normalize(parameters[12].xyz+p.x*parameters[10].w*parameters[10].xyz-p.y*parameters[11].w*parameters[11].xyz);
-    bool connect=texels[lightHeader()]>0;
-    float3 value=path(parameters[4].xyz,direction,state,asuint(parameters[24]).w,!connect,2);
-    if(connect)value+=bidirectional(parameters[4].xyz,direction,state,asuint(parameters[24]).w,2);
-    return min(max(value,0),float3(64,64,64));
+float3 mltEvaluate(out uint pixel)
+{
+    mltDimension     = 0;
+    uint   state     = 0;
+    float2 uv        = float2(random(state), random(state));
+    uint2  size      = asuint(parameters[24]).yz;
+    uint2  location  = min(uint2(uv * float2(size)), size - 1);
+    pixel            = location.y * size.x + location.x;
+    float2 p         = uv * 2 - 1;
+    float3 direction = normalize(
+      parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz - p.y * parameters[11].w * parameters[11].xyz);
+    bool   connect = texels[lightHeader()] > 0;
+    float3 value   = path(parameters[4].xyz, direction, state, asuint(parameters[24]).w, !connect, 2);
+    if (connect)
+        value += bidirectional(parameters[4].xyz, direction, state, asuint(parameters[24]).w, 2);
+    return min(max(value, 0), float3(64, 64, 64));
 }
-float mltIntensity(float3 value){return dot(value,float3(.2126,.7152,.0722));}
+float mltIntensity(float3 value)
+{
+    return dot(value, float3(.2126, .7152, .0722));
+}
 // 64-bit fixed-point RGB splats using only core 32-bit atomics. The low
 // word has 16 fractional bits; carry is recorded separately after atomic add.
-void mltAtomicAdd(uint offset,float value){
-    uint increment=uint(max(value,0)*65536+.5),previous;
-    InterlockedAdd(work[offset],increment,previous);
-    if(previous>0xffffffffu-increment){uint ignored;InterlockedAdd(work[offset+1],1,ignored);}
-}
-float mltFilmChannel(uint offset){return (float(work[offset+1])*4294967296.0+float(work[offset]))/65536;}
-void mltSplat(uint pixel,float3 value,float intensity,float weight){
-    if(intensity<=0 || weight<=0)return;
-    float3 contribution=value*(weight/intensity);
-    uint address=mltPixels()*4+pixel*6;
-    mltAtomicAdd(address,contribution.x);mltAtomicAdd(address+2,contribution.y);mltAtomicAdd(address+4,contribution.z);
-}
-[numthreads(64,1,1)] void MLTBootstrap(uint3 id:SV_DispatchThreadID){
-    uint i=id.x+id.y*65536u;
-    if(i<mltPixels()){
-        for(uint k=0;k<6;k++)work[mltPixels()*4+i*6+k]=0;
-        for(uint k=0;k<4;k++)work[mltPixels()*10+i*4+k]=0;
+void mltAtomicAdd(uint offset, float value)
+{
+    uint increment = uint(max(value, 0) * 65536 + .5), previous;
+    InterlockedAdd(work[offset], increment, previous);
+    if (previous > 0xffffffffu - increment)
+    {
+        uint ignored;
+        InterlockedAdd(work[offset + 1], 1, ignored);
     }
-    if(i>=mltBootstrapCount())return;
-    mltMode=1;mltLarge=true;mltSeed=mltHash(i+asuint(parameters[14]).z*0x68bc21ebu+12345u);
-    uint pixel;float3 value=mltEvaluate(pixel);
-    work[mltBootstrapOffset()+i*2]=mltSeed;
-    work[mltBootstrapOffset()+i*2+1]=asuint(mltIntensity(value));
 }
-[numthreads(1,1,1)] void MLTReduce(uint3 id:SV_DispatchThreadID){
-    float sum=0,square=0,compensation=0;uint positive=0;
-    for(uint i=0;i<mltBootstrapCount();i++){
-        uint at=mltBootstrapOffset()+i*2+1;float weight=asfloat(work[at]);
-        float corrected=weight-compensation,next=sum+corrected;compensation=(next-sum)-corrected;sum=next;square+=weight*weight;positive+=weight>0?1:0;work[at]=asuint(sum);
-    }
-    float mean=sum/float(mltBootstrapCount());
-    work[mltHeader()]=asuint(mean);work[mltHeader()+1]=0;work[mltHeader()+2]=0;work[mltHeader()+3]=0;
-    work[mltHeader()+4]=asuint(sqrt(max(0,square/float(mltBootstrapCount())-mean*mean)/float(mltBootstrapCount()-1)));
-    work[mltHeader()+5]=positive;
+float mltFilmChannel(uint offset)
+{
+    return (float(work[offset + 1]) * 4294967296.0 + float(work[offset])) / 65536;
 }
-void mltTransition(inout uint rng,inout float3 value,inout float intensity,inout uint pixel,bool deposit){
-    mltSeed=randomBits(rng);mltMode=2;
-    mltLarge=mltUniform(mltSeed,MLT_DIMENSIONS*2+1)<asfloat(asuint(parameters[30]).w);
-    uint proposedPixel;float3 proposed=mltEvaluate(proposedPixel);float candidate=mltIntensity(proposed);
-    float accept=intensity>0?min(1,candidate/intensity):1;
-    if(deposit){mltSplat(pixel,value,intensity,1-accept);mltSplat(proposedPixel,proposed,candidate,accept);}
-    bool accepted=mltUniform(mltSeed,MLT_DIMENSIONS*2+2)<accept;
-    if(accepted){
-        for(uint d=0;d<MLT_DIMENSIONS;d++)work[mltAddress+d]=asuint(mltPrimary(d));
-        value=proposed;intensity=candidate;pixel=proposedPixel;
-    }
-    if(deposit){uint ignored;InterlockedAdd(work[mltHeader()+2],1,ignored);if(accepted)InterlockedAdd(work[mltHeader()+1],1,ignored);}
+void mltSplat(uint pixel, float3 value, float intensity, float weight)
+{
+    if (intensity <= 0 || weight <= 0)
+        return;
+    float3 contribution = value * (weight / intensity);
+    uint   address      = mltPixels() * 4 + pixel * 6;
+    mltAtomicAdd(address, contribution.x);
+    mltAtomicAdd(address + 2, contribution.y);
+    mltAtomicAdd(address + 4, contribution.z);
 }
-[numthreads(64,1,1)] void MLTMutate(uint3 id:SV_DispatchThreadID){
-    uint chain=id.x;if(chain>=mltChainCount())return;
-    mltAddress=mltChainOffset()+chain*(MLT_DIMENSIONS+8);
-    uint record=mltAddress+MLT_DIMENSIONS,frame=asuint(parameters[24]).x;
-    uint rng;float3 value;float intensity;uint pixel;
-    if(frame==0){
-        rng=mltHash(chain+asuint(parameters[14]).z*0x1234567u+0x95a827bu);
-        float total=asfloat(work[mltHeader()])*float(mltBootstrapCount());
-        uint index=selectCDF(mltBootstrapOffset()+1,mltBootstrapCount(),2,mltUniform(rng,0)*total);
-        mltMode=1;mltLarge=true;mltSeed=work[mltBootstrapOffset()+index*2];
-        for(uint d=0;d<MLT_DIMENSIONS;d++)work[mltAddress+d]=asuint(mltUniform(mltSeed,d));
-        value=mltEvaluate(pixel);intensity=mltIntensity(value);
-        for(uint burn=0;burn<16;burn++)mltTransition(rng,value,intensity,pixel,false);
-    }else{
-        value=asfloat(uint3(work[record],work[record+1],work[record+2]));intensity=asfloat(work[record+3]);pixel=work[record+4];rng=work[record+5];
+[numthreads(64, 1, 1)] void MLTBootstrap(uint3 id : SV_DispatchThreadID) {
+    uint i = id.x + id.y * 65536u;
+    if (i < mltPixels())
+    {
+        for (uint k = 0; k < 6; k++)
+            work[mltPixels() * 4 + i * 6 + k] = 0;
+        for (uint k = 0; k < 4; k++)
+            work[mltPixels() * 10 + i * 4 + k] = 0;
     }
-    uint count=mltPixels()*asuint(parameters[25]).x;
-    uint iterations=count/mltChainCount()+(chain<count%mltChainCount()?1:0);
-    if(asfloat(work[mltHeader()])>0)for(uint j=0;j<iterations;j++)mltTransition(rng,value,intensity,pixel,true);
-    work[record]=asuint(value.x);work[record+1]=asuint(value.y);work[record+2]=asuint(value.z);work[record+3]=asuint(intensity);work[record+4]=pixel;work[record+5]=rng;
+    if (i >= mltBootstrapCount())
+        return;
+    mltMode  = 1;
+    mltLarge = true;
+    mltSeed  = mltHash(i + asuint(parameters[14]).z * 0x68bc21ebu + 12345u);
+    uint   pixel;
+    float3 value                           = mltEvaluate(pixel);
+    work[mltBootstrapOffset() + i * 2]     = mltSeed;
+    work[mltBootstrapOffset() + i * 2 + 1] = asuint(mltIntensity(value));
+}[numthreads(1, 1, 1)] void MLTReduce(uint3 id : SV_DispatchThreadID)
+{
+    precise float sum = 0, compensation = 0;
+    float         square   = 0;
+    uint          positive = 0;
+    for (uint i = 0; i < mltBootstrapCount(); i++)
+    {
+        uint          at        = mltBootstrapOffset() + i * 2 + 1;
+        float         weight    = asfloat(work[at]);
+        precise float corrected = weight - compensation, next = sum + corrected;
+        compensation = (next - sum) - corrected;
+        sum          = next;
+        square += weight * weight;
+        positive += weight > 0 ? 1 : 0;
+        work[at] = asuint(sum);
+    }
+    float mean            = sum / float(mltBootstrapCount());
+    work[mltHeader()]     = asuint(mean);
+    work[mltHeader() + 1] = 0;
+    work[mltHeader() + 2] = 0;
+    work[mltHeader() + 3] = 0;
+    work[mltHeader() + 4] =
+      asuint(sqrt(max(0, square / float(mltBootstrapCount()) - mean * mean) / float(mltBootstrapCount() - 1)));
+    work[mltHeader() + 5] = positive;
+}
+// Bootstrap records live in work, not the material/light-distribution buffer.
+uint mltSelectCDF(float u)
+{
+    uint lo = 0, hi = mltBootstrapCount();
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2;
+        if (asfloat(work[mltBootstrapOffset() + mid * 2 + 1]) <= u)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return min(lo, mltBootstrapCount() - 1);
+}
+void mltTransition(inout uint rng, inout float3 value, inout float intensity, inout uint pixel, bool deposit)
+{
+    mltSeed  = randomBits(rng);
+    mltMode  = 2;
+    mltLarge = mltUniform(mltSeed, MLT_DIMENSIONS * 2 + 1) < asfloat(asuint(parameters[30]).w);
+    uint   proposedPixel;
+    float3 proposed  = mltEvaluate(proposedPixel);
+    float  candidate = mltIntensity(proposed);
+    float  accept    = intensity > 0 ? min(1, candidate / intensity) : 1;
+    if (deposit)
+    {
+        mltSplat(pixel, value, intensity, 1 - accept);
+        mltSplat(proposedPixel, proposed, candidate, accept);
+    }
+    bool accepted = mltUniform(mltSeed, MLT_DIMENSIONS * 2 + 2) < accept;
+    if (accepted)
+    {
+        for (uint d = 0; d < MLT_DIMENSIONS; d++)
+            work[mltAddress + d] = asuint(mltPrimary(d));
+        value     = proposed;
+        intensity = candidate;
+        pixel     = proposedPixel;
+    }
+    if (deposit)
+    {
+        uint ignored;
+        InterlockedAdd(work[mltHeader() + 2], 1, ignored);
+        if (accepted)
+            InterlockedAdd(work[mltHeader() + 1], 1, ignored);
+    }
+}
+[numthreads(64, 1, 1)] void MLTMutate(uint3 id : SV_DispatchThreadID) {
+    uint chain = id.x;
+    if (chain >= mltChainCount())
+        return;
+    mltAddress    = mltChainOffset() + chain * (MLT_DIMENSIONS + 8);
+    uint   record = mltAddress + MLT_DIMENSIONS, frame = asuint(parameters[24]).x;
+    uint   rng;
+    float3 value;
+    float  intensity;
+    uint   pixel;
+    if (frame == 0)
+    {
+        rng         = mltHash(chain + asuint(parameters[14]).z * 0x1234567u + 0x95a827bu);
+        float total = asfloat(work[mltHeader()]) * float(mltBootstrapCount());
+        uint  index = mltSelectCDF(mltUniform(rng, 0) * total);
+        mltMode     = 1;
+        mltLarge    = true;
+        mltSeed     = work[mltBootstrapOffset() + index * 2];
+        for (uint d = 0; d < MLT_DIMENSIONS; d++)
+            work[mltAddress + d] = asuint(mltUniform(mltSeed, d));
+        value     = mltEvaluate(pixel);
+        intensity = mltIntensity(value);
+        for (uint burn = 0; burn < 16; burn++)
+            mltTransition(rng, value, intensity, pixel, false);
+    }
+    else
+    {
+        value     = asfloat(uint3(work[record], work[record + 1], work[record + 2]));
+        intensity = asfloat(work[record + 3]);
+        pixel     = work[record + 4];
+        rng       = work[record + 5];
+    }
+    uint count      = mltPixels() * asuint(parameters[25]).x;
+    uint iterations = count / mltChainCount() + (chain < count % mltChainCount() ? 1 : 0);
+    if (asfloat(work[mltHeader()]) > 0)
+        for (uint j = 0; j < iterations; j++)
+            mltTransition(rng, value, intensity, pixel, true);
+    work[record]     = asuint(value.x);
+    work[record + 1] = asuint(value.y);
+    work[record + 2] = asuint(value.z);
+    work[record + 3] = asuint(intensity);
+    work[record + 4] = pixel;
+    work[record + 5] = rng;
 }
 
-[numthreads(8, 8, 1)] void CSMain(uint3 id : SV_DispatchThreadID) {
+  [numthreads(8, 8, 1)] void CSMain(uint3 id : SV_DispatchThreadID)
+{
     uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
     if (id.x >= frame.y || id.y >= frame.z)
         return;
@@ -1108,9 +1269,16 @@ void mltTransition(inout uint rng,inout float3 value,inout float intensity,inout
         work[index * 4 + 2] = bits.z;
         work[index * 4 + 3] = bits.w;
     }
-    bool useMLT=(options.w&32u)!=0;
-    uint directOffset=mltPixels()*10+index*4;
-    float3 sum=frame.x ? (useMLT?asfloat(uint3(work[directOffset],work[directOffset+1],work[directOffset+2])):accumulation[index].rgb):float3(0,0,0);
+    bool   useMLT       = (options.w & 32u) != 0;
+    uint   directOffset = mltPixels() * 10 + index * 4;
+    float3 sum          = 0;
+    // These modes allocate different scratch regions. A select expression may
+    // speculatively load both operands; root UAVs have no bounds descriptor.
+    [branch] if (frame.x != 0)
+    {
+        [branch] if (useMLT) sum = asfloat(uint3(work[directOffset], work[directOffset + 1], work[directOffset + 2]));
+        else sum                 = accumulation[index].rgb;
+    }
     for (uint sampleIndex = 0; sampleIndex < options.x; ++sampleIndex)
     {
         uint state = index * 1973u + (frame.x + sampleIndex) * 9277u + 89173u;
@@ -1119,7 +1287,11 @@ void mltTransition(inout uint rng,inout float3 value,inout float intensity,inout
         float3 direction = normalize(
           parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz
           - p.y * parameters[11].w * parameters[11].xyz);
-        if(useMLT){sum+=path(parameters[4].xyz,direction,state,1);continue;}
+        if (useMLT)
+        {
+            sum += path(parameters[4].xyz, direction, state, 1);
+            continue;
+        }
         bool   connectLightPaths = (options.w & 8u) != 0 && texels[lightHeader()] > 0;
         bool   usePhotons        = (options.w & 16u) != 0 && texels[lightHeader()] > 0;
         float3 value = path(parameters[4].xyz, direction, state, frame.w, !connectLightPaths && !usePhotons);
@@ -1129,10 +1301,13 @@ void mltTransition(inout uint rng,inout float3 value,inout float intensity,inout
             value += photonCamera(parameters[4].xyz, direction, state, frame.w);
         sum += min(max(value, 0), float3(64, 64, 64));
     }
-    if(useMLT){
-        work[directOffset]=asuint(sum.x);work[directOffset+1]=asuint(sum.y);work[directOffset+2]=asuint(sum.z);
-        uint at=mltPixels()*4+index*6;
-        sum+=float3(mltFilmChannel(at),mltFilmChannel(at+2),mltFilmChannel(at+4))*asfloat(work[mltHeader()]);
+    if (useMLT)
+    {
+        work[directOffset]     = asuint(sum.x);
+        work[directOffset + 1] = asuint(sum.y);
+        work[directOffset + 2] = asuint(sum.z);
+        uint at                = mltPixels() * 4 + index * 6;
+        sum += float3(mltFilmChannel(at), mltFilmChannel(at + 2), mltFilmChannel(at + 4)) * asfloat(work[mltHeader()]);
     }
     accumulation[index] = float4(sum, 1);
     if ((options.w & 4u) != 0)
@@ -1145,10 +1320,9 @@ void mltTransition(inout uint rng,inout float3 value,inout float intensity,inout
     outputImage[index] = encoded.x | (encoded.y << 8) | (encoded.z << 16) | 0xff000000u;
 }
 
-  // Display-only joint bilateral filter. Raw progressive radiance is never modified.
-  // Geometry guides stop filtering across silhouettes, depth breaks and normal edges.
-  [numthreads(8, 8, 1)] void DenoiseMain(uint3 id : SV_DispatchThreadID)
-{
+// Display-only joint bilateral filter. Raw progressive radiance is never modified.
+// Geometry guides stop filtering across silhouettes, depth breaks and normal edges.
+[numthreads(8, 8, 1)] void DenoiseMain(uint3 id : SV_DispatchThreadID) {
     uint4 frame = asuint(parameters[24]), options = asuint(parameters[25]);
     if (id.x >= frame.y || id.y >= frame.z)
         return;

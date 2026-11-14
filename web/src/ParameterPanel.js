@@ -689,16 +689,22 @@ export function attachParameterPanel(
           comparing || adapter.getPathTracing().integrator === 'photon-mapping' ? '' : 'none'
       field.input.value = values[key]
       field.output.textContent = Number(values[key]).toFixed(
-        key === 'distance' || key === 'resolutionScale' || ['R', 'G', 'B'].includes(key)
-          ? 2
-          : [
-                'samplesPerFrame',
-                'maxBounces',
-                'photonsPerIteration',
-                'mltBootstrapSamples',
-              ].includes(key)
-            ? 0
-            : 1,
+        key === 'mltMutationScale'
+          ? 4
+          : key === 'mltLargeStepProbability'
+            ? 2
+            : key === 'photonRadius'
+              ? 3
+              : key === 'distance' || key === 'resolutionScale' || ['R', 'G', 'B'].includes(key)
+                ? 2
+                : [
+                      'samplesPerFrame',
+                      'maxBounces',
+                      'photonsPerIteration',
+                      'mltBootstrapSamples',
+                    ].includes(key)
+                  ? 0
+                  : 1,
       )
     }
   }

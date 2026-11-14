@@ -77,6 +77,7 @@ int main(int argc, char** argv)
             settings.comparisonMilliseconds = 0;
             settings.comparisonSamples      = 64;
             settings.photonsPerIteration    = 8192;
+            settings.mltBootstrapSamples    = 262144;
             settings.photonRadius           = .1f;
             settings.resolutionScale        = .5f;
             const render::detail::ModelImage* frame = nullptr;
