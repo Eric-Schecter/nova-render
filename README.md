@@ -299,7 +299,7 @@ C++ `PathTracingSettings::denoise` 与网页 `setPathTracing({ ...settings, deno
 
 ### Cornell Box 场景
 
-三个模型例子的 Model 列表新增 Cornell Box，原生和网页共用自包含的 GLB：红绿侧墙、白色房间、两个方块和顶部发光面板。支持光栅、路径追踪和降噪。切换保留当前相机与灯光，正面建议 yaw=0、pitch=0、distance=3.6。它是自行生成的示意场景，不是测量数据复刻；当前发光面靠路径反弹采样，可配合方向光或环境光观察。
+三个模型例子的 Model 列表新增 Cornell Box，原生和网页共用自包含的 GLB：红绿侧墙、白色房间、两个方块和顶部发光面板。支持光栅、路径追踪和降噪。切换保留当前相机与灯光，正面建议 yaw=0、pitch=0、distance=3.6。它是自行生成的示意场景，不是测量数据复刻；路径追踪默认使用发光面与 HDR 重要性采样、MIS；关闭方向光与环境照明也能靠顶灯观察间接光。
 
 重建资源：`node scripts/generate-cornell-box.mjs`，无新增依赖。资源说明在 `assets/CornellBox/README.md`；`node scripts/webgpu/check-cornell.mjs` 验证实际墙面颜色、32 次采样与三个例子的列表/模式/降噪切换。
 
@@ -332,3 +332,13 @@ GPU 蒙皮验证（2026-11-14）：Metal 真实 GPU 读回 20 个姿态，含双
 
 
 Fox 与环境验证（2026-11-14）：原始 GLB 校验值不变，加载器验证 24 关节、576 三角形、三片段及生成法线；网页 GPU 姿态与原生参考核对通过。Mac 37 项中 35 项通过、2 项按能力跳过；Ubuntu 六项通过；Windows WARP 18 项通过、硬件探测跳过。验证了默认/自定义原生环境入口、三套环境保留动画状态、天空盒显隐与环境光分别影响像素、静态网站/手机控件、无 UI 构建及安装包独立调用。日志与截图在 `build/validation/fox-*`，第三方署名保存在资源目录及文档页脚。
+
+### 光源重要性采样与 MIS
+
+C++ `PathTracingSettings::lightSampling` 和网页 `lightSampling` 默认开启，两个面板均提供 **Light sampling / MIS**。共享 HLSL 实现发光三角形面积/亮度采样、HDR 亮度/立体角采样、遮挡测试和 power heuristic，与 diffuse/GGX BSDF 采样合并；方向光独立处理。切换重新累计，关闭退回 BSDF 采样。无需新依赖，仍为单向路径追踪。
+
+验证使用仅顶灯照明的 Cornell Box，方向光、环境照明、降噪全部关闭，固定相机和随机序列；比较色调映射前的线性亮度，以 1024 spp MIS 为参考。64×64 Metal 与 Chrome WebGPU 的 8 spp MSE 从 `0.00138407` 降到 `0.0000639693`（约 95%），32 spp 从 `0.000338694` 降到 `0.0000141903`（约 96%）；128 spp 继续降到 `0.00000298023`。1024 spp BSDF/MIS 平均亮度差 0.46%。极亮 HDR 小光源及 90° 环境旋转的低采样误差和高采样能量对比也通过。低采样速度收益取决于场景；每次反弹可能多一条阴影射线，原有路径辐射上限 64 仍可能引入偏差。
+
+复现：`ctest --test-dir build -R light-sampling -V`，网页先 `npm run docs:dev` 再 `node scripts/webgpu/check-light-sampling.mjs`。测试同时验证统一开关和累计重置；原始图像与统计输出位于 `build/validation/cornell-*-{bsdf-8,mis-8,mis-32,reference}.png`、`build/validation/mis-web.json`。
+
+后端回归（2026-11-14）：Mac 39 项中 36 项通过、3 项因 MoltenVK 无光追而跳过；Ubuntu Vulkan Lavapipe 7 项全部通过；Windows DX12 WARP 20 项中 19 项通过、硬件光追探测跳过。软件后端的 32×32 Cornell 8 spp MSE 从约 `0.0009896` 降到 `0.00002791`，1024 spp 平均亮度差约 1.55%。Chrome 的原有求交、HDR、降噪、12 组模型/环境和隐藏恢复回归通过；构建后的静态网站、MIS/降噪开关与手机面板通过。另验证了安装包独立调用 Cornell MIS、开关重置和无 UI 构建。日志位于 `build/validation/mis-*`；Windows 真机 GPU 尚未验证。

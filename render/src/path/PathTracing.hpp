@@ -19,6 +19,8 @@ namespace render::detail
         std::vector<unsigned char>             texels;
         std::array<std::array<uint32_t, 4>, 5> images{};
     };
+    // Append to material texels: 8-word header, emitter CDF records, primitive PMFs, cubemap CDF.
+    // images[0].w points at the header; bindings and the 512-byte shader parameter layout stay fixed.
     void PrepareLightSampling(PathScene&, bool hdr);
     class PathDevice
     {
@@ -35,6 +37,7 @@ namespace render::detail
     class PathSession
     {
       public:
+        // Private validation mode writes raw linear luminance instead of tone-mapped RGBA8.
         explicit PathSession(bool linearOutput = false)
           : linearOutput(linearOutput)
         {

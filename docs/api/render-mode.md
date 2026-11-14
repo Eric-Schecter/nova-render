@@ -14,6 +14,7 @@ if (capabilities.pathTracing)
     settings.samplesPerFrame = 1;
     settings.maxBounces = 3;
     settings.resolutionScale = 0.5f;
+    settings.lightSampling = true; // 默认开启光源重要性采样与 MIS
     window.SetPathTracing(settings);
     window.SetRenderMode(render::RenderMode::PathTracing);
 }
@@ -49,7 +50,7 @@ window.WaitIdle();
 
 DX12 使用 DXR 1.1 inline ray query；Vulkan 使用 acceleration structure 与 ray query 扩展；Metal 使用原生加速结构与 ray query。内核只维护 HLSL，由 DXC 生成 DXIL / SPIR-V，再由 SPIRV-Cross 生成 Metal shader。没有新增第三方依赖。
 
-当前实现支持静态不透明模型、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。支持可选空间降噪；尚无透明材质、蒙皮和多材质支持；为减少亮点，单条路径辐射值上限为 64。
+当前实现支持静态不透明模型、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。支持可选空间降噪与光源重要性采样 / MIS；尚无透明材质、蒙皮和多材质支持；为减少亮点，单条路径辐射值上限为 64。
 
 原生当前为功能验证版本：计算结果每帧回读 CPU，再上传到显示后端，存在传输与同步开销。网页的计算与显示直接留在 GPU，不需要逐帧回读。
 
@@ -61,6 +62,7 @@ renderer.setPathTracing({
   samplesPerFrame: 1,
   maxBounces: 3,
   resolutionScale: 0.5,
+  lightSampling: true, // 默认值
 })
 renderer.setRenderMode('path-tracing') // 'raster' 切回光栅
 await renderer.drawFrame()
@@ -77,6 +79,14 @@ renderer.enableParameterPanel()
 
 构建时可用 `-DNOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。
 
+
+## 光源采样与 MIS
+
+`PathTracingSettings::lightSampling` 与网页 `lightSampling` 对应，默认 `true`。面板的 **Light sampling / MIS** 可切换；修改会重新累计。
+
+发光三角形按面积与发光亮度选择，HDR 环境按亮度与立体角采样，并发射阴影射线检查遮挡。光源采样与原有 diffuse/GGX BSDF 采样通过 power heuristic 合并；直接看见灯或天空的亮度不变。关闭后使用 BSDF 采样，可用于同采样数对比。方向光仍单独采样。
+
+康奈尔盒子建议正面相机、关闭方向光和环境照明，仅靠顶灯观察间接光与阴影；比较时关闭降噪。MIS 减少低采样噪声，但每次反弹增加一次光源采样及可能的阴影射线，不保证每帧更快。
 
 ## 降噪
 
