@@ -41,8 +41,17 @@ try {
       }
       const a = await panel.boundingBox(),
         b = await canvas.boundingBox()
-      if (a.x < b.x || a.y < b.y + b.height + 8 || a.x + a.width > b.x + b.width + 1)
-        throw Error('Panel overlaps render surface or exceeds preview width')
+      if (slug === 'integrators') {
+        if (a.x < b.x || a.y < b.y + b.height + 8 || a.x + a.width > b.x + b.width + 1)
+          throw Error('Comparison controls overlap render surface')
+      } else if (
+        a.x < b.x ||
+        a.y < b.y ||
+        a.x + a.width > b.x + b.width + 1 ||
+        a.y + a.height > b.y + b.height + 1
+      ) {
+        throw Error('Regular example overlay left the render area')
+      }
       const controls = await page
         .locator('input[type=range],select')
         .evaluateAll((elements) => elements.every((e) => e.closest('.nova-panel')))
@@ -126,7 +135,7 @@ try {
   )
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS all six panels below render surfaces, desktop/mobile bounds, collapse, real pointer/wheel isolation, scene drag, reset, hide/show and enable/disable/dispose',
+    'PASS comparison controls below rendering, five original overlays, desktop/mobile bounds, collapse, real pointer/wheel isolation, scene drag, reset, hide/show and enable/disable/dispose',
   )
 } finally {
   await browser.close()

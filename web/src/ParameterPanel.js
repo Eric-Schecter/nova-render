@@ -1,16 +1,18 @@
-// Optional DOM controls below the rendering surface; no framework or WASM dependency.
+// Optional DOM panel; comparison controls occupy a separate row below the canvas.
 const dark = [0.025, 0.035, 0.055, 1]
 const light = [0.8, 0.85, 0.95, 1]
 const styles = `
 .nova-viewport{position:relative;width:100%;isolation:isolate}
 .nova-render-surface{position:relative;width:100%;min-width:0}
-.nova-panel{box-sizing:border-box;position:relative;width:100%;margin-top:12px;overflow:hidden;background:#181e29;border:1px solid #3c4659;border-radius:7px;color:#e1e6f0;font:12px/1.4 system-ui,sans-serif;text-align:left;color-scheme:dark}
+.nova-panel{position:absolute;z-index:1;top:12px;right:12px;width:250px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);overflow:auto;overscroll-behavior:contain;background:#181e29f5;border:1px solid #3c4659;border-radius:7px;color:#e1e6f0;box-shadow:0 4px 16px #0004;font:12px/1.4 system-ui,sans-serif;text-align:left;color-scheme:dark}
+.nova-comparison .nova-panel{box-sizing:border-box;position:relative;top:auto;right:auto;width:100%;max-width:none;max-height:none;margin-top:12px;overflow:hidden;background:#181e29;box-shadow:none}
+.nova-comparison .nova-panel-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));align-items:start;gap:12px;padding:12px;max-height:360px;overflow:auto;overscroll-behavior:contain}
 .nova-panel *{box-sizing:border-box}
 .nova-panel button,.nova-panel select,.nova-panel input{font:inherit;color:inherit}
 .nova-panel button{cursor:pointer;background:#29364e;border:1px solid #465776;border-radius:4px;padding:4px 8px}
 .nova-panel button:focus-visible,.nova-panel select:focus-visible,.nova-panel input:focus-visible{outline:2px solid #86a6ff;outline-offset:2px}
 .nova-panel .nova-panel-toggle{position:sticky;top:0;z-index:1;display:block;width:100%;border:0;border-radius:0;padding:8px 10px;background:#25324b;text-align:left;font-weight:600}
-.nova-panel-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));align-items:start;gap:12px;padding:12px;max-height:360px;overflow:auto;overscroll-behavior:contain}.nova-panel-body[hidden]{display:none}
+.nova-panel-body{padding:10px}.nova-panel-body[hidden]{display:none}
 .nova-panel fieldset{min-width:0;padding:8px 0;margin:0;border:0;border-bottom:1px solid #354056}
 .nova-panel fieldset:last-child{border-bottom:0}.nova-panel legend{padding:0;font-weight:600;color:#b9ccff}
 .nova-panel label{display:flex;flex-direction:column;gap:3px;margin:6px 0;color:inherit}
@@ -590,6 +592,7 @@ export function attachParameterPanel(
       intensity: light.intensity,
     }
     const comparing = !!current.comparison
+    wrapper.classList.toggle('nova-comparison', comparing)
     legend.style.display = comparing ? 'grid' : 'none'
     const vertical = canvas.clientHeight > canvas.clientWidth
     legend.style.height = vertical ? '100%' : 'auto'
@@ -715,7 +718,7 @@ export function attachParameterPanel(
     refresh()
   })
   resizeObserver.observe(canvas)
-  setCollapsed(false)
+  setCollapsed(!adapter.getMode().comparison && canvas.getBoundingClientRect().width < 520)
   refresh()
   return {
     refresh,
