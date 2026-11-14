@@ -1,3 +1,4 @@
+#include "../common/AssetChoices.hpp"
 #include "../common/ModelOptions.hpp"
 #include <chrono>
 #include <iostream>
@@ -5,18 +6,23 @@ int main(int argc, char** argv)
 {
     try
     {
-        const auto     options = example::ParseModelOptions(argc, argv, "Nova | Skeletal Animation", true);
+        const auto     options = example::ParseModelOptions(argc, argv, "Nova | Skeletal Animation", true, false, true);
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
         window.SetRenderMode(options.mode);
         window.SetLighting(render::LightingMode::PBR);
         window.SetDirectionalLight(options.light);
+        window.LoadEnvironment(options.environmentPath);
+        window.SetEnvironment(render::EnvironmentSettings{});
         render::OrbitCamera camera;
-        camera.yaw   = 15;
-        camera.pitch = 5;
+        camera.yaw      = 65;
+        camera.pitch    = 10;
+        camera.distance = 3;
         window.SetCamera(camera);
         window.EnableOrbitControls();
-        window.EnableParameterPanel();
+        render::ParameterPanelConfig panel;
+        panel.environments = example::EnvironmentChoices(options.environmentPath);
+        window.EnableParameterPanel(panel);
         if (window.GetAnimations().empty())
             throw std::runtime_error("Load a GLB with skeletal animation clips");
         auto previous = std::chrono::steady_clock::now();

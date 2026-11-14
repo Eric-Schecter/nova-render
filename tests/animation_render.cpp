@@ -20,10 +20,10 @@ int main(int argc, char** argv)
         }
         render::Window              window(config);
         const std::filesystem::path root = argv[2];
-        window.LoadModel(root / "SkinningRobot/SkinningRobot.glb");
+        window.LoadModel(root / "Fox/Fox.glb");
         window.SetLighting(render::LightingMode::PBR);
         window.EnableParameterPanel();
-        if (window.GetAnimations().size() != 2 || window.GetCapabilities().pathTracing)
+        if (window.GetAnimations().size() != 3 || window.GetCapabilities().pathTracing)
             throw std::runtime_error("Animation/capability API mismatch");
         auto draw = [&] {
             window.PollEvents();
@@ -48,10 +48,21 @@ int main(int argc, char** argv)
         draw();
         if (window.GetAnimationState().time != .5f)
             throw std::runtime_error("Speed/clip failed");
-        window.LoadEnvironment(root / "Environment/venice_sunset.nenv");
+        for (const auto* name : {"venice_sunset", "kloppenheim_06", "studio_small_09"})
+        {
+            window.LoadEnvironment(root / "Environment" / (std::string(name) + ".nenv"));
+            draw();
+            if (window.GetAnimationState().clip != 1 || window.GetAnimationState().time != .5f)
+                throw std::runtime_error("Environment reset animation");
+        }
+        auto environment           = window.GetEnvironment();
+        environment.showBackground = false;
+        environment.intensity      = .5f;
+        window.SetEnvironment(environment);
         draw();
-        if (window.GetAnimationState().clip != 1 || window.GetAnimationState().time != .5f)
-            throw std::runtime_error("Environment reset animation");
+        if (window.GetEnvironment().showBackground || window.GetEnvironment().intensity != .5f)
+            throw std::runtime_error("Animation environment controls failed");
+
         bool rejected = false;
         try
         {
@@ -86,7 +97,7 @@ int main(int argc, char** argv)
             window.SetRenderMode(render::RenderMode::PathTracing);
             draw();
         }
-        window.LoadModel(root / "SkinningRobot/SkinningRobot.glb");
+        window.LoadModel(root / "Fox/Fox.glb");
         draw();
         if (window.GetRenderMode() != render::RenderMode::Raster || window.GetAccumulatedSamples() != 0)
             throw std::runtime_error("Animated load did not reset path mode");

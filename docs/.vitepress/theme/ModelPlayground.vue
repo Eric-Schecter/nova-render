@@ -75,9 +75,14 @@ onMounted(async () => {
   try {
     const next = await showExample(
       canvas.value,
-      withBase(props.animation ? '/generated/SkinningRobot.glb' : '/generated/DamagedHelmet.glb'),
+      withBase(props.animation ? '/generated/Fox.glb' : '/generated/DamagedHelmet.glb'),
       withBase('/generated/'),
-      { yaw: props.animation ? 15 : 20, pitch: 5, distance: 3.6, exposure: 1 },
+      {
+        yaw: props.animation ? 65 : 20,
+        pitch: props.animation ? 10 : 5,
+        distance: props.animation ? 3 : 3.6,
+        exposure: 1,
+      },
       {
         environmentURL: withBase('/generated/venice_sunset.bin'),
         onError(error) {

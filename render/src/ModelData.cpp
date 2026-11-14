@@ -102,31 +102,47 @@ namespace render::detail
             if (node.mesh >= 0)
                 for (const auto& p : gltf.meshes.at(node.mesh).primitives)
                 {
-                    if (p.mode != TINYGLTF_MODE_TRIANGLES || p.indices < 0 || !p.targets.empty())
-                        throw std::runtime_error("Only indexed static triangle primitives are supported");
+                    if (p.mode != TINYGLTF_MODE_TRIANGLES || !p.targets.empty())
+                        throw std::runtime_error("Only triangle primitives without morph targets are supported");
                     if (materialIndex == -1)
                         materialIndex = p.material;
                     if (p.material < 0 || materialIndex != p.material)
                         throw std::runtime_error("The initial GLB loader requires one material");
-                    const int position = p.attributes.at("POSITION"), normal = p.attributes.at("NORMAL"),
-                              uv        = p.attributes.at("TEXCOORD_0");
-                    const auto& indices = gltf.accessors.at(p.indices);
-                    if (indices.count % 3 || result->vertices.size() + indices.count > 10000000)
+                    const int  position = p.attributes.at("POSITION"), uv = p.attributes.at("TEXCOORD_0");
+                    const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
+                    const auto count =
+                      p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
+                    if (count % 3 || result->vertices.size() + count > 10000000)
                         throw std::runtime_error("Invalid or oversized triangle mesh");
-                    for (size_t i = 0; i < indices.count; ++i)
-                    {
-                        const int c = indices.componentType;
-                        uint32_t  v = 0;
-                        if (
-                          c != TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE && c != TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT
-                          && c != TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
+                    auto vertexIndex = [&](size_t i) {
+                        if (p.indices < 0)
+                            return uint32_t(i);
+                        const auto c = gltf.accessors.at(p.indices).componentType;
+                        if (c != 5121 && c != 5123 && c != 5125)
                             throw std::runtime_error("Invalid index format");
+                        uint32_t v = 0;
                         std::memcpy(
                           &v,
                           element(gltf, p.indices, i, TINYGLTF_TYPE_SCALAR, c),
                           tinygltf::GetComponentSizeInBytes(c));
+                        return v;
+                    };
+                    for (size_t i = 0; i < count; ++i)
+                    {
+                        const auto v = vertexIndex(i);
+                        glm::vec3  localNormal;
+                        if (normal >= 0)
+                            localNormal = vec3(gltf, normal, v);
+                        else
+                        {
+                            const auto first = i - i % 3;
+                            const auto a     = vec3(gltf, position, vertexIndex(first)),
+                                       b     = vec3(gltf, position, vertexIndex(first + 1)),
+                                       c     = vec3(gltf, position, vertexIndex(first + 2));
+                            localNormal      = glm::normalize(glm::cross(b - a, c - a));
+                        }
                         const glm::vec3 pos = glm::vec3(matrix * glm::vec4(vec3(gltf, position, v), 1));
-                        const glm::vec3 n   = glm::normalize(normals * vec3(gltf, normal, v));
+                        const glm::vec3 n   = glm::normalize(normals * localNormal);
                         const glm::vec2 t   = vec2(gltf, uv, v);
                         for (int k = 0; k < 3; ++k)
                             if (!std::isfinite(pos[k]) || !std::isfinite(n[k]))
@@ -136,8 +152,9 @@ namespace render::detail
                         minimum = glm::min(minimum, pos);
                         maximum = glm::max(maximum, pos);
                         if (animation)
-                            AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix);
-                        result->vertices.push_back({{pos.x, pos.y, pos.z, 1}, {n.x, n.y, n.z, 0}, {t.x, t.y, 0, 0}});
+                            AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix, localNormal);
+                        result->vertices.push_back(
+                          {{pos.x, pos.y, pos.z, 1}, {n.x, n.y, n.z, 0}, {t.x, t.y, normal < 0 ? 1.0f : 0.0f, 0}});
                     }
                 }
             for (int child : node.children)

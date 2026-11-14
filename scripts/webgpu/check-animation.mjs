@@ -14,10 +14,14 @@ try {
   if (!process.env.NOVA_PREVIEW_URL) {
     const bytes = await readFile('build/animation-native-pose.bin'),
       native = Array.from(new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4))
+    const foxBytes = await readFile('build/fox-native-pose.bin'),
+      foxNative = Array.from(
+        new Float32Array(foxBytes.buffer, foxBytes.byteOffset, foxBytes.byteLength / 4),
+      )
     await page.goto(base + '/')
     console.log(
       await page.evaluate(
-        async ({ root, native, probeURL }) => {
+        async ({ root, native, foxNative, probeURL }) => {
           const { loadGLB } = await import(root + '/ModelData.js'),
             { createAnimationPlayer } = await import(root + '/AnimationData.js'),
             Nova = await import(root + '/Nova.js'),
@@ -98,6 +102,47 @@ try {
             if (r.getAnimationState().time !== paused) throw Error('Pause failed')
             const error = await device.popErrorScope()
             if (error) throw Error(error.message)
+            device.pushErrorScope('validation')
+            await r.loadModel('/generated/Fox.glb')
+            if (r.getAnimations().length !== 3) throw Error('Fox clips missing')
+            r.setCamera({ yaw: 65, pitch: 10, distance: 3 })
+            r.setAnimationState({ clip: 0, time: 0.5, speed: 1, playing: false, loop: true })
+            const fox = await loadGLB('/generated/Fox.glb')
+            try {
+              const foxPlayer = createAnimationPlayer(fox)
+              foxPlayer.set({ ...foxPlayer.state, time: 0.5, playing: false })
+              const actual = await readSkin(fox)
+              let difference = 0
+              for (let i = 0; i < actual.length; i++)
+                difference = Math.max(difference, Math.abs(actual[i] - foxNative[i]))
+              if (actual.length !== foxNative.length || difference > 3e-5)
+                throw Error('Fox native/web GPU pose mismatch ' + difference)
+            } finally {
+              fox.images.forEach((i) => i.bitmap?.close())
+            }
+            await r.loadEnvironment('/generated/venice_sunset.bin')
+            r.setDirectionalLight({ direction: [-1, 1.6, 2], color: [1, 1, 1], intensity: 0 })
+            await r.drawFrame()
+            const sky = canvas.toDataURL()
+            r.setEnvironment({ ...r.getEnvironment(), showBackground: false })
+            await r.drawFrame()
+            const lit = canvas.toDataURL()
+            if (lit === sky) throw Error('Fox sky visibility had no effect')
+            r.setEnvironment({ ...r.getEnvironment(), intensity: 0 })
+            await r.drawFrame()
+            if (canvas.toDataURL() === lit) throw Error('Fox environment light had no effect')
+            r.setEnvironment({ ...r.getEnvironment(), intensity: 1, showBackground: true })
+            const maps = new Set()
+            for (const name of ['venice_sunset', 'kloppenheim_06', 'studio_small_09']) {
+              await r.loadEnvironment('/generated/' + name + '.bin')
+              await r.drawFrame()
+              maps.add(canvas.toDataURL())
+              if (r.getAnimationState().time !== 0.5 || r.getAnimationState().playing)
+                throw Error('Environment reset Fox animation state')
+            }
+            if (maps.size !== 3) throw Error('Fox environments did not change pixels')
+            const foxError = await device.popErrorScope()
+            if (foxError) throw Error(foxError.message)
             r.dispose()
             host.remove()
             return (
@@ -113,6 +158,7 @@ try {
         {
           root: '/@fs' + resolve('web/src'),
           native,
+          foxNative,
           probeURL: '/@fs' + resolve('scripts/webgpu/skin-readback.js'),
         },
       ),
@@ -127,7 +173,7 @@ try {
     await playing.uncheck()
     const time = page.getByRole('slider', { name: '动画时间', exact: true })
     await time.fill('.5')
-    await page.getByRole('combobox', { name: '动画片段', exact: true }).selectOption('1')
+    await page.getByRole('combobox', { name: '动画片段', exact: true }).selectOption('2')
     await time.fill('.25')
     await page.waitForTimeout(100)
     const firstPose = await page.locator('canvas').evaluate((canvas) => canvas.toDataURL())
@@ -145,6 +191,15 @@ try {
     await playing.uncheck()
     await mkdir('build/validation', { recursive: true })
     await page.locator('.preview').screenshot({ path: 'build/validation/animation-web-panel.png' })
+    const maps = page.getByRole('combobox', { name: '环境贴图', exact: true })
+    if ((await maps.locator('option').count()) !== 3) throw Error('Fox environment options missing')
+    await maps.selectOption('/generated/kloppenheim_06.bin')
+    await page.waitForFunction(() => !document.querySelector('[aria-label="环境贴图"]').disabled)
+    if ((await maps.inputValue()) !== '/generated/kloppenheim_06.bin')
+      throw Error('Fox environment selection failed')
+    await page.getByRole('checkbox', { name: '显示天空盒', exact: true }).uncheck()
+    await page.getByRole('slider', { name: '环境强度', exact: true }).fill('.7')
+    await page.getByRole('checkbox', { name: '显示天空盒', exact: true }).check()
     await playing.check()
     await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
     await page.waitForTimeout(100)

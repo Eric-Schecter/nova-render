@@ -19,16 +19,23 @@ namespace example
     };
 
     inline ModelOptions ParseModelOptions(
-      int argc, char** argv, const char* title, bool allowLighting = false, bool allowEnvironment = false)
+      int         argc,
+      char**      argv,
+      const char* title,
+      bool        allowLighting      = false,
+      bool        allowEnvironment   = false,
+      bool        defaultEnvironment = false)
     {
         if (argc < (allowEnvironment ? 3 : 2))
             throw std::invalid_argument(
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
-              "[--frames N] [--spin] "
+              "[--frames N] [--spin] [--environment path.nenv] "
               "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|path] [--spp N] "
               "[--bounces N] [--scale N]");
         ModelOptions options;
         options.modelPath = argv[1];
+        if (defaultEnvironment)
+            options.light.intensity = 0;
         if (allowEnvironment)
         {
             options.environmentPath = argv[2];
@@ -61,6 +68,8 @@ namespace example
                 else
                     throw std::invalid_argument("Unknown API");
             }
+            else if (arg == "--environment" && (allowEnvironment || defaultEnvironment) && i + 1 < argc)
+                options.environmentPath = argv[++i];
             else if (arg == "--frames" && i + 1 < argc)
             {
                 size_t            consumed = 0;
@@ -106,6 +115,10 @@ namespace example
             else
                 throw std::invalid_argument("Unknown argument: " + arg);
         }
+        if (defaultEnvironment && options.environmentPath.empty())
+            options.environmentPath =
+              (std::filesystem::path(options.modelPath).parent_path().parent_path() / "Environment/venice_sunset.nenv")
+                .string();
         return options;
     }
 } // namespace example

@@ -123,20 +123,40 @@ export async function loadGLB(url) {
     if (Math.abs(det) < 1e-10) throw Error('Degenerate node transform')
     if (node.mesh !== undefined)
       for (const p of json.meshes[node.mesh].primitives) {
-        if ((p.mode ?? 4) !== 4 || p.indices === undefined || p.targets)
-          throw Error('Only indexed static triangle primitives are supported')
+        if ((p.mode ?? 4) !== 4 || p.targets)
+          throw Error('Only triangle primitives without morph targets are supported')
         if (materialIndex < 0) materialIndex = p.material
         if (p.material === undefined || p.material !== materialIndex)
           throw Error('Initial model loader requires one material')
-        if (![5121, 5123, 5125].includes(json.accessors[p.indices].componentType))
+        if (
+          p.indices !== undefined &&
+          ![5121, 5123, 5125].includes(json.accessors[p.indices].componentType)
+        )
           throw Error('Invalid index format')
-        const count = json.accessors[p.indices].count
+        const count = json.accessors[p.indices ?? p.attributes.POSITION].count
+        const vertexIndex = (i) =>
+          p.indices === undefined ? i : element(p.indices, i, 'SCALAR', 1)[0]
         if (count % 3 || vertices.length / 12 + count > 10000000)
           throw Error('Invalid or oversized mesh')
+        function faceNormal(i) {
+          const first = i - (i % 3),
+            positions = [0, 1, 2].map((k) =>
+              element(p.attributes.POSITION, vertexIndex(first + k), 'VEC3', 3),
+            )
+          return normalize(
+            cross(
+              positions[1].map((v, k) => v - positions[0][k]),
+              positions[2].map((v, k) => v - positions[0][k]),
+            ),
+          )
+        }
         for (let i = 0; i < count; i++) {
-          const index = element(p.indices, i, 'SCALAR', 1)[0],
+          const index = vertexIndex(i),
             pos = element(p.attributes.POSITION, index, 'VEC3', 3),
-            normal = element(p.attributes.NORMAL, index, 'VEC3', 3),
+            normal =
+              p.attributes.NORMAL !== undefined
+                ? element(p.attributes.NORMAL, index, 'VEC3', 3)
+                : faceNormal(i),
             uv = element(p.attributes.TEXCOORD_0, index, 'VEC2', 2)
           const world = pos.map(
             (_, r) => m[r] * pos[0] + m[4 + r] * pos[1] + m[8 + r] * pos[2] + m[12 + r],
@@ -152,8 +172,8 @@ export async function loadGLB(url) {
             min[k] = Math.min(min[k], world[k])
             max[k] = Math.max(max[k], world[k])
           }
-          vertices.push(...world, 1, ...n, 0, ...uv, 0, 0)
-          animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex)
+          vertices.push(...world, 1, ...n, 0, ...uv, p.attributes.NORMAL === undefined ? 1 : 0, 0)
+          animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex, normal)
         }
       }
     for (const child of node.children || []) visit(child, m)

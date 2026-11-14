@@ -47,7 +47,14 @@ namespace render::detail
     };
     std::shared_ptr<AnimationData> ReadAnimationData(const tinygltf::Model&);
     void                           AppendSkinVertex(
-                                AnimationData&, const tinygltf::Model&, int, int, const tinygltf::Primitive&, uint32_t, const glm::mat4&);
+                                AnimationData&,
+                                const tinygltf::Model&,
+                                int,
+                                int,
+                                const tinygltf::Primitive&,
+                                uint32_t,
+                                const glm::mat4&,
+                                const glm::vec3&);
     class AnimationPlayer
     {
       public:

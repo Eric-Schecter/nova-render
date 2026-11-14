@@ -192,11 +192,12 @@ namespace render::detail
       int                        nodeIndex,
       const tinygltf::Primitive& p,
       uint32_t                   index,
-      const glm::mat4&           matrix)
+      const glm::mat4&           matrix,
+      const glm::vec3&           localNormal)
     {
         SkinVertex v;
         v.position = Read(m, p.attributes.at("POSITION"), index, 3);
-        v.normal   = Read(m, p.attributes.at("NORMAL"), index, 3);
+        v.normal   = localNormal;
         v.matrix   = matrix;
         v.skin     = skin;
         v.node     = nodeIndex;

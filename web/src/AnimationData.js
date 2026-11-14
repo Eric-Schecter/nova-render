@@ -140,10 +140,10 @@ export function readAnimation(json, bin) {
     vertices: [],
     center: [0, 0, 0],
     scale: 1,
-    addVertex(skin, p, index, matrix, node) {
+    addVertex(skin, p, index, matrix, node, normal) {
       const v = {
         position: read(p.attributes.POSITION, index, 3),
-        normal: read(p.attributes.NORMAL, index, 3),
+        normal: [...normal],
         skin,
         node,
         matrix,

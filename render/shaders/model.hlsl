@@ -74,21 +74,25 @@ Vertex skinVertex(uint id)
     uint count = uint(skyParams.z); // Validation dispatch count; unused by the vertex stage.
     if (id.x < count)
         skinOutput[id.x] = skinVertex(id.x);
-} struct VertexOut
+}
+
+struct VertexOut
 {
-    float4 position : SV_Position;
-    float3 worldPosition : TEXCOORD0;
-    float3 normal : TEXCOORD1;
-    float2 uv : TEXCOORD2;
+    float4                position : SV_Position;
+    float3                worldPosition : TEXCOORD0;
+    float3                normal : TEXCOORD1;
+    float2                uv : TEXCOORD2;
+    nointerpolation float generatedNormal : TEXCOORD3;
 };
 VertexOut VSMain(uint id : SV_VertexID)
 {
     Vertex    v = skinVertex(id);
     VertexOut o;
-    o.position      = mul(viewProjection, v.position);
-    o.worldPosition = v.position.xyz;
-    o.normal        = v.normal.xyz;
-    o.uv            = v.uv.xy;
+    o.position        = mul(viewProjection, v.position);
+    o.worldPosition   = v.position.xyz;
+    o.normal          = v.normal.xyz;
+    o.uv              = v.uv.xy;
+    o.generatedNormal = v.uv.z;
     return o;
 }
 float3 fresnel(float cosine, float3 f0)
@@ -197,6 +201,15 @@ float4 PSMain(VertexOut input)
     }
     float3 n   = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
+    if (input.generatedNormal > .5)
+    {
+        float3 face = cross(dp1, dp2);
+        if (dot(face, face) > 1e-12)
+        {
+            face = normalize(face);
+            n    = dot(face, n) < 0 ? -face : face;
+        }
+    }
     float2 duv1 = ddx(input.uv), duv2 = ddy(input.uv);
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
     float3 t = p2perp * duv1.x + p1perp * duv2.x, b = p2perp * duv1.y + p1perp * duv2.y;
