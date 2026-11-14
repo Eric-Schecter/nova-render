@@ -2,6 +2,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import { showWeekend } from '../../../web/examples/weekend.js'
+import weekendJS from '../../../web/examples/weekend.js?raw'
 import { showComparison } from '../../../web/examples/comparison.js'
 import comparisonJS from '../../../web/examples/comparison.js?raw'
 import comparisonCPP from '../../../examples/comparison/main.cpp?raw'
@@ -24,34 +26,41 @@ const props = defineProps({
   environment: Boolean,
   animation: Boolean,
   comparison: Boolean,
+  weekend: Boolean,
 })
-const jsSource = props.comparison
-  ? comparisonJS
-  : props.animation
-    ? animationJS
-    : props.environment
-      ? environmentJS
-      : props.lighting
-        ? lightingJS
-        : helmetJS
-const cppSource = props.comparison
-  ? comparisonCPP
-  : props.animation
-    ? animationCPP
-    : props.environment
-      ? environmentCPP
-      : props.lighting
-        ? lightingCPP
-        : helmetCPP
-const showExample = props.comparison
-  ? showComparison
-  : props.animation
-    ? showAnimation
-    : props.environment
-      ? showEnvironment
-      : props.lighting
-        ? showLighting
-        : showHelmet
+const jsSource = props.weekend
+  ? weekendJS
+  : props.comparison
+    ? comparisonJS
+    : props.animation
+      ? animationJS
+      : props.environment
+        ? environmentJS
+        : props.lighting
+          ? lightingJS
+          : helmetJS
+const cppSource = props.weekend
+  ? environmentCPP
+  : props.comparison
+    ? comparisonCPP
+    : props.animation
+      ? animationCPP
+      : props.environment
+        ? environmentCPP
+        : props.lighting
+          ? lightingCPP
+          : helmetCPP
+const showExample = props.weekend
+  ? showWeekend
+  : props.comparison
+    ? showComparison
+    : props.animation
+      ? showAnimation
+      : props.environment
+        ? showEnvironment
+        : props.lighting
+          ? showLighting
+          : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('加载模型…'),
@@ -91,17 +100,19 @@ onMounted(async () => {
     const next = await showExample(
       canvas.value,
       withBase(
-        props.comparison
-          ? '/generated/CornellCaustics.glb'
-          : props.animation
-            ? '/generated/Fox.glb'
-            : '/generated/DamagedHelmet.glb',
+        props.weekend
+          ? '/generated/WeekendSpheres.glb'
+          : props.comparison
+            ? '/generated/CornellCaustics.glb'
+            : props.animation
+              ? '/generated/Fox.glb'
+              : '/generated/DamagedHelmet.glb',
       ),
       withBase('/generated/'),
       {
-        yaw: props.comparison ? 0 : props.animation ? 65 : 20,
-        pitch: props.comparison ? 0 : props.animation ? 10 : 5,
-        distance: props.animation ? 3 : 3.6,
+        yaw: props.weekend ? 25 : props.comparison ? 0 : props.animation ? 65 : 20,
+        pitch: props.weekend ? 12 : props.comparison ? 0 : props.animation ? 10 : 5,
+        distance: props.weekend ? 2.8 : props.animation ? 3 : 3.6,
         exposure: props.comparison ? 3 : 1,
       },
       {
@@ -189,7 +200,7 @@ onBeforeUnmount(() => {
       <span class="hint">拖动旋转 · 滚轮缩放</span
       ><canvas
         :class="{ comparison: props.comparison }"
-        :style="props.comparison ? { aspectRatio: '4 / 1' } : {}"
+        :style="props.comparison ? { aspectRatio: '1 / 1' } : {}"
         ref="canvas"
         width="800"
         height="650"
@@ -275,10 +286,5 @@ canvas {
 p {
   padding: 0 16px;
   font-size: 13px;
-}
-@media (max-width: 600px) {
-  canvas.comparison {
-    aspect-ratio: 1/4 !important;
-  }
 }
 </style>

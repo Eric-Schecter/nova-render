@@ -27,6 +27,7 @@ for (const name of [
   'CornellIndirect',
   'CornellGlossy',
   'CornellCaustics',
+  'WeekendSpheres',
   'SkinningRobot',
   'Fox',
 ]) {

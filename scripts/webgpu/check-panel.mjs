@@ -42,6 +42,17 @@ try {
       const a = await panel.boundingBox(),
         b = await canvas.boundingBox()
       if (slug === 'integrators') {
+        const layout = await canvas.evaluate((e) => {
+          const box = e.getBoundingClientRect()
+          const legend = e.closest('.nova-viewport').querySelector('[aria-label="积分器对比结果"]')
+          return {
+            ratio: box.width / box.height,
+            columns: getComputedStyle(legend).gridTemplateColumns.split(' ').length,
+            rows: getComputedStyle(legend).gridTemplateRows.split(' ').length,
+          }
+        })
+        if (Math.abs(layout.ratio - 1) > 0.01 || layout.columns !== 2 || layout.rows !== 2)
+          throw Error('Comparison is not a 2x2 grid')
         if (a.x < b.x || a.y < b.y + b.height + 8 || a.x + a.width > b.x + b.width + 1)
           throw Error('Comparison controls overlap render surface')
       } else if (

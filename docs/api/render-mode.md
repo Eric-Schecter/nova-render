@@ -184,7 +184,7 @@ const progress = renderer.getComparisonProgress()
 
 返回四项 `ComparisonProgress`，顺序 PT、BDPT、光子映射、MLT，各含 `integrator`、`samples`、`milliseconds`、`complete`。相机、模型、尺寸、预算或有效采样参数变化会重跑，`ResetAccumulation()` / `resetAccumulation()` 也会重跑。切回普通光追会继续使用原有场景配置。
 
-对比模式固定正方形视图，宽窗口横排、竖窗口上下排列，强制关闭外部光照、天空背景和显示降噪，PT 启用 MIS。每轮光子预算仍独立计数：光子发射路径总数 = 光子映射相机 spp × `photonsPerIteration`。使用带发光面的场景；无发光面的模型在此模式下可能全黑。专用[积分器例子](../examples/integrators)提供玻璃焦散场景。
+对比模式固定正方形视图；网页以两行两列展示，参数独立放在下方。原生宽窗口横排、竖窗口上下排列。对比模式强制关闭外部光照、天空背景和显示降噪，PT 启用 MIS。每轮光子预算仍独立计数：光子发射路径总数 = 光子映射相机 spp × `photonsPerIteration`。使用带发光面的场景；无发光面的模型在此模式下可能全黑。专用[积分器例子](../examples/integrators)提供玻璃焦散场景。
 
 ## 梅特波利斯光传输（MLT）
 

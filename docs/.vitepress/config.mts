@@ -28,6 +28,7 @@ export default defineConfig({
           { text: '04 · 天空盒与环境光', link: '/examples/environment' },
           { text: '05 · 骨骼动画', link: '/examples/skeletal-animation' },
           { text: '06 · 积分器对比', link: '/examples/integrators' },
+          { text: '07 · 多球场景', link: '/examples/weekend-spheres' },
         ],
       },
       {

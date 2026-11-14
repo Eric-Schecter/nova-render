@@ -39,3 +39,7 @@ GPU 蒙皮回归测试用的小机器人、关节、权重、两个动画片段�
 ## Fox
 
 第五个骨骼动画例子的默认模型来自 [Khronos glTF Sample Models · Fox](https://github.com/KhronosGroupArchives/glTF-Sample-Models/tree/main/2.0/Fox)。原始低多边形模型由 PixelMannen 提供，采用 [CC0](https://creativecommons.org/publicdomain/zero/1.0/)；绑定与动画由 tomkranis 提供，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，glTF 转换由 AsoboStudio 与 scurest 完成。Nova 未修改 GLB 文件，来源、校验值和上游原文保存在 `assets/Fox/`。
+
+## Weekend Spheres
+
+多球场景的几何与纹理由 Nova 在项目内生成，构图参考 [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) 的随机球最终场景，未复制书籍代码或外部模型。生成命令和差异说明见 `assets/WeekendSpheres/README.md`。

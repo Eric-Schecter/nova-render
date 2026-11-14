@@ -5,6 +5,8 @@ namespace example
     inline std::string AssetName(const std::filesystem::path& path)
     {
         const auto name = path.stem().string();
+        if (name == "WeekendSpheres")
+            return "Weekend Spheres";
         if (name == "CornellCaustics")
             return "Cornell Caustics";
         if (name == "CornellIndirect")
@@ -34,7 +36,8 @@ namespace example
               "CornellBox",
               "CornellIndirect",
               "CornellGlossy",
-              "CornellCaustics"})
+              "CornellCaustics",
+              "WeekendSpheres"})
         {
             const auto path = assets / name / (std::string(name) + ".glb");
             if (path != current && std::filesystem::exists(path))

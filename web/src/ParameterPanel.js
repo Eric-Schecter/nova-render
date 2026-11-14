@@ -594,10 +594,13 @@ export function attachParameterPanel(
     const comparing = !!current.comparison
     wrapper.classList.toggle('nova-comparison', comparing)
     legend.style.display = comparing ? 'grid' : 'none'
-    const vertical = canvas.clientHeight > canvas.clientWidth
-    legend.style.height = vertical ? '100%' : 'auto'
-    legend.style.gridTemplateColumns = vertical ? '1fr' : 'repeat(4,minmax(0,1fr))'
-    legend.style.gridTemplateRows = vertical ? 'repeat(4,minmax(0,1fr))' : 'auto'
+    const side = Math.min(canvas.clientWidth, canvas.clientHeight)
+    legend.style.width = `${side}px`
+    legend.style.height = `${side}px`
+    legend.style.left = `${(canvas.clientWidth - side) / 2}px`
+    legend.style.top = `${(canvas.clientHeight - side) / 2}px`
+    legend.style.gridTemplateColumns = 'repeat(2,minmax(0,1fr))'
+    legend.style.gridTemplateRows = 'repeat(2,minmax(0,1fr))'
     if (comparing) {
       legend.replaceChildren(
         ...(adapter.getComparisonProgress?.() || []).map((p, i) => {

@@ -201,11 +201,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         return comparisonProgress.map((p) => ({ ...p }))
       },
       async drawComparison(camera, width, height, path) {
-        const vertical = height > width,
-          size = Math.max(
-            1,
-            Math.floor(vertical ? Math.min(width, height / 4) : Math.min(width / 4, height)),
-          ),
+        const size = Math.max(1, Math.floor(Math.min(width, height) / 2)),
           light = { direction: [0, 1, 0], color: [1, 1, 1], intensity: 0 },
           env = { rotation: 0, intensity: 0, backgroundIntensity: 0, showBackground: false },
           key = JSON.stringify([camera, width, height, path])
@@ -282,14 +278,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                 : progress.samples >= (path.comparisonSamples ?? 64)
           }
         }
-        // Present all columns in one uninterrupted turn: awaiting GPU completion
-        // between columns would let the browser swap the canvas texture.
+        // Present all tiles in one uninterrupted turn: awaiting GPU completion
+        // between tiles would let the browser swap the canvas texture.
         for (let i = 0; i < 4; i++)
           comparisonViews[i].present(
             context,
             {
-              x: Math.floor((width - size * (vertical ? 1 : 4)) / 2) + (vertical ? 0 : i * size),
-              y: Math.floor((height - size * (vertical ? 4 : 1)) / 2) + (vertical ? i * size : 0),
+              x: Math.floor((width - size * 2) / 2) + (i % 2) * size,
+              y: Math.floor((height - size * 2) / 2) + Math.floor(i / 2) * size,
               width: size,
               height: size,
             },

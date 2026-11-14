@@ -15,7 +15,7 @@ try {
     async (root) => {
       const Nova = await import(root + '/Nova.js'),
         canvas = document.createElement('canvas')
-      canvas.style.cssText = 'width:1380px;height:345px'
+      canvas.style.cssText = 'width:640px;height:640px'
       document.body.replaceChildren(canvas)
       const renderer = await Nova.createRenderer({ canvas })
       window.testRenderer = renderer
@@ -60,13 +60,17 @@ try {
     const ctx = c.getContext('2d')
     ctx.drawImage(image, 0, 0)
     const p = ctx.getImageData(0, 0, c.width, c.height).data
-    return [0, 1, 2, 3].map((column) => {
+    return [0, 1, 2, 3].map((tile) => {
       let sum = 0,
         n = 0
-      for (let y = 40; y < c.height; y++)
+      for (
+        let y = (Math.floor(tile / 2) * c.height) / 2 + 30;
+        y < ((Math.floor(tile / 2) + 1) * c.height) / 2 - 10;
+        y++
+      )
         for (
-          let x = Math.floor((column * c.width) / 4) + 10;
-          x < ((column + 1) * c.width) / 4 - 10;
+          let x = Math.floor(((tile % 2) * c.width) / 2) + 10;
+          x < (((tile % 2) + 1) * c.width) / 2 - 10;
           x++
         ) {
           sum +=
@@ -77,7 +81,7 @@ try {
     })
   }, png.toString('base64'))
   if (columns.some((v) => !Number.isFinite(v) || v < 5))
-    throw Error('Blank comparison column ' + columns)
+    throw Error('Blank comparison tile ' + columns)
   await page.evaluate(async () => {
     const r = window.testRenderer
     r.setRayTracing({ ...r.getRayTracing(), comparisonSamples: 3, comparisonMilliseconds: 0 })
