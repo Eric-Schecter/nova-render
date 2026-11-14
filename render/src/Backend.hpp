@@ -77,7 +77,7 @@ namespace render::detail
                 model = animation.Model();
             }
             if (model && model->animation)
-                mode = RenderMode::Raster;
+                SetRenderMode(RenderMode::Raster);
         }
         virtual void LoadEnvironment(std::shared_ptr<const EnvironmentData> data)
         {

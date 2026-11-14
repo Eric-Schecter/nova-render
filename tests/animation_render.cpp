@@ -81,8 +81,15 @@ int main(int argc, char** argv)
         draw();
         if (!window.GetAnimations().empty())
             throw std::runtime_error("Old animation retained");
+        if (window.GetCapabilities().pathTracing)
+        {
+            window.SetRenderMode(render::RenderMode::PathTracing);
+            draw();
+        }
         window.LoadModel(root / "SkinningRobot/SkinningRobot.glb");
         draw();
+        if (window.GetRenderMode() != render::RenderMode::Raster || window.GetAccumulatedSamples() != 0)
+            throw std::runtime_error("Animated load did not reset path mode");
         window.EnableParameterPanel(false);
         window.UpdateAnimation(.25);
         draw();
