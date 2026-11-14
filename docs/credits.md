@@ -27,9 +27,9 @@
 
 [Studio Small 09](https://polyhaven.com/a/studio_small_09)（Sergej Majboroda）与 [Kloppenheim 06](https://polyhaven.com/a/kloppenheim_06)（Greg Zaal）来自 Poly Haven，采用 [CC0](https://polyhaven.com/license)。原始 HDR 未修改；Nova 生成预过滤资源，记录见 `assets/Environment/README.md`。
 
-## Cornell Box
+## Cornell 场景
 
-康奈尔盒子风格示意场景由 Nova 的 `scripts/generate-cornell-box.mjs` 生成，几何和两张纹理图集均在项目内构建，未使用外部模型素材。它不是 Cornell 实验室测量场景的复刻。资源说明见仓库 `assets/CornellBox/README.md`。
+康奈尔盒子风格示意场景由 Nova 的 `scripts/generate-cornell-box.mjs` 生成，基础、间接照明和金属反射三个场景的几何与纹理图集均在项目内构建，未使用外部模型素材。它不是 Cornell 实验室测量场景的复刻。资源说明见仓库 `assets/CornellBox/README.md`、`assets/CornellIndirect/README.md` 和 `assets/CornellGlossy/README.md`。
 
 ## Skinning Robot
 

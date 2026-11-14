@@ -1,6 +1,6 @@
 # 渲染模式
 
-原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，可在参数面板的 **Renderer → Mode** 切换渐进路径追踪。
+原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）或 Ray tracing（光追）；光追模式内再通过 **Integrator** 选择 PT、BDPT 或光子映射。
 
 ```cpp
 render::Window window;
@@ -8,15 +8,15 @@ window.LoadModel("assets/DamagedHelmet/DamagedHelmet.glb");
 window.LoadEnvironment("assets/Environment/venice_sunset.nenv");
 
 const auto capabilities = window.GetCapabilities();
-if (capabilities.pathTracing)
+if (capabilities.rayTracing)
 {
-    render::PathTracingSettings settings;
+    render::RayTracingSettings settings;
     settings.samplesPerFrame = 1;
     settings.maxBounces = 3;
     settings.resolutionScale = 0.5f;
     settings.lightSampling = true; // 默认开启光源重要性采样与 MIS
-    window.SetPathTracing(settings);
-    window.SetRenderMode(render::RenderMode::PathTracing);
+    window.SetRayTracing(settings);
+    window.SetRenderMode(render::RenderMode::RayTracing);
 }
 window.EnableParameterPanel();
 while (window.PollEvents())
@@ -28,9 +28,9 @@ window.WaitIdle();
 
 ## 接口
 
-- `GetCapabilities()`：返回 `pathTracing`、`softwareRayTracing`、设备名称 `rayTracingDevice` 和不可用原因 `reason`。
-- `SetRenderMode(RenderMode::Raster / PathTracing)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
-- `SetPathTracing(settings)` / `GetPathTracing()`：每帧采样数 `1–4`、最大反弹次数 `1–8`、内部渲染比例 `0.25–1`。非法参数抛异常。
+- `GetCapabilities()`：返回 `rayTracing`、`softwareRayTracing`、设备名称 `rayTracingDevice` 和不可用原因 `reason`。
+- `SetRenderMode(RenderMode::Raster / RayTracing)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
+- `SetRayTracing(settings)` / `GetRayTracing()`：每帧采样数 `1–4`、最大反弹次数 `1–8`、内部渲染比例 `0.25–1`。非法参数抛异常。
 - `GetAccumulatedSamples()`：读取当前累计采样数。
 - `ResetAccumulation()`：清空累计采样；下一帧重新开始。
 
@@ -41,7 +41,7 @@ window.WaitIdle();
 ```sh
 ./build/nova_environment assets/DamagedHelmet/DamagedHelmet.glb \
   assets/Environment/venice_sunset.nenv --api metal \
-  --mode path --spp 1 --bounces 3 --scale 0.5 --integrator path
+  --mode ray --spp 1 --bounces 3 --scale 0.5 --integrator path
 ```
 
 模型加载、光照、天空盒三个原生例子均支持这些选项。Windows 使用 `--api dx12`，Linux 使用 `--api vulkan`；Windows 可追加 `--warp` 验证软件光追。
@@ -58,18 +58,18 @@ DX12 使用 DXR 1.1 inline ray query；Vulkan 使用 acceleration structure 与 
 
 ```js
 await renderer.loadModel('/generated/DamagedHelmet.glb')
-renderer.setPathTracing({
+renderer.setRayTracing({
   samplesPerFrame: 1,
   maxBounces: 3,
   resolutionScale: 0.5,
   lightSampling: true, // 默认值
 })
-renderer.setRenderMode('path-tracing') // 'raster' 切回光栅
+renderer.setRenderMode('ray-tracing') // 'raster' 切回光栅
 await renderer.drawFrame()
 renderer.enableParameterPanel()
 ```
 
-对应方法为 `getCapabilities()`、`setRenderMode()` / `getRenderMode()`、`setPathTracing()` / `getPathTracing()`、`resetAccumulation()` 和 `getAccumulatedSamples()`，参数范围与原生一致。设置无效参数或未加载模型就切换路径追踪会抛异常。
+对应方法为 `getCapabilities()`、`setRenderMode()` / `getRenderMode()`、`setRayTracing()` / `getRayTracing()`、`resetAccumulation()` 和 `getAccumulatedSamples()`，参数范围与原生一致。设置无效参数或未加载模型就切换光追会抛异常。
 
 网页在 JavaScript 中构建 BVH，使用 WebGPU compute shader 遍历与求交，不调用专用硬件光追接口。`softwareRayTracing: true` 在网页表示通用 GPU 上的 BVH 求交，并不表示 CPU 渲染；`rayTracingDevice` 为 `WebGPU compute BVH`。材质、光照和采样与原生共享 HLSL，仅求交实现不同。没有新增第三方依赖或 WASM。
 
@@ -79,10 +79,11 @@ renderer.enableParameterPanel()
 
 构建时可用 `-DNOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。
 
+旧的 `PathTracingSettings`、`SetPathTracing` / `GetPathTracing`、`RenderMode::PathTracing` 和网页 `setPathTracing` / `getPathTracing` 保留为兼容入口；`pathTracing` 能力字段对应 `rayTracing`。网页仍接受 `'path-tracing'` 输入，`getRenderMode()` 统一返回 `'ray-tracing'`。
 
 ## 光源采样与 MIS
 
-`PathTracingSettings::lightSampling` 与网页 `lightSampling` 对应，默认 `true`。面板的 **Light sampling / MIS** 可切换；修改会重新累计。
+`RayTracingSettings::lightSampling` 与网页 `lightSampling` 对应，默认 `true`。面板的 **Light sampling / MIS** 可切换；修改会重新累计。
 
 发光三角形按面积与发光亮度选择，HDR 环境按亮度与立体角采样，并发射阴影射线检查遮挡。光源采样与原有 diffuse/GGX BSDF 采样通过 power heuristic 合并；直接看见灯或天空的亮度不变。关闭后使用 BSDF 采样，可用于同采样数对比。方向光仍单独采样。
 
@@ -93,17 +94,17 @@ renderer.enableParameterPanel()
 面板 **Integrator** 可选择 Path tracing / Bidirectional，默认 Path tracing。两端通过 `integrator` 指定，切换会重新累计；降噪和反弹次数仍适用。
 
 ```cpp
-auto settings = window.GetPathTracing();
-settings.integrator = render::PathIntegrator::Bidirectional;
-window.SetPathTracing(settings);
+auto settings = window.GetRayTracing();
+settings.integrator = render::RayIntegrator::Bidirectional;
+window.SetRayTracing(settings);
 ```
 
 ```js
-renderer.setPathTracing({ ...renderer.getPathTracing(), integrator: 'bidirectional' })
+renderer.setRayTracing({ ...renderer.getRayTracing(), integrator: 'bidirectional' })
 // integrator: 'path' 切回单向路径追踪
 ```
 
-原生例子也可使用 `--mode path --integrator bidirectional`。BDPT 从发光面生成光路，与相机子路径连接，以面积度量的路径概率和 power heuristic 合并各连接策略。两端共用 HLSL，材质与法线求值一致；BDPT 始终启用 MIS，`lightSampling` 开关仅用于单向 PT。
+原生例子也可使用 `--mode ray --integrator bidirectional`。BDPT 从发光面生成光路，与相机子路径连接，以面积度量的路径概率和 power heuristic 合并各连接策略。两端共用 HLSL，材质与法线求值一致；BDPT 始终启用 MIS，`lightSampling` 开关仅用于单向 PT。
 
 当前光路起点限于有限面光源；HDR 与方向光保留单向 NEE/MIS，没有面光源时回退到此估计器。不做光路直接投向其他像素的相机 splat；仍只支持静态不透明材质。算法背景可参阅 [PBRT 双向路径追踪](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Bidirectional_Path_Tracing)。
 
@@ -111,18 +112,45 @@ Cornell 测试关闭方向光、环境照明与降噪，48×48、5 次反弹，�
 
 Windows WARP 软件验证使用微软 WARP 1.0.22；测试机器自带的旧 WARP 会在此复杂内核中崩溃。新版驱动仅放在测试程序旁，不修改系统 DLL，不增加项目依赖；实体 GPU 使用其 DX12 驱动。
 
-## 降噪
+## 光子映射
 
-路径追踪参数新增 `denoise`，默认 `false`。原生与网页面板的 **Denoise** 复选框控制同一功能，仅在路径追踪模式显示。
+在 **Integrator → Photon mapping** 中启用，也可通过 API 设置：
 
 ```cpp
-auto settings = window.GetPathTracing();
-settings.denoise = true;
-window.SetPathTracing(settings);
+auto settings = window.GetRayTracing();
+settings.integrator = render::RayIntegrator::PhotonMapping;
+settings.photonsPerIteration = 8192;
+settings.photonRadius = 0.16f;
+window.SetRayTracing(settings);
 ```
 
 ```js
-renderer.setPathTracing({ ...renderer.getPathTracing(), denoise: true })
+renderer.setRayTracing({
+  ...renderer.getRayTracing(),
+  integrator: 'photon-mapping',
+  photonsPerIteration: 8192,
+  photonRadius: 0.16,
+})
+```
+
+每轮发射 `256–65536` 条光子路径，同轮的相机样本复用光子图；初始聚集半径为 `0.03–0.5`，使用模型归一化后的世界单位。默认每轮 8192 条、半径 0.16。参数变化重新累计。
+
+共享 HLSL 生成光子、构建有界内存的链表网格，并在漫反射可见点做密度估计；金属/光滑表面继续追踪相机路径。直接照明独立采样，避免与间接光子重复计光。每轮重发射光子，半径按轮数的负六分之一次方缩小，再累计像素估计。有限半径会平滑照明、引入偏差；它与可选显示降噪是两项功能。
+
+光子起点限于面光源，HDR 与方向光保留原有估计器。没有面光源时回到原有采样。模型加载、光照、环境三个例子均可切换 `Cornell Box`、`Cornell Indirect` 和 `Cornell Glossy`；具体设置和测量见[积分器对比](../guide/integrator-comparison)。
+
+## 降噪
+
+光追参数 `denoise`，默认 `false`。原生与网页面板的 **Denoise** 复选框控制同一功能，仅在光追模式显示。
+
+```cpp
+auto settings = window.GetRayTracing();
+settings.denoise = true;
+window.SetRayTracing(settings);
+```
+
+```js
+renderer.setRayTracing({ ...renderer.getRayTracing(), denoise: true })
 await renderer.drawFrame()
 ```
 

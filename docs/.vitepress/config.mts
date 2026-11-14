@@ -16,6 +16,7 @@ export default defineConfig({
           { text: '快速开始', link: '/guide/quick-start' },
           { text: '编写示例', link: '/guide/integration' },
           { text: '作为依赖使用', link: '/guide/package' },
+          { text: '积分器对比', link: '/guide/integrator-comparison' },
         ],
       },
       {

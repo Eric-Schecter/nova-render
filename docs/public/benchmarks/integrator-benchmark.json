@@ -1,0 +1,770 @@
+[
+  {
+    "name": "CornellBox",
+    "size": 48,
+    "maxBounces": 5,
+    "photonSettings": {
+      "photonsPerIteration": 8192,
+      "initialRadius": 0.16,
+      "samplesPerFrame": 4,
+      "exposure": 3
+    },
+    "reference": {
+      "integrator": "bidirectional",
+      "spp": 32768,
+      "mean": 0.014498301311358508,
+      "auditPTMean": 0.014519225748243417,
+      "auditRelativeMSE": 0.0001355597741036129,
+      "floorPixels": 163,
+      "floorMean": 0.012430636918577908,
+      "referenceVariance": 3.5177310310585735e-9,
+      "floorReferenceVariance": 1.5645009849455652e-9,
+      "floorAuditRelativeMSE": 0.00007642450954274132
+    },
+    "records": [
+      {
+        "integrator": "path",
+        "spp": 8,
+        "ms": 3.3999999910593033,
+        "mse": 0.00006761110461471468,
+        "relativeMSE": 0.321650172689326,
+        "floorMSE": 0.000008730939074751257,
+        "floorRelativeMSE": 0.05650334966286887,
+        "mean": 0.014698397525219368,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 32,
+        "ms": 10.099999994039536,
+        "mse": 0.00001448401481678721,
+        "relativeMSE": 0.068905631605972,
+        "floorMSE": 0.000004454148423167424,
+        "floorRelativeMSE": 0.028825571184244593,
+        "mean": 0.014620709320507894,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 128,
+        "ms": 34.70000000298023,
+        "mse": 0.0000031573981003732115,
+        "relativeMSE": 0.015020870462349555,
+        "floorMSE": 0.0000019781074713080835,
+        "floorRelativeMSE": 0.012801566608714229,
+        "mean": 0.014520863079501149,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 512,
+        "ms": 140.30000001192093,
+        "mse": 7.790210132971694e-7,
+        "relativeMSE": 0.0037060811960335062,
+        "floorMSE": 5.293942374277776e-7,
+        "floorRelativeMSE": 0.0034260401373539242,
+        "mean": 0.01452143793036406,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 2048,
+        "ms": 525.5,
+        "mse": 2.01488530889137e-7,
+        "relativeMSE": 0.0009585529052472353,
+        "floorMSE": 8.874275432489335e-8,
+        "floorRelativeMSE": 0.0005743096859037896,
+        "mean": 0.014513887297920209,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "budgetMs": 200,
+        "spp": 532,
+        "ms": 201.5,
+        "emittedPhotons": 0,
+        "mse": 7.362517428259397e-7,
+        "relativeMSE": 0.0035026125008944305,
+        "floorMSE": 4.923576328417772e-7,
+        "floorRelativeMSE": 0.003186353180277338
+      },
+      {
+        "integrator": "path",
+        "budgetMs": 1000,
+        "spp": 2984,
+        "ms": 1002.2999999970198,
+        "emittedPhotons": 0,
+        "mse": 1.2569593531199513e-7,
+        "relativeMSE": 0.000597980457941675,
+        "floorMSE": 6.709000405565745e-8,
+        "floorRelativeMSE": 0.0004341812404810651
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 8,
+        "ms": 5.9000000059604645,
+        "mse": 0.00001611737144249138,
+        "relativeMSE": 0.07667609244542796,
+        "floorMSE": 0.000005999487149976562,
+        "floorRelativeMSE": 0.0388264214571526,
+        "mean": 0.014559602589911675,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 32,
+        "ms": 22.299999997019768,
+        "mse": 0.000004361336796004003,
+        "relativeMSE": 0.02074843683718921,
+        "floorMSE": 0.000002018060358484888,
+        "floorRelativeMSE": 0.013060126648460749,
+        "mean": 0.014503584006844046,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 128,
+        "ms": 71.19999998807907,
+        "mse": 0.0000011048550947926311,
+        "relativeMSE": 0.005256190296873043,
+        "floorMSE": 3.970503292357395e-7,
+        "floorRelativeMSE": 0.0025695602036031107,
+        "mean": 0.014447063311966327,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 512,
+        "ms": 236.19999998807907,
+        "mse": 2.730113831574596e-7,
+        "relativeMSE": 0.0012988126586477484,
+        "floorMSE": 8.206693466372094e-8,
+        "floorRelativeMSE": 0.0005311062951376908,
+        "mean": 0.014470905263371324,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 2048,
+        "ms": 899.9000000059605,
+        "mse": 6.016168760230533e-8,
+        "relativeMSE": 0.0002862106353214542,
+        "floorMSE": 2.48546906748383e-8,
+        "floorRelativeMSE": 0.00016085019789269863,
+        "mean": 0.014486238307830307,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "budgetMs": 200,
+        "spp": 348,
+        "ms": 201.29999999701977,
+        "emittedPhotons": 0,
+        "mse": 4.101113822853384e-7,
+        "relativeMSE": 0.0019510463212462923,
+        "floorMSE": 1.377219952073753e-7,
+        "floorRelativeMSE": 0.0008912848875528292
+      },
+      {
+        "integrator": "bidirectional",
+        "budgetMs": 1000,
+        "spp": 1780,
+        "ms": 1001.2000000029802,
+        "emittedPhotons": 0,
+        "mse": 6.706796253994475e-8,
+        "relativeMSE": 0.00031906625185058017,
+        "floorMSE": 2.65148700088309e-8,
+        "floorRelativeMSE": 0.00017159425332688742
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 8,
+        "ms": 21.099999994039536,
+        "mse": 0.00000821785605890123,
+        "relativeMSE": 0.039095276368348676,
+        "floorMSE": 0.000004774997995762766,
+        "floorRelativeMSE": 0.030901988787703033,
+        "mean": 0.014288901423564062,
+        "emittedPhotons": 16384
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 32,
+        "ms": 61.400000005960464,
+        "mse": 0.000002235642299963712,
+        "relativeMSE": 0.010635748904750008,
+        "floorMSE": 0.0000019785451422209636,
+        "floorRelativeMSE": 0.012804399050037664,
+        "mean": 0.014276316667854106,
+        "emittedPhotons": 65536
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 128,
+        "ms": 172.79999999701977,
+        "mse": 8.938128982448101e-7,
+        "relativeMSE": 0.004252187191892448,
+        "floorMSE": 3.8139273733848414e-7,
+        "floorRelativeMSE": 0.002468230165416545,
+        "mean": 0.014246176184062199,
+        "emittedPhotons": 262144
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 512,
+        "ms": 485.90000000596046,
+        "mse": 2.970478881022996e-7,
+        "relativeMSE": 0.0014131628975680131,
+        "floorMSE": 8.984611329606925e-8,
+        "floorRelativeMSE": 0.0005814502096456519,
+        "mean": 0.014319633285768043,
+        "emittedPhotons": 1048576
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 2048,
+        "ms": 1497.2999999970198,
+        "mse": 1.3656272316264804e-7,
+        "relativeMSE": 0.0006496776489380203,
+        "floorMSE": 3.070573812096613e-8,
+        "floorRelativeMSE": 0.00019871597348820817,
+        "mean": 0.014345563820246513,
+        "emittedPhotons": 4194304
+      },
+      {
+        "integrator": "photon-mapping",
+        "budgetMs": 200,
+        "spp": 132,
+        "ms": 204.40000000596046,
+        "emittedPhotons": 270336,
+        "mse": 8.751592776628613e-7,
+        "relativeMSE": 0.004163445256441815,
+        "floorMSE": 3.638278664674052e-7,
+        "floorRelativeMSE": 0.0023545569359833198
+      },
+      {
+        "integrator": "photon-mapping",
+        "budgetMs": 1000,
+        "spp": 996,
+        "ms": 1001.2000000029802,
+        "emittedPhotons": 2039808,
+        "mse": 2.0347622055968194e-7,
+        "relativeMSE": 0.0009680090549348774,
+        "floorMSE": 6.28085032749916e-8,
+        "floorRelativeMSE": 0.0004064729798208336
+      }
+    ]
+  },
+  {
+    "name": "CornellIndirect",
+    "size": 48,
+    "maxBounces": 5,
+    "photonSettings": {
+      "photonsPerIteration": 8192,
+      "initialRadius": 0.16,
+      "samplesPerFrame": 4,
+      "exposure": 12
+    },
+    "reference": {
+      "integrator": "bidirectional",
+      "spp": 32768,
+      "mean": 0.0031319960569117264,
+      "auditPTMean": 0.003143522933668109,
+      "auditRelativeMSE": 0.0030864338964977315,
+      "floorPixels": 163,
+      "floorMean": 0.0008731122390064268,
+      "referenceVariance": 2.9219771969461193e-9,
+      "floorReferenceVariance": 2.0486400797009033e-10,
+      "floorAuditRelativeMSE": 0.011951522904250644
+    },
+    "records": [
+      {
+        "integrator": "path",
+        "spp": 8,
+        "ms": 2.0999999940395355,
+        "mse": 0.00007898338311751282,
+        "relativeMSE": 8.051806303103755,
+        "floorMSE": 0.00000387043082958865,
+        "floorRelativeMSE": 5.077140224275199,
+        "mean": 0.00343007243198581,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 32,
+        "ms": 6.600000008940697,
+        "mse": 0.00001593789804243316,
+        "relativeMSE": 1.62475780159174,
+        "floorMSE": 0.000003139928372988324,
+        "floorRelativeMSE": 4.11888426527863,
+        "mean": 0.003318446230796642,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 128,
+        "ms": 24.100000008940697,
+        "mse": 0.0000031643411184454176,
+        "relativeMSE": 0.3225825579636366,
+        "floorMSE": 0.0000012542725140158302,
+        "floorRelativeMSE": 1.6453252140380856,
+        "mean": 0.0032228145105893517,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 512,
+        "ms": 93.5,
+        "mse": 8.139511140297296e-7,
+        "relativeMSE": 0.0829766521979956,
+        "floorMSE": 4.669679321746845e-7,
+        "floorRelativeMSE": 0.612557561748928,
+        "mean": 0.0031342890386366453,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 2048,
+        "ms": 370.70000000298023,
+        "mse": 1.8418723270869e-7,
+        "relativeMSE": 0.018776606708129685,
+        "floorMSE": 9.524853608062547e-8,
+        "floorRelativeMSE": 0.12494479171190027,
+        "mean": 0.003153583282536813,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "budgetMs": 200,
+        "spp": 740,
+        "ms": 201.20000000298023,
+        "emittedPhotons": 0,
+        "mse": 5.821422421631792e-7,
+        "relativeMSE": 0.05934535075281087,
+        "floorMSE": 3.484777735081611e-7,
+        "floorRelativeMSE": 0.45712495560402133
+      },
+      {
+        "integrator": "path",
+        "budgetMs": 1000,
+        "spp": 3736,
+        "ms": 1000.9000000059605,
+        "emittedPhotons": 0,
+        "mse": 8.760613872817372e-8,
+        "relativeMSE": 0.008930836236181518,
+        "floorMSE": 3.943723500533633e-8,
+        "floorRelativeMSE": 0.05173283827967734
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 8,
+        "ms": 4.0999999940395355,
+        "mse": 0.000008619689437012583,
+        "relativeMSE": 0.8787173580102818,
+        "floorMSE": 8.917448931470984e-7,
+        "floorRelativeMSE": 1.1697699987756423,
+        "mean": 0.0030995417529958535,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 32,
+        "ms": 15.299999997019768,
+        "mse": 0.000002569416694609458,
+        "relativeMSE": 0.26193415273407356,
+        "floorMSE": 2.4842904458142166e-7,
+        "floorRelativeMSE": 0.3258833836998567,
+        "mean": 0.003125955731091707,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 128,
+        "ms": 62.400000005960464,
+        "mse": 6.852198526941745e-7,
+        "relativeMSE": 0.06985339588108185,
+        "floorMSE": 7.247602155849618e-8,
+        "floorRelativeMSE": 0.09507234221498424,
+        "mean": 0.00310320811990828,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 512,
+        "ms": 240.90000000596046,
+        "mse": 1.4044887928537421e-7,
+        "relativeMSE": 0.014317785929874781,
+        "floorMSE": 1.666706958873074e-8,
+        "floorRelativeMSE": 0.021863470284193734,
+        "mean": 0.003103879713566822,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 2048,
+        "ms": 936.2999999970198,
+        "mse": 3.3143490584697544e-8,
+        "relativeMSE": 0.00337874823619142,
+        "floorMSE": 3.750614008401126e-9,
+        "floorRelativeMSE": 0.0049199673334059365,
+        "mean": 0.003116525133440391,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "budgetMs": 200,
+        "spp": 356,
+        "ms": 201.3999999910593,
+        "emittedPhotons": 0,
+        "mse": 2.0001635317820056e-7,
+        "relativeMSE": 0.020390275393090507,
+        "floorMSE": 2.433368089143674e-8,
+        "floorRelativeMSE": 0.03192035085967954
+      },
+      {
+        "integrator": "bidirectional",
+        "budgetMs": 1000,
+        "spp": 1812,
+        "ms": 1002.7999999970198,
+        "emittedPhotons": 0,
+        "mse": 3.658930324172407e-8,
+        "relativeMSE": 0.003730024858894215,
+        "floorMSE": 4.212330126920391e-9,
+        "floorRelativeMSE": 0.005525635689396042
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 8,
+        "ms": 24.799999997019768,
+        "mse": 0.000004639857821441219,
+        "relativeMSE": 0.4730012184537848,
+        "floorMSE": 1.7343634499197248e-7,
+        "floorRelativeMSE": 0.2275097223746536,
+        "mean": 0.002933265900861019,
+        "emittedPhotons": 16384
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 32,
+        "ms": 68,
+        "mse": 0.0000013219516090742955,
+        "relativeMSE": 0.1347637677472753,
+        "floorMSE": 6.41015275416624e-8,
+        "floorRelativeMSE": 0.0840868777272136,
+        "mean": 0.0030730547960161076,
+        "emittedPhotons": 65536
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 128,
+        "ms": 193.80000001192093,
+        "mse": 4.120755828150926e-7,
+        "relativeMSE": 0.04200823824081084,
+        "floorMSE": 2.2800288276406566e-8,
+        "floorRelativeMSE": 0.02990888245521676,
+        "mean": 0.0030867593319945466,
+        "emittedPhotons": 262144
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 512,
+        "ms": 533.8999999910593,
+        "mse": 9.739296849787613e-8,
+        "relativeMSE": 0.009928535429565661,
+        "floorMSE": 8.094950249822107e-9,
+        "floorRelativeMSE": 0.010618765542244925,
+        "mean": 0.0031143333376020097,
+        "emittedPhotons": 1048576
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 2048,
+        "ms": 1620.2999999970198,
+        "mse": 5.1787718449607024e-8,
+        "relativeMSE": 0.005279397531193511,
+        "floorMSE": 2.4429779397782867e-9,
+        "floorRelativeMSE": 0.003204641062241519,
+        "mean": 0.003104110649899938,
+        "emittedPhotons": 4194304
+      },
+      {
+        "integrator": "photon-mapping",
+        "budgetMs": 200,
+        "spp": 128,
+        "ms": 201.3999999910593,
+        "emittedPhotons": 262144,
+        "mse": 4.120755803821264e-7,
+        "relativeMSE": 0.04200823799278687,
+        "floorMSE": 2.2800288276406566e-8,
+        "floorRelativeMSE": 0.02990888245521676
+      },
+      {
+        "integrator": "photon-mapping",
+        "budgetMs": 1000,
+        "spp": 1052,
+        "ms": 1001,
+        "emittedPhotons": 2154496,
+        "mse": 7.005664521125363e-8,
+        "relativeMSE": 0.007141787490249991,
+        "floorMSE": 4.098432233522491e-9,
+        "floorRelativeMSE": 0.005376227108932625
+      }
+    ]
+  },
+  {
+    "name": "CornellGlossy",
+    "size": 48,
+    "maxBounces": 5,
+    "photonSettings": {
+      "photonsPerIteration": 8192,
+      "initialRadius": 0.16,
+      "samplesPerFrame": 4,
+      "exposure": 16
+    },
+    "reference": {
+      "integrator": "bidirectional",
+      "spp": 32768,
+      "mean": 0.0009927926700139728,
+      "auditPTMean": 0.0009993410523869907,
+      "auditRelativeMSE": 0.004953341548758406,
+      "floorPixels": 210,
+      "floorMean": 0.0014443010683905977,
+      "referenceVariance": 3.5015356772613996e-10,
+      "floorReferenceVariance": 1.6250798361599587e-10,
+      "floorAuditRelativeMSE": 0.0013997640260419379
+    },
+    "records": [
+      {
+        "integrator": "path",
+        "spp": 8,
+        "ms": 5,
+        "mse": 5.6014573062359315e-8,
+        "relativeMSE": 0.0568308178665933,
+        "floorMSE": 0.00029766475414930746,
+        "floorRelativeMSE": 142.6960491151154,
+        "mean": 0.0009062235076133065,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 32,
+        "ms": 18.400000005960464,
+        "mse": 6.704240066706554e-7,
+        "relativeMSE": 0.6801934306287643,
+        "floorMSE": 0.000020923554677409553,
+        "floorRelativeMSE": 10.03044043438484,
+        "mean": 0.0009464604105764902,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 128,
+        "ms": 72.90000000596046,
+        "mse": 7.437345794190068e-7,
+        "relativeMSE": 0.7545722856263554,
+        "floorMSE": 0.0000013201386306792038,
+        "floorRelativeMSE": 0.6328547947187287,
+        "mean": 0.0010264675225470702,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 512,
+        "ms": 288,
+        "mse": 1.586061569926341e-7,
+        "relativeMSE": 0.1609173671739673,
+        "floorMSE": 1.9982879327609806e-7,
+        "floorRelativeMSE": 0.09579494684022088,
+        "mean": 0.001009917543210991,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "spp": 2048,
+        "ms": 1147.699999988079,
+        "mse": 4.176589077379965e-8,
+        "relativeMSE": 0.042374503666383255,
+        "floorMSE": 3.052702499554703e-8,
+        "floorRelativeMSE": 0.014634201051287177,
+        "mean": 0.0010051955160884207,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "path",
+        "budgetMs": 200,
+        "spp": 284,
+        "ms": 202.59999999403954,
+        "emittedPhotons": 0,
+        "mse": 2.324121819570834e-7,
+        "relativeMSE": 0.23579889412129038,
+        "floorMSE": 3.136442015366415e-7,
+        "floorRelativeMSE": 0.15035635816222442
+      },
+      {
+        "integrator": "path",
+        "budgetMs": 1000,
+        "spp": 1420,
+        "ms": 1001.7999999970198,
+        "emittedPhotons": 0,
+        "mse": 6.06366572343814e-8,
+        "relativeMSE": 0.06152025508593657,
+        "floorMSE": 5.387347601040083e-8,
+        "floorRelativeMSE": 0.025826141898298488
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 8,
+        "ms": 12.099999994039536,
+        "mse": 0.0000010775147760964998,
+        "relativeMSE": 1.0932163299848956,
+        "floorMSE": 4.8720124369938115e-8,
+        "floorRelativeMSE": 0.023355701886357827,
+        "mean": 0.0009934053620209633,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 32,
+        "ms": 46.29999999701977,
+        "mse": 3.9016076950979793e-7,
+        "relativeMSE": 0.39584619534663806,
+        "floorMSE": 7.075743058149086e-7,
+        "floorRelativeMSE": 0.33920058215731075,
+        "mean": 0.0009909755584667096,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 128,
+        "ms": 181.79999999701977,
+        "mse": 8.86815715504227e-8,
+        "relativeMSE": 0.08997384011647518,
+        "floorMSE": 9.517740243726643e-8,
+        "floorRelativeMSE": 0.04562662896267819,
+        "mean": 0.0009943491276242782,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 512,
+        "ms": 725.0999999940395,
+        "mse": 1.8406278446423506e-8,
+        "relativeMSE": 0.018674494882357978,
+        "floorMSE": 1.9728418285364375e-8,
+        "floorRelativeMSE": 0.009457509850829765,
+        "mean": 0.0009962448443449532,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "spp": 2048,
+        "ms": 2891.5,
+        "mse": 4.515928229505301e-9,
+        "relativeMSE": 0.004581734371587713,
+        "floorMSE": 3.292023442373471e-9,
+        "floorRelativeMSE": 0.0015781470001833234,
+        "mean": 0.0009938463887663414,
+        "emittedPhotons": 0
+      },
+      {
+        "integrator": "bidirectional",
+        "budgetMs": 200,
+        "spp": 128,
+        "ms": 203.40000000596046,
+        "emittedPhotons": 0,
+        "mse": 8.86815715504227e-8,
+        "relativeMSE": 0.08997384011647518,
+        "floorMSE": 9.517740243726643e-8,
+        "floorRelativeMSE": 0.04562662896267819
+      },
+      {
+        "integrator": "bidirectional",
+        "budgetMs": 1000,
+        "spp": 608,
+        "ms": 1002,
+        "emittedPhotons": 0,
+        "mse": 1.4640186500858275e-8,
+        "relativeMSE": 0.014853523415004502,
+        "floorMSE": 1.492848985779724e-8,
+        "floorRelativeMSE": 0.007156495662547333
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 8,
+        "ms": 105.79999999701977,
+        "mse": 4.5378785196147744e-8,
+        "relativeMSE": 0.04604004521499266,
+        "floorMSE": 2.5263258509337225e-8,
+        "floorRelativeMSE": 0.012110829807038573,
+        "mean": 0.0009773914817273574,
+        "emittedPhotons": 16384
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 32,
+        "ms": 317.59999999403954,
+        "mse": 1.3530444472445675e-8,
+        "relativeMSE": 0.013727610216926403,
+        "floorMSE": 4.7889402081563084e-9,
+        "floorRelativeMSE": 0.0022957465995777633,
+        "mean": 0.0009726200913117765,
+        "emittedPhotons": 65536
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 128,
+        "ms": 966.5,
+        "mse": 1.8266345351579905e-8,
+        "relativeMSE": 0.018532522681343217,
+        "floorMSE": 1.798008818699709e-9,
+        "floorRelativeMSE": 0.0008619386444855692,
+        "mean": 0.0009787745075138152,
+        "emittedPhotons": 262144
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 512,
+        "ms": 2796,
+        "mse": 7.77822182565538e-9,
+        "relativeMSE": 0.007891566135970885,
+        "floorMSE": 8.670550641265483e-10,
+        "floorRelativeMSE": 0.000415653282061239,
+        "mean": 0.0009852075211630466,
+        "emittedPhotons": 1048576
+      },
+      {
+        "integrator": "photon-mapping",
+        "spp": 2048,
+        "ms": 7766,
+        "mse": 3.3556815096625505e-9,
+        "relativeMSE": 0.0034045805273142035,
+        "floorMSE": 3.9485866617003283e-10,
+        "floorRelativeMSE": 0.00018928936273411007,
+        "mean": 0.0009866389700773398,
+        "emittedPhotons": 4194304
+      },
+      {
+        "integrator": "photon-mapping",
+        "budgetMs": 200,
+        "spp": 20,
+        "ms": 222.40000000596046,
+        "emittedPhotons": 40960,
+        "mse": 1.509885905767662e-8,
+        "relativeMSE": 0.015318879751969326,
+        "floorMSE": 6.641900801715115e-9,
+        "floorRelativeMSE": 0.0031840283063673206
+      },
+      {
+        "integrator": "photon-mapping",
+        "budgetMs": 1000,
+        "spp": 132,
+        "ms": 1019.2999999970198,
+        "emittedPhotons": 270336,
+        "mse": 1.753538587497147e-8,
+        "relativeMSE": 0.01779091165742721,
+        "floorMSE": 1.7703408547473181e-9,
+        "floorRelativeMSE": 0.0008486750347097028
+      }
+    ]
+  }
+]

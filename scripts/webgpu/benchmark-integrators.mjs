@@ -21,7 +21,7 @@ try {
         for (const [name, exposure] of [
           ['CornellBox', 3],
           ['CornellIndirect', 12],
-          ['CornellGlossy', 30],
+          ['CornellGlossy', 16],
         ]) {
           const data = await loadGLB('/generated/' + name + '.glb'),
             size = 48,
@@ -167,6 +167,10 @@ try {
                   budgetMs: budget,
                   spp: r.spp,
                   ms: r.ms,
+                  emittedPhotons:
+                    integrator === 'photon-mapping'
+                      ? (r.spp / settings.samplesPerFrame) * settings.photonsPerIteration
+                      : 0,
                   mse: metric(r.values),
                   relativeMSE: metric(r.values) / (mean * mean),
                   floorMSE: floorMetric(r.values),
@@ -200,6 +204,12 @@ try {
               name,
               size,
               maxBounces: 5,
+              photonSettings: {
+                photonsPerIteration: settings.photonsPerIteration,
+                initialRadius: settings.photonRadius,
+                samplesPerFrame: settings.samplesPerFrame,
+                exposure: camera.exposure,
+              },
               reference: {
                 integrator: 'bidirectional',
                 spp: 32768,

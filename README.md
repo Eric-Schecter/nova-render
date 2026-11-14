@@ -358,3 +358,17 @@ Cornell（仅顶灯、无环境/方向光、无降噪，48×48，反弹上限 5�
 Windows 软件验证使用 [微软 WARP 1.0.22](https://www.nuget.org/packages/Microsoft.Direct3D.WARP/1.0.22)，仅将微软签名的 ARM64 `d3d10warp.dll` 放在隔离测试程序旁。系统自带的 `10.0.26100.9818` 可运行原 PT，但执行本 BDPT 内核会崩溃；更换此测试驱动后同一内核通过。未替换系统 DLL，也未将 WARP 加入项目依赖；实际显卡仍使用其 DX12 驱动。官方更新记录包括复杂控制流与 RayQuery 处理的修复。
 
 最终回归（2026-11-14）：Mac 在 Metal API 校验下 41 项中 37 项通过，4 项因 MoltenVK 无光追而跳过；Ubuntu Vulkan Lavapipe 8 项全部通过，并复核最终降噪入口；Windows WARP 1.0.22 的 21 项中 20 项通过、硬件光追探测跳过。Chrome 的 BDPT 实际像素、多种反弹深度、法线与混合光照能量审计、原 PT/MIS/降噪和 12 组资源回归通过；构建后的静态文档、手机控件、安装包独立 BDPT 调用和无 UI 构建通过。Windows 真机 GPU 尚未验证。四组软件后端的 32 spp 平均 MSE 从约 `1.94909e-5` 降到 `3.90193e-6`；日志和对比图位于 `build/validation/bdpt-*`。
+
+### 光追层级与光子映射
+
+上层统一为 `Raster` / `RayTracing`，光追内部通过 `RayIntegrator::PathTracing`、`Bidirectional`、`PhotonMapping` 选择积分器；网页对应 `'raster'` / `'ray-tracing'` 和 `'path'` / `'bidirectional'` / `'photon-mapping'`。新增 `RayTracingSettings`、`SetRayTracing/GetRayTracing`（网页小写），旧的 PathTracing 设置接口、枚举、能力字段与网页模式输入仍可用；网页模式读取统一返回 `'ray-tracing'`。没有新增项目依赖。
+
+光子映射继续共享 `pathtrace.hlsl`。每轮先清理 32³ 网格桶，再从面光源生成光子路径，以无丢弃的原子链表存储间接光子，最后用 Epanechnikov 表面核聚集；直接照明独立估计以避免重复计光。每轮重发射、按轮数的负六分之一次方缩小半径并平均像素估计。金属/光滑相机路径继续追踪，HDR 与方向光沿用原有估计器。仅支持当前静态不透明材质，有限半径有平滑偏差；它与显示降噪独立。
+
+`photonsPerIteration` 默认 8192、范围 256–65536；`photonRadius` 默认 0.16、范围 0.03–0.5，单位为归一化模型世界坐标。两端面板均提供对应控件，参数变化重新累计。光子记录与网格复用原 scratch 绑定，仍为 8 个存储绑定；占用随预算和最大反弹次数增长，超出 WebGPU 限额时提示降低预算或渲染比例。
+
+模型列表增加 Cornell Indirect（遮挡间接光）和 Cornell Glossy（小顶灯、粗糙金属球）。球使用几何法线作为着色法线，使测试聚焦于采样与密度估计；玻璃折射焦散未包含在本阶段。设置方法、实际渲染和收敛曲线见 `docs/guide/integrator-comparison.md`。基准同时报告相同相机 spp 和等时间下的整体/地面线性亮度误差，并估计高采样参考噪声，不将光子映射的平滑直接当作更准确。
+
+复现：`ctest --test-dir build -R photon-mapping -V`；网页先启动文档，再运行 `node scripts/webgpu/check-photon.mjs` 和 `node scripts/webgpu/benchmark-integrators.mjs`。绘图工具单独安装 matplotlib 后可运行 `scripts/plot-integrator-benchmark.py`，不属于项目运行依赖。验证记录位于 `build/validation/photon-*`、`integrator-benchmark.json`；原生 Metal 与网页基础光子图逐像素 RMS 差约 `5.7e-7`。
+
+本阶段回归：Mac 43 项中 38 项通过、5 项因 MoltenVK 缺少光追能力跳过；Ubuntu Vulkan Lavapipe 9 项全部通过；Windows WARP 1.0.22 的 22 项中 21 项通过、硬件光追探测跳过。Chrome 光子映射像素、三例子面板、原 PT 模式生命周期回归通过；安装后的独立 C++ 调用与关闭 UI 的库构建通过。Windows 真机显卡尚未验证。

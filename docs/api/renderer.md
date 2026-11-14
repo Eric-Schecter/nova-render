@@ -52,4 +52,4 @@ uint32_t ValidationErrorCount() const;
 
 `EnableParameterPanel(const ParameterPanelConfig&)` 可配置模型与环境选择列表，见[参数面板](./ui#模型与环境选择)。
 
-光栅与渐进路径追踪的模式、采样和能力查询接口见[渲染模式](./render-mode)。
+光栅与光追的模式、采样和能力查询接口见[渲染模式](./render-mode)。
