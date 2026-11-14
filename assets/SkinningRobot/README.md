@@ -6,4 +6,4 @@ Nova 自行生成的骨骼动画演示资源，含 11 个关节、180 个三角�
 
 重建：`node scripts/generate-skinning-demo.mjs`。
 
-示例入口：`nova_animation assets/SkinningRobot/SkinningRobot.glb`，网页为“05 · 骨骼动画”。首版 CPU 蒙皮、每帧更新顶点缓冲，动画模型暂使用光栅渲染。
+示例入口：`nova_animation assets/SkinningRobot/SkinningRobot.glb`，网页为“05 · 骨骼动画”。共享 HLSL GPU 蒙皮、每帧仅更新骨骼/节点矩阵，动画模型暂使用光栅渲染。

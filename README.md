@@ -310,8 +310,17 @@ C++ `PathTracingSettings::denoise` 与网页 `setPathTracing({ ...settings, deno
 
 新增 `nova_animation` 原生例子与网页 `/examples/skeletal-animation`，使用自建 Skinning Robot（11 关节、180 三角形、肘膝混合权重），提供 Walk / Wave 片段。面板控制片段、播放/暂停、循环、速度和时间，相机仍可拖动/缩放。
 
-接口：`GetAnimations()`、`GetAnimationState()`、`SetAnimationState(state)`、`UpdateAnimation(deltaSeconds)`，网页使用对应小写方法。原生窗口循环传入每帧秒数；网页自动播放并在预览隐藏时暂停。首版 CPU 采样/线性蒙皮，仅更新顶点缓冲，不重建纹理；支持 glTF TRS LINEAR / STEP，不支持 CUBICSPLINE、morph 或动画混合，动画模型暂限光栅。没有新增依赖，原静态模型的路径追踪保持可用。
+接口：`GetAnimations()`、`GetAnimationState()`、`SetAnimationState(state)`、`UpdateAnimation(deltaSeconds)`，网页使用对应小写方法。原生窗口循环传入每帧秒数；网页自动播放并在预览隐藏时暂停。CPU 采样骨骼矩阵，共享 HLSL 顶点着色器执行 GPU 蒙皮，每帧仅更新矩阵，不重建纹理；支持 glTF TRS LINEAR / STEP，不支持 CUBICSPLINE、morph 或动画混合，动画模型暂限光栅。没有新增依赖，原静态模型的路径追踪保持可用。
 
 运行：`./build/nova_animation assets/SkinningRobot/SkinningRobot.glb --api metal`；Windows 使用 `--api dx12`，软件验证追加 `--warp`，Linux 使用 `--api vulkan`。资源可用 `node scripts/generate-skinning-demo.mjs` 重建。接口说明见 `docs/api/animation.md`。
 
 动画验证（2026-11-14）：原生与网页在 Walk 0.5 秒的完整顶点/法线数据最大差约 `1.2e-7`；检查了混合权重、不同片段、暂停、速度、时间定位、非循环结尾与非法参数。Mac 完整回归 33 项通过、2 项按能力跳过；Ubuntu Vulkan 的动画、数据及原有路径追踪五项通过；Windows DX12 WARP 17 项通过、硬件探测跳过。Chrome 验证实际蒙皮像素、静态站点第五例、控件、隐藏暂停恢复和手机布局；原生窗口截图检查后修正了控件标签裁切。另验证了从静态路径追踪切换到动画时清空累计、安装包独立调用及无 UI 构建。日志与截图在 `build/validation/animation-*`。
+
+
+### GPU 蒙皮
+
+第五例现使用共享 `model.hlsl::skinVertex` 在顶点着色器中进行 GPU 线性蒙皮。CPU 只采样关键帧、计算关节/节点矩阵；绑定顶点与权重为静态缓冲，每帧只上传矩阵和原有场景常量。C++ / 网页播放 API 与 UI 不变，动画模型仍限光栅。无新增依赖。
+
+该机器人每帧动画数据由 25,920 字节顶点改为 1,536 字节矩阵，CPU 不再逐帧遍历顶点。仅测试保留 CPU 蒙皮参考：`NOVA_BUILD_SKINNING_PROBE=ON` 可运行 Metal GPU 读回，对比两片段、混合权重、非均匀/镜像缩放；网页检查 GPU 输出、实际像素及仅更新矩阵的上传行为。使用说明见 `tools/gpu_skinning/README.md`。
+
+GPU 蒙皮验证（2026-11-14）：Metal 真实 GPU 读回 20 个姿态，含双关节混合与非均匀/镜像缩放，相对测试专用 CPU 参考最大误差 `1.79e-7`；网页 GPU 读回误差 `1.49e-7`，并验证绑定顶点不变、每帧只写矩阵和场景常量。Mac 36 项中 34 项通过、2 项按能力跳过；Ubuntu Vulkan 五项通过，Windows DX12 WARP 17 项通过、硬件探测跳过。静态网站验证不同动画时刻的实际像素、控件与窄屏/隐藏生命周期；原有静态路径追踪、资源切换、无 UI 构建和独立安装包调用均通过。日志及截图在 `build/validation/gpu-skin-*`。

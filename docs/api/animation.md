@@ -36,6 +36,13 @@ await renderer.drawFrame()
 
 按 [glTF 2.0 skin 与动画定义](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skins) 处理关节层级、逆绑定矩阵和每顶点最多四个权重。支持平移、旋转、缩放通道的 LINEAR / STEP 采样，旋转使用四元数插值；权重可为 float 或归一化 uint8 / uint16，关节索引为 uint8 / uint16。
 
-首版使用 CPU 线性蒙皮并更新顶点缓冲，材质和纹理不随帧重建，无新增依赖、无 WASM。继续使用现有 HLSL 光栅 shader。仍限不透明单材质、内嵌资源的 GLB，不支持 morph、CUBICSPLINE、动画混合或压缩扩展；变换须可逆。
+CPU 负责关键帧采样和骨骼/节点矩阵计算，共享 HLSL 顶点着色器负责位置与法线的 GPU 蒙皮。绑定姿态顶点、关节索引和权重只在加载时上传，每帧更新矩阵调色板与原有场景常量，材质和纹理不随帧重建。Metal、DX12、Vulkan 与网页使用同一段 HLSL；无新增依赖、无 WASM。仍限不透明单材质、内嵌资源的 GLB，不支持 morph、CUBICSPLINE、动画混合或压缩扩展；变换须可逆。
 
 动画模型暂不支持路径追踪：能力查询返回 `pathTracing=false`，面板禁用此模式；切换调用会报告原因。静态模型的路径追踪与降噪不受影响。
+
+
+## GPU 蒙皮验证
+
+运行时不再逐顶点执行 CPU 蒙皮，也不逐帧上传变形顶点。法线使用混合蒙皮矩阵的逆转置变换，支持非均匀缩放。此示例的每帧动画数据由约 25.3 KiB 顶点降为 1.5 KiB 矩阵，播放 API 与 UI 不变。
+
+独立 CPU 参考计算仅用于测试。可选 Metal 读回工具与网页验证通过共享 `skinVertex` 函数检查位置、法线、混合权重和多个姿态；使用方法见仓库 `tools/gpu_skinning/README.md`。
