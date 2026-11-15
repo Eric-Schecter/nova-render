@@ -139,7 +139,7 @@ export async function showRasterLaboratory(
           )
     })
     input.addEventListener(
-      kind === 'range' ? 'input' : 'change',
+      kind === 'range' ? 'input' : kind === 'button' ? 'click' : 'change',
       () => {
         try {
           const result = set(

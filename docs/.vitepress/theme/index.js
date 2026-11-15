@@ -2,6 +2,7 @@ import './custom.css'
 import DefaultTheme from 'vitepress/theme'
 import ModelPlayground from './ModelPlayground.vue'
 import ShaderPlayground from './ShaderPlayground.vue'
+import ReflectionProbePlayground from './ReflectionProbePlayground.vue'
 import PlanarReflectionPlayground from './PlanarReflectionPlayground.vue'
 import ScreenSpaceReflectionPlayground from './ScreenSpaceReflectionPlayground.vue'
 import PostProcessingPlayground from './PostProcessingPlayground.vue'
@@ -12,6 +13,7 @@ export default {
   enhanceApp({ app }) {
     app.component('ShaderPlayground', ShaderPlayground)
     app.component('AntiAliasingPlayground', AntiAliasingPlayground)
+    app.component('ReflectionProbePlayground', ReflectionProbePlayground)
     app.component('PlanarReflectionPlayground', PlanarReflectionPlayground)
     app.component('ScreenSpaceReflectionPlayground', ScreenSpaceReflectionPlayground)
     app.component('PostProcessingPlayground', PostProcessingPlayground)
