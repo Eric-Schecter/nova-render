@@ -1,5 +1,6 @@
 #pragma once
 #include "AntiAliasing.hpp"
+#include "PlanarReflections.hpp"
 #include "PostProcessing.hpp"
 #include "Renderer.hpp"
 #include "ScreenSpaceReflections.hpp"
@@ -34,10 +35,13 @@ namespace render
         friend class ShadowView;
         friend class PostProcessingView;
         friend class ScreenSpaceReflectionView;
-        void ConfigureReflectionScene();
-        void ConfigureHDRScene();
-        void ConfigureSceneIntensity(float value);
-        void ConfigureShadow(const struct ShadowSettings& value);
+        friend class PlanarReflectionView;
+        void                     SetPlanarReflections(const PlanarReflectionSettings& value);
+        PlanarReflectionSettings GetPlanarReflections() const;
+        void                     ConfigureReflectionScene();
+        void                     ConfigureHDRScene();
+        void                     ConfigureSceneIntensity(float value);
+        void                     ConfigureShadow(const struct ShadowSettings& value);
         struct Impl;
         std::unique_ptr<Impl> impl_;
     };

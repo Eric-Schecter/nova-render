@@ -763,3 +763,4 @@ export { createShadowView } from './ShadowView.js'
 export { createPostProcessingView } from './PostProcessingView.js'
 
 export { createScreenSpaceReflectionView } from './ScreenSpaceReflectionView.js'
+export { createPlanarReflectionView } from './PlanarReflectionView.js'

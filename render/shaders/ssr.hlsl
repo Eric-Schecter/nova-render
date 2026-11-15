@@ -1,4 +1,4 @@
-// Shared HDR surface pass, conservative min/max Hi-Z, screen-space DDA and environment fallback.
+// Shared HDR surface, planar mirror views, Hi-Z SSR and environment fallback.
 cbuffer Parameters : register(b0)
 {
     float4 aa[16];
@@ -97,6 +97,18 @@ float3 environment(float3 direction, float roughness)
     return lerp(atlasLevel(normalize(direction), low), atlasLevel(normalize(direction), min(low + 1, 8)), frac(level))
            * aa[10].w;
 }
+bool planarScene()
+{
+    return aa[8].y < 0;
+}
+float3 mirrorPoint(float3 p, uint plane)
+{
+    if (plane == 1)
+        p.y = -2 - p.y;
+    if (plane == 2)
+        p.z = -6.4 - p.z;
+    return p;
+}
 #if AA_PASS == 17
 struct Geometry
 {
@@ -139,6 +151,14 @@ Geometry geometry(uint id, float time)
             center  = float3(-3.3 + (object - 4) * .6, -.85, 2.4);
             size    = float3(.06, .3, .06);
             g.color = float3(.7, .7, .72);
+            if (planarScene() && object < 8)
+            {
+                uint frame = object - 4;
+                center     = frame < 2 ? float3(frame == 0 ? -3.86 : 3.86, 1.1, -3.16)
+                                       : float3(0, frame == 2 ? -1.06 : 3.26, -3.16);
+                size       = frame < 2 ? float3(.12, 4.44, .12) : float3(7.84, .12, .12);
+                g.color    = float3(.12, .15, .19);
+            }
         }
         else
         {
@@ -147,6 +167,13 @@ Geometry geometry(uint id, float time)
             size        = float3(.65, .8, .65);
             g.color     = k == 0 ? float3(.9, .28, .04) : k == 1 ? float3(.08, .7, .27) : float3(.14, .3, .9);
             g.roughness = .15 + k * .2;
+            // Bright magenta witness behind the initial camera: appears in the mirror, not the primary view.
+            if (planarScene() && object == 18)
+            {
+                center  = float3(2, .25, 9);
+                size    = float3(1, 1.6, 1);
+                g.color = float3(.9, .03, .55);
+            }
         }
         float sign = (face & 1) ? 1 : -1;
         uint  axis = face / 2;
@@ -156,6 +183,15 @@ Geometry geometry(uint id, float time)
         return g;
     }
     id -= 19 * 36;
+    if (planarScene() && id >= 6912)
+    {
+        uint q      = tri[id - 6912];
+        g.p         = float3((q & 1) ? 3.8 : -3.8, (q & 2) ? 3.2 : -1, -3.2);
+        g.normal    = float3(0, 0, 1);
+        g.color     = float3(.01, .015, .02);
+        g.roughness = aa[9].y;
+        return g;
+    }
     uint  object = id / 2304, k = id % 2304, cell = k / 6, q = tri[k % 6];
     float u = (float(cell % 24) + float(q & 1)) / 24 * 2 * PI, v = (float(cell / 24) + float((q >> 1) & 1)) / 16 * PI;
     g.normal    = float3(sin(v) * cos(u), cos(v), sin(v) * sin(u));
@@ -178,10 +214,11 @@ struct Varying
 Varying VSMain(uint id : SV_VertexID)
 {
     Varying o;
-    o.sky = id >= 7602 ? 1 : 0;
+    uint    skyStart = planarScene() ? 7608 : 7602;
+    o.sky            = id >= skyStart ? 1 : 0;
     if (o.sky)
     {
-        float2 uv   = float2(((id - 7602) << 1) & 2, (id - 7602) & 2);
+        float2 uv   = float2(((id - skyStart) << 1) & 2, (id - skyStart) & 2);
         o.position  = float4(uv * float2(2, -2) + float2(-1, 1), .999999, 1);
         o.world     = 0;
         o.normal    = 0;
@@ -196,8 +233,8 @@ Varying VSMain(uint id : SV_VertexID)
     o.normal    = g.normal;
     o.color     = g.color;
     o.roughness = g.roughness;
-    o.current   = projectWorld(g.p, aa[2].x, aa[4].z, aa[4].x);
-    o.previous  = projectWorld(geometry(id, aa[2].w).p, aa[2].y, aa[4].w, aa[4].y);
+    o.current   = projectWorld(mirrorPoint(g.p, uint(aa[5].w)), aa[2].x, aa[4].z, aa[4].x);
+    o.previous  = projectWorld(mirrorPoint(geometry(id, aa[2].w).p, uint(aa[5].w)), aa[2].y, aa[4].w, aa[4].y);
     o.position  = o.current;
     o.position.xy += aa[1].xy * 2 / aa[0].xy * float2(1, -1) * o.position.w;
     return o;
@@ -216,20 +253,35 @@ SurfaceOutput PSMain(Varying i)
     {
         float2 uv = (i.position.xy / (aa[0].xy * (aa[0].w == 4 ? 2 : 1))) - aa[1].xy / aa[0].xy;
         float3 d  = cameraRay(uv), r, u, f;
+        if (aa[5].w == 1)
+            d.y = -d.y;
+        if (aa[5].w == 2)
+            d.z = -d.z;
         basis(aa[2].y, aa[4].w, r, u, f);
-        float3 old        = float3(dot(d, r), dot(d, u), -dot(d, f));
-        float2 prev       = projectView(old);
-        o.color           = rgbL(environment(d, 0) * aa[2].z);
-        o.motion          = float4(prev - uv, 1, 1);
-        o.normalRoughness = float4(0, 0, 0, 1);
-        o.depth           = float4(1000, 1000, 0, 1);
+        float3 motionDirection = cameraRay(uv);
+        float3 old             = float3(dot(motionDirection, r), dot(motionDirection, u), -dot(motionDirection, f));
+        float2 prev            = projectView(old);
+        o.color                = rgbL(environment(d, 0) * aa[2].z);
+        o.motion               = float4(prev - uv, 1, 1);
+        o.normalRoughness      = float4(0, 0, 0, 1);
+        o.depth                = float4(1000, 1000, 0, 1);
         return o;
     }
-    float3 n = normalize(i.normal), v = normalize(eye() - i.world), l = normalize(float3(-.5, 1.2, 1.3)),
-           h    = normalize(l + v);
+    if (planarScene() && aa[5].w > .5)
+    {
+        // Clip the original scene to the camera-facing half-space; omit receivers from reflection views.
+        if ((i.world.y < -.999 && i.normal.y > .99) || (i.world.z < -3.199 && i.normal.z > .99))
+            discard;
+        if (aa[5].w == 1 && (i.world.y + 1) * (eye().y + 1) < -.001)
+            discard;
+        if (aa[5].w == 2 && (i.world.z + 3.2) * (eye().z + 3.2) < -.001)
+            discard;
+    }
+    float3 n = normalize(i.normal), v = normalize(mirrorPoint(eye(), uint(aa[5].w)) - i.world),
+           l = normalize(float3(-.5, 1.2, 1.3)), h = normalize(l + v);
     float rough = i.roughness;
     if (n.y > .99 && i.world.y < -.98)
-        rough = lerp(.035, .6, saturate((i.world.x + 4) / 8));
+        rough = planarScene() ? aa[9].x : lerp(.035, .6, saturate((i.world.x + 4) / 8));
     float  power = lerp(160, 6, rough);
     float3 c     = i.color * (.08 + 1.4 * saturate(dot(n, l))) + pow(saturate(dot(n, h)), power) * .4
                + environment(n, .9) * i.color * .12;
@@ -418,9 +470,19 @@ float4 PSMain(Varying i)
     }
     return 0;
 #else
-    float  z     = sceneDepth.SampleLevel(PointSampler, i.uv, 0).r;
-    float4 nr    = surface.SampleLevel(PointSampler, i.uv, 0);
-    uint   debug = uint(aa[10].y);
+    float  z  = sceneDepth.SampleLevel(PointSampler, i.uv, 0).r;
+    float4 nr = surface.SampleLevel(PointSampler, i.uv, 0);
+    if (planarScene() && aa[5].y < 0)
+    {
+        float4 motion   = hiz3.SampleLevel(PointSampler, i.uv, 0);
+        float3 position = worldPosition(i.uv - aa[1].xy / aa[0].xy, z);
+        if (z < 64 && abs(nr.y) > .99 && abs(position.y + 1) < .02 && aa[8].z > .5 && aa[9].z > .01)
+            motion.xy = hiz4.SampleLevel(LinearSampler, i.uv, 0).xy;
+        if (z < 64 && abs(nr.z) > .99 && abs(position.z + 3.2) < .02 && aa[8].w > .5 && aa[9].w > .01)
+            motion.xy = hiz5.SampleLevel(LinearSampler, i.uv, 0).xy;
+        return motion;
+    }
+    uint debug = uint(aa[10].y);
     if (debug == 3)
         return rgbL(z > 64 ? 0 : nr.xyz * .5 + .5);
     if (debug == 4)
@@ -438,7 +500,39 @@ float4 PSMain(Varying i)
     float2 uv = i.uv - aa[1].xy / aa[0].xy;
     float3 p = worldPosition(uv, z), n = normalize(nr.xyz), v = normalize(eye() - p), direction = reflect(-v, n);
     float3 fallback = environment(direction, nr.w) * aa[2].z;
-    float4 traced   = aa[8].x > .5 ? hiz1.SampleLevel(PointSampler, i.uv, 0) : 0;
+    if (planarScene())
+    {
+        bool   floor      = abs(n.y) > .99 && abs(p.y + 1) < .02;
+        bool   mirror     = abs(n.z) > .99 && abs(p.z + 3.2) < .02;
+        bool   enabled    = floor ? aa[8].z > .5 : mirror && aa[8].w > .5;
+        float  intensity  = floor ? aa[9].z : aa[9].w;
+        float3 reflection = fallback;
+        if (enabled)
+        {
+            uint w, h;
+            sceneColor.GetDimensions(w, h);
+            float2 radius = nr.w * nr.w * 24 / float2(w, h);
+            float3 sum    = 0;
+            float  weight = 0;
+            for (int y = -2; y <= 2; y++)
+                for (int x = -2; x <= 2; x++)
+                {
+                    float  k = exp(-.5 * (x * x + y * y));
+                    float2 q = i.uv + float2(x, y) * radius;
+                    sum +=
+                      (floor ? hiz1.SampleLevel(LinearSampler, q, 0).rgb : hiz2.SampleLevel(LinearSampler, q, 0).rgb)
+                      * k;
+                    weight += k;
+                }
+            reflection = sum / weight;
+        }
+        if (!floor && !mirror)
+            return rgbL(base + fallback * .06);
+        float f0      = mirror ? .92 : .65;
+        float fresnel = f0 + (1 - f0) * pow(1 - saturate(abs(dot(n, v))), 5);
+        return rgbL(base + reflection * fresnel * intensity * (1 - nr.w * .35));
+    }
+    float4 traced = aa[8].x > .5 ? hiz1.SampleLevel(PointSampler, i.uv, 0) : 0;
     if (debug == 2)
         return float4(traced.aaa, 1);
     float3 reflection = lerp(fallback, traced.rgb, traced.a);

@@ -83,6 +83,8 @@ namespace render
         detail::PostProcessingState       postState;
         bool                              reflectionScene = false;
         ScreenSpaceReflectionSettings     reflections;
+        bool                              planarScene = false;
+        PlanarReflectionSettings          planar;
         bool                              hdrScene       = false;
         float                             sceneIntensity = 1;
     };
@@ -222,6 +224,22 @@ namespace render
         UseDefaultReflectionEnvironment();
         ResetHistory();
     }
+    void AntiAliasingView::SetPlanarReflections(const PlanarReflectionSettings& s)
+    {
+        detail::ValidatePlanar(s);
+        const auto& old = impl_->planar;
+        if (
+          !impl_->planarScene || old.floorEnabled != s.floorEnabled || old.mirrorEnabled != s.mirrorEnabled
+          || old.floorRoughness != s.floorRoughness || old.mirrorRoughness != s.mirrorRoughness
+          || old.floorIntensity != s.floorIntensity || old.mirrorIntensity != s.mirrorIntensity)
+            ResetHistory();
+        impl_->planarScene = true;
+        impl_->planar      = s;
+    }
+    PlanarReflectionSettings AntiAliasingView::GetPlanarReflections() const
+    {
+        return impl_->planar;
+    }
     void AntiAliasingView::SetScreenSpaceReflections(const ScreenSpaceReflectionSettings& s)
     {
         detail::ValidateReflections(s);
@@ -297,6 +315,8 @@ namespace render
         if (s.reflectionScene)
         {
             detail::PackReflectionUniforms(u, s.reflections, w, h, method == AAMethod::SSAA);
+            if (s.planarScene)
+                detail::PackPlanarUniforms(u, s.planar);
             u[7] = {.025f, .035f, .055f, 1};
         }
         if (s.post.enabled || s.hdrScene || s.reflectionScene)
@@ -312,7 +332,11 @@ namespace render
         };
         if (s.reflectionScene)
         {
-            detail::AppendReflectionPasses(passes, u, s.reflections, method == AAMethod::MSAA, taa, s.settings.split);
+            if (s.planarScene)
+                detail::AppendPlanarPasses(passes, u, s.planar, method == AAMethod::MSAA, taa, s.settings.split);
+            else
+                detail::AppendReflectionPasses(
+                  passes, u, s.reflections, method == AAMethod::MSAA, taa, s.settings.split);
         }
         else
         {

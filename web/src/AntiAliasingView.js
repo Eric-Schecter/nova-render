@@ -1,4 +1,10 @@
 import {
+  defaultPlanarReflections,
+  copyPlanarReflections,
+  packPlanarUniforms,
+  appendPlanarPasses,
+} from './PlanarReflections.js'
+import {
   defaultScreenSpaceReflections,
   copyScreenSpaceReflections,
   reflectionEnvironmentAtlas,
@@ -53,6 +59,7 @@ export async function createAntiAliasingView({
   shadowScene = false,
   hdrScene = false,
   reflectionScene = false,
+  planarScene = false,
 } = {}) {
   if (!canvas) throw Error('AA requires a canvas')
   const adapter = borrowedDevice ? null : await navigator.gpu?.requestAdapter()
@@ -99,6 +106,7 @@ export async function createAntiAliasingView({
     previous = { ...camera }
   }
   let reflections = defaultScreenSpaceReflections()
+  let planar = defaultPlanarReflections()
   let postSettings = { ...defaultPostProcessing(), enabled: hdrScene || reflectionScene },
     postState = { frames: 0, last: 0 },
     sceneIntensity = 1
@@ -239,7 +247,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 65; i++)
+    for (let i = 0; i < 73; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -315,6 +323,7 @@ export async function createAntiAliasingView({
     }
     if (reflectionScene)
       packReflectionUniforms(u, reflections, width, height, settings.method === 'ssaa')
+    if (planarScene) packPlanarUniforms(u, planar)
     if (postSettings.enabled || hdrScene || reflectionScene) u[26] = 1
     const passes = [],
       add = (program, target) => {
@@ -330,10 +339,10 @@ export async function createAntiAliasingView({
       if (!luma) p.u[26] = 1
     }
     if (reflectionScene) {
-      appendReflectionPasses(
+      ;(planarScene ? appendPlanarPasses : appendReflectionPasses)(
         passes,
         u,
-        reflections,
+        planarScene ? planar : reflections,
         settings.method === 'msaa',
         taa,
         settings.split,
@@ -453,7 +462,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 65; i++) {
+    for (let i = 0; i < 73; i++) {
       if (i === AREA || i === SEARCH || i === 64) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -472,7 +481,7 @@ export async function createAntiAliasingView({
         th =
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
-      if (i >= 42 && i < 64) [tw, th] = reflectionResourceSize(i, w, h, superSample)
+      if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
       if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
         textures[i].destroy()
         textures[i] = undefined
@@ -641,6 +650,13 @@ export async function createAntiAliasingView({
     return 'rendered'
   }
   return {
+    getPlanarReflections: () => ({ ...planar }),
+    setPlanarReflections(value) {
+      if (!planarScene) throw Error('Not a planar reflection view')
+      const next = copyPlanarReflections({ ...planar, ...value })
+      if (JSON.stringify(next) !== JSON.stringify(planar)) reset()
+      planar = next
+    },
     getScreenSpaceReflections: () => ({ ...reflections }),
     setScreenSpaceReflections(value) {
       check()

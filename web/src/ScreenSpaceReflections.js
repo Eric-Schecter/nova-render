@@ -124,7 +124,7 @@ export function reflectionResourceSize(i, w, h, ss) {
     const d = 2 ** (i - 49)
     return [Math.ceil((w * scale) / d), Math.ceil((h * scale) / d)]
   }
-  if (i >= 42 && i <= 63) return [w * scale, h * scale]
+  if ((i >= 42 && i <= 63) || i >= 65) return [w * scale, h * scale]
   return [w, h]
 }
 export function packReflectionUniforms(u, s, w, h, ss) {

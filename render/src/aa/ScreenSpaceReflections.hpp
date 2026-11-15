@@ -107,4 +107,65 @@ namespace render::detail
             base->uniforms[6][0] = 1;
         }
     }
+    inline void ValidatePlanar(const PlanarReflectionSettings& s)
+    {
+        for (float v : {s.floorRoughness, s.mirrorRoughness})
+            if (!std::isfinite(v) || v < 0 || v > 1)
+                throw std::invalid_argument("Invalid planar roughness");
+        for (float v : {s.floorIntensity, s.mirrorIntensity})
+            if (!std::isfinite(v) || v < 0 || v > 2)
+                throw std::invalid_argument("Invalid planar intensity");
+    }
+    inline void PackPlanarUniforms(AAUniforms& u, const PlanarReflectionSettings& s)
+    {
+        u[8]     = {0, -1, s.floorEnabled ? 1.f : 0.f, s.mirrorEnabled ? 1.f : 0.f};
+        u[9]     = {s.floorRoughness, s.mirrorRoughness, s.floorIntensity, s.mirrorIntensity};
+        u[10][1] = 0;
+        u[10][2] = 7611;
+    }
+    inline void AppendPlanarPasses(
+      std::vector<AAPass>&            passes,
+      const AAUniforms&               u,
+      const PlanarReflectionSettings& s,
+      bool                            ms,
+      bool                            taa,
+      bool                            split)
+    {
+        // Reflection views omit both receiving surfaces: bounded single bounce, no recursive feedback.
+        for (int plane = 1; plane <= 2; plane++)
+        {
+            if (plane == 1 ? !s.floorEnabled : !s.mirrorEnabled)
+                continue;
+            AAPass p;
+            p.program        = 17;
+            p.target         = plane == 1 ? AAPlanarFloor : AAPlanarMirror;
+            p.uniforms       = u;
+            p.uniforms[5][3] = float(plane);
+            p.sources[3]     = AASsrEnvironment;
+            passes.push_back(p);
+        }
+        ScreenSpaceReflectionSettings off;
+        off.enabled = false;
+        AppendReflectionPasses(passes, u, off, ms, taa, split);
+        for (auto& p : passes)
+        {
+            if (p.program == 1 && p.target == AAMotion)
+            {
+                p.program        = 20;
+                p.uniforms[5][1] = -1;
+                p.sources[0]     = AASsrColor;
+                p.sources[1]     = AASsrNormal;
+                p.sources[2]     = AASsrDepth;
+                p.sources[3]     = AASsrEnvironment;
+            }
+            if (p.program == 20)
+            {
+                p.sources[4] = s.floorEnabled ? AAPlanarFloor : AADummy;
+                p.sources[5] = s.mirrorEnabled ? AAPlanarMirror : AADummy;
+                p.sources[6] = AASsrMotion;
+                p.sources[7] = s.floorEnabled ? AAPlanarFloor + 1 : AADummy;
+                p.sources[8] = s.mirrorEnabled ? AAPlanarMirror + 1 : AADummy;
+            }
+        }
+    }
 } // namespace render::detail
