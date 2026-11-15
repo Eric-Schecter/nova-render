@@ -85,7 +85,10 @@ export function instrumentRenderer(renderer, canvas) {
       ...meter.snapshot(
         !visible() ? 'paused' : !active ? 'idle' : ray ? 'accumulating' : 'rendering',
       ),
-      accumulatedFrames: renderer.getAccumulatedSamples(),
+      accumulatedFrames:
+        renderer.getRenderMode() === 'raster'
+          ? renderer.getAntiAliasingHistoryFrames()
+          : renderer.getAccumulatedSamples(),
     }
   }
   const panel = attachPerformanceBar(host, () => renderer.getPerformanceStats())
@@ -97,17 +100,25 @@ export function instrumentRenderer(renderer, canvas) {
       if (result === 'rendered' && !disposed) {
         const ray = renderer.getRenderMode() === 'ray-tracing',
           settings = renderer.getRayTracing(),
-          scale = ray ? settings.resolutionScale : 1
+          aa = renderer.getAntiAliasing(),
+          scale = ray ? settings.resolutionScale : aa.method === 'ssaa' ? 2 : 1
         meter.record(start, {
           width: Math.max(1, Math.round(canvas.width * scale)),
           height: Math.max(1, Math.round(canvas.height * scale)),
           scale,
-          samples: ray ? settings.samplesPerFrame : 1,
+          samples: ray ? settings.samplesPerFrame : ['msaa', 'ssaa'].includes(aa.method) ? 4 : 1,
           method: ray
             ? { path: 'PT', bidirectional: 'BDPT', 'photon-mapping': 'Photon mapping', mlt: 'MLT' }[
                 settings.integrator
               ]
-            : 'Raster',
+            : {
+                off: 'Raster',
+                fxaa: 'FXAA',
+                smaa: 'SMAA 1x',
+                msaa: 'MSAA 4x',
+                ssaa: 'SSAA 2×2',
+                taa: 'TAA',
+              }[aa.method],
         })
         lastFinished = performance.now()
       }

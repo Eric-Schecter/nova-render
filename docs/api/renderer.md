@@ -26,6 +26,9 @@ GLFW 须先初始化，窗口用 `GLFW_NO_API` 创建。销毁顺序是 Renderer
 void Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
 FrameResult DrawFrame();
 void WaitIdle();
+void SetAntiAliasing(const AntiAliasingSettings& settings);
+AntiAliasingSettings GetAntiAliasing() const;
+uint32_t GetAntiAliasingHistoryFrames() const;
 void LoadModel(const std::filesystem::path& glbPath);
 void LoadEnvironment(const std::filesystem::path& environmentPath);
 void SetEnvironment(const EnvironmentSettings& settings);
@@ -53,3 +56,5 @@ uint32_t ValidationErrorCount() const;
 `EnableParameterPanel(const ParameterPanelConfig&)` 可配置模型与环境选择列表，见[参数面板](./ui#模型与环境选择)。
 
 光栅与光追的模式、采样和能力查询接口见[渲染模式](./render-mode)。
+
+光栅 AA 默认 Off，六档算法与历史管理见[抗锯齿](./antialiasing)。

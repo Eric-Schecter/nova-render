@@ -50,3 +50,5 @@ try {
 模型例子支持光栅与光追，接口与参数范围对应原生 C++。用法见[渲染模式](./render-mode#网页用法)。
 
 动画片段、播放状态与时间推进接口见[骨骼动画](./animation)。
+
+常规光栅例子通过 `setAntiAliasing({ method: 'taa' })` 选择算法，`getAntiAliasing()` 读取设置，`getAntiAliasingHistoryFrames()` 读取历史帧数；默认 Off。详见[抗锯齿](./antialiasing)。

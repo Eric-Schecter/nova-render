@@ -211,6 +211,34 @@ export function attachParameterPanel(
     fieldEvents = new AbortController()
     body.replaceChildren()
     fields.clear()
+    if (adapter.getAntiAliasing) {
+      const renderer = group('Anti-aliasing'),
+        label = document.createElement('label'),
+        select = document.createElement('select')
+      label.textContent = 'Algorithm'
+      select.setAttribute('aria-label', '抗锯齿算法')
+      for (const [value, text] of [
+        ['off', 'Off'],
+        ['fxaa', 'FXAA'],
+        ['smaa', 'SMAA 1x'],
+        ['msaa', 'MSAA 4x'],
+        ['ssaa', 'SSAA 2×2'],
+        ['taa', 'TAA'],
+      ]) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = text
+        select.append(option)
+      }
+      select.addEventListener(
+        'change',
+        () => change(() => adapter.setAntiAliasing({ method: select.value })),
+        { signal: fieldEvents.signal },
+      )
+      label.append(select)
+      renderer.append(label)
+      fields.set('aaMethod', { input: select })
+    }
     if (current.camera) {
       const renderer = group('Renderer'),
         label = document.createElement('label'),
@@ -526,7 +554,15 @@ export function attachParameterPanel(
     }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
-      if (key.startsWith('animation')) {
+      if (key === 'aaMethod') {
+        field.input.value = adapter.getAntiAliasing().method
+        field.input.disabled =
+          adapter.getRenderMode() !== 'raster' || !!adapter.getAmbientOcclusion?.().enabled
+        field.input.title = field.input.disabled
+          ? 'Available for raster rendering without AO diagnostic'
+          : ''
+        continue
+      } else if (key.startsWith('animation')) {
         const state = adapter.getAnimationState()
         if (key === 'animationClip') field.input.value = state.clip
         else if (key === 'animation_playing' || key === 'animation_loop')

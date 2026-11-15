@@ -70,7 +70,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       const texture = device.createTexture({
         size: [image.width, image.height],
         mipLevelCount: levels.length,
-        format: slot===0||slot===4?'rgba8unorm-srgb':'rgba8unorm',
+        format: slot === 0 || slot === 4 ? 'rgba8unorm-srgb' : 'rgba8unorm',
         usage:
           GPUTextureUsage.TEXTURE_BINDING |
           GPUTextureUsage.COPY_DST |
@@ -88,8 +88,25 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     }
     cube = cubeTexture(device, fallbackEnvironment)
     backgroundCube = cubeTexture(device, fallbackEnvironment)
+    const previousUniform = makeBuffer(
+        new Float32Array(96),
+        GPUBufferUsage.UNIFORM,
+        'Nova previous scene',
+      ),
+      previousPalette = makeBuffer(
+        data.jointMatrices || new Float32Array(16),
+        GPUBufferUsage.STORAGE,
+        'Nova previous palette',
+      )
+    let lastScene, lastPalette, currentScene, aaPipelines
     const layout = device.createBindGroupLayout({
       entries: [
+        {
+          binding: 15,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform', minBindingSize: 384 },
+        },
+        { binding: 16, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
@@ -129,6 +146,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       device.createBindGroup({
         layout,
         entries: [
+          { binding: 15, resource: { buffer: previousUniform } },
+          { binding: 16, resource: { buffer: previousPalette } },
           { binding: 0, resource: { buffer: uniform } },
           { binding: 1, resource: { buffer: vertices } },
           ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
@@ -141,7 +160,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ],
       })
     let bindGroup = group(cube, backgroundCube)
-    async function pipelineFor(shader, sky = false) {
+    async function pipelineFor(shader, sky = false, samples = 1, motion = false, aa = false) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
       for (const module of [vertex, fragment]) {
@@ -151,13 +170,23 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       }
       return device.createRenderPipelineAsync({
         layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-        vertex: { module: vertex, entryPoint: sky ? 'SkyVSMain' : 'VSMain' },
+        vertex: {
+          module: vertex,
+          entryPoint: motion ? (sky ? 'SkyVSMain' : 'MotionVSMain') : sky ? 'SkyVSMain' : 'VSMain',
+        },
         fragment: {
           module: fragment,
-          entryPoint: sky ? 'SkyPSMain' : 'PSMain',
-          targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
+          entryPoint: motion
+            ? sky
+              ? 'SkyMotionPSMain'
+              : 'MotionPSMain'
+            : sky
+              ? 'SkyPSMain'
+              : 'PSMain',
+          targets: [{ format: aa ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat() }],
         },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
+        multisample: { count: samples },
         depthStencil: {
           format: 'depth32float',
           depthWriteEnabled: !sky,
@@ -167,6 +196,54 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     }
     const pipeline = await pipelineFor(shader)
     return {
+      async prepareAA(camera, width, height, lighting, light, settings, frames) {
+        if (!aaPipelines) {
+          const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
+          const packages = await Promise.all(
+            ['model-aa', 'sky-aa', 'model-motion', 'sky-motion'].map(async (n) => {
+              const r = await fetch(dir + n + '.json')
+              if (!r.ok) throw Error('Missing raster AA shader ' + n)
+              return r.json()
+            }),
+          )
+          aaPipelines = {}
+          for (const count of [1, 4]) {
+            aaPipelines['model' + count] = await pipelineFor(packages[0], false, count, false, true)
+            aaPipelines['sky' + count] = await pipelineFor(packages[1], true, count, false, true)
+          }
+          aaPipelines.motion = await pipelineFor(packages[2], false, 1, true, true)
+          aaPipelines.skyMotion = await pipelineFor(packages[3], true, 1, true, true)
+        }
+        currentScene = sceneUniforms(
+          data,
+          camera,
+          width / height,
+          lighting,
+          light,
+          environment,
+          settings,
+        )
+        device.queue.writeBuffer(uniform, 0, currentScene)
+        device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
+        if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)
+        const palette = data.jointMatrices || new Float32Array(16)
+        device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
+      },
+      drawAA(pass, motion, count, settings) {
+        pass.setBindGroup(0, bindGroup)
+        if (environment && settings.showBackground) {
+          pass.setPipeline(motion ? aaPipelines.skyMotion : aaPipelines['sky' + count])
+          pass.draw(3)
+        }
+        if (data.vertices.length) {
+          pass.setPipeline(motion ? aaPipelines.motion : aaPipelines['model' + count])
+          pass.draw(data.vertices.length / 12)
+        }
+      },
+      finishAA() {
+        lastScene = currentScene?.slice()
+        lastPalette = data.jointMatrices?.slice()
+      },
       triangles: data.vertices.length / 36,
       get skinned() {
         return !!data.animation

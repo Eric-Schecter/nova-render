@@ -4,6 +4,8 @@
 
 可选 **Off、FXAA、SMAA 1x、MSAA 4x、SSAA 2×2、TAA**。分割线左侧为 Off，右侧为所选算法；暂停运动并开启 4× / 8× 放大，便于查看像素差异。性能条独立位于画面上方，参数在下方，不自动降低画质。
 
+棋盘过滤默认开启；关闭可单独观察纹理混叠。常规模型也默认启用 mipmap、三线性和各向异性过滤，其他光栅例子的面板提供相同的六档 AA。
+
 具体实现与范围见 [抗锯齿接口](../api/antialiasing)。
 
 <ClientOnly><AntiAliasingPlayground /></ClientOnly>

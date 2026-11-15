@@ -1,6 +1,24 @@
 # 抗锯齿
 
-`AntiAliasingView` 是独立的光栅诊断视图，当前绘制内置程序化测试台；不新增渲染 Mode，也不表示已给所有 GLB / AO / 光追视图接入全局 AA 后处理。
+`Renderer` 和 `Window` 的常规光栅绘制支持六档 AA，覆盖三角形、模型、光照、天空盒和 GPU 蒙皮。默认 Off，参数面板提供算法选择；不新增 Mode。AO 诊断与光追采用各自的采样流程，不叠加这里的光栅 AA。
+
+```cpp
+render::AntiAliasingSettings aa;
+aa.method = render::AAMethod::TAA;
+window.SetAntiAliasing(aa);
+window.DrawFrame();
+```
+
+```js
+renderer.setAntiAliasing({ method: 'taa' })
+await renderer.drawFrame()
+```
+
+通过 `GetAntiAliasingHistoryFrames()` / `getAntiAliasingHistoryFrames()` 查看 TAA 历史帧数。小幅相机移动和 GPU 蒙皮使用上一帧的矩阵与骨骼姿态重投影；切换模型、环境、曝光、算法、尺寸或大幅切换视角时重置历史。网页静止后累计 32 帧即待命，动画播放时继续绘制。
+
+模型纹理默认生成完整 mip 链，使用三线性与最高 8× 各向异性过滤（Vulkan 按设备支持降级）；基础色与自发光在 sRGB/线性空间正确转换，法线、材质与遮蔽数据保持线性。无需增加依赖。
+
+`AntiAliasingView` 是独立的程序化测试台，额外提供分屏、放大、时间和棋盘过滤开关：
 
 ```cpp
 #include <render/AntiAliasingView.hpp>
@@ -21,6 +39,7 @@ await view.drawFrame(800, 485)
 
 两端提供 `SetAntiAliasing` / `GetAntiAliasing`、`SetCamera` / `GetCamera`、`SetTime`、`ResetHistory`、`GetHistoryFrames`、`DrawFrame`。网页使用小写首字母，并提供 `dispose()`；原生对象离开作用域时释放资源。网页 setter 可传部分字段，原生传完整设置。
 
+- `textureFiltering`：默认 true，测试台的程序化棋盘使用屏幕导数解析过滤；关闭可观察高频纹理混叠。此开关不关闭模型的通用纹理过滤。
 - `method`：Off / FXAA / SMAA / MSAA / SSAA / TAA，网页为对应小写，默认 TAA。
 - `historyWeight`：0–0.98，默认 0.9，仅 TAA 使用。越高越依赖历史，运动时可能损失细节。
 - `zoom`：1–8，默认 1。全画面以中心为基准放大，便于观察像素。
@@ -39,4 +58,4 @@ await view.drawFrame(800, 485)
 
 `GetHistoryFrames()` 只对 TAA 返回自重置后的历史帧数，其他方法返回 0。例子暂停后让 TAA 再绘制 32 帧，其他方法按需绘制；隐藏或离开视口时网页暂停。UI、运动节奏与停止预算属于例子层。
 
-原生离屏结果读回为 `Image` 再交给窗口显示；网页直接显示。Draw / FPS 统计整个例子的绘制与等待，不代表只测 AA 核心的 GPU 成本。此例用于观察效果和接口，后续可将已验证的 pass 接到常规模型的后处理链。
+原生启用 AA 后，离屏结果读回为 `Image` 再交给窗口显示；网页直接显示。Draw / FPS 包含绘制、读回与等待，不代表纯 GPU 成本。SSAA 的内部宽高各加倍，MSAA 使用真实四重采样；资源按所选算法分配，不自动降画质。

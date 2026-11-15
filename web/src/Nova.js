@@ -1,3 +1,4 @@
+import { createAntiAliasingView } from './AntiAliasingView.js'
 import { defaultAmbientOcclusion, copyAmbientOcclusion } from './AmbientOcclusion.js'
 import { defaultPathTracing, validatePathTracing } from './PathView.js'
 import { defaultEnvironment, copyEnvironment, loadEnvironmentFile } from './EnvironmentData.js'
@@ -26,6 +27,117 @@ class Renderer {
   #device
   #context
   #pipeline
+  #triangleShader
+  #triangleAA = {}
+  #aaView
+  #aaRemaining = 0
+  #aaSettings = { method: 'off', historyWeight: 0.9, zoom: 1, split: false, textureFiltering: true }
+  #resetAA() {
+    this.#aaView?.resetHistory()
+    this.#aaRemaining = 32
+  }
+  #taaActive() {
+    return (
+      this.#renderMode === 'raster' &&
+      !this.#aoSettings.enabled &&
+      this.#aaSettings.method === 'taa' &&
+      this.#aaRemaining > 0
+    )
+  }
+  getAntiAliasing() {
+    this.#check()
+    return { ...this.#aaSettings }
+  }
+  getAntiAliasingHistoryFrames() {
+    return this.#aaView?.getHistoryFrames() || 0
+  }
+  setAntiAliasing(value) {
+    this.#check()
+    const next = { ...this.#aaSettings, ...value }
+    if (
+      !['off', 'fxaa', 'smaa', 'msaa', 'ssaa', 'taa'].includes(next.method) ||
+      !Number.isFinite(next.historyWeight) ||
+      next.historyWeight < 0 ||
+      next.historyWeight > 0.98 ||
+      !Number.isFinite(next.zoom) ||
+      next.zoom < 1 ||
+      next.zoom > 8 ||
+      typeof next.split !== 'boolean' ||
+      typeof next.textureFiltering !== 'boolean'
+    )
+      throw Error('Invalid AA settings')
+    this.#aaSettings = next
+    this.#aaView?.setAntiAliasing(next)
+    this.#resetAA()
+    this.#parameterPanel?.refresh()
+  }
+  async #drawAA(width, height) {
+    if (!this.#aaView) {
+      const scene = {
+          get encoded() {
+            return !owner.#model
+          },
+          clear: () =>
+            this.#clear.map((v, i) =>
+              i === 3 || !this.#model ? v : v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
+            ),
+          prepare: async (w, h, settings, frames) => {
+            if (this.#model)
+              await this.#model.prepareAA(
+                this.#camera,
+                w,
+                h,
+                this.#lighting,
+                this.#directionalLight,
+                this.#environmentSettings,
+                frames,
+              )
+            else if (!this.#triangleAA[settings.method === 'msaa' ? 4 : 1]) {
+              const count = settings.method === 'msaa' ? 4 : 1,
+                shader = this.#triangleShader
+              this.#triangleAA[count] = await this.#device.createRenderPipelineAsync({
+                layout: 'auto',
+                vertex: {
+                  module: this.#device.createShaderModule({ code: shader.vert }),
+                  entryPoint: 'VSMain',
+                },
+                fragment: {
+                  module: this.#device.createShaderModule({ code: shader.frag }),
+                  entryPoint: 'PSMain',
+                  targets: [{ format: 'rgba16float' }],
+                },
+                primitive: { topology: 'triangle-list' },
+                multisample: { count },
+                depthStencil: {
+                  format: 'depth32float',
+                  depthWriteEnabled: false,
+                  depthCompare: 'always',
+                },
+              })
+            }
+          },
+          draw: (pass, motion, count) => {
+            if (this.#model) this.#model.drawAA(pass, motion, count, this.#environmentSettings)
+            else {
+              pass.setPipeline(this.#triangleAA[count])
+              pass.draw(3)
+            }
+          },
+          finish: () => this.#model?.finishAA(),
+        },
+        owner = this
+      this.#aaView = await createAntiAliasingView({
+        canvas: this.#canvas,
+        shaderDirectory: this.#shaderDirectory,
+        device: this.#device,
+        context: this.#context,
+        scene,
+      })
+      this.#aaView.setAntiAliasing(this.#aaSettings)
+    }
+    await this.#aaView.drawFrame(width, height)
+    this.#aaRemaining = Math.max(0, this.#aaRemaining - 1)
+  }
   #renderMode = 'raster'
   #pathSettings = defaultPathTracing()
   #aoSettings = defaultAmbientOcclusion()
@@ -95,6 +207,7 @@ class Renderer {
         throw failure || Error(error?.message || 'Renderer 已释放')
       }
       this.#model?.dispose()
+      this.#resetAA()
       this.#model = next
       this.#animationLastTime = undefined
       if (next.skinned) this.#renderMode = 'raster'
@@ -127,6 +240,7 @@ class Renderer {
         if (candidate !== this.#model) candidate?.dispose()
         throw error
       }
+      this.#resetAA()
       this.#model = candidate
       this.#environment = environment
       this.#environmentURL = url
@@ -167,6 +281,7 @@ class Renderer {
       if (!this.#model?.triangles) throw Error('Path tracing requires a loaded model')
     }
     if (mode === this.#renderMode) return
+    this.#resetAA()
     this.#renderMode = mode
     this.resetAccumulation()
     if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
@@ -184,6 +299,13 @@ class Renderer {
   setAnimationState(value) {
     this.#check()
     if (!this.#model?.animations.length) throw Error('No animation clips loaded')
+    const old = this.#model.animationState
+    if (
+      (value.clip !== undefined && value.clip !== old.clip) ||
+      (value.time !== undefined && Math.abs(value.time - old.time) > 0.25)
+    )
+      this.#resetAA()
+    this.#aaRemaining = 32
     this.#model.setAnimationState(value)
     this.#animationLastTime = undefined
     this.#parameterPanel?.refresh()
@@ -202,6 +324,7 @@ class Renderer {
     const next = copyAmbientOcclusion(value)
     if (next.enabled && !this.getCapabilities().rayTracing)
       throw Error(this.getCapabilities().reason)
+    this.#resetAA()
     this.#aoSettings = next
     this.resetAccumulation()
     this.#parameterPanel?.refresh()
@@ -261,7 +384,10 @@ class Renderer {
       !this.#continuous ||
       this.#disposed ||
       this.#pathError ||
-      (this.#renderMode === 'raster' && !this.#aoSettings.enabled && !this.#animationPlaying()) ||
+      (this.#renderMode === 'raster' &&
+        !this.#aoSettings.enabled &&
+        !this.#animationPlaying() &&
+        !this.#taaActive()) ||
       this.#pathFrame
     )
       return
@@ -269,7 +395,10 @@ class Renderer {
       this.#pathFrame = 0
       if (
         this.#disposed ||
-        (this.#renderMode === 'raster' && !this.#aoSettings.enabled && !this.#animationPlaying())
+        (this.#renderMode === 'raster' &&
+          !this.#aoSettings.enabled &&
+          !this.#animationPlaying() &&
+          !this.#taaActive())
       )
         return
       const rect = this.#canvas.getBoundingClientRect()
@@ -301,6 +430,7 @@ class Renderer {
   }
   setEnvironment(settings) {
     this.#check()
+    this.#resetAA()
     this.#environmentSettings = copyEnvironment(settings)
     this.#parameterPanel?.refresh()
   }
@@ -310,6 +440,7 @@ class Renderer {
   }
   setDirectionalLight(light) {
     this.#check()
+    this.#resetAA()
     this.#directionalLight = copyDirectionalLight(light)
     this.#parameterPanel?.refresh()
   }
@@ -321,6 +452,7 @@ class Renderer {
     this.#check()
     if (mode !== 'unlit' && mode !== 'pbr')
       throw Error('Invalid lighting mode: expected unlit or pbr')
+    this.#resetAA()
     this.#lighting = mode
     this.#parameterPanel?.refresh()
   }
@@ -328,6 +460,15 @@ class Renderer {
     this.#check()
     const value = { ...this.#camera, ...camera }
     validateCamera(value)
+    if (
+      Math.abs(value.yaw - this.#camera.yaw) > 20 ||
+      Math.abs(value.pitch - this.#camera.pitch) > 20 ||
+      Math.abs(value.distance - this.#camera.distance) > 2 ||
+      value.exposure !== this.#camera.exposure ||
+      JSON.stringify(value.target || [0, 0, 0]) !== JSON.stringify(this.#camera.target || [0, 0, 0])
+    )
+      this.#resetAA()
+    this.#aaRemaining = 32
     this.#camera = { ...value, target: [...(value.target || [0, 0, 0])] }
     this.#parameterPanel?.refresh()
   }
@@ -341,6 +482,9 @@ class Renderer {
     const panel = attachParameterPanel(
       this.#canvas,
       {
+        getAntiAliasing: () => this.getAntiAliasing(),
+        setAntiAliasing: (value) => this.setAntiAliasing(value),
+        getAmbientOcclusion: () => this.getAmbientOcclusion(),
         getCapabilities: () => this.getCapabilities(),
         getRenderMode: () => this.getRenderMode(),
         setRenderMode: (mode) => this.setRenderMode(mode),
@@ -458,6 +602,9 @@ class Renderer {
     this.#environment = undefined
     this.#environmentURL = undefined
     this.#modelURL = undefined
+    this.#resetAA()
+    this.#triangleShader = { vert, frag }
+    this.#triangleAA = {}
     this.#pipeline = pipeline
     this.#renderMode = 'raster'
     if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
@@ -472,6 +619,7 @@ class Renderer {
       !color.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)
     )
       throw Error('背景色需要 4 个 0～1 的数值')
+    this.#resetAA()
     this.#clear = [...color]
     this.#parameterPanel?.refresh()
   }
@@ -508,7 +656,13 @@ class Renderer {
     this.#device.pushErrorScope('validation')
     let failure
     try {
-      if (this.#model) {
+      if (
+        this.#renderMode === 'raster' &&
+        !this.#aoSettings.enabled &&
+        this.#aaSettings.method !== 'off'
+      )
+        await this.#drawAA(width, height)
+      else if (this.#model) {
         if (this.#renderMode === 'ray-tracing' || this.#aoSettings.enabled)
           await this.#model.drawPath(
             this.#camera,
@@ -572,6 +726,7 @@ class Renderer {
     this.#disposed = true
     if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
     this.#pathFrame = 0
+    this.#aaView?.dispose()
     this.#model?.dispose()
     this.#context.unconfigure()
     this.#device.destroy()

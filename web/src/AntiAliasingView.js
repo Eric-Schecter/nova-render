@@ -27,14 +27,20 @@ const halton = (index, base) => {
   }
   return v
 }
-export async function createAntiAliasingView({ canvas, shaderDirectory = '/generated/' } = {}) {
+export async function createAntiAliasingView({
+  canvas,
+  shaderDirectory = '/generated/',
+  device: borrowedDevice,
+  context: borrowedContext,
+  scene: external,
+} = {}) {
   if (!canvas) throw Error('AA requires a canvas')
-  const adapter = await navigator.gpu?.requestAdapter()
-  if (!adapter) throw Error('WebGPU unavailable')
-  const device = await adapter.requestDevice(),
-    context = canvas.getContext('webgpu')
+  const adapter = borrowedDevice ? null : await navigator.gpu?.requestAdapter()
+  if (!borrowedDevice && !adapter) throw Error('WebGPU unavailable')
+  const device = borrowedDevice || (await adapter.requestDevice()),
+    context = borrowedContext || canvas.getContext('webgpu')
   if (!context) {
-    device.destroy()
+    if (!borrowedDevice) device.destroy()
     throw Error('WebGPU canvas unavailable')
   }
   const format = navigator.gpu.getPreferredCanvasFormat()
@@ -48,10 +54,10 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
     depthMS,
     depthBaseline
   let settings = {
-      method: 'taa',
+      method: external ? 'off' : 'taa',
       historyWeight: 0.9,
       zoom: 1,
-      split: true,
+      split: !external,
       textureFiltering: true,
     },
     camera = { yaw: 20, pitch: 15, distance: 6.2, exposure: 1 },
@@ -156,7 +162,7 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
   } catch (error) {
     uniform?.destroy()
     textures.forEach((t) => t?.destroy())
-    device.destroy()
+    if (!borrowedDevice) device.destroy()
     throw error
   }
   function reset() {
@@ -170,23 +176,15 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 17; i++)
+    for (let i = 0; i < 22; i++)
       if (i !== AREA && i !== SEARCH) {
         textures[i]?.destroy()
-        const big = ss && (i === C || i === M)
-        textures[i] = texture(
-          i === DUMMY ? 1 : w * (big ? 2 : 1),
-          i === DUMMY ? 1 : h * (big ? 2 : 1),
-          'rgba16float',
-          i === MC || i === MM ? 4 : 1,
-        )
+        textures[i] = undefined
       }
     depth?.destroy()
     depthMS?.destroy()
     depthBaseline?.destroy()
-    depth = texture(w * (ss ? 2 : 1), h * (ss ? 2 : 1), 'depth32float')
-    depthMS = texture(w, h, 'depth32float', 4)
-    depthBaseline = texture(w, h, 'depth32float')
+    depth = depthMS = depthBaseline = undefined
     canvas.width = w
     canvas.height = h
     context.configure({ device, format, alphaMode: 'opaque' })
@@ -236,14 +234,33 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
         passes.push(p)
         return p
       }
-    add(0, B).u.splice(4, 4, 0, 0, 0, 0)
-    add(0, C).ms = settings.method === 'msaa'
+    const crop = (target, source, aw, ah, luma) => {
+      const p = add(1, target)
+      p.sources[0] = source
+      p.u.splice(20, 4, aw / (aw + 2), ah / (ah + 2), 1 / (aw + 2), 1 / (ah + 2))
+      p.u[24] = luma ? 1 : 0
+      if (!luma) p.u[26] = 1
+    }
+    if (external) {
+      u[26] = external.encoded ? 2 : 1
+      u.splice(28, 4, ...external.clear())
+      if (settings.split) {
+        add(-1, 21).u.splice(4, 4, 0, 0, 0, 0)
+        crop(B, 21, width, height, true)
+      }
+      add(-1, 17).ms = settings.method === 'msaa'
+      const scale = settings.method === 'ssaa' ? 2 : 1
+      crop(C, 17, width * scale, height * scale, true)
+    } else {
+      add(0, B).u.splice(4, 4, 0, 0, 0, 0)
+      add(0, C).ms = settings.method === 'msaa'
+    }
     let filtered = C
     if (settings.method === 'fxaa') {
       add(2, F).sources[0] = C
       filtered = F
     }
-    if (settings.method === 'ssaa') {
+    if (!external && settings.method === 'ssaa') {
       add(1, F).sources[0] = C
       filtered = F
     }
@@ -260,6 +277,10 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
       filtered = F
     }
     if (taa) {
+      if (external) {
+        add(external.encoded ? -3 : -2, 18)
+        crop(M, 18, width, height, false)
+      }
       filtered = frames % 2 ? HB : HA
       const p = add(7, filtered)
       p.sources[0] = C
@@ -275,14 +296,64 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
   }
   async function draw(w, h) {
     check()
-    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w > 2048 || h > 2048)
-      throw Error('AA dimensions must be 1..2048')
+    if (
+      !Number.isInteger(w) ||
+      !Number.isInteger(h) ||
+      w < 1 ||
+      h < 1 ||
+      w > (external ? 4096 : 2048) ||
+      h > (external ? 4096 : 2048)
+    )
+      throw Error('AA dimensions exceed the view limit')
     resize(w, h)
-    const { passes, jitter } = plan(),
-      encoder = device.createCommandEncoder()
+    const { passes, jitter } = plan()
+    const used = new Set([DUMMY])
+    for (const p of passes) {
+      used.add(p.target)
+      p.sources.forEach((i) => used.add(i))
+      if (p.program === 0) used.add(p.target + 1)
+      if (p.ms) {
+        used.add(external ? 19 : MC)
+        if (!external) used.add(MM)
+      }
+    }
+    for (let i = 0; i < 22; i++) {
+      if (i === AREA || i === SEARCH) continue
+      if (!used.has(i)) {
+        textures[i]?.destroy()
+        textures[i] = undefined
+        continue
+      }
+      const big = superSample && (external ? i === 17 || i === 18 : i === C || i === M)
+      const raw = external && i >= 17 && i <= 21
+      const tw = i === DUMMY ? 1 : w * (big ? 2 : 1) + (raw ? 2 : 0),
+        th = i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
+      if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
+        textures[i].destroy()
+        textures[i] = undefined
+      }
+      if (!textures[i])
+        textures[i] = texture(tw, th, 'rgba16float', [MC, MM, 19, 20].includes(i) ? 4 : 1)
+    }
+    const raw = textures[external ? 17 : C]
+    if (!depth || depth.width !== raw.width || depth.height !== raw.height) {
+      depth?.destroy()
+      depth = texture(raw.width, raw.height, 'depth32float')
+    }
+    if (
+      settings.method === 'msaa' &&
+      (!depthMS || depthMS.width !== raw.width || depthMS.height !== raw.height)
+    ) {
+      depthMS?.destroy()
+      depthMS = texture(raw.width, raw.height, 'depth32float', 4)
+    }
+    if (used.has(B) && !depthBaseline)
+      depthBaseline = texture(w + (external ? 2 : 0), h + (external ? 2 : 0), 'depth32float')
+    if (external) await external.prepare(w, h, settings, frames)
+    const encoder = device.createCommandEncoder()
     device.pushErrorScope('validation')
     for (const i of [HA, HB, PM, DUMMY])
-      if (frames === 0 || i === DUMMY) {
+      if (textures[i] && (frames === 0 || i === DUMMY)) {
         const p = encoder.beginRenderPass({
           colorAttachments: [
             {
@@ -297,14 +368,15 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
       }
     function render(p, index, present = false) {
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
-      const scene = p.program === 0,
+      const scene = p.program <= 0,
+        native = p.program < 0,
         target = textures[p.target]
-      const colorAttachments = Array.from({ length: scene ? 2 : 1 }, (_, a) => ({
+      const colorAttachments = Array.from({ length: scene && !native ? 2 : 1 }, (_, a) => ({
         view: present
           ? context.getCurrentTexture().createView()
-          : textures[p.ms ? MC + a : p.target + a].createView(),
+          : textures[p.ms ? (native ? 19 : MC) + a : p.target + a].createView(),
         ...(p.ms ? { resolveTarget: textures[p.target + a].createView() } : {}),
-        clearValue: a ? [0, 0, 1, 1] : [0.012, 0.02, 0.035, 0.1],
+        clearValue: p.program < -1 || a ? [0, 0, 1, 1] : p.u.slice(28, 32),
         loadOp: 'clear',
         storeOp: p.ms ? 'discard' : 'store',
       }))
@@ -313,7 +385,12 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
         ...(scene
           ? {
               depthStencilAttachment: {
-                view: (p.target === B ? depthBaseline : p.ms ? depthMS : depth).createView(),
+                view: (p.target === B || p.target === 21
+                  ? depthBaseline
+                  : p.ms
+                    ? depthMS
+                    : depth
+                ).createView(),
                 depthLoadOp: 'clear',
                 depthClearValue: 1,
                 depthStoreOp: 'discard',
@@ -321,6 +398,12 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
             }
           : {}),
       })
+      if (native) {
+        pass.setViewport(1 + p.u[4], 1 + p.u[5], target.width - 2, target.height - 2, 0, 1)
+        if (p.program !== -3) external.draw(pass, p.program === -2, p.ms ? 4 : 1)
+        pass.end()
+        return
+      }
       pass.setPipeline(present ? displayPipeline : p.ms ? sceneMS : pipelines[p.program])
       const group = device.createBindGroup({
         layout,
@@ -348,6 +431,7 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
     await device.queue.onSubmittedWorkDone()
     const error = await device.popErrorScope()
     if (error) throw Error(error.message)
+    external?.finish()
     previous = { ...camera }
     previousTime = time
     previousJitter = jitter
@@ -441,13 +525,13 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
     dispose() {
       if (disposed) return
       disposed = true
-      context.unconfigure()
+      if (!borrowedContext) context.unconfigure()
       uniform.destroy()
       textures.forEach((t) => t?.destroy())
       depth?.destroy()
       depthMS?.destroy()
       depthBaseline?.destroy()
-      device.destroy()
+      if (!borrowedDevice) device.destroy()
     },
   }
 }

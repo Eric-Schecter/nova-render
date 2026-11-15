@@ -27,6 +27,9 @@ explicit Window(const WindowConfig& config = {});
 bool PollEvents();
 FrameResult DrawFrame();
 void WaitIdle();
+void SetAntiAliasing(const AntiAliasingSettings& settings);
+AntiAliasingSettings GetAntiAliasing() const;
+uint32_t GetAntiAliasingHistoryFrames() const;
 void LoadModel(const std::filesystem::path& glbPath);
 void LoadEnvironment(const std::filesystem::path& environmentPath);
 void SetEnvironment(const EnvironmentSettings& settings);
@@ -59,3 +62,5 @@ uint32_t ValidationErrorCount() const;
 ## 应用组织的视图
 
 `GetFramebufferSize()` 返回当前帧缓冲的像素宽高；窗口最小化时可返回零。`PresentImage(image)` 复制 sRGB RGBA8 图像并在下一帧显示；`ClearImage()` 恢复 Window 自己的光栅或光追输出。由应用决定图像布局、预算与 UI，例如[积分器对比](../examples/integrators)。
+
+光栅 AA 默认 Off，六档算法与历史管理见[抗锯齿](./antialiasing)。
