@@ -44,10 +44,39 @@ namespace render::detail
                 }
                 return VK_FALSE;
             }
-            VkInstance                       instance{};
-            VkPhysicalDevice                 physical{};
-            VkDevice                         device{};
-            VolkDeviceTable                  api{};
+            VkInstance       instance{};
+            VkPhysicalDevice physical{};
+            VkDevice         device{};
+            VolkDeviceTable  api{};
+            struct InstanceDispatch
+            {
+                PFN_vkDestroyInstance                        vkDestroyInstance{};
+                PFN_vkEnumeratePhysicalDevices               vkEnumeratePhysicalDevices{};
+                PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties{};
+                PFN_vkGetPhysicalDeviceProperties            vkGetPhysicalDeviceProperties{};
+                PFN_vkGetPhysicalDeviceMemoryProperties      vkGetPhysicalDeviceMemoryProperties{};
+                PFN_vkEnumerateDeviceExtensionProperties     vkEnumerateDeviceExtensionProperties{};
+                PFN_vkCreateDevice                           vkCreateDevice{};
+                void                                         Load(VkInstance instance)
+                {
+                    vkDestroyInstance =
+                      reinterpret_cast<PFN_vkDestroyInstance>(vkGetInstanceProcAddr(instance, "vkDestroyInstance"));
+                    vkEnumeratePhysicalDevices = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+                      vkGetInstanceProcAddr(instance, "vkEnumeratePhysicalDevices"));
+                    vkGetPhysicalDeviceQueueFamilyProperties =
+                      reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
+                        vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
+                    vkGetPhysicalDeviceProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+                      vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties"));
+                    vkGetPhysicalDeviceMemoryProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
+                      vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties"));
+                    vkEnumerateDeviceExtensionProperties = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+                      vkGetInstanceProcAddr(instance, "vkEnumerateDeviceExtensionProperties"));
+                    vkCreateDevice =
+                      reinterpret_cast<PFN_vkCreateDevice>(vkGetInstanceProcAddr(instance, "vkCreateDevice"));
+                }
+            } instanceApi;
+
             VkQueue                          queue{};
             VkPhysicalDeviceMemoryProperties memory{};
             uint32_t                         family = 0, width = 0, height = 0;
@@ -367,7 +396,7 @@ namespace render::detail
                 if (portability)
                     info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
                 Check(vkCreateInstance(&info, nullptr, &instance));
-                volkLoadInstanceOnly(instance);
+                instanceApi.Load(instance);
                 if (validation)
                 {
                     VkDebugUtilsMessengerCreateInfoEXT debug{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
@@ -381,15 +410,15 @@ namespace render::detail
                       vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
                     Check(create(instance, &debug, nullptr, &messenger));
                 }
-                Check(vkEnumeratePhysicalDevices(instance, &count, nullptr));
+                Check(instanceApi.vkEnumeratePhysicalDevices(instance, &count, nullptr));
                 std::vector<VkPhysicalDevice> devices(count);
-                Check(vkEnumeratePhysicalDevices(instance, &count, devices.data()));
+                Check(instanceApi.vkEnumeratePhysicalDevices(instance, &count, devices.data()));
                 for (auto candidate : devices)
                 {
                     uint32_t n = 0;
-                    vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, nullptr);
+                    instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, nullptr);
                     std::vector<VkQueueFamilyProperties> q(n);
-                    vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, q.data());
+                    instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, q.data());
                     for (uint32_t f = 0; f < n; f++)
                         if (q[f].queueFlags & VK_QUEUE_GRAPHICS_BIT)
                         {
@@ -403,21 +432,21 @@ namespace render::detail
                 if (!physical)
                     throw std::runtime_error("Vulkan AA graphics device unavailable");
                 VkPhysicalDeviceProperties props;
-                vkGetPhysicalDeviceProperties(physical, &props);
+                instanceApi.vkGetPhysicalDeviceProperties(physical, &props);
                 if (!(props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts
                       & VK_SAMPLE_COUNT_4_BIT))
                     throw std::runtime_error("Vulkan AA requires 4x MSAA");
                 uniformStride = std::max(VkDeviceSize(256), props.limits.minUniformBufferOffsetAlignment);
-                vkGetPhysicalDeviceMemoryProperties(physical, &memory);
+                instanceApi.vkGetPhysicalDeviceMemoryProperties(physical, &memory);
                 float                   priority = 1;
                 VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
                 qi.queueFamilyIndex = family;
                 qi.queueCount       = 1;
                 qi.pQueuePriorities = &priority;
                 extensions.clear();
-                Check(vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, nullptr));
+                Check(instanceApi.vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, nullptr));
                 ext.resize(count);
-                Check(vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, ext.data()));
+                Check(instanceApi.vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, ext.data()));
                 for (const auto& e : ext)
                     if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0)
                         extensions.push_back("VK_KHR_portability_subset");
@@ -426,8 +455,108 @@ namespace render::detail
                 di.pQueueCreateInfos       = &qi;
                 di.enabledExtensionCount   = uint32_t(extensions.size());
                 di.ppEnabledExtensionNames = extensions.data();
-                Check(vkCreateDevice(physical, &di, nullptr, &device));
-                volkLoadDeviceTable(&api, device);
+                Check(instanceApi.vkCreateDevice(physical, &di, nullptr, &device));
+                // Never overwrite the window backend's global Volk dispatch.
+                const auto getDeviceProc =
+                  reinterpret_cast<PFN_vkGetDeviceProcAddr>(vkGetInstanceProcAddr(instance, "vkGetDeviceProcAddr"));
+                api.vkAllocateCommandBuffers =
+                  reinterpret_cast<PFN_vkAllocateCommandBuffers>(getDeviceProc(device, "vkAllocateCommandBuffers"));
+                api.vkAllocateDescriptorSets =
+                  reinterpret_cast<PFN_vkAllocateDescriptorSets>(getDeviceProc(device, "vkAllocateDescriptorSets"));
+                api.vkAllocateMemory =
+                  reinterpret_cast<PFN_vkAllocateMemory>(getDeviceProc(device, "vkAllocateMemory"));
+                api.vkBeginCommandBuffer =
+                  reinterpret_cast<PFN_vkBeginCommandBuffer>(getDeviceProc(device, "vkBeginCommandBuffer"));
+                api.vkBindBufferMemory =
+                  reinterpret_cast<PFN_vkBindBufferMemory>(getDeviceProc(device, "vkBindBufferMemory"));
+                api.vkBindImageMemory =
+                  reinterpret_cast<PFN_vkBindImageMemory>(getDeviceProc(device, "vkBindImageMemory"));
+                api.vkCmdBeginRenderPass =
+                  reinterpret_cast<PFN_vkCmdBeginRenderPass>(getDeviceProc(device, "vkCmdBeginRenderPass"));
+                api.vkCmdBindDescriptorSets =
+                  reinterpret_cast<PFN_vkCmdBindDescriptorSets>(getDeviceProc(device, "vkCmdBindDescriptorSets"));
+                api.vkCmdBindPipeline =
+                  reinterpret_cast<PFN_vkCmdBindPipeline>(getDeviceProc(device, "vkCmdBindPipeline"));
+                api.vkCmdClearColorImage =
+                  reinterpret_cast<PFN_vkCmdClearColorImage>(getDeviceProc(device, "vkCmdClearColorImage"));
+                api.vkCmdCopyBufferToImage =
+                  reinterpret_cast<PFN_vkCmdCopyBufferToImage>(getDeviceProc(device, "vkCmdCopyBufferToImage"));
+                api.vkCmdCopyImageToBuffer =
+                  reinterpret_cast<PFN_vkCmdCopyImageToBuffer>(getDeviceProc(device, "vkCmdCopyImageToBuffer"));
+                api.vkCmdDraw = reinterpret_cast<PFN_vkCmdDraw>(getDeviceProc(device, "vkCmdDraw"));
+                api.vkCmdEndRenderPass =
+                  reinterpret_cast<PFN_vkCmdEndRenderPass>(getDeviceProc(device, "vkCmdEndRenderPass"));
+                api.vkCmdPipelineBarrier =
+                  reinterpret_cast<PFN_vkCmdPipelineBarrier>(getDeviceProc(device, "vkCmdPipelineBarrier"));
+                api.vkCmdSetScissor = reinterpret_cast<PFN_vkCmdSetScissor>(getDeviceProc(device, "vkCmdSetScissor"));
+                api.vkCmdSetViewport =
+                  reinterpret_cast<PFN_vkCmdSetViewport>(getDeviceProc(device, "vkCmdSetViewport"));
+                api.vkCreateBuffer = reinterpret_cast<PFN_vkCreateBuffer>(getDeviceProc(device, "vkCreateBuffer"));
+                api.vkCreateCommandPool =
+                  reinterpret_cast<PFN_vkCreateCommandPool>(getDeviceProc(device, "vkCreateCommandPool"));
+                api.vkCreateDescriptorPool =
+                  reinterpret_cast<PFN_vkCreateDescriptorPool>(getDeviceProc(device, "vkCreateDescriptorPool"));
+                api.vkCreateDescriptorSetLayout = reinterpret_cast<PFN_vkCreateDescriptorSetLayout>(
+                  getDeviceProc(device, "vkCreateDescriptorSetLayout"));
+                api.vkCreateFramebuffer =
+                  reinterpret_cast<PFN_vkCreateFramebuffer>(getDeviceProc(device, "vkCreateFramebuffer"));
+                api.vkCreateGraphicsPipelines =
+                  reinterpret_cast<PFN_vkCreateGraphicsPipelines>(getDeviceProc(device, "vkCreateGraphicsPipelines"));
+                api.vkCreateImage = reinterpret_cast<PFN_vkCreateImage>(getDeviceProc(device, "vkCreateImage"));
+                api.vkCreateImageView =
+                  reinterpret_cast<PFN_vkCreateImageView>(getDeviceProc(device, "vkCreateImageView"));
+                api.vkCreatePipelineLayout =
+                  reinterpret_cast<PFN_vkCreatePipelineLayout>(getDeviceProc(device, "vkCreatePipelineLayout"));
+                api.vkCreateRenderPass =
+                  reinterpret_cast<PFN_vkCreateRenderPass>(getDeviceProc(device, "vkCreateRenderPass"));
+                api.vkCreateSampler = reinterpret_cast<PFN_vkCreateSampler>(getDeviceProc(device, "vkCreateSampler"));
+                api.vkCreateShaderModule =
+                  reinterpret_cast<PFN_vkCreateShaderModule>(getDeviceProc(device, "vkCreateShaderModule"));
+                api.vkDestroyBuffer = reinterpret_cast<PFN_vkDestroyBuffer>(getDeviceProc(device, "vkDestroyBuffer"));
+                api.vkDestroyCommandPool =
+                  reinterpret_cast<PFN_vkDestroyCommandPool>(getDeviceProc(device, "vkDestroyCommandPool"));
+                api.vkDestroyDescriptorPool =
+                  reinterpret_cast<PFN_vkDestroyDescriptorPool>(getDeviceProc(device, "vkDestroyDescriptorPool"));
+                api.vkDestroyDescriptorSetLayout = reinterpret_cast<PFN_vkDestroyDescriptorSetLayout>(
+                  getDeviceProc(device, "vkDestroyDescriptorSetLayout"));
+                api.vkDestroyDevice = reinterpret_cast<PFN_vkDestroyDevice>(getDeviceProc(device, "vkDestroyDevice"));
+                api.vkDestroyFramebuffer =
+                  reinterpret_cast<PFN_vkDestroyFramebuffer>(getDeviceProc(device, "vkDestroyFramebuffer"));
+                api.vkDestroyImage = reinterpret_cast<PFN_vkDestroyImage>(getDeviceProc(device, "vkDestroyImage"));
+                api.vkDestroyImageView =
+                  reinterpret_cast<PFN_vkDestroyImageView>(getDeviceProc(device, "vkDestroyImageView"));
+                api.vkDestroyPipeline =
+                  reinterpret_cast<PFN_vkDestroyPipeline>(getDeviceProc(device, "vkDestroyPipeline"));
+                api.vkDestroyPipelineLayout =
+                  reinterpret_cast<PFN_vkDestroyPipelineLayout>(getDeviceProc(device, "vkDestroyPipelineLayout"));
+                api.vkDestroyRenderPass =
+                  reinterpret_cast<PFN_vkDestroyRenderPass>(getDeviceProc(device, "vkDestroyRenderPass"));
+                api.vkDestroySampler =
+                  reinterpret_cast<PFN_vkDestroySampler>(getDeviceProc(device, "vkDestroySampler"));
+                api.vkDestroyShaderModule =
+                  reinterpret_cast<PFN_vkDestroyShaderModule>(getDeviceProc(device, "vkDestroyShaderModule"));
+                api.vkDeviceWaitIdle =
+                  reinterpret_cast<PFN_vkDeviceWaitIdle>(getDeviceProc(device, "vkDeviceWaitIdle"));
+                api.vkEndCommandBuffer =
+                  reinterpret_cast<PFN_vkEndCommandBuffer>(getDeviceProc(device, "vkEndCommandBuffer"));
+                api.vkFreeMemory = reinterpret_cast<PFN_vkFreeMemory>(getDeviceProc(device, "vkFreeMemory"));
+                api.vkGetBufferMemoryRequirements = reinterpret_cast<PFN_vkGetBufferMemoryRequirements>(
+                  getDeviceProc(device, "vkGetBufferMemoryRequirements"));
+                api.vkGetDeviceQueue =
+                  reinterpret_cast<PFN_vkGetDeviceQueue>(getDeviceProc(device, "vkGetDeviceQueue"));
+                api.vkGetImageMemoryRequirements = reinterpret_cast<PFN_vkGetImageMemoryRequirements>(
+                  getDeviceProc(device, "vkGetImageMemoryRequirements"));
+                api.vkMapMemory     = reinterpret_cast<PFN_vkMapMemory>(getDeviceProc(device, "vkMapMemory"));
+                api.vkQueueSubmit   = reinterpret_cast<PFN_vkQueueSubmit>(getDeviceProc(device, "vkQueueSubmit"));
+                api.vkQueueWaitIdle = reinterpret_cast<PFN_vkQueueWaitIdle>(getDeviceProc(device, "vkQueueWaitIdle"));
+                api.vkResetCommandPool =
+                  reinterpret_cast<PFN_vkResetCommandPool>(getDeviceProc(device, "vkResetCommandPool"));
+                api.vkResetDescriptorPool =
+                  reinterpret_cast<PFN_vkResetDescriptorPool>(getDeviceProc(device, "vkResetDescriptorPool"));
+                api.vkUnmapMemory = reinterpret_cast<PFN_vkUnmapMemory>(getDeviceProc(device, "vkUnmapMemory"));
+                api.vkUpdateDescriptorSets =
+                  reinterpret_cast<PFN_vkUpdateDescriptorSets>(getDeviceProc(device, "vkUpdateDescriptorSets"));
+
                 api.vkGetDeviceQueue(device, family, 0, &queue);
                 VkCommandPoolCreateInfo pi{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
                 pi.queueFamilyIndex = family;
@@ -511,7 +640,7 @@ namespace render::detail
                         destroy(instance, messenger, nullptr);
                     }
                     if (instance)
-                        vkDestroyInstance(instance, nullptr);
+                        instanceApi.vkDestroyInstance(instance, nullptr);
                     return;
                 }
                 api.vkDeviceWaitIdle(device);
@@ -548,7 +677,7 @@ namespace render::detail
                       vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
                     destroy(instance, messenger, nullptr);
                 }
-                vkDestroyInstance(instance, nullptr);
+                instanceApi.vkDestroyInstance(instance, nullptr);
             }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
