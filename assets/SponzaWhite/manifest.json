@@ -1,0 +1,23 @@
+{
+  "source": "https://cdrdv2.intel.com/v1/dl/getContent/830833",
+  "sourceGeometrySHA256": "903d443b46b51c8397c25b65286d9f9e111121f12a3e0e303f19019982568d6b",
+  "sourceTriangles": 3747018,
+  "triangles": 251936,
+  "vertices": 144925,
+  "bytes": 4763176,
+  "sha256": "80684e46af98c6a2c018744921322441e94ab42406d6840a32e8f2f700cbaeeb",
+  "min": [
+    -16.245574951171875,
+    -1.131135106086731,
+    -9.402087211608887
+  ],
+  "max": [
+    20.001304626464844,
+    18.75722885131836,
+    14.363932609558105
+  ],
+  "maxRelativeError": 0.0029999902471899986,
+  "simplifier": "meshoptimizer 1.3.0",
+  "targetTriangles": 180000,
+  "maxRelativeErrorLimit": 0.003
+}

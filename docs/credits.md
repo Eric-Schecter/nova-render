@@ -43,3 +43,7 @@ GPU 蒙皮回归测试用的小机器人、关节、权重、两个动画片段�
 ## Weekend Spheres
 
 多球场景的几何与纹理由 Nova 在项目内生成，构图参考 [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) 的随机球最终场景，未复制书籍代码或外部模型。生成命令和差异说明见 `assets/WeekendSpheres/README.md`。
+
+## Intel Sponza White
+
+第八例来自 [Intel Sponza Base Scene](https://www.intel.com/content/www/us/en/developer/topic-technology/graphics-research/samples.html)，由 Frank Meinl 委托制作、Anton Kaplanyan 赞助（2022）。Nova 烘焙几何变换、简化网格并移除纹理，形成约 4.76 MB 的白模。原包完整署名、用途说明与 CC BY 4.0 正文保存在 `assets/SponzaWhite/credits_license.txt`，来源、修改过程及校验值见同目录 README 和 manifest；未使用 Crytek 版本的 Sponza。

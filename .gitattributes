@@ -1,0 +1,2 @@
+# Preserve the upstream Intel license byte-for-byte, including original CRLF/spacing.
+assets/SponzaWhite/credits_license.txt -text -whitespace
