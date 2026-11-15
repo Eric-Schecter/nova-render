@@ -34,6 +34,7 @@ export default defineConfig({
           { text: '10 · 阴影', link: '/examples/shadows' },
           { text: '11 · HDR 与后处理', link: '/examples/postprocessing' },
           { text: '12 · 屏幕空间反射 SSR', link: '/examples/ssr' },
+          { text: '13 · 平面反射', link: '/examples/planar' },
         ],
       },
       {
@@ -51,6 +52,7 @@ export default defineConfig({
           { text: '阴影', link: '/api/shadows' },
           { text: '后处理', link: '/api/postprocessing' },
           { text: '屏幕空间反射 SSR', link: '/api/ssr' },
+          { text: '平面反射', link: '/api/planar' },
           { text: '参数面板', link: '/api/ui' },
           { text: '类型与配置', link: '/api/types' },
           { text: '后端查询与选择', link: '/api/selection' },
