@@ -47,3 +47,7 @@ GPU 蒙皮回归测试用的小机器人、关节、权重、两个动画片段�
 ## Intel Sponza White
 
 第八例来自 [Intel Sponza Base Scene](https://www.intel.com/content/www/us/en/developer/topic-technology/graphics-research/samples.html)，由 Frank Meinl 委托制作、Anton Kaplanyan 赞助（2022）。Nova 烘焙几何变换、简化网格并移除纹理，形成约 4.76 MB 的白模。原包完整署名、用途说明与 CC BY 4.0 正文保存在 `assets/SponzaWhite/credits_license.txt`，来源、修改过程及校验值见同目录 README 和 manifest；未使用 Crytek 版本的 Sponza。
+
+## 抗锯齿参考代码
+
+SMAA 1x 与查找表来自 [SMAA 作者仓库](https://github.com/iryoku/smaa)，保留原始许可；整合只替换 sampler 绑定及文本编码。FXAA 3.11 复用原 Nova 内的 NVIDIA / Timothy Lottes 参考实现，保留版权与免责声明。副本与集成说明位于 `render/shaders/third_party` 和 `assets/AntiAliasing/README.md`。测试台几何由 Nova 生成，无第三方模型资源。

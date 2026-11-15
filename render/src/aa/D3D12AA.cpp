@@ -84,20 +84,20 @@ namespace render::detail
                 d.DepthOrArraySize = d.MipLevels = 1;
                 d.Format                         = format;
                 d.SampleDesc.Count               = samples;
-                const bool depth                 = format == DXGI_FORMAT_D32_FLOAT;
-                d.Flags                          = lookup  ? D3D12_RESOURCE_FLAG_NONE
-                                                   : depth ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-                                                           : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+                const bool isDepth               = format == DXGI_FORMAT_D32_FLOAT;
+                d.Flags                          = lookup    ? D3D12_RESOURCE_FLAG_NONE
+                                                   : isDepth ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+                                                             : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
                 D3D12_CLEAR_VALUE clear{};
                 clear.Format = format;
-                if (depth)
+                if (isDepth)
                     clear.DepthStencil.Depth = 1;
                 Check(device->CreateCommittedResource(
                   &heap,
                   D3D12_HEAP_FLAG_NONE,
                   &d,
                   D3D12_RESOURCE_STATE_COMMON,
-                  lookup ? nullptr : &clear,
+                  lookup || !isDepth ? nullptr : &clear,
                   IID_PPV_ARGS(&t.resource)));
                 return t;
             }
@@ -144,6 +144,24 @@ namespace render::detail
                         throw std::runtime_error("D3D12 AA fence wait failed");
                 }
                 Check(device->GetDeviceRemovedReason());
+                ComPtr<ID3D12InfoQueue> messages;
+                if (SUCCEEDED(device.As(&messages)))
+                {
+                    const auto count = messages->GetNumStoredMessagesAllowedByRetrievalFilter();
+                    for (UINT64 i = 0; i < count; i++)
+                    {
+                        SIZE_T size = 0;
+                        messages->GetMessage(i, nullptr, &size);
+                        std::vector<unsigned char> bytes(size);
+                        auto*                      message = reinterpret_cast<D3D12_MESSAGE*>(bytes.data());
+                        Check(messages->GetMessage(i, message, &size));
+                        if (
+                          message->Severity == D3D12_MESSAGE_SEVERITY_ERROR
+                          || message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION)
+                            throw std::runtime_error(message->pDescription);
+                    }
+                    messages->ClearStoredMessages();
+                }
             }
             ComPtr<ID3D12PipelineState> Pipeline(int program, UINT samples, const RendererConfig& c)
             {
@@ -161,8 +179,13 @@ namespace render::detail
                 d.NumRenderTargets      = program == 0 ? 2 : 1;
                 for (UINT i = 0; i < d.NumRenderTargets; i++)
                 {
-                    d.RTVFormats[i]                                    = DXGI_FORMAT_R16G16B16A16_FLOAT;
-                    d.BlendState.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+                    d.RTVFormats[i] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                    auto& blend     = d.BlendState.RenderTarget[i];
+                    blend.SrcBlend = blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+                    blend.DestBlend = blend.DestBlendAlpha = D3D12_BLEND_ZERO;
+                    blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+                    blend.LogicOp                      = D3D12_LOGIC_OP_NOOP;
+                    blend.RenderTargetWriteMask        = D3D12_COLOR_WRITE_ENABLE_ALL;
                 }
                 d.RasterizerState.FillMode          = D3D12_FILL_MODE_SOLID;
                 d.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;

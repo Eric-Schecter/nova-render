@@ -59,8 +59,12 @@ try {
     await bar.scrollIntoViewIfNeeded()
     if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)
       throw Error(name + ': mobile overflow')
-    const a = await bar.boundingBox(),
-      b = await page.locator('canvas').first().boundingBox()
+    // Read both rectangles in one frame: scroll anchoring and the live metrics can move the page.
+    const { a, b } = await page.evaluate(() => {
+      const a = document.querySelector('[aria-label="渲染性能"]').getBoundingClientRect(),
+        b = document.querySelector('canvas').getBoundingClientRect()
+      return { a: { y: a.y, height: a.height }, b: { y: b.y, height: b.height } }
+    })
     if (a.y + a.height > b.y + 1) throw Error(name + ': mobile overlap')
     await page.screenshot({ path: `build/validation/performance/${name}-mobile.png` })
     await page.setViewportSize({ width: 1440, height: 1100 })

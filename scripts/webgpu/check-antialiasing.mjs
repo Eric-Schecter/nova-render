@@ -59,6 +59,8 @@ try {
         })
       }
       stats.forEach((s, i) => (s.referenceMAE = error(images[i], images[4])))
+      if (stats[5].referenceMAE >= stats[0].referenceMAE * 0.9)
+        throw Error('TAA failed static convergence against SSAA reference')
       // Accumulation must respond to changing geometry, not freeze or blindly blend history.
       v.setTime(0.1)
       await v.drawFrame(128, 96)

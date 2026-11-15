@@ -17,3 +17,5 @@
 - [离屏视图与图像展示](./render-mode#离屏视图与例子层对比)：`RayTracingView`、`Image`、`PresentImage`，供应用组织多视图。
 
 - [环境遮蔽 AO](./ambient-occlusion)：SSAO、HBAO、MSAO、RTAO 与白模诊断输出。
+
+- [抗锯齿](./antialiasing)：Off、FXAA、SMAA 1x、MSAA 4x、SSAA 2×2 与 TAA 的独立光栅测试台。

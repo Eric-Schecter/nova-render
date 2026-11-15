@@ -40,3 +40,8 @@ if(NOVA_BUNDLE_DEPENDENCIES)
             FILES_MATCHING PATTERN "*glfw*" PATTERN "*volk*" PATTERN "*imgui*" PATTERN "pkgconfig" EXCLUDE)
     endforeach()
 endif()
+
+install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME SMAA-LICENSE.txt)
+install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/NOTICE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME FXAA-NOTICE.txt)

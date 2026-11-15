@@ -422,3 +422,7 @@ node scripts/webgpu/check-ao.mjs
 模型来源与完整许可见 `assets/SponzaWhite/`，接口见 `docs/api/ambient-occlusion.md`，页面为 `/examples/ambient-occlusion`。
 
 所有八个例子均提供独立性能条（FPS、Draw、P95、内部尺寸与采样），C++ 与网页口径一致，详见 [编写示例](docs/guide/integration.md#例子性能指标)。C++ 示例计时等待 GPU 完成，库的默认绘制流程不增加同步。
+
+第九例为程序化抗锯齿测试台：Off、FXAA、SMAA 1x、真实 MSAA 4x、SSAA 2×2、带重投影/历史拒绝的 TAA，共享 HLSL。原生运行 `nova_antialiasing --api metal --frames 120`，不需要模型路径；网页见 `/examples/antialiasing`。不新增依赖，SMAA 查找表保留作者许可。该独立诊断视图尚未接入所有 GLB 视图的全局后处理。
+
+第九例验证（2026-11-15）：Mac 原生回归 44 项通过、4 项受 MoltenVK 光追能力限制跳过；六种 AA 在 Metal、Vulkan、WebGPU 实际绘制，WebGPU / Metal 固定测试图逐像素一致。Windows 11 ARM64 虚拟机的 DX12/WARP 六算法与带 UI 窗口通过，D3D12 Debug Layer 开启；这不是硬件 GPU 性能测试。
