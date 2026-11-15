@@ -764,3 +764,4 @@ export { createPostProcessingView } from './PostProcessingView.js'
 
 export { createScreenSpaceReflectionView } from './ScreenSpaceReflectionView.js'
 export { createPlanarReflectionView } from './PlanarReflectionView.js'
+export { createReflectionProbeView } from './ReflectionProbeView.js'

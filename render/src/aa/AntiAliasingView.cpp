@@ -2,6 +2,7 @@
 #include "../../../assets/AntiAliasing/SearchTex.h"
 #include "AADevice.hpp"
 #include "PostProcessing.hpp"
+#include "ReflectionProbe.hpp"
 #include "ScreenSpaceReflections.hpp"
 #include "render/ShadowView.hpp"
 #include <algorithm>
@@ -85,6 +86,9 @@ namespace render
         ScreenSpaceReflectionSettings     reflections;
         bool                              planarScene = false;
         PlanarReflectionSettings          planar;
+        bool                              probeScene = false, probeDirty = true;
+        uint32_t                          probeCaptures = 0;
+        ReflectionProbeSettings           probe;
         bool                              hdrScene       = false;
         float                             sceneIntensity = 1;
     };
@@ -224,6 +228,34 @@ namespace render
         UseDefaultReflectionEnvironment();
         ResetHistory();
     }
+    void AntiAliasingView::SetReflectionProbe(const ReflectionProbeSettings& value)
+    {
+        detail::ValidateProbe(value);
+        const auto& old = impl_->probe;
+        if (!impl_->probeScene || old.position != value.position)
+            impl_->probeDirty = true;
+        if (
+          !impl_->probeScene || old.position != value.position || old.boxMin != value.boxMin
+          || old.boxMax != value.boxMax || old.enabled != value.enabled || old.boxProjection != value.boxProjection
+          || old.roughness != value.roughness || old.intensity != value.intensity
+          || old.blendDistance != value.blendDistance || old.debug != value.debug)
+            ResetHistory();
+        impl_->probeScene = true;
+        impl_->probe      = value;
+    }
+    ReflectionProbeSettings AntiAliasingView::GetReflectionProbe() const
+    {
+        return impl_->probe;
+    }
+    void AntiAliasingView::UpdateProbe()
+    {
+        impl_->probeDirty = true;
+        ResetHistory();
+    }
+    uint32_t AntiAliasingView::GetProbeCaptureCount() const
+    {
+        return impl_->probeCaptures;
+    }
     void AntiAliasingView::SetPlanarReflections(const PlanarReflectionSettings& s)
     {
         detail::ValidatePlanar(s);
@@ -262,12 +294,14 @@ namespace render
         auto data  = detail::LoadEnvironmentFile(path);
         auto atlas = detail::ReflectionEnvironmentAtlas(data.get());
         impl_->device->SetReflectionEnvironment(atlas);
+        impl_->probeDirty = true;
         ResetHistory();
     }
     void AntiAliasingView::UseDefaultReflectionEnvironment()
     {
         auto atlas = detail::ReflectionEnvironmentAtlas();
         impl_->device->SetReflectionEnvironment(atlas);
+        impl_->probeDirty = true;
         ResetHistory();
     }
     const Image& AntiAliasingView::DrawFrame(uint32_t w, uint32_t h)
@@ -317,6 +351,8 @@ namespace render
             detail::PackReflectionUniforms(u, s.reflections, w, h, method == AAMethod::SSAA);
             if (s.planarScene)
                 detail::PackPlanarUniforms(u, s.planar);
+            if (s.probeScene)
+                detail::PackProbeUniforms(u, s.probe);
             u[7] = {.025f, .035f, .055f, 1};
         }
         if (s.post.enabled || s.hdrScene || s.reflectionScene)
@@ -332,7 +368,9 @@ namespace render
         };
         if (s.reflectionScene)
         {
-            if (s.planarScene)
+            if (s.probeScene)
+                detail::AppendProbePasses(passes, u, s.probeDirty, method == AAMethod::MSAA, taa, s.settings.split);
+            else if (s.planarScene)
                 detail::AppendPlanarPasses(passes, u, s.planar, method == AAMethod::MSAA, taa, s.settings.split);
             else
                 detail::AppendReflectionPasses(
@@ -377,7 +415,9 @@ namespace render
         const int baselineSource =
           ((!s.shadow && !s.hdrScene && !s.reflectionScene) || s.settings.split) ? detail::AABaseline : detail::AADummy;
         auto effectivePost = s.post;
-        if (s.reflectionScene && unsigned(s.reflections.debug) >= 2)
+        if (
+          (s.reflectionScene && unsigned(s.reflections.debug) >= 2)
+          || (s.probeScene && s.probe.debug == ProbeDebug::Influence))
             effectivePost.enabled = false;
         const auto post =
           detail::AppendPostProcessing(passes, filtered, baselineSource, w, h, effectivePost, s.postState, u);
@@ -404,7 +444,12 @@ namespace render
         display->sources[0] = filtered;
         if ((!s.shadow && !s.hdrScene && !s.reflectionScene) || s.settings.split)
             display->sources[3] = post.baseline;
-        s.image          = s.device->Draw(passes);
+        s.image = s.device->Draw(passes);
+        if (s.probeScene && s.probeDirty)
+        {
+            s.probeDirty = false;
+            s.probeCaptures++;
+        }
         s.previous       = s.camera;
         s.previousTime   = s.time;
         s.previousJitter = jitter;

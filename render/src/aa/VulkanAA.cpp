@@ -87,7 +87,7 @@ namespace render::detail
             VkDescriptorPool                 descriptorPool{};
             VkDescriptorSetLayout            setLayout{};
             VkPipelineLayout                 layout{};
-            VkPipeline                       pipelines[21]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
+            VkPipeline                       pipelines[22]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
               surfaceMSPass{};
             VkSampler    linear{}, point{};
@@ -630,7 +630,7 @@ namespace render::detail
                 externalMSPass = MakePass(true, true, true);
                 surfacePass    = MakePass(true, false, false, true);
                 surfaceMSPass  = MakePass(true, true, false, true);
-                for (int i = 0; i < 21; i++)
+                for (int i = 0; i < 22; i++)
                     pipelines[i] = Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
                 shadowMS = Pipeline(10, true, config);

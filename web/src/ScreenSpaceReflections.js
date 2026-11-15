@@ -119,6 +119,7 @@ export function reflectionEnvironmentAtlas(env) {
 }
 export { loadEnvironmentFile }
 export function reflectionResourceSize(i, w, h, ss) {
+  if (i === 73) return [384, 512]
   const scale = ss ? 2 : 1
   if (i >= 50 && i < 62) {
     const d = 2 ** (i - 49)

@@ -51,7 +51,8 @@ namespace render::detail
         AASsrEnvironment = 64,
         AAPlanarFloor    = 65,
         AAPlanarMirror   = 69,
-        AAResourceCount  = 73
+        AAProbeCubemap   = 73,
+        AAResourceCount  = 74
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -78,6 +79,8 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id == AAProbeCubemap)
+            return {384, 512, 1};
         if (id >= AAPlanarFloor)
             return {w * (ss ? 2 : 1), h * (ss ? 2 : 1), 1};
         if (id == AASsrEnvironment)

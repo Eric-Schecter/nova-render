@@ -1,5 +1,5 @@
 # Independent raster AA shaders. No ray-query requirement.
-foreach(pass RANGE 0 20)
+foreach(pass RANGE 0 21)
     set(aa_air)
     foreach(stage vert frag)
         if(stage STREQUAL "vert")
@@ -22,7 +22,7 @@ foreach(pass RANGE 0 20)
         if(pass GREATER_EQUAL 17)
             set(source "${PROJECT_SOURCE_DIR}/render/shaders/ssr.hlsl")
         endif()
-        set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/texture-filtering.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
+        set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/probe-scene.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/texture-filtering.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
         if(NOVA_ENABLE_VULKAN)
             add_custom_command(OUTPUT "${base}.spv"
                 COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 ${invert} -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.spv"

@@ -160,9 +160,15 @@ for (let pass = 11; pass <= 16; pass++) {
 }
 console.log('HDR post-processing HLSL generated')
 
-for (let pass = 17; pass <= 20; pass++) {
+for (let pass = 17; pass <= 21; pass++) {
   const data = await compile(
-    '#define AA_PASS ' + pass + '\n' + (await readFile('render/shaders/ssr.hlsl', 'utf8')),
+    '#define AA_PASS ' +
+      pass +
+      '\n' +
+      (await readFile('render/shaders/ssr.hlsl', 'utf8')).replace(
+        '#include \"probe-scene.hlsli\"',
+        await readFile('render/shaders/probe-scene.hlsli', 'utf8'),
+      ),
   )
   await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
 }

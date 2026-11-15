@@ -2,6 +2,7 @@
 #include "AntiAliasing.hpp"
 #include "PlanarReflections.hpp"
 #include "PostProcessing.hpp"
+#include "ReflectionProbe.hpp"
 #include "Renderer.hpp"
 #include "ScreenSpaceReflections.hpp"
 namespace render
@@ -36,6 +37,11 @@ namespace render
         friend class PostProcessingView;
         friend class ScreenSpaceReflectionView;
         friend class PlanarReflectionView;
+        friend class ReflectionProbeView;
+        void                     SetReflectionProbe(const ReflectionProbeSettings& value);
+        ReflectionProbeSettings  GetReflectionProbe() const;
+        void                     UpdateProbe();
+        uint32_t                 GetProbeCaptureCount() const;
         void                     SetPlanarReflections(const PlanarReflectionSettings& value);
         PlanarReflectionSettings GetPlanarReflections() const;
         void                     ConfigureReflectionScene();

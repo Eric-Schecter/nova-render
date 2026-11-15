@@ -97,9 +97,10 @@ float3 environment(float3 direction, float roughness)
     return lerp(atlasLevel(normalize(direction), low), atlasLevel(normalize(direction), min(low + 1, 8)), frac(level))
            * aa[10].w;
 }
+#include "probe-scene.hlsli"
 bool planarScene()
 {
-    return aa[8].y < 0;
+    return aa[8].y < 0 && aa[8].y > -1.5;
 }
 float3 mirrorPoint(float3 p, uint plane)
 {
@@ -117,8 +118,79 @@ struct Geometry
     float3 color;
     float  roughness;
 };
+Geometry probeGeometry(uint id, float time)
+{
+    Geometry g;
+    g.roughness       = 1;
+    const uint tri[6] = {0, 1, 3, 0, 3, 2};
+    if (id < 30)
+    {
+        uint   wall = id / 6, q = tri[id % 6];
+        float2 uv = float2(q & 1, (q >> 1) & 1);
+        if (wall == 0 || wall == 4)
+        {
+            g.p      = float3(uv.x * 8 - 4, wall == 0 ? -1 : 3, uv.y * 8 - 4);
+            g.normal = float3(0, wall == 0 ? 1 : -1, 0);
+        }
+        else if (wall == 1)
+        {
+            g.p      = float3(uv.x * 8 - 4, uv.y * 4 - 1, -4);
+            g.normal = float3(0, 0, 1);
+        }
+        else
+        {
+            g.p      = float3(wall == 2 ? -4 : 4, uv.y * 4 - 1, uv.x * 8 - 4);
+            g.normal = float3(wall == 2 ? 1 : -1, 0, 0);
+        }
+        g.color = float3(float(wall), 0, 0);
+        return g;
+    }
+    id -= 30;
+    if (id < 108)
+    {
+        uint   object = id / 36, face = (id % 36) / 6, q = tri[id % 6], axis = face / 2;
+        float  sign = (face & 1) ? 1 : -1;
+        float2 uv   = float2(q & 1, (q >> 1) & 1) * 2 - 1;
+        float3 center, size;
+        probeProp(object, center, size, g.color);
+        g.normal = axis == 0 ? float3(sign, 0, 0) : axis == 1 ? float3(0, sign, 0) : float3(0, 0, sign);
+        g.p      = center
+              + (axis == 0   ? float3(sign, uv)
+                 : axis == 1 ? float3(uv.x, sign, uv.y)
+                             : float3(uv, sign))
+                  * size * .5;
+        return g;
+    }
+    if (id >= 7020)
+    {
+        uint marker = id - 7020, axis = marker / 36, face = (marker % 36) / 6, q = tri[marker % 6],
+             normalAxis = face / 2;
+        float  sign     = (face & 1) ? 1 : -1;
+        float2 uv       = float2(q & 1, (q >> 1) & 1) * 2 - 1;
+        g.normal     = normalAxis == 0 ? float3(sign, 0, 0) : normalAxis == 1 ? float3(0, sign, 0) : float3(0, 0, sign);
+        float3 size  = float3(.045, .045, .045);
+        size[axis]   = .4;
+        float3 local = normalAxis == 0   ? float3(sign, uv)
+                       : normalAxis == 1 ? float3(uv.x, sign, uv.y)
+                                         : float3(uv, sign);
+        g.p          = aa[11].xyz + local * size * .5;
+        g.color      = float3(1, .6, .015);
+        g.roughness  = 2;
+        return g;
+    }
+    id -= 108;
+    uint  object = id / 2304, k = id % 2304, cell = k / 6, q = tri[k % 6];
+    float u = (float(cell % 24) + float(q & 1)) / 24 * 2 * PI, v = (float(cell / 24) + float((q >> 1) & 1)) / 16 * PI;
+    g.normal    = float3(sin(v) * cos(u), cos(v), sin(v) * sin(u));
+    g.p         = float3(-2.5 + object * 2.5 + sin(time) * .25, -.2, .9) + g.normal * .75;
+    g.color     = float3(.025, .028, .035);
+    g.roughness = aa[8].w;
+    return g;
+}
 Geometry geometry(uint id, float time)
 {
+    if (probeScene())
+        return probeGeometry(id, time);
     Geometry g;
     g.roughness       = .2;
     const uint tri[6] = {0, 1, 3, 0, 3, 2};
@@ -214,7 +286,7 @@ struct Varying
 Varying VSMain(uint id : SV_VertexID)
 {
     Varying o;
-    uint    skyStart = planarScene() ? 7608 : 7602;
+    uint    skyStart = probeScene() ? 7158 : planarScene() ? 7608 : 7602;
     o.sky            = id >= skyStart ? 1 : 0;
     if (o.sky)
     {
@@ -280,11 +352,18 @@ SurfaceOutput PSMain(Varying i)
     float3 n = normalize(i.normal), v = normalize(mirrorPoint(eye(), uint(aa[5].w)) - i.world),
            l = normalize(float3(-.5, 1.2, 1.3)), h = normalize(l + v);
     float rough = i.roughness;
-    if (n.y > .99 && i.world.y < -.98)
+    if (!probeScene() && n.y > .99 && i.world.y < -.98)
         rough = planarScene() ? aa[9].x : lerp(.035, .6, saturate((i.world.x + 4) / 8));
     float  power = lerp(160, 6, rough);
     float3 c     = i.color * (.08 + 1.4 * saturate(dot(n, l))) + pow(saturate(dot(n, h)), power) * .4
                + environment(n, .9) * i.color * .12;
+    if (probeScene())
+    {
+        float3 color = i.color;
+        if (i.roughness > .999 && i.color.y == 0 && i.color.z == 0)
+            color = probeRoomColor(i.world, uint(i.color.x));
+        c = probeShade(i.world, n, color);
+    }
     o.color           = rgbL(c * aa[2].z);
     float2 uv         = i.current.xy / i.current.w * float2(.5, -.5) + .5,
            old        = i.previous.xy / i.previous.w * float2(.5, -.5) + .5;
@@ -360,7 +439,9 @@ float3 filteredHit(float2 uv, float rough, float travelled, float thickness, flo
 float4 PSMain(Varying i)
   : SV_Target
 {
-#if AA_PASS == 18
+#if AA_PASS == 21
+    return probeAtlas(i.position.xy);
+#elif AA_PASS == 18
     uint w, h;
     sceneColor.GetDimensions(w, h);
     int2  base = int2(i.position.xy) * 2;
@@ -470,6 +551,8 @@ float4 PSMain(Varying i)
     }
     return 0;
 #else
+    if (probeScene() && aa[9].z > 2.5)
+        return rgbL(hiz3.SampleLevel(LinearSampler, i.uv, 0).rgb * aa[2].z);
     float  z  = sceneDepth.SampleLevel(PointSampler, i.uv, 0).r;
     float4 nr = surface.SampleLevel(PointSampler, i.uv, 0);
     if (planarScene() && aa[5].y < 0)
@@ -500,6 +583,31 @@ float4 PSMain(Varying i)
     float2 uv = i.uv - aa[1].xy / aa[0].xy;
     float3 p = worldPosition(uv, z), n = normalize(nr.xyz), v = normalize(eye() - p), direction = reflect(-v, n);
     float3 fallback = environment(direction, nr.w) * aa[2].z;
+    if (probeScene())
+    {
+        if (nr.w > 1.5)
+            return rgbL(base);
+        float3 distances = min(p - aa[12].xyz, aa[13].xyz - p);
+        float  edge      = min(min(distances.x, distances.y), distances.z);
+        float  influence = aa[8].x > .5 && edge >= -.0001 ? (aa[9].y > .0001 ? smoothstep(0, aa[9].y, edge) : 1) : 0;
+        float3 corrected = direction;
+        if (influence > 0 && aa[8].z > .5)
+        {
+            float3 safe = float3(
+              direction.x >= 0 ? max(direction.x, .00001) : min(direction.x, -.00001),
+              direction.y >= 0 ? max(direction.y, .00001) : min(direction.y, -.00001),
+              direction.z >= 0 ? max(direction.z, .00001) : min(direction.z, -.00001));
+            float3 exits = max((aa[12].xyz - p) / safe, (aa[13].xyz - p) / safe);
+            float  t     = min(min(exits.x, exits.y), exits.z);
+            corrected    = normalize(p + direction * t - aa[11].xyz);
+        }
+        if (aa[9].z > 1.5)
+            return rgbL(float3(1 - influence, influence, 0));
+        float3 reflection = lerp(fallback, probeSample(corrected, nr.w) * aa[2].z, influence);
+        float  f0         = nr.w < .999 ? .92 : .035;
+        float  fresnel    = f0 + (1 - f0) * pow(1 - saturate(abs(dot(n, v))), 5);
+        return rgbL(aa[9].z > .5 ? reflection : base + reflection * fresnel * aa[9].x);
+    }
     if (planarScene())
     {
         bool   floor      = abs(n.y) > .99 && abs(p.y + 1) < .02;
