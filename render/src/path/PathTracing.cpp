@@ -12,7 +12,7 @@ namespace render::detail
           int(s.method) < 0 || int(s.method) > 4 || int(s.output) < 0 || int(s.output) > 3 || !std::isfinite(s.radius)
           || s.radius < .001f || s.radius > 1 || !std::isfinite(s.bias) || s.bias < 0 || s.bias > .05f
           || !std::isfinite(s.strength) || s.strength < 0 || s.strength > 4 || s.samples < 4 || s.samples > 64
-          || !std::isfinite(s.resolutionScale) || s.resolutionScale < .25f || s.resolutionScale > 1)
+          || !std::isfinite(s.resolutionScale) || s.resolutionScale < .125f || s.resolutionScale > 1)
             throw std::invalid_argument("Invalid ambient occlusion settings");
     }
 

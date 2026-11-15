@@ -25,7 +25,7 @@ await renderer.drawFrame()
 - `output`：Composite / Occlusion / Depth / Normals，网页为对应小写。默认合成，只调制环境项，保留固定方向的白模明暗；这不是给现有 PBR 材质追加完整后处理链。
 - `radius`：0.001–1，默认 0.08，使用归一化模型坐标；`bias`：0–0.05，默认 0.001；`strength`：0–4，默认 1。
 - `samples`：4–64，默认 16。HBAO 按方向与步数分组，MSAO 在四层深度上分别采样，不应将相同设置视为相同计算成本。
-- `denoise`：默认 true，深度与法线引导的显示滤波；`resolutionScale`：0.25–1，默认 0.5；`seed`：32 位无符号整数，默认 1。
+- `denoise`：默认 true，深度与法线引导的显示滤波；`resolutionScale`：0.125–1，默认 0.5；`seed`：32 位无符号整数，默认 1。
 
 SSAO 将半球采样点投影到深度图；HBAO 搜索多个屏幕方向的遮蔽地平线；MSAO 合并原始深度与 2× / 4× / 8× 最小深度层；RTAO 使用有限半径的余弦半球可见性射线。均为 Nova 的实现，沿用旧项目的分类，并非移植完整的厂商 AO SDK。
 
@@ -34,3 +34,5 @@ SSAO 将半球采样点投影到深度图；HBAO 搜索多个屏幕方向的遮�
 `GetAccumulatedSamples()` / `getAccumulatedSamples()` 在 AO 视图中返回累计帧数，RTAO 每帧每像素发出 `samples` 条遮蔽射线。例子在 32 帧后停止；SSAO/HBAO/MSAO 按需绘制一帧。相机、尺寸和 AO 参数变化会重置。滤波只作用于显示，不反馈原始累计。
 
 室内相机可设置 `OrbitCamera.target` / `camera.target` 为三个有限数，默认 `[0,0,0]`；距离限制仍为 1.5–100，旧例子不变。第八例的预设、面板布局和停止策略都由例子层管理。
+
+第八例在例子层提供性能统计与交互自适应。网页控制器的 `getPerformanceStats()` 返回最近绘制耗时、P95、实际更新 FPS、内部尺寸和状态；`setAdaptiveQuality(false)` 关闭交互降质。原生提供同名含义的面板开关。FPS 按完成的图像更新间隔计算，待命时不显示数值；绘制耗时包含 CPU 准备和 GPU 完成等待，并非纯 GPU 时间。P95 取最近 60 次绘制，排除首次资源准备。交互降质不修改用户设置，停止后恢复原分辨率与采样数。

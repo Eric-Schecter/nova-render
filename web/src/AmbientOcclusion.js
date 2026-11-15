@@ -36,7 +36,7 @@ export function copyAmbientOcclusion(value) {
     s.seed < 0 ||
     s.seed > 4294967295 ||
     !Number.isFinite(s.resolutionScale) ||
-    s.resolutionScale < 0.25 ||
+    s.resolutionScale < 0.125 ||
     s.resolutionScale > 1
   )
     throw Error('Invalid ambient occlusion settings')

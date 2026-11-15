@@ -1,3 +1,4 @@
+#include "../common/FrameMeter.hpp"
 #include "../common/ModelOptions.hpp"
 #include <algorithm>
 #include <cstring>
@@ -30,13 +31,50 @@ int main(int argc, char** argv)
         camera.target   = {-1.35f, -.47850394f, -.25f};
         window.SetCamera(camera);
         window.EnableOrbitControls();
-        bool changed = true, cameraChanged = false;
-        int  preset = 0;
+        bool                             changed = true, cameraChanged = false;
+        bool                             adaptive = true, usingPreview = false;
+        example::FrameMeter              meter;
+        auto                             interactionUntil = example::FrameMeter::Clock::time_point{};
+        double                           lastFullMs       = 0;
+        render::AmbientOcclusionSettings applied          = ao;
+        uint32_t                         renderWidth = 0, renderHeight = 0;
+        int                              preset = 0;
 #ifdef NOVA_EXAMPLE_UI
         render::ParameterPanelConfig panel;
         panel.showBuiltinPanel = false;
         panel.drawUI           = [&] {
             const auto display = ImGui::GetIO().DisplaySize;
+            const bool active  = example::FrameMeter::Clock::now() < interactionUntil
+                                || (ao.method == render::AOMethod::RTAO && view.GetAccumulatedSamples() < 32);
+            const auto fps = meter.FPS(active);
+            char       left[220], right[220], fpsText[32], p95Text[32];
+            if (fps > 0)
+                std::snprintf(fpsText, sizeof(fpsText), "%.1f", fps);
+            else
+                std::snprintf(fpsText, sizeof(fpsText), "--");
+            if (meter.frames > 1)
+                std::snprintf(p95Text, sizeof(p95Text), "%.1f", meter.P95());
+            else
+                std::snprintf(p95Text, sizeof(p95Text), "--");
+            std::snprintf(
+              left, sizeof(left), "AO %s FPS | Draw %.1f ms | P95 %s ms", fpsText, meter.lastMilliseconds, p95Text);
+            const char* names[] = {"Off", "SSAO", "HBAO", "MSAO", "RTAO"};
+            std::snprintf(
+              right,
+              sizeof(right),
+              "%s | %ux%u | %.1f%% | %s | %u samples",
+              usingPreview ? "Interaction preview"
+                        : active     ? "Rendering"
+                                     : "Idle (on demand)",
+              renderWidth,
+              renderHeight,
+              applied.resolutionScale * 100,
+              names[int(ao.method)],
+              applied.samples);
+            auto* draw = ImGui::GetBackgroundDrawList();
+            draw->AddRectFilled({0, 0}, {display.x, 40}, IM_COL32(21, 27, 38, 255));
+            draw->AddText({7, 3}, IM_COL32_WHITE, left);
+            draw->AddText({7, 21}, IM_COL32_WHITE, right);
             ImGui::SetNextWindowPos({0, display.y * .8f});
             ImGui::SetNextWindowSize({display.x, display.y * .2f});
             ImGui::Begin(
@@ -68,6 +106,8 @@ int main(int argc, char** argv)
             if (ImGui::SliderFloat("Render scale", &ao.resolutionScale, .25f, 1))
                 changed = true;
             if (ImGui::Checkbox("Edge-aware filter", &ao.denoise))
+                changed = true;
+            if (ImGui::Checkbox("Adaptive interaction quality", &adaptive))
                 changed = true;
             if (ImGui::Combo("View", &preset, "Column arcade\0Doorway\0Overview\0"))
             {
@@ -116,33 +156,65 @@ int main(int argc, char** argv)
             const auto framebuffer = window.GetFramebufferSize();
             if (!framebuffer[0] || !framebuffer[1])
                 continue;
-            const float    scale  = std::min(1.f, 1024.f / float(std::max(framebuffer[0], framebuffer[1])));
+            const float scale        = std::min(1.f, 1024.f / float(std::max(framebuffer[0], framebuffer[1])));
+            float       headerPixels = 0;
+#ifdef NOVA_EXAMPLE_UI
+            const auto logical = ImGui::GetIO().DisplaySize;
+            headerPixels       = std::min(
+              float(framebuffer[1]) * .3f,
+              40.f * float(framebuffer[0]) / std::max(1.f, logical.x > 0 ? logical.x : float(options.window.width)));
+#endif
             const uint32_t width  = std::max(2u, uint32_t(framebuffer[0] * scale)),
-                           height = std::max(2u, uint32_t(framebuffer[1] * scale * .8f));
-            if (
-              std::memcmp(&camera, &previousCamera, sizeof(camera))
-              || previousSize != std::array<uint32_t, 2>{width, height})
-                changed = true;
-            if (changed)
+                           height = std::max(2u, uint32_t((float(framebuffer[1]) * .8f - headerPixels) * scale));
+            const bool motion     = std::memcmp(&camera, &previousCamera, sizeof(camera))
+                                || previousSize != std::array<uint32_t, 2>{width, height};
+            const auto now = example::FrameMeter::Clock::now();
+            if (meter.frames && (motion || changed))
+                interactionUntil = now + std::chrono::milliseconds(220);
+            usingPreview   = adaptive && now < interactionUntil && lastFullMs > 25;
+            auto effective = ao;
+            if (usingPreview)
+            {
+                effective.resolutionScale = std::min(
+                  ao.resolutionScale, std::max(.125f, std::min({.25f, 240.f / float(width), 180.f / float(height)})));
+                effective.samples = std::min(ao.samples, 4u);
+            }
+            const bool qualityChanged =
+              effective.resolutionScale != applied.resolutionScale || effective.samples != applied.samples;
+            if (changed || motion || qualityChanged)
             {
                 view.SetCamera(camera);
-                view.SetAmbientOcclusion(ao);
+                view.SetAmbientOcclusion(effective);
                 previousCamera = camera;
                 previousSize   = {width, height};
+                applied        = effective;
                 changed        = false;
                 output         = {};
             }
             if (output.pixels.empty() || (ao.method == render::AOMethod::RTAO && view.GetAccumulatedSamples() < 32))
             {
-                output        = view.DrawFrame(width, height);
-                output.height = output.height * 5 / 4;
-                output.pixels.resize(size_t(output.width) * output.height * 4, 0);
+                const auto  start   = example::FrameMeter::Clock::now();
+                const auto& picture = view.DrawFrame(width, height);
+                meter.Record(start);
+                if (!usingPreview)
+                    lastFullMs = meter.lastMilliseconds;
+                renderWidth    = picture.width;
+                renderHeight   = picture.height;
+                const auto top = uint32_t(headerPixels * scale * effective.resolutionScale);
+                output.width   = picture.width;
+                output.height =
+                  std::max(picture.height + top, uint32_t(float(framebuffer[1]) * scale * effective.resolutionScale));
+                output.pixels.assign(size_t(output.width) * output.height * 4, 0);
+                std::memcpy(
+                  output.pixels.data() + size_t(top) * output.width * 4, picture.pixels.data(), picture.pixels.size());
             }
             window.PresentImage(output);
             if (window.DrawFrame() == render::FrameResult::Rendered)
                 ++frames;
         }
         window.WaitIdle();
+        std::cout << "Last AO draw: " << meter.lastMilliseconds << " ms; internal " << renderWidth << "x"
+                  << renderHeight << "; P95 " << meter.P95() << " ms\n";
         std::cout << "AO frames: " << view.GetAccumulatedSamples()
                   << "; validation errors: " << window.ValidationErrorCount() << '\n';
         return window.ValidationErrorCount() ? 1 : 0;

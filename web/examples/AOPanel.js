@@ -3,9 +3,16 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   const host = document.createElement('div')
   host.className = 'ao-viewport'
   canvas.before(host)
-  host.append(canvas)
+  const metrics = document.createElement('div')
+  metrics.className = 'ao-performance'
+  metrics.setAttribute('aria-label', '渲染性能')
+  metrics.setAttribute('role', 'status')
+  metrics.setAttribute('aria-live', 'off')
+  metrics.title =
+    'FPS 是最近一秒实际 AO 图像更新频率；Draw/P95 包含 CPU 提交与 GPU 等待，不是纯 GPU 时间。静止按需绘制，FPS 显示 —。'
+  host.append(metrics, canvas)
   const style = document.createElement('style')
-  style.textContent = `.ao-viewport{width:100%;min-width:0}.ao-controls{margin-top:12px;border:1px solid #3c4659;border-radius:7px;background:#181e29;color:#e1e6f0;font:12px/1.4 system-ui;color-scheme:dark}.ao-controls-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;padding:12px;max-height:360px;overflow:auto}.ao-controls-body[hidden]{display:none}.ao-controls button,.ao-controls select,.ao-controls input{font:inherit;color:inherit}.ao-controls button,.ao-controls select{background:#25324b;border:1px solid #465776;border-radius:4px;padding:5px}.ao-controls select,.ao-controls input{width:100%;box-sizing:border-box}.ao-controls label{display:flex;flex-direction:column;gap:4px;margin:8px 0}.ao-controls input[type=range]{accent-color:#819eff}.ao-controls legend{font-weight:600;color:#b9ccff}.ao-controls fieldset{min-width:0;border:0;padding:0;margin:0}.ao-toggle{display:block;width:100%;text-align:left}`
+  style.textContent = `.ao-viewport{width:100%;min-width:0}.ao-performance{box-sizing:border-box;display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px;min-height:38px;padding:5px 8px;background:#151b26;color:#dce5f2;border-radius:6px 6px 0 0;font:11px/1.5 ui-monospace,monospace;font-variant-numeric:tabular-nums;pointer-events:none}.ao-performance span{overflow-wrap:anywhere;min-width:0}.ao-controls{margin-top:12px;border:1px solid #3c4659;border-radius:7px;background:#181e29;color:#e1e6f0;font:12px/1.4 system-ui;color-scheme:dark}.ao-controls-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;padding:12px;max-height:360px;overflow:auto}.ao-controls-body[hidden]{display:none}.ao-controls button,.ao-controls select,.ao-controls input{font:inherit;color:inherit}.ao-controls button,.ao-controls select{background:#25324b;border:1px solid #465776;border-radius:4px;padding:5px}.ao-controls select,.ao-controls input{width:100%;box-sizing:border-box}.ao-controls label{display:flex;flex-direction:column;gap:4px;margin:8px 0}.ao-controls input[type=range]{accent-color:#819eff}.ao-controls legend{font-weight:600;color:#b9ccff}.ao-controls fieldset{min-width:0;border:0;padding:0;margin:0}.ao-toggle{display:block;width:100%;text-align:left}`
   host.append(style)
   const panel = document.createElement('section')
   panel.className = 'ao-controls'
@@ -143,6 +150,21 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   fields.push(() => {
     denoise.checked = scene.getAmbientOcclusion().denoise
   })
+  const adaptiveLabel = document.createElement('label'),
+    adaptive = document.createElement('input')
+  adaptive.type = 'checkbox'
+  adaptive.setAttribute('aria-label', '交互自适应画质')
+  adaptiveLabel.textContent = 'Adaptive interaction quality'
+  adaptiveLabel.append(adaptive)
+  sampling.append(adaptiveLabel)
+  adaptive.addEventListener(
+    'change',
+    () => update(() => scene.setAdaptiveQuality(adaptive.checked)),
+    { signal: events.signal },
+  )
+  fields.push(() => {
+    adaptive.checked = scene.getAdaptiveQuality()
+  })
   const camera = group('Camera')
   let current = 'courtyard'
   select(
@@ -166,13 +188,33 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   fields.push(() => {
     status.textContent = `Frames: ${scene.getAccumulatedSamples()}${scene.getAmbientOcclusion().method === 'rtao' ? ' / 32' : ''}`
   })
+  function performanceInfo() {
+    const p = scene.getPerformanceStats(),
+      fps = p.fps === null ? '—' : p.fps.toFixed(1),
+      left = document.createElement('span'),
+      right = document.createElement('span')
+    left.textContent = `AO ${fps} FPS · Draw ${p.frameCount ? p.lastRenderMs.toFixed(1) : '—'} ms · P95 ${p.frameCount > 1 ? p.p95Ms.toFixed(1) : '—'} ms`
+    const state = {
+      idle: '待命 · 按需绘制',
+      paused: '不可见 · 已暂停',
+      interactive: p.interactive ? '交互预览' : '交互绘制',
+      accumulating: '累计中',
+      rendering: '绘制中',
+    }[p.state]
+    right.textContent = `${state} · ${p.width}×${p.height} · ${(p.scale * 100).toFixed(1)}% · ${p.method.toUpperCase()} · ${p.samples} samples`
+    metrics.title = `FPS 为实际 AO 图像更新频率；Draw 包含 CPU 提交与 GPU 等待；P95 为最近 60 次非首帧绘制的 95 分位。首帧 ${p.firstRenderMs.toFixed(1)} ms（含资源准备）。静止按需绘制，FPS 显示 —。交互预览会暂时降低像素与采样，停止后恢复面板设定。`
+    metrics.replaceChildren(left, right)
+  }
+  const metricTimer = setInterval(performanceInfo, 250)
   function refresh() {
     fields.forEach((f) => f())
+    performanceInfo()
   }
   refresh()
   return {
     refresh,
     dispose() {
+      clearInterval(metricTimer)
       events.abort()
       host.before(canvas)
       host.remove()
