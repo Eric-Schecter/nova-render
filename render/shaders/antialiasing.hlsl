@@ -212,6 +212,8 @@ float4 PSMain(Varying i)
     float2 prevUV = uv + m.xy + (aa[1].zw - aa[1].xy) / aa[0].xy;
     if (aa[3].x < .5 || any(prevUV < 0) || any(prevUV > 1))
         return current;
+    if (aa[6].w > .5 && abs(current.a - historyTex.SampleLevel(LinearSampler, prevUV, 0).a) > .25)
+        return current;
     float4 old = oldMotionTex.SampleLevel(PointSampler, prevUV, 0);
     if (abs(m.z - old.z) > .012 || abs(m.w - old.w) > .03)
         return current;
@@ -222,8 +224,9 @@ float4 PSMain(Varying i)
         lo       = min(lo, c);
         hi       = max(hi, c);
     }
-    float3 history = clamp(historyTex.SampleLevel(LinearSampler, prevUV, 0).rgb, lo, hi);
-    return rgbL(lerp(current.rgb, history, aa[3].y));
+    float3 history  = clamp(historyTex.SampleLevel(LinearSampler, prevUV, 0).rgb, lo, hi);
+    float3 resolved = lerp(current.rgb, history, aa[3].y);
+    return aa[6].w > .5 ? float4(resolved, current.a) : rgbL(resolved);
 #elif AA_PASS == 8
     uv       = .5 + (uv - .5) / aa[3].z;
     float3 c = colorTex.SampleLevel(PointSampler, uv, 0).rgb;

@@ -12,7 +12,7 @@ namespace render::detail
             id<MTLDevice>              device;
             id<MTLCommandQueue>        queue;
             id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
-            id<MTLRenderPipelineState> pipelines[17], sceneMS, shadowMS, hdrMS;
+            id<MTLRenderPipelineState> pipelines[21], sceneMS, shadowMS, hdrMS, ssrMS;
             id<MTLSamplerState>        linear, point;
             id<MTLDepthStencilState>   depthState;
             uint32_t                   width = 0, height = 0;
@@ -39,10 +39,15 @@ namespace render::detail
                 d.fragmentFunction                = [library newFunctionWithName:@"PSMain"];
                 d.sampleCount                     = samples;
                 d.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
-                if (program == 0 || program == 10 || program == 16)
+                if (program == 0 || program == 10 || program == 16 || program == 17)
                 {
                     d.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
-                    d.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
+                    if (program == 17)
+                    {
+                        d.colorAttachments[2].pixelFormat = MTLPixelFormatRGBA16Float;
+                        d.colorAttachments[3].pixelFormat = MTLPixelFormatRGBA16Float;
+                    }
+                    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
                 }
                 if (program == 9)
                     d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
@@ -63,7 +68,7 @@ namespace render::detail
                 if (![device supportsTextureSampleCount:4])
                     throw std::runtime_error("Metal AA requires 4x MSAA support");
                 queue = [device newCommandQueue];
-                for (int i = 0; i < 17; i++)
+                for (int i = 0; i < 21; i++)
                 {
                     const auto data =
                       LoadShader(config.shaderDirectory, ("aa-" + std::to_string(i) + ".metallib").c_str());
@@ -79,6 +84,8 @@ namespace render::detail
                     pipelines[i] = Pipeline(lib, i, 1);
                     if (i == 0)
                         sceneMS = Pipeline(lib, 0, 4);
+                    if (i == 17)
+                        ssrMS = Pipeline(lib, 17, 4);
                     if (i == 16)
                         hdrMS = Pipeline(lib, 16, 4);
                     if (i == 10)
@@ -110,6 +117,23 @@ namespace render::detail
                                    bytesPerRow:data.width * 4];
                 }
             }
+            void SetReflectionEnvironment(const AATextureData& data) override
+            {
+                auto d        = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                                                            width:data.width
+                                                                           height:data.height
+                                                                        mipmapped:NO];
+                d.storageMode = MTLStorageModeShared;
+                d.usage       = MTLTextureUsageShaderRead;
+                auto texture  = [device newTextureWithDescriptor:d];
+                if (!texture)
+                    throw std::runtime_error("SSR environment allocation failed");
+                [texture replaceRegion:MTLRegionMake2D(0, 0, data.width, data.height)
+                           mipmapLevel:0
+                             withBytes:data.pixels.data()
+                           bytesPerRow:data.width * 8];
+                textures[AASsrEnvironment] = texture;
+            }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
                 width  = w;
@@ -120,7 +144,7 @@ namespace render::detail
             {
                 const auto used = AAUsed(passes);
                 for (int i = 0; i < AAResourceCount; i++)
-                    if (i != AAArea && i != AASearch)
+                    if (i != AAArea && i != AASearch && i != AASsrEnvironment)
                     {
                         if (!used[i])
                         {
@@ -128,13 +152,19 @@ namespace render::detail
                             continue;
                         }
                         const auto spec = AAResourceSpec(
-                          i, width, height, super, bool(external.draw), uint32_t(passes.front().uniforms[8][1]));
+                          i,
+                          width,
+                          height,
+                          super,
+                          bool(external.draw),
+                          uint32_t(passes.front().uniforms[8][1]),
+                          passes.front().uniforms[6][3] > .5f);
                         if (!textures[i] || textures[i].width != spec.width || textures[i].height != spec.height)
                             textures[i] = Texture(spec.width, spec.height, MTLPixelFormatRGBA16Float, spec.samples);
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17))
                     {
                         const int k       = p.program == 9                                          ? 3
                                             : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -178,23 +208,35 @@ namespace render::detail
                         }
                     for (const auto& p : passes)
                     {
-                        auto       d     = [MTLRenderPassDescriptor renderPassDescriptor];
-                        const bool scene = (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16),
+                        auto       d = [MTLRenderPassDescriptor renderPassDescriptor];
+                        const bool scene =
+                                     (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16
+                                      || p.program == 17),
                                    nativeScene = p.program < 0,
                                    baseline    = p.target == AABaseline || p.target == AARawBaseline;
-                        const int attachments  = (p.program == 0 || p.program == 10 || p.program == 16) ? 2 : 1;
+                        const int attachments  = p.program == 17                                          ? 4
+                                                 : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
+                                                                                                          : 1;
                         for (int a = 0; a < attachments; a++)
                         {
                             auto      c      = d.colorAttachments[a];
-                            const int target = p.target + (a ? 1 : 0);
-                            c.texture =
-                              textures[p.multisampled ? (nativeScene ? AARawMultiColor : AAMultiColor) + a : target];
+                            const int target = p.target + a;
+                            c.texture        = textures
+                              [p.multisampled ? (p.program == 17 ? AASsrMulti0
+                                                 : nativeScene   ? AARawMultiColor
+                                                                 : AAMultiColor)
+                                                  + a
+                                              : target];
                             c.loadAction = MTLLoadActionClear;
                             c.clearColor =
                               (a || p.program == -2 || p.program == -3)
                                 ? MTLClearColorMake(0, 0, 1, 1)
                                 : MTLClearColorMake(
                                     p.uniforms[7][0], p.uniforms[7][1], p.uniforms[7][2], p.uniforms[7][3]);
+                            if (p.program == 17 && a == 2)
+                                c.clearColor = MTLClearColorMake(0, 0, 0, 1);
+                            if (p.program == 17 && a == 3)
+                                c.clearColor = MTLClearColorMake(1000, 1000, 0, 1);
                             c.storeAction = p.multisampled ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
                             if (p.multisampled)
                                 c.resolveTexture = textures[target];
@@ -227,7 +269,8 @@ namespace render::detail
                             [e endEncoding];
                             continue;
                         }
-                        [e setRenderPipelineState:p.multisampled ? (p.program == 16   ? hdrMS
+                        [e setRenderPipelineState:p.multisampled ? (p.program == 17   ? ssrMS
+                                                                    : p.program == 16 ? hdrMS
                                                                     : p.program == 10 ? shadowMS
                                                                                       : sceneMS)
                                                                  : pipelines[p.program]];
@@ -238,13 +281,13 @@ namespace render::detail
                         [e setFragmentBytes:p.uniforms.data() length:sizeof(AAUniforms) atIndex:0];
                         if (scene)
                             [e setDepthStencilState:depthState];
-                        for (int b = 0; b < 8; b++)
-                            [e setFragmentTexture:textures[p.sources[b]] atIndex:b + 1];
+                        for (int b = 0; b < 16; b++)
+                            [e setFragmentTexture:textures[p.sources[b]] atIndex:b < 8 ? b + 1 : b + 3];
                         [e setFragmentSamplerState:linear atIndex:9];
                         [e setFragmentSamplerState:point atIndex:10];
                         [e drawPrimitives:MTLPrimitiveTypeTriangle
                               vertexStart:0
-                              vertexCount:(p.program == 9 || p.program == 10 || p.program == 16)
+                              vertexCount:(p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17)
                                             ? uint32_t(p.uniforms[10][2])
                                           : scene ? 79 * 6
                                                   : 3];

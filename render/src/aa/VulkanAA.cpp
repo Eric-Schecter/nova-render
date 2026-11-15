@@ -87,13 +87,14 @@ namespace render::detail
             VkDescriptorPool                 descriptorPool{};
             VkDescriptorSetLayout            setLayout{};
             VkPipelineLayout                 layout{};
-            VkPipeline                       pipelines[17]{}, sceneMS{}, shadowMS{}, hdrMS{};
-            VkRenderPass                     scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{};
-            VkSampler                        linear{}, point{};
-            Texture                          textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
-            Buffer                           uniforms, readback;
-            VkDeviceSize                     uniformStride = 256;
-            uint32_t                         Type(uint32_t bits, VkMemoryPropertyFlags flags)
+            VkPipeline                       pipelines[21]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
+            VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
+              surfaceMSPass{};
+            VkSampler    linear{}, point{};
+            Texture      textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
+            Buffer       uniforms, readback;
+            VkDeviceSize uniformStride = 256;
+            uint32_t     Type(uint32_t bits, VkMemoryPropertyFlags flags)
             {
                 for (uint32_t i = 0; i < memory.memoryTypeCount; i++)
                     if ((bits & (1u << i)) && (memory.memoryTypes[i].propertyFlags & flags) == flags)
@@ -216,9 +217,9 @@ namespace render::detail
                 api.vkCmdClearColorImage(command, t.image, t.layout, &c, 1, &range);
                 Transition(t, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             }
-            VkRenderPass MakePass(bool scene, bool ms, bool borrowedScene = false)
+            VkRenderPass MakePass(bool scene, bool ms, bool borrowedScene = false, bool surface = false)
             {
-                const uint32_t                       n = borrowedScene ? 1 : scene ? 2 : 1;
+                const uint32_t                       n = surface ? 4 : borrowedScene ? 1 : scene ? 2 : 1;
                 std::vector<VkAttachmentDescription> attachments;
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -253,14 +254,13 @@ namespace render::detail
                     a.initialLayout = a.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                     attachments.push_back(a);
                 }
-                VkAttachmentReference colors[2] =
-                  {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-                                      resolves[2] =
-                                        {{n, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                                         {n + 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-                                      depthRef{
-                                        uint32_t(attachments.size() - 1),
-                                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+                VkAttachmentReference colors[4]{}, resolves[4]{},
+                  depthRef{uint32_t(attachments.size() - 1), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+                for (uint32_t i = 0; i < n; i++)
+                {
+                    colors[i]   = {i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+                    resolves[i] = {n + i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+                }
                 VkSubpassDescription sub{};
                 sub.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
                 sub.colorAttachmentCount    = n;
@@ -309,13 +309,14 @@ namespace render::detail
                 sampling.rasterizationSamples = ms ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
                 VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
                 ds.depthTestEnable = ds.depthWriteEnable =
-                  program == 0 || program == 9 || program == 10 || program == 16;
+                  program == 0 || program == 9 || program == 10 || program == 16 || program == 17;
                 ds.depthCompareOp = VK_COMPARE_OP_LESS;
-                VkPipelineColorBlendAttachmentState blends[2]{};
-                blends[0].colorWriteMask = blends[1].colorWriteMask = 15;
+                VkPipelineColorBlendAttachmentState blends[4]{};
+                for (auto& blend : blends)
+                    blend.colorWriteMask = 15;
                 VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-                blend.attachmentCount                       = (program == 0 || program == 10 || program == 16) ? 2 : 1;
-                blend.pAttachments                          = blends;
+                blend.attachmentCount = program == 17 ? 4 : (program == 0 || program == 10 || program == 16) ? 2 : 1;
+                blend.pAttachments    = blends;
                 VkDynamicState                   dynamics[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
                 VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
                 dynamic.dynamicStateCount = 2;
@@ -332,7 +333,8 @@ namespace render::detail
                 d.pColorBlendState    = &blend;
                 d.pDynamicState       = &dynamic;
                 d.layout              = layout;
-                d.renderPass          = program == 9                                       ? externalPass
+                d.renderPass          = program == 17  ? (ms ? surfaceMSPass : surfacePass)
+                                        : program == 9 ? externalPass
                                         : (program == 0 || program == 10 || program == 16) ? (ms ? msPass : scenePass)
                                                                                            : postPass;
                 VkPipeline result;
@@ -587,18 +589,18 @@ namespace render::detail
                 ca.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
                 ca.commandBufferCount = 1;
                 Check(api.vkAllocateCommandBuffers(device, &ca, &command));
-                std::array<VkDescriptorSetLayoutBinding, 11> bindings{};
-                for (uint32_t i = 0; i < 11; i++)
+                std::array<VkDescriptorSetLayoutBinding, 19> bindings{};
+                for (uint32_t i = 0; i < 19; i++)
                 {
                     bindings[i].binding         = i;
                     bindings[i].descriptorCount = 1;
-                    bindings[i].descriptorType  = i == 0  ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                                  : i < 9 ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
-                                                          : VK_DESCRIPTOR_TYPE_SAMPLER;
+                    bindings[i].descriptorType  = i == 0                ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                                  : (i == 9 || i == 10) ? VK_DESCRIPTOR_TYPE_SAMPLER
+                                                                        : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                     bindings[i].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
                 }
                 VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-                sl.bindingCount = 11;
+                sl.bindingCount = 19;
                 sl.pBindings    = bindings.data();
                 Check(api.vkCreateDescriptorSetLayout(device, &sl, nullptr, &setLayout));
                 VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -607,7 +609,7 @@ namespace render::detail
                 Check(api.vkCreatePipelineLayout(device, &pl, nullptr, &layout));
                 VkDescriptorPoolSize sizes[] = {
                   {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 64},
-                  {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 512},
+                  {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024},
                   {VK_DESCRIPTOR_TYPE_SAMPLER, 128}};
                 VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
                 dp.maxSets       = 64;
@@ -626,11 +628,14 @@ namespace render::detail
                 postPass       = MakePass(false, false);
                 externalPass   = MakePass(true, false, true);
                 externalMSPass = MakePass(true, true, true);
-                for (int i = 0; i < 17; i++)
+                surfacePass    = MakePass(true, false, false, true);
+                surfaceMSPass  = MakePass(true, true, false, true);
+                for (int i = 0; i < 21; i++)
                     pipelines[i] = Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
                 shadowMS = Pipeline(10, true, config);
                 hdrMS    = Pipeline(16, true, config);
+                ssrMS    = Pipeline(17, true, config);
                 uniforms = MakeBuffer(uniformStride * 64, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
                 for (int i = AAArea; i <= AASearch; i++)
                 {
@@ -682,11 +687,13 @@ namespace render::detail
                         api.vkDestroyPipeline(device, p, nullptr);
                 if (sceneMS)
                     api.vkDestroyPipeline(device, sceneMS, nullptr);
+                if (ssrMS)
+                    api.vkDestroyPipeline(device, ssrMS, nullptr);
                 if (hdrMS)
                     api.vkDestroyPipeline(device, hdrMS, nullptr);
                 if (shadowMS)
                     api.vkDestroyPipeline(device, shadowMS, nullptr);
-                for (auto p : {scenePass, msPass, postPass, externalPass, externalMSPass})
+                for (auto p : {scenePass, msPass, postPass, externalPass, externalMSPass, surfacePass, surfaceMSPass})
                     if (p)
                         api.vkDestroyRenderPass(device, p, nullptr);
                 for (auto s : {linear, point})
@@ -711,6 +718,26 @@ namespace render::detail
                 if (!external.device)
                     instanceApi.vkDestroyInstance(instance, nullptr);
             }
+            void SetReflectionEnvironment(const AATextureData& data) override
+            {
+                auto  next    = MakeTexture(data.width, data.height, VK_FORMAT_R16G16B16A16_SFLOAT);
+                auto  staging = MakeBuffer(data.pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+                void* mapped;
+                Check(api.vkMapMemory(device, staging.memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+                std::memcpy(mapped, data.pixels.data(), data.pixels.size());
+                api.vkUnmapMemory(device, staging.memory);
+                Begin();
+                Transition(next, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                VkBufferImageCopy copy{};
+                copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                copy.imageExtent      = {data.width, data.height, 1};
+                api.vkCmdCopyBufferToImage(command, staging.buffer, next.image, next.layout, 1, &copy);
+                Transition(next, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                End();
+                Destroy(staging);
+                Destroy(textures[AASsrEnvironment]);
+                textures[AASsrEnvironment] = next;
+            }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
                 if (w != width || h != height)
@@ -726,7 +753,7 @@ namespace render::detail
             {
                 const auto used = AAUsed(passes);
                 for (int i = 0; i < AAResourceCount; i++)
-                    if (i != AAArea && i != AASearch)
+                    if (i != AAArea && i != AASearch && i != AASsrEnvironment)
                     {
                         if (!used[i])
                         {
@@ -734,7 +761,13 @@ namespace render::detail
                             continue;
                         }
                         const auto spec = AAResourceSpec(
-                          i, width, height, supersampled, bool(external.draw), uint32_t(passes.front().uniforms[8][1]));
+                          i,
+                          width,
+                          height,
+                          supersampled,
+                          bool(external.draw),
+                          uint32_t(passes.front().uniforms[8][1]),
+                          passes.front().uniforms[6][3] > .5f);
                         if (textures[i].width != spec.width || textures[i].height != spec.height)
                         {
                             Destroy(textures[i]);
@@ -747,7 +780,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17))
                     {
                         int k         = p.program == 9                                          ? 3
                                         : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -792,16 +825,23 @@ namespace render::detail
                 std::vector<VkFramebuffer> framebuffers;
                 for (size_t index = 0; index < passes.size(); index++)
                 {
-                    const auto& p           = passes[index];
-                    bool        scene       = (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16);
-                    const bool  nativeScene = p.program < 0;
-                    const int   attachments = (p.program == 0 || p.program == 10 || p.program == 16) ? 2 : 1;
-                    auto&       target      = textures[p.target];
+                    const auto& p = passes[index];
+                    bool        scene =
+                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17);
+                    const bool               nativeScene = p.program < 0;
+                    const int                attachments = p.program == 17                                          ? 4
+                                                           : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
+                                                                                                                    : 1;
+                    auto&                    target      = textures[p.target];
                     std::vector<VkImageView> views;
                     for (int a = 0; a < attachments; a++)
                     {
-                        auto& t =
-                          textures[p.multisampled ? (nativeScene ? AARawMultiColor : AAMultiColor) + a : p.target + a];
+                        auto& t = textures
+                          [p.multisampled ? (p.program == 17 ? AASsrMulti0
+                                             : nativeScene   ? AARawMultiColor
+                                                             : AAMultiColor)
+                                              + a
+                                          : p.target + a];
                         Transition(t, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
                         views.push_back(t.view);
                     }
@@ -830,26 +870,26 @@ namespace render::detail
                     VkDescriptorSet set;
                     Check(api.vkAllocateDescriptorSets(device, &da, &set));
                     VkDescriptorBufferInfo ub{uniforms.buffer, index * uniformStride, sizeof(AAUniforms)};
-                    std::array<VkDescriptorImageInfo, 10> images{};
-                    std::array<VkWriteDescriptorSet, 11>  writes{};
-                    for (uint32_t b = 0; b < 11; b++)
+                    std::array<VkDescriptorImageInfo, 18> images{};
+                    std::array<VkWriteDescriptorSet, 19>  writes{};
+                    for (uint32_t b = 0; b < 19; b++)
                     {
                         auto& write           = writes[b];
                         write                 = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                         write.dstSet          = set;
                         write.dstBinding      = b;
                         write.descriptorCount = 1;
-                        write.descriptorType  = b == 0  ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                                : b < 9 ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
-                                                        : VK_DESCRIPTOR_TYPE_SAMPLER;
+                        write.descriptorType  = b == 0                ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                                : (b == 9 || b == 10) ? VK_DESCRIPTOR_TYPE_SAMPLER
+                                                                      : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                         if (b == 0)
                             write.pBufferInfo = &ub;
                         else
                         {
                             auto& image = images[b - 1];
-                            if (b < 9)
+                            if (b != 9 && b != 10)
                             {
-                                image.imageView   = textures[p.sources[b - 1]].view;
+                                image.imageView   = textures[p.sources[b < 9 ? b - 1 : b - 3]].view;
                                 image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                             }
                             else
@@ -857,11 +897,12 @@ namespace render::detail
                             write.pImageInfo = &image;
                         }
                     }
-                    api.vkUpdateDescriptorSets(device, 11, writes.data(), 0, nullptr);
-                    VkRenderPass            renderPass = nativeScene ? (p.multisampled ? externalMSPass : externalPass)
-                                                         : p.program == 9 ? externalPass
-                                                         : scene          ? (p.multisampled ? msPass : scenePass)
-                                                                          : postPass;
+                    api.vkUpdateDescriptorSets(device, 19, writes.data(), 0, nullptr);
+                    VkRenderPass renderPass = p.program == 17  ? (p.multisampled ? surfaceMSPass : surfacePass)
+                                              : nativeScene    ? (p.multisampled ? externalMSPass : externalPass)
+                                              : p.program == 9 ? externalPass
+                                              : scene          ? (p.multisampled ? msPass : scenePass)
+                                                               : postPass;
                     VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
                     fb.renderPass      = renderPass;
                     fb.attachmentCount = uint32_t(views.size());
@@ -872,11 +913,16 @@ namespace render::detail
                     VkFramebuffer framebuffer;
                     Check(api.vkCreateFramebuffer(device, &fb, nullptr, &framebuffer));
                     framebuffers.push_back(framebuffer);
-                    VkClearValue clears[5]{};
+                    VkClearValue clears[9]{};
                     std::copy(p.uniforms[7].begin(), p.uniforms[7].end(), clears[0].color.float32);
                     if (p.program == -2 || p.program == -3)
                         clears[0].color = {{0, 0, 1, 1}};
                     clears[1].color = {{0, 0, 1, 1}};
+                    if (p.program == 17)
+                    {
+                        clears[2].color = {{0, 0, 0, 1}};
+                        clears[3].color = {{1000, 1000, 0, 1}};
+                    }
                     if (scene)
                         clears[views.size() - 1].depthStencil = {1, 0};
                     VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -906,7 +952,8 @@ namespace render::detail
                     api.vkCmdBindPipeline(
                       command,
                       VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      p.multisampled ? (p.program == 16   ? hdrMS
+                      p.multisampled ? (p.program == 17   ? ssrMS
+                                        : p.program == 16 ? hdrMS
                                         : p.program == 10 ? shadowMS
                                                           : sceneMS)
                                      : pipelines[p.program]);
@@ -918,9 +965,10 @@ namespace render::detail
                     api.vkCmdSetScissor(command, 0, 1, &scissor);
                     api.vkCmdDraw(
                       command,
-                      (p.program == 9 || p.program == 10 || p.program == 16) ? uint32_t(p.uniforms[10][2])
-                      : scene                                                ? 79 * 6
-                                                                             : 3,
+                      (p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17)
+                        ? uint32_t(p.uniforms[10][2])
+                      : scene ? 79 * 6
+                              : 3,
                       1,
                       0,
                       0);

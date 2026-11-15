@@ -2,6 +2,7 @@
 #include "../../../assets/AntiAliasing/SearchTex.h"
 #include "AADevice.hpp"
 #include "PostProcessing.hpp"
+#include "ScreenSpaceReflections.hpp"
 #include "render/ShadowView.hpp"
 #include <algorithm>
 #include <optional>
@@ -80,6 +81,8 @@ namespace render
         std::optional<ShadowSettings>     shadow;
         PostProcessingSettings            post;
         detail::PostProcessingState       postState;
+        bool                              reflectionScene = false;
+        ScreenSpaceReflectionSettings     reflections;
         bool                              hdrScene       = false;
         float                             sceneIntensity = 1;
     };
@@ -211,6 +214,44 @@ namespace render
     {
         return impl_->sceneIntensity;
     }
+    void AntiAliasingView::ConfigureReflectionScene()
+    {
+        impl_->reflectionScene = true;
+        impl_->settings.split  = false;
+        impl_->camera          = {18, 22, 8, 1};
+        UseDefaultReflectionEnvironment();
+        ResetHistory();
+    }
+    void AntiAliasingView::SetScreenSpaceReflections(const ScreenSpaceReflectionSettings& s)
+    {
+        detail::ValidateReflections(s);
+        const auto& o       = impl_->reflections;
+        bool        changed = o.enabled != s.enabled || o.hierarchical != s.hierarchical || o.maxSteps != s.maxSteps
+                       || o.maxDistance != s.maxDistance || o.thickness != s.thickness || o.stride != s.stride
+                       || o.roughnessCutoff != s.roughnessCutoff || o.edgeFade != s.edgeFade
+                       || o.intensity != s.intensity || o.environmentIntensity != s.environmentIntensity
+                       || o.debug != s.debug || o.debugMip != s.debugMip;
+        impl_->reflections = s;
+        if (changed)
+            ResetHistory();
+    }
+    ScreenSpaceReflectionSettings AntiAliasingView::GetScreenSpaceReflections() const
+    {
+        return impl_->reflections;
+    }
+    void AntiAliasingView::LoadReflectionEnvironment(const std::filesystem::path& path)
+    {
+        auto data  = detail::LoadEnvironmentFile(path);
+        auto atlas = detail::ReflectionEnvironmentAtlas(data.get());
+        impl_->device->SetReflectionEnvironment(atlas);
+        ResetHistory();
+    }
+    void AntiAliasingView::UseDefaultReflectionEnvironment()
+    {
+        auto atlas = detail::ReflectionEnvironmentAtlas();
+        impl_->device->SetReflectionEnvironment(atlas);
+        ResetHistory();
+    }
     const Image& AntiAliasingView::DrawFrame(uint32_t w, uint32_t h)
     {
         if (!w || !h || w > 2048 || h > 2048)
@@ -253,7 +294,12 @@ namespace render
             u[14][2] = s.sceneIntensity;
             u[7]     = {.002f, .003f, .005f, 1};
         }
-        if (s.post.enabled || s.hdrScene)
+        if (s.reflectionScene)
+        {
+            detail::PackReflectionUniforms(u, s.reflections, w, h, method == AAMethod::SSAA);
+            u[7] = {.025f, .035f, .055f, 1};
+        }
+        if (s.post.enabled || s.hdrScene || s.reflectionScene)
             u[6][2] = 1;
         std::vector<detail::AAPass> passes;
         auto                        pass = [&](int program, int target) {
@@ -264,25 +310,32 @@ namespace render
             passes.push_back(p);
             return &passes.back();
         };
-        const bool shadowed = s.shadow && s.shadow->method != ShadowMethod::Off;
-        if (shadowed)
+        if (s.reflectionScene)
         {
-            auto* p        = pass(9, detail::AAShadowMap);
-            p->uniforms[7] = {1, 0, 0, 1};
+            detail::AppendReflectionPasses(passes, u, s.reflections, method == AAMethod::MSAA, taa, s.settings.split);
         }
-        if ((!s.shadow && !s.hdrScene) || s.settings.split)
+        else
         {
-            auto* baseline        = pass(s.hdrScene ? 16 : s.shadow ? 10 : 0, detail::AABaseline);
-            baseline->uniforms[1] = {};
+            const bool shadowed = s.shadow && s.shadow->method != ShadowMethod::Off;
             if (shadowed)
-                baseline->sources[0] = detail::AAShadowMap;
+            {
+                auto* p        = pass(9, detail::AAShadowMap);
+                p->uniforms[7] = {1, 0, 0, 1};
+            }
+            if ((!s.shadow && !s.hdrScene && !s.reflectionScene) || s.settings.split)
+            {
+                auto* baseline        = pass(s.hdrScene ? 16 : s.shadow ? 10 : 0, detail::AABaseline);
+                baseline->uniforms[1] = {};
+                if (shadowed)
+                    baseline->sources[0] = detail::AAShadowMap;
+            }
+            auto* color         = pass(s.hdrScene ? 16 : s.shadow ? 10 : 0, detail::AAColor);
+            color->multisampled = method == AAMethod::MSAA;
+            if (shadowed)
+                color->sources[0] = detail::AAShadowMap;
         }
-        auto* color         = pass(s.hdrScene ? 16 : s.shadow ? 10 : 0, detail::AAColor);
-        color->multisampled = method == AAMethod::MSAA;
-        if (shadowed)
-            color->sources[0] = detail::AAShadowMap;
         int filtered = detail::AAColor;
-        if (method == AAMethod::SSAA)
+        if (method == AAMethod::SSAA && !s.reflectionScene)
         {
             pass(1, detail::AAFiltered)->sources[0] = detail::AAColor;
             filtered                                = detail::AAFiltered;
@@ -298,9 +351,13 @@ namespace render
             pass(1, detail::AAPrevMotion)->sources[0] = detail::AAMotion;
         }
         const int baselineSource =
-          ((!s.shadow && !s.hdrScene) || s.settings.split) ? detail::AABaseline : detail::AADummy;
-        const auto post = detail::AppendPostProcessing(passes, filtered, baselineSource, w, h, s.post, s.postState, u);
-        filtered        = post.color;
+          ((!s.shadow && !s.hdrScene && !s.reflectionScene) || s.settings.split) ? detail::AABaseline : detail::AADummy;
+        auto effectivePost = s.post;
+        if (s.reflectionScene && unsigned(s.reflections.debug) >= 2)
+            effectivePost.enabled = false;
+        const auto post =
+          detail::AppendPostProcessing(passes, filtered, baselineSource, w, h, effectivePost, s.postState, u);
+        filtered = post.color;
         if (method == AAMethod::FXAA)
         {
             pass(2, detail::AAFiltered)->sources[0] = filtered;
@@ -321,7 +378,7 @@ namespace render
         }
         auto* display       = pass(8, detail::AAOutput);
         display->sources[0] = filtered;
-        if ((!s.shadow && !s.hdrScene) || s.settings.split)
+        if ((!s.shadow && !s.hdrScene && !s.reflectionScene) || s.settings.split)
             display->sources[3] = post.baseline;
         s.image          = s.device->Draw(passes);
         s.previous       = s.camera;

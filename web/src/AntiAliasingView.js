@@ -1,4 +1,14 @@
 import {
+  defaultScreenSpaceReflections,
+  copyScreenSpaceReflections,
+  reflectionEnvironmentAtlas,
+  loadEnvironmentFile,
+  reflectionResourceSize,
+  packReflectionUniforms,
+  appendReflectionPasses,
+  reflectionDebugModes,
+} from './ScreenSpaceReflections.js'
+import {
   defaultPostProcessing,
   copyPostProcessing,
   appendPostProcessing,
@@ -42,6 +52,7 @@ export async function createAntiAliasingView({
   scene: external,
   shadowScene = false,
   hdrScene = false,
+  reflectionScene = false,
 } = {}) {
   if (!canvas) throw Error('AA requires a canvas')
   const adapter = borrowedDevice ? null : await navigator.gpu?.requestAdapter()
@@ -67,7 +78,7 @@ export async function createAntiAliasingView({
       method: external ? 'off' : 'taa',
       historyWeight: 0.9,
       zoom: 1,
-      split: !external && !shadowScene && !hdrScene,
+      split: !external && !shadowScene && !hdrScene && !reflectionScene,
       textureFiltering: true,
     },
     camera = { yaw: 20, pitch: 15, distance: 6.2, exposure: 1 },
@@ -83,7 +94,12 @@ export async function createAntiAliasingView({
     camera = { yaw: 0, pitch: 0, distance: 6.2, exposure: 1 }
     previous = { ...camera }
   }
-  let postSettings = { ...defaultPostProcessing(), enabled: hdrScene },
+  if (reflectionScene) {
+    camera = { yaw: 18, pitch: 22, distance: 8, exposure: 1 }
+    previous = { ...camera }
+  }
+  let reflections = defaultScreenSpaceReflections()
+  let postSettings = { ...defaultPostProcessing(), enabled: hdrScene || reflectionScene },
     postState = { frames: 0, last: 0 },
     sceneIntensity = 1
   let shadowSettings = defaultShadowSettings()
@@ -111,6 +127,7 @@ export async function createAntiAliasingView({
     sceneMS,
     shadowMS,
     hdrMS,
+    ssrMS,
     displayPipeline,
     linear,
     point
@@ -120,13 +137,13 @@ export async function createAntiAliasingView({
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
     layout = device.createBindGroupLayout({
-      entries: Array.from({ length: 11 }, (_, i) => ({
+      entries: Array.from({ length: 19 }, (_, i) => ({
         binding: i,
         visibility:
           i === 0 ? GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT : GPUShaderStage.FRAGMENT,
         ...(i === 0
           ? { buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 256 } }
-          : i < 9
+          : i !== 9 && i !== 10
             ? { texture: { sampleType: 'float' } }
             : { sampler: { type: i === 9 ? 'filtering' : 'non-filtering' } }),
       })),
@@ -143,7 +160,10 @@ export async function createAntiAliasingView({
           module: device.createShaderModule({ code: data.frag }),
           entryPoint: 'PSMain',
           targets: Array.from(
-            { length: program === 0 || program === 10 || program === 16 ? 2 : 1 },
+            {
+              length:
+                program === 17 ? 4 : program === 0 || program === 10 || program === 16 ? 2 : 1,
+            },
             () => ({
               format: targetFormat,
             }),
@@ -151,7 +171,7 @@ export async function createAntiAliasingView({
         },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
         multisample: { count },
-        ...([0, 9, 10, 16].includes(program)
+        ...([0, 9, 10, 16, 17].includes(program)
           ? {
               depthStencil: {
                 format: 'depth32float',
@@ -162,10 +182,11 @@ export async function createAntiAliasingView({
           : {}),
       })
     }
-    for (let i = 0; i < 17; i++) pipelines.push(await pipeline(i))
+    for (let i = 0; i < 21; i++) pipelines.push(await pipeline(i))
     sceneMS = await pipeline(0, 4)
     if (shadowScene) shadowMS = await pipeline(10, 4)
     if (hdrScene) hdrMS = await pipeline(16, 4)
+    if (reflectionScene) ssrMS = await pipeline(17, 4)
     displayPipeline = await pipeline(8, 1, format)
     linear = device.createSampler({
       minFilter: 'linear',
@@ -196,6 +217,17 @@ export async function createAntiAliasingView({
     if (!borrowedDevice) device.destroy()
     throw error
   }
+  function uploadReflectionEnvironment(data) {
+    const next = device.createTexture({
+      size: [256, 256],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    })
+    device.queue.writeTexture({ texture: next }, data.pixels, { bytesPerRow: 256 * 8 }, [256, 256])
+    textures[64]?.destroy()
+    textures[64] = next
+  }
+  if (reflectionScene) uploadReflectionEnvironment(reflectionEnvironmentAtlas())
   function reset() {
     frames = 0
     previousJitter = [0, 0]
@@ -207,8 +239,8 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 42; i++)
-      if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39) {
+    for (let i = 0; i < 65; i++)
+      if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64) {
         textures[i]?.destroy()
         textures[i] = undefined
       }
@@ -281,10 +313,12 @@ export async function createAntiAliasingView({
       u[58] = sceneIntensity
       u.splice(28, 4, 0.002, 0.003, 0.005, 1)
     }
-    if (postSettings.enabled || hdrScene) u[26] = 1
+    if (reflectionScene)
+      packReflectionUniforms(u, reflections, width, height, settings.method === 'ssaa')
+    if (postSettings.enabled || hdrScene || reflectionScene) u[26] = 1
     const passes = [],
       add = (program, target) => {
-        const p = { program, target, sources: Array(8).fill(DUMMY), u: [...u] }
+        const p = { program, target, sources: Array(16).fill(DUMMY), u: [...u] }
         passes.push(p)
         return p
       }
@@ -295,7 +329,16 @@ export async function createAntiAliasingView({
       p.u[24] = luma ? 1 : 0
       if (!luma) p.u[26] = 1
     }
-    if (external) {
+    if (reflectionScene) {
+      appendReflectionPasses(
+        passes,
+        u,
+        reflections,
+        settings.method === 'msaa',
+        taa,
+        settings.split,
+      )
+    } else if (external) {
       u[26] = external.encoded ? 2 : 1
       u.splice(28, 4, ...external.clear())
       if (settings.split) {
@@ -327,7 +370,7 @@ export async function createAntiAliasingView({
       add(0, C).ms = settings.method === 'msaa'
     }
     let filtered = C
-    if (!external && settings.method === 'ssaa') {
+    if (!external && !reflectionScene && settings.method === 'ssaa') {
       add(1, F).sources[0] = C
       filtered = F
     }
@@ -344,14 +387,17 @@ export async function createAntiAliasingView({
       p.sources[5] = PM
       add(1, PM).sources[0] = M
     }
-    const baselineSource = (!shadowScene && !hdrScene) || settings.split ? B : DUMMY
+    const baselineSource =
+      (!shadowScene && !hdrScene && !reflectionScene) || settings.split ? B : DUMMY
     const post = appendPostProcessing(
       passes,
       filtered,
       baselineSource,
       width,
       height,
-      postSettings,
+      reflectionScene && reflectionDebugModes.indexOf(reflections.debug) >= 2
+        ? { ...postSettings, enabled: false }
+        : postSettings,
       postState,
       u,
     )
@@ -374,7 +420,8 @@ export async function createAntiAliasingView({
     }
     const p = add(8, O)
     p.sources[0] = filtered
-    if ((!shadowScene && !hdrScene) || settings.split) p.sources[3] = post.baseline
+    if ((!shadowScene && !hdrScene && !reflectionScene) || settings.split)
+      p.sources[3] = post.baseline
     return { passes, jitter }
   }
   async function draw(w, h) {
@@ -394,20 +441,27 @@ export async function createAntiAliasingView({
     for (const p of passes) {
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
+      if (p.program === 17) {
+        for (let a = 1; a < 4; a++) used.add(p.target + a)
+      }
       if (p.program === 0 || p.program === 10 || p.program === 16) used.add(p.target + 1)
       if (p.ms) {
-        used.add(external ? 19 : MC)
+        used.add(p.program === 17 ? 46 : external ? 19 : MC)
+        if (p.program === 17) {
+          for (let a = 1; a < 4; a++) used.add(46 + a)
+        }
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 42; i++) {
-      if (i === AREA || i === SEARCH) continue
+    for (let i = 0; i < 65; i++) {
+      if (i === AREA || i === SEARCH || i === 64) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
         textures[i] = undefined
         continue
       }
-      const big = superSample && (external ? i === 17 || i === 18 : i === C || i === M)
+      const big =
+        superSample && !reflectionScene && (external ? i === 17 || i === 18 : i === C || i === M)
       const raw = external && i >= 17 && i <= 21
       let tw =
           i === 22
@@ -418,14 +472,20 @@ export async function createAntiAliasingView({
         th =
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
+      if (i >= 42 && i < 64) [tw, th] = reflectionResourceSize(i, w, h, superSample)
       if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
         textures[i].destroy()
         textures[i] = undefined
       }
       if (!textures[i])
-        textures[i] = texture(tw, th, 'rgba16float', [MC, MM, 19, 20].includes(i) ? 4 : 1)
+        textures[i] = texture(
+          tw,
+          th,
+          'rgba16float',
+          [MC, MM, 19, 20, 46, 47, 48, 49].includes(i) ? 4 : 1,
+        )
     }
-    const raw = textures[external ? 17 : C]
+    const raw = textures[reflectionScene ? 42 : external ? 17 : C]
     if (!depth || depth.width !== raw.width || depth.height !== raw.height) {
       depth?.destroy()
       depth = texture(raw.width, raw.height, 'depth32float')
@@ -470,17 +530,34 @@ export async function createAntiAliasingView({
       }
     function render(p, index, present = false) {
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
-      const scene = p.program <= 0 || p.program === 9 || p.program === 10 || p.program === 16,
+      const scene =
+          p.program <= 0 ||
+          p.program === 9 ||
+          p.program === 10 ||
+          p.program === 16 ||
+          p.program === 17,
         native = p.program < 0,
         target = textures[p.target]
       const colorAttachments = Array.from(
-        { length: p.program === 0 || p.program === 10 || p.program === 16 ? 2 : 1 },
+        {
+          length:
+            p.program === 17 ? 4 : p.program === 0 || p.program === 10 || p.program === 16 ? 2 : 1,
+        },
         (_, a) => ({
           view: present
             ? context.getCurrentTexture().createView()
-            : textures[p.ms ? (native ? 19 : MC) + a : p.target + a].createView(),
+            : textures[
+                p.ms ? (p.program === 17 ? 46 : native ? 19 : MC) + a : p.target + a
+              ].createView(),
           ...(p.ms ? { resolveTarget: textures[p.target + a].createView() } : {}),
-          clearValue: p.program < -1 || a ? [0, 0, 1, 1] : p.u.slice(28, 32),
+          clearValue:
+            p.program === 17 && a === 3
+              ? [1000, 1000, 0, 1]
+              : p.program === 17 && a === 2
+                ? [0, 0, 0, 1]
+                : p.program < -1 || a
+                  ? [0, 0, 1, 1]
+                  : p.u.slice(28, 32),
           loadOp: 'clear',
           storeOp: p.ms ? 'discard' : 'store',
         }),
@@ -515,22 +592,24 @@ export async function createAntiAliasingView({
         present
           ? displayPipeline
           : p.ms
-            ? p.program === 16
-              ? hdrMS
-              : p.program === 10
-                ? shadowMS
-                : sceneMS
+            ? p.program === 17
+              ? ssrMS
+              : p.program === 16
+                ? hdrMS
+                : p.program === 10
+                  ? shadowMS
+                  : sceneMS
             : pipelines[p.program],
       )
       const group = device.createBindGroup({
         layout,
-        entries: Array.from({ length: 11 }, (_, i) => ({
+        entries: Array.from({ length: 19 }, (_, i) => ({
           binding: i,
           resource:
             i === 0
               ? { buffer: uniform, size: 256 }
-              : i < 9
-                ? textures[p.sources[i - 1]].createView()
+              : i !== 9 && i !== 10
+                ? textures[p.sources[i < 9 ? i - 1 : i - 3]].createView()
                 : i === 9
                   ? linear
                   : point,
@@ -538,7 +617,11 @@ export async function createAntiAliasingView({
       })
       pass.setBindGroup(0, group, [index * 256])
       pass.draw(
-        p.program === 9 || p.program === 10 || p.program === 16 ? p.u[42] : scene ? 79 * 6 : 3,
+        p.program === 9 || p.program === 10 || p.program === 16 || p.program === 17
+          ? p.u[42]
+          : scene
+            ? 79 * 6
+            : 3,
       )
       pass.end()
     }
@@ -558,6 +641,31 @@ export async function createAntiAliasingView({
     return 'rendered'
   }
   return {
+    getScreenSpaceReflections: () => ({ ...reflections }),
+    setScreenSpaceReflections(value) {
+      check()
+      const next = copyScreenSpaceReflections({ ...reflections, ...value })
+      if (JSON.stringify(next) !== JSON.stringify(reflections)) reset()
+      reflections = next
+    },
+    loadEnvironment(url) {
+      check()
+      const op = tail.then(async () => {
+        const env = await loadEnvironmentFile(url),
+          data = reflectionEnvironmentAtlas(env)
+        check()
+        await device.queue.onSubmittedWorkDone()
+        uploadReflectionEnvironment(data)
+        reset()
+      })
+      tail = op.catch(() => {})
+      return op
+    },
+    useDefaultEnvironment() {
+      check()
+      uploadReflectionEnvironment(reflectionEnvironmentAtlas())
+      reset()
+    },
     getPostProcessing: () => ({ ...postSettings }),
     setPostProcessing(value) {
       check()

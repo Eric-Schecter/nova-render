@@ -71,7 +71,7 @@ export function appendPostProcessing(passes, color, baseline, w, h, s, state, ba
   u.splice(56, 4, s.minEV, s.maxEV, base[58], 0)
   u.splice(60, 4, state.frames ? 1 : 0, 0, 0, 0)
   const add = (program, target, source) => {
-    const p = { program, target, sources: Array(8).fill(16), u: [...u] }
+    const p = { program, target, sources: Array(16).fill(16), u: [...u] }
     p.sources[0] = source
     passes.push(p)
     return p

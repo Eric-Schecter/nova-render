@@ -2,6 +2,7 @@
 #include "AntiAliasing.hpp"
 #include "PostProcessing.hpp"
 #include "Renderer.hpp"
+#include "ScreenSpaceReflections.hpp"
 namespace render
 {
     // Independent raster laboratory: procedural rails, fine checkerboard and moving spokes.
@@ -11,23 +12,29 @@ namespace render
       public:
         explicit AntiAliasingView(const RendererConfig& config = {});
         ~AntiAliasingView();
-        AntiAliasingView(const AntiAliasingView&)                 = delete;
-        AntiAliasingView&      operator=(const AntiAliasingView&) = delete;
-        void                   SetPostProcessing(const PostProcessingSettings& value);
-        PostProcessingSettings GetPostProcessing() const;
-        float                  GetSceneIntensity() const;
-        void                   SetAntiAliasing(const AntiAliasingSettings& settings);
-        AntiAliasingSettings   GetAntiAliasing() const;
-        void                   SetCamera(const OrbitCamera& camera);
-        OrbitCamera            GetCamera() const;
-        void                   SetTime(float seconds);
-        void                   ResetHistory();
-        uint32_t               GetHistoryFrames() const;
-        const Image&           DrawFrame(uint32_t width, uint32_t height);
+        AntiAliasingView(const AntiAliasingView&)                        = delete;
+        AntiAliasingView&             operator=(const AntiAliasingView&) = delete;
+        void                          SetPostProcessing(const PostProcessingSettings& value);
+        PostProcessingSettings        GetPostProcessing() const;
+        float                         GetSceneIntensity() const;
+        void                          SetScreenSpaceReflections(const ScreenSpaceReflectionSettings& settings);
+        ScreenSpaceReflectionSettings GetScreenSpaceReflections() const;
+        void                          LoadReflectionEnvironment(const std::filesystem::path& path);
+        void                          UseDefaultReflectionEnvironment();
+        void                          SetAntiAliasing(const AntiAliasingSettings& settings);
+        AntiAliasingSettings          GetAntiAliasing() const;
+        void                          SetCamera(const OrbitCamera& camera);
+        OrbitCamera                   GetCamera() const;
+        void                          SetTime(float seconds);
+        void                          ResetHistory();
+        uint32_t                      GetHistoryFrames() const;
+        const Image&                  DrawFrame(uint32_t width, uint32_t height);
 
       private:
         friend class ShadowView;
         friend class PostProcessingView;
+        friend class ScreenSpaceReflectionView;
+        void ConfigureReflectionScene();
         void ConfigureHDRScene();
         void ConfigureSceneIntensity(float value);
         void ConfigureShadow(const struct ShadowSettings& value);

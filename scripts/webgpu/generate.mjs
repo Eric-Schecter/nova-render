@@ -159,3 +159,11 @@ for (let pass = 11; pass <= 16; pass++) {
   await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
 }
 console.log('HDR post-processing HLSL generated')
+
+for (let pass = 17; pass <= 20; pass++) {
+  const data = await compile(
+    '#define AA_PASS ' + pass + '\n' + (await readFile('render/shaders/ssr.hlsl', 'utf8')),
+  )
+  await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
+}
+console.log('SSR surface, depth hierarchy, tracing and composition HLSL generated')

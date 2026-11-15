@@ -42,7 +42,7 @@ namespace render::detail
             uint64_t                           serial = 0;
             ComPtr<ID3D12RootSignature>        root;
             ComPtr<ID3D12DescriptorHeap>       rtvHeap, dsvHeap, srvHeap;
-            ComPtr<ID3D12PipelineState>        pipelines[17], sceneMS, shadowMS, hdrMS;
+            ComPtr<ID3D12PipelineState>        pipelines[21], sceneMS, shadowMS, hdrMS, ssrMS;
             ComPtr<ID3D12Resource>             uniforms, readback;
             Texture                            textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             UINT                               rtvStride = 0, dsvStride = 0, srvStride = 0;
@@ -177,7 +177,7 @@ namespace render::detail
                 d.SampleMask            = UINT_MAX;
                 d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
                 d.SampleDesc.Count      = samples;
-                d.NumRenderTargets      = (program == 0 || program == 10 || program == 16) ? 2 : 1;
+                d.NumRenderTargets      = program == 17 ? 4 : (program == 0 || program == 10 || program == 16) ? 2 : 1;
                 for (UINT i = 0; i < d.NumRenderTargets; i++)
                 {
                     d.RTVFormats[i] = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -192,18 +192,21 @@ namespace render::detail
                 d.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;
                 d.RasterizerState.DepthClipEnable   = TRUE;
                 d.RasterizerState.MultisampleEnable = samples > 1;
-                d.DepthStencilState.DepthEnable     = program == 0 || program == 9 || program == 10 || program == 16;
-                d.DepthStencilState.DepthWriteMask  = (program == 0 || program == 9 || program == 10 || program == 16)
-                                                        ? D3D12_DEPTH_WRITE_MASK_ALL
-                                                        : D3D12_DEPTH_WRITE_MASK_ZERO;
+                d.DepthStencilState.DepthEnable =
+                  program == 0 || program == 9 || program == 10 || program == 16 || program == 17;
+                d.DepthStencilState.DepthWriteMask =
+                  (program == 0 || program == 9 || program == 10 || program == 16 || program == 17)
+                    ? D3D12_DEPTH_WRITE_MASK_ALL
+                    : D3D12_DEPTH_WRITE_MASK_ZERO;
                 d.DepthStencilState.DepthFunc       = D3D12_COMPARISON_FUNC_LESS;
                 d.DepthStencilState.StencilReadMask = d.DepthStencilState.StencilWriteMask = 255;
                 d.DepthStencilState.FrontFace.StencilFailOp   = d.DepthStencilState.FrontFace.StencilDepthFailOp =
                   d.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
                 d.DepthStencilState.FrontFace.StencilFunc     = D3D12_COMPARISON_FUNC_ALWAYS;
                 d.DepthStencilState.BackFace                  = d.DepthStencilState.FrontFace;
-                d.DSVFormat = (program == 0 || program == 9 || program == 10 || program == 16) ? DXGI_FORMAT_D32_FLOAT
-                                                                                               : DXGI_FORMAT_UNKNOWN;
+                d.DSVFormat = (program == 0 || program == 9 || program == 10 || program == 16 || program == 17)
+                                ? DXGI_FORMAT_D32_FLOAT
+                                : DXGI_FORMAT_UNKNOWN;
                 ComPtr<ID3D12PipelineState> result;
                 Check(device->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&result)));
                 return result;
@@ -246,7 +249,7 @@ namespace render::detail
                     throw std::runtime_error("D3D12 AA event creation failed");
                 D3D12_DESCRIPTOR_RANGE range{};
                 range.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-                range.NumDescriptors                    = 8;
+                range.NumDescriptors                    = 18;
                 range.BaseShaderRegister                = 1;
                 range.OffsetInDescriptorsFromTableStart = 0;
                 D3D12_ROOT_PARAMETER parameters[2]{};
@@ -281,18 +284,19 @@ namespace render::detail
                 heap.NumDescriptors = 4;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&dsvHeap)));
                 heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-                heap.NumDescriptors = 64 * 8;
+                heap.NumDescriptors = 64 * 18;
                 heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&srvHeap)));
                 rtvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
                 dsvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 uniforms  = Buffer(256 * 64, D3D12_HEAP_TYPE_UPLOAD);
-                for (int i = 0; i < 17; i++)
+                for (int i = 0; i < 21; i++)
                     pipelines[i] = Pipeline(i, 1, c);
                 sceneMS  = Pipeline(0, 4, c);
                 shadowMS = Pipeline(10, 4, c);
                 hdrMS    = Pipeline(16, 4, c);
+                ssrMS    = Pipeline(17, 4, c);
                 for (int i = AAArea; i <= AASearch; i++)
                 {
                     const auto table = AALookup(i == AAArea);
@@ -327,6 +331,37 @@ namespace render::detail
                 }
             }
             ~D3D12AA() override = default;
+            void SetReflectionEnvironment(const AATextureData& data) override
+            {
+                auto next = MakeTexture(data.width, data.height, DXGI_FORMAT_R16G16B16A16_FLOAT, 1, true);
+                D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;
+                UINT64                             bytes;
+                auto                               desc = next.resource->GetDesc();
+                device->GetCopyableFootprints(&desc, 0, 1, 0, &fp, nullptr, nullptr, &bytes);
+                auto        upload = Buffer(bytes, D3D12_HEAP_TYPE_UPLOAD);
+                void*       mapped;
+                D3D12_RANGE empty{0, 0};
+                Check(upload->Map(0, &empty, &mapped));
+                for (uint32_t y = 0; y < data.height; y++)
+                    std::memcpy(
+                      static_cast<char*>(mapped) + fp.Offset + y * fp.Footprint.RowPitch,
+                      data.pixels.data() + size_t(y) * data.width * 8,
+                      data.width * 8);
+                upload->Unmap(0, nullptr);
+                Begin();
+                Transition(next, D3D12_RESOURCE_STATE_COPY_DEST);
+                D3D12_TEXTURE_COPY_LOCATION to{};
+                to.pResource = next.resource.Get();
+                to.Type      = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                D3D12_TEXTURE_COPY_LOCATION from{};
+                from.pResource       = upload.Get();
+                from.Type            = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+                from.PlacedFootprint = fp;
+                commands->CopyTextureRegion(&to, 0, 0, 0, &from, nullptr);
+                Transition(next, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                End();
+                textures[AASsrEnvironment] = std::move(next);
+            }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
                 width        = w;
@@ -338,7 +373,7 @@ namespace render::detail
                 const auto used    = AAUsed(passes);
                 bool       changed = false;
                 for (int i = 0; i < AAResourceCount; i++)
-                    if (i != AAArea && i != AASearch)
+                    if (i != AAArea && i != AASearch && i != AASsrEnvironment)
                     {
                         if (!used[i])
                         {
@@ -346,7 +381,13 @@ namespace render::detail
                             continue;
                         }
                         const auto spec = AAResourceSpec(
-                          i, width, height, supersampled, bool(external.draw), uint32_t(passes.front().uniforms[8][1]));
+                          i,
+                          width,
+                          height,
+                          supersampled,
+                          bool(external.draw),
+                          uint32_t(passes.front().uniforms[8][1]),
+                          passes.front().uniforms[6][3] > .5f);
                         if (
                           !textures[i].resource || textures[i].width != spec.width || textures[i].height != spec.height)
                         {
@@ -359,7 +400,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17))
                     {
                         int k         = p.program == 9                                          ? 3
                                         : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -412,24 +453,41 @@ namespace render::detail
                 commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 for (size_t index = 0; index < passes.size(); index++)
                 {
-                    const auto& p           = passes[index];
-                    const bool  scene       = (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16);
-                    const bool  nativeScene = p.program < 0;
-                    const int   attachments = (p.program == 0 || p.program == 10 || p.program == 16) ? 2 : 1;
-                    auto&       target      = textures[p.target];
-                    D3D12_CPU_DESCRIPTOR_HANDLE targets[2];
+                    const auto& p = passes[index];
+                    const bool  scene =
+                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17);
+                    const bool                  nativeScene = p.program < 0;
+                    const int                   attachments = p.program == 17 ? 4
+                                                              : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
+                                                                                                                       : 1;
+                    auto&                       target      = textures[p.target];
+                    D3D12_CPU_DESCRIPTOR_HANDLE targets[4];
                     for (int a = 0; a < attachments; a++)
                     {
-                        const int n =
-                          p.multisampled ? (nativeScene ? AARawMultiColor : AAMultiColor) + a : p.target + a;
+                        const int n = p.multisampled ? (p.program == 17 ? AASsrMulti0
+                                                        : nativeScene   ? AARawMultiColor
+                                                                        : AAMultiColor)
+                                                         + a
+                                                     : p.target + a;
                         Transition(textures[n], D3D12_RESOURCE_STATE_RENDER_TARGET);
                         targets[a]         = RTV(n);
-                        float colors[2][4] = {{0, 0, 0, 0}, {0, 0, 1, 1}};
+                        float colors[4][4] = {{0, 0, 0, 0}, {0, 0, 1, 1}};
                         std::copy(p.uniforms[7].begin(), p.uniforms[7].end(), colors[0]);
                         if (p.program == -2 || p.program == -3)
                         {
                             colors[0][0] = colors[0][1] = 0;
                             colors[0][2] = colors[0][3] = 1;
+                        }
+                        if (p.program == 17 && a == 2)
+                        {
+                            colors[a][0] = colors[a][1] = colors[a][2] = 0;
+                            colors[a][3]                               = 1;
+                        }
+                        if (p.program == 17 && a == 3)
+                        {
+                            colors[a][0] = colors[a][1] = 1000;
+                            colors[a][2]                = 0;
+                            colors[a][3]                = 1;
                         }
                         commands->ClearRenderTargetView(targets[a], colors[a], 0, nullptr);
                     }
@@ -469,17 +527,18 @@ namespace render::detail
                         commands->SetDescriptorHeaps(1, aaHeaps);
                         commands->SetGraphicsRootSignature(root.Get());
                         commands->SetPipelineState(
-                          p.multisampled ? (p.program == 16   ? hdrMS.Get()
+                          p.multisampled ? (p.program == 17   ? ssrMS.Get()
+                                            : p.program == 16 ? hdrMS.Get()
                                             : p.program == 10 ? shadowMS.Get()
                                                               : sceneMS.Get())
                                          : pipelines[p.program].Get());
                         auto cpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
-                        cpu.ptr += index * 8 * srvStride;
+                        cpu.ptr += index * 18 * srvStride;
                         auto gpu = srvHeap->GetGPUDescriptorHandleForHeapStart();
-                        gpu.ptr += index * 8 * srvStride;
-                        for (int b = 0; b < 8; b++)
+                        gpu.ptr += index * 18 * srvStride;
+                        for (int b = 0; b < 18; b++)
                         {
-                            auto& input = textures[p.sources[b]];
+                            auto& input = textures[(b == 8 || b == 9) ? AADummy : p.sources[b < 8 ? b : b - 2]];
                             Transition(input, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
                             D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
                             srv.Format                  = input.resource->GetDesc().Format;
@@ -497,9 +556,10 @@ namespace render::detail
                         commands->RSSetViewports(1, &vp);
                         commands->RSSetScissorRects(1, &scissor);
                         commands->DrawInstanced(
-                          (p.program == 9 || p.program == 10 || p.program == 16) ? uint32_t(p.uniforms[10][2])
-                          : scene                                                ? 79 * 6
-                                                                                 : 3,
+                          (p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17)
+                            ? uint32_t(p.uniforms[10][2])
+                          : scene ? 79 * 6
+                                  : 3,
                           1,
                           0,
                           0);
@@ -508,13 +568,22 @@ namespace render::detail
                         for (int a = 0; a < attachments; a++)
                         {
                             Transition(
-                              textures[(nativeScene ? AARawMultiColor : AAMultiColor) + a],
+                              textures
+                                [(p.program == 17 ? AASsrMulti0
+                                  : nativeScene   ? AARawMultiColor
+                                                  : AAMultiColor)
+                                 + a],
                               D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
                             Transition(textures[p.target + a], D3D12_RESOURCE_STATE_RESOLVE_DEST);
                             commands->ResolveSubresource(
                               textures[p.target + a].resource.Get(),
                               0,
-                              textures[(nativeScene ? AARawMultiColor : AAMultiColor) + a].resource.Get(),
+                              textures
+                                [(p.program == 17 ? AASsrMulti0
+                                  : nativeScene   ? AARawMultiColor
+                                                  : AAMultiColor)
+                                 + a]
+                                  .resource.Get(),
                               0,
                               DXGI_FORMAT_R16G16B16A16_FLOAT);
                         }
