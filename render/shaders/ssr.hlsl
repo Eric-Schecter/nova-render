@@ -121,7 +121,7 @@ struct Geometry
 Geometry probeGeometry(uint id, float time)
 {
     Geometry g;
-    g.roughness       = 1;
+    g.roughness       = 1.25;
     const uint tri[6] = {0, 1, 3, 0, 3, 2};
     if (id < 30)
     {
@@ -361,7 +361,7 @@ SurfaceOutput PSMain(Varying i)
     {
         float3 color = i.color;
         if (i.roughness > .999 && i.color.y == 0 && i.color.z == 0)
-            color = probeRoomColor(i.world, uint(i.color.x));
+            color = probeRoomColor(i.world, uint(round(i.color.x)));
         c = probeShade(i.world, n, color);
     }
     o.color           = rgbL(c * aa[2].z);
@@ -603,8 +603,8 @@ float4 PSMain(Varying i)
         }
         if (aa[9].z > 1.5)
             return rgbL(float3(1 - influence, influence, 0));
-        float3 reflection = lerp(fallback, probeSample(corrected, nr.w) * aa[2].z, influence);
-        float  f0         = nr.w < .999 ? .92 : .035;
+        float3 reflection = lerp(fallback, probeSample(corrected, saturate(nr.w)) * aa[2].z, influence);
+        float  f0         = nr.w <= 1 ? .92 : .035;
         float  fresnel    = f0 + (1 - f0) * pow(1 - saturate(abs(dot(n, v))), 5);
         return rgbL(aa[9].z > .5 ? reflection : base + reflection * fresnel * aa[9].x);
     }
