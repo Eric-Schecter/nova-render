@@ -88,7 +88,25 @@ float3 probeFaceDirection(uint face, float2 uv)
       : face == 4 ? float3(p.x, -p.y, 1)
                   : float3(-p.x, -p.y, -1));
 }
-float3 probeSampleLevel(float3 d, uint level)
+float4 probeMeta(uint index, uint row)
+{
+    return hiz7.Load(int3(index * 5 + row, 0, 0));
+}
+float3 probeTint(uint index)
+{
+    return index == 0   ? float3(1, .12, .08)
+           : index == 1 ? float3(.08, 1, .15)
+           : index == 2 ? float3(.08, .25, 1)
+                        : float3(1, .7, .04);
+}
+float4 probeTexture(uint index, float2 uv)
+{
+    return index == 0   ? hiz3.SampleLevel(LinearSampler, uv, 0)
+           : index == 1 ? hiz4.SampleLevel(LinearSampler, uv, 0)
+           : index == 2 ? hiz5.SampleLevel(LinearSampler, uv, 0)
+                        : hiz6.SampleLevel(LinearSampler, uv, 0);
+}
+float3 probeSampleLevel(float3 d, uint level, uint index)
 {
     float3 a = abs(d);
     uint   face;
@@ -110,13 +128,14 @@ float3 probeSampleLevel(float3 d, uint level)
     }
     float  size = float(128 >> level), offset = 512 - 4 * size;
     float2 pixel = float2((face % 3) * size, offset + (face / 3) * size) + clamp((uv * .5 + .5) * size, .5, size - .5);
-    return hiz3.SampleLevel(LinearSampler, pixel / float2(384, 512), 0).rgb;
+    return probeTexture(index, pixel / float2(384, 512)).rgb;
 }
-float3 probeSample(float3 direction, float roughness)
+float3 probeSample(float3 direction, float roughness, uint index)
 {
     float mip = roughness * 7;
     uint  low = uint(floor(mip));
-    return lerp(probeSampleLevel(direction, low), probeSampleLevel(direction, min(low + 1, 7)), frac(mip));
+    return lerp(
+      probeSampleLevel(direction, low, index), probeSampleLevel(direction, min(low + 1, 7), index), frac(mip));
 }
 float4 probeAtlas(float2 pixel)
 {

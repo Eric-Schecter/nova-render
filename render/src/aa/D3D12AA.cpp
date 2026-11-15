@@ -258,7 +258,7 @@ namespace render::detail
                 parameters[0].ShaderVisibility          = D3D12_SHADER_VISIBILITY_ALL;
                 parameters[1].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
                 parameters[1].DescriptorTable           = {1, &range};
-                parameters[1].ShaderVisibility          = D3D12_SHADER_VISIBILITY_PIXEL;
+                parameters[1].ShaderVisibility          = D3D12_SHADER_VISIBILITY_ALL;
                 D3D12_STATIC_SAMPLER_DESC samplers[2]{};
                 for (int i = 0; i < 2; i++)
                 {
@@ -331,7 +331,7 @@ namespace render::detail
                 }
             }
             ~D3D12AA() override = default;
-            void SetReflectionEnvironment(const AATextureData& data) override
+            void SetReflectionEnvironment(const AATextureData& data, int slot) override
             {
                 auto next = MakeTexture(data.width, data.height, DXGI_FORMAT_R16G16B16A16_FLOAT, 1, true);
                 D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;
@@ -360,7 +360,7 @@ namespace render::detail
                 commands->CopyTextureRegion(&to, 0, 0, 0, &from, nullptr);
                 Transition(next, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
                 End();
-                textures[AASsrEnvironment] = std::move(next);
+                textures[slot] = std::move(next);
             }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
@@ -373,7 +373,7 @@ namespace render::detail
                 const auto used    = AAUsed(passes);
                 bool       changed = false;
                 for (int i = 0; i < AAResourceCount; i++)
-                    if (i != AAArea && i != AASearch && i != AASsrEnvironment)
+                    if (i != AAArea && i != AASearch && i != AASsrEnvironment && i != AAProbeData)
                     {
                         if (!used[i])
                         {

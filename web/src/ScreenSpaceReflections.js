@@ -51,7 +51,7 @@ export function copyScreenSpaceReflections(value) {
 }
 const f32 = new Float32Array(1),
   bits = new Uint32Array(f32.buffer)
-function half(v) {
+export function half(v) {
   f32[0] = v
   const x = bits[0]
   let e = ((x >>> 23) & 255) - 127 + 15,
@@ -119,7 +119,8 @@ export function reflectionEnvironmentAtlas(env) {
 }
 export { loadEnvironmentFile }
 export function reflectionResourceSize(i, w, h, ss) {
-  if (i === 73) return [384, 512]
+  if (i === 77) return [20, 1]
+  if (i >= 73 && i < 77) return [384, 512]
   const scale = ss ? 2 : 1
   if (i >= 50 && i < 62) {
     const d = 2 ** (i - 49)

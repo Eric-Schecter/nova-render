@@ -1,3 +1,4 @@
+import { openExampleParameters, assertFloatingParameters } from './ExamplePanel.mjs'
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5204'
@@ -13,15 +14,16 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(base + '/examples/planar')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
+  await openExampleParameters(page)
   const canvas = page.locator('canvas'),
     panel = page.getByRole('region', { name: '平面反射参数', exact: true }),
     bar = page.getByLabel('渲染性能')
   await canvas.scrollIntoViewIfNeeded()
+  await assertFloatingParameters(page, canvas, bar)
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
-  if (a.y + a.height > c.y + 1 || u.y < c.y + c.height - 1)
-    throw Error('Planar controls obscure rendering')
+  if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('Planar controls obscure rendering')
   await page.waitForFunction(
     () => document.querySelector('[aria-label="渲染性能"]').textContent.includes('32 accumulated'),
     null,
@@ -76,7 +78,7 @@ try {
     throw Error('Missing planar API')
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS planar page: two mirrors, roughness/intensity, environment, six AA, post, separate metrics/controls, mobile and disposal',
+    'PASS planar page: two mirrors, roughness/intensity, environment, six AA, post, floating controls and separate metrics, mobile and disposal',
   )
 } finally {
   await browser.close()

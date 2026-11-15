@@ -22,9 +22,13 @@ export async function showRasterLaboratory(
   const host = document.createElement('div')
   host.className = 'aa-laboratory'
   canvas.before(host)
-  host.append(canvas)
+  const viewport = document.createElement('div')
+  viewport.className = 'aa-viewport'
+  viewport.append(canvas)
+  host.append(viewport)
   const style = document.createElement('style')
   style.textContent = `.aa-laboratory{width:100%;min-width:0}.aa-laboratory canvas{display:block;width:100%;aspect-ratio:1.65;height:auto;image-rendering:auto}.aa-parameters{margin-top:12px;padding:12px;background:#181e29;border:1px solid #3c4659;border-radius:7px;color:#e1e6f0;font:12px/1.4 system-ui;color-scheme:dark;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px}.aa-parameters label{display:flex;flex-direction:column;gap:5px;min-width:0}.aa-parameters select,.aa-parameters input,.aa-parameters button{font:inherit;box-sizing:border-box;width:100%;background:#25324b;color:inherit;border:1px solid #465776;border-radius:4px;padding:5px}.aa-parameters input[type=checkbox]{width:auto;align-self:flex-start}.aa-parameters input[type=range]{accent-color:#819eff}.aa-note{grid-column:1/-1;color:#b9ccff}`
+  style.textContent += `.aa-viewport{position:relative;min-width:0}.aa-drawer{max-height:calc(100% - 20px);overflow:auto;position:absolute;top:10px;right:10px;z-index:2;width:min(290px,calc(100% - 20px));color:#e1e6f0;font:12px/1.4 system-ui;background:#181e29ed;border:1px solid #3c4659;border-radius:7px;box-sizing:border-box}.aa-drawer summary{position:sticky;top:0;background:#181e29;z-index:3;padding:8px 10px;cursor:pointer;user-select:none}.aa-drawer:not([open]){width:auto;min-width:110px}.aa-drawer .aa-parameters{margin:0;border:0;border-top:1px solid #3c4659;border-radius:0;display:grid;grid-template-columns:1fr;max-height:min(310px,45vw);overflow:auto;overscroll-behavior:contain}.aa-drawer:not([open]) .aa-parameters{display:none}`
   host.append(style)
   let playing = initialPlaying,
     scale = initialScale,
@@ -44,7 +48,13 @@ export async function showRasterLaboratory(
     panel = document.createElement('section')
   panel.className = 'aa-parameters'
   panel.setAttribute('aria-label', panelLabel)
-  host.append(panel)
+  const drawer = document.createElement('details'),
+    summary = document.createElement('summary')
+  drawer.className = 'aa-drawer'
+  summary.textContent = 'Parameters'
+  summary.setAttribute('aria-label', '参数面板')
+  drawer.append(summary, panel)
+  viewport.append(drawer)
   const fields = []
   const methods = [
     ['off', 'Off'],
@@ -173,6 +183,12 @@ export async function showRasterLaboratory(
     },
     getPerformanceStats: stats,
     getPlaying: () => playing,
+    getTime: () => time,
+    setTime(value) {
+      time = value
+      view.setTime(value)
+      changed()
+    },
     setPlaying(value) {
       playing = !!value
       lastTime = undefined

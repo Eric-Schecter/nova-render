@@ -10,9 +10,13 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   metrics.setAttribute('aria-live', 'off')
   metrics.title =
     'FPS 是最近一秒实际 AO 图像更新频率；Draw/P95 包含 CPU 提交与 GPU 等待，不是纯 GPU 时间。静止按需绘制，FPS 显示 —。'
-  host.append(metrics, canvas)
+  const viewport = document.createElement('div')
+  viewport.className = 'ao-stage'
+  viewport.append(canvas)
+  host.append(metrics, viewport)
   const style = document.createElement('style')
   style.textContent = `.ao-viewport{width:100%;min-width:0}.ao-performance{box-sizing:border-box;display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px;min-height:38px;padding:5px 8px;background:#151b26;color:#dce5f2;border-radius:6px 6px 0 0;font:11px/1.5 ui-monospace,monospace;font-variant-numeric:tabular-nums;pointer-events:none}.ao-performance span{overflow-wrap:anywhere;min-width:0}.ao-controls{margin-top:12px;border:1px solid #3c4659;border-radius:7px;background:#181e29;color:#e1e6f0;font:12px/1.4 system-ui;color-scheme:dark}.ao-controls-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;padding:12px;max-height:360px;overflow:auto}.ao-controls-body[hidden]{display:none}.ao-controls button,.ao-controls select,.ao-controls input{font:inherit;color:inherit}.ao-controls button,.ao-controls select{background:#25324b;border:1px solid #465776;border-radius:4px;padding:5px}.ao-controls select,.ao-controls input{width:100%;box-sizing:border-box}.ao-controls label{display:flex;flex-direction:column;gap:4px;margin:8px 0}.ao-controls input[type=range]{accent-color:#819eff}.ao-controls legend{font-weight:600;color:#b9ccff}.ao-controls fieldset{min-width:0;border:0;padding:0;margin:0}.ao-toggle{display:block;width:100%;text-align:left}`
+  style.textContent += `.ao-stage{position:relative;min-width:0}.ao-controls{max-height:calc(100% - 20px);overflow:auto;position:absolute;top:10px;right:10px;z-index:2;width:min(290px,calc(100% - 20px));margin:0;background:#181e29ed;box-sizing:border-box}.ao-controls:has(.ao-controls-body[hidden]){width:auto;min-width:110px}.ao-controls-body{grid-template-columns:1fr;max-height:min(310px,45vw);overscroll-behavior:contain}`
   host.append(style)
   const panel = document.createElement('section')
   panel.className = 'ao-controls'
@@ -22,11 +26,12 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   toggle.className = 'ao-toggle'
   toggle.type = 'button'
   body.className = 'ao-controls-body'
-  toggle.textContent = 'Parameters ▾'
-  toggle.setAttribute('aria-label', '收起参数面板')
-  toggle.setAttribute('aria-expanded', 'true')
+  body.hidden = true
+  toggle.textContent = 'Parameters ▸'
+  toggle.setAttribute('aria-label', '显示参数面板')
+  toggle.setAttribute('aria-expanded', 'false')
   panel.append(toggle, body)
-  host.append(panel)
+  viewport.append(panel)
   const events = new AbortController(),
     fields = []
   function update(fn) {

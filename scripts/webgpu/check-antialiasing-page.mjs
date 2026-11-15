@@ -1,3 +1,4 @@
+import { openExampleParameters, assertFloatingParameters } from './ExamplePanel.mjs'
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5198'
@@ -13,18 +14,19 @@ try {
   p.on('pageerror', (e) => errors.push(e.message))
   await p.goto(base + '/examples/antialiasing')
   await p.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
+  await openExampleParameters(p)
   const bar = p.locator('[aria-label="渲染性能"]'),
     canvas = p.locator('canvas'),
     panel = p.getByRole('region', { name: '抗锯齿参数', exact: true }),
     methods = p.getByRole('combobox', { name: '抗锯齿算法', exact: true })
   await canvas.scrollIntoViewIfNeeded()
+  await assertFloatingParameters(p, canvas, bar)
   if ((await methods.locator('option').count()) !== 6) throw Error('Missing AA method')
   const assertLayout = async () => {
     const a = await bar.boundingBox(),
       c = await canvas.boundingBox(),
       u = await panel.boundingBox()
-    if (a.y + a.height > c.y + 1 || u.y < c.y + c.height - 1)
-      throw Error('UI overlaps rendered image')
+    if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('UI overlaps rendered image')
   }
   await assertLayout()
   await p.getByRole('checkbox', { name: '播放运动', exact: true }).uncheck()
@@ -86,6 +88,7 @@ try {
   await p.screenshot({ path: 'build/validation/aa/final-mobile.png', fullPage: true })
   await p.getByRole('button', { name: '重置', exact: true }).click()
   await p.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
+  await openExampleParameters(p)
   if ((await bar.count()) !== 1) throw Error('Reset leaks performance strip')
   await p.goto(base + '/api/antialiasing')
   await p.locator('h1').waitFor()

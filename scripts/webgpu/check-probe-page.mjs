@@ -1,3 +1,4 @@
+import { openExampleParameters, assertFloatingParameters } from './ExamplePanel.mjs'
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5205'
@@ -13,15 +14,17 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(base + '/examples/probe')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
+  await openExampleParameters(page)
   const canvas = page.locator('canvas'),
     panel = page.getByRole('region', { name: '反射探针参数', exact: true }),
     bar = page.getByLabel('渲染性能')
   await canvas.scrollIntoViewIfNeeded()
+  await assertFloatingParameters(page, canvas, bar)
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
-  if (a.y + a.height > c.y + 1 || u.y < c.y + c.height - 1)
-    throw Error('Probe UI overlaps rendering')
+  if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('Probe UI overlaps rendering')
+  await page.getByRole('checkbox', { name: '播放运动', exact: true }).uncheck()
   await page.waitForFunction(
     () => document.querySelector('[aria-label="渲染性能"]').textContent.includes('32 accumulated'),
     null,
@@ -30,6 +33,9 @@ try {
   await canvas.screenshot({ path: 'build/validation/probe/default.png' })
   await page.screenshot({ path: 'build/validation/probe/desktop.png' })
   await page.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption('off')
+  await page.getByRole('checkbox', { name: '平滑混合', exact: true }).uncheck()
+  await page.getByRole('checkbox', { name: '平滑混合', exact: true }).check()
+  await page.getByRole('combobox', { name: '活动探针', exact: true }).selectOption('1')
   await page.getByRole('checkbox', { name: '盒体投影修正', exact: true }).uncheck()
   await page.waitForTimeout(250)
   await canvas.screenshot({ path: 'build/validation/probe/uncorrected.png' })
@@ -86,7 +92,7 @@ try {
     throw Error('Missing API docs')
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS probe page: cubemap/box correction, material and position controls, refresh, environment, six AA, post, separate UI/metrics, mobile and disposal',
+    'PASS probe page: cubemap/box correction, material and position controls, refresh, environment, six AA, post, floating UI and separate metrics, mobile and disposal',
   )
 } finally {
   await browser.close()

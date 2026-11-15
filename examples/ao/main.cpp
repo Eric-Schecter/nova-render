@@ -1,3 +1,4 @@
+#include "../common/FloatingPanel.hpp"
 #include "../common/FrameMeter.hpp"
 #include "../common/ModelOptions.hpp"
 #include <algorithm>
@@ -75,12 +76,8 @@ int main(int argc, char** argv)
             draw->AddRectFilled({0, 0}, {display.x, 40}, IM_COL32(21, 27, 38, 255));
             draw->AddText({7, 3}, IM_COL32_WHITE, left);
             draw->AddText({7, 21}, IM_COL32_WHITE, right);
-            ImGui::SetNextWindowPos({0, display.y * .8f});
-            ImGui::SetNextWindowSize({display.x, display.y * .2f});
-            ImGui::Begin(
-              "Ambient occlusion",
-              nullptr,
-              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+            example::PlaceFloatingPanel();
+            ImGui::Begin("Ambient occlusion", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
             int method = int(ao.method), output = int(ao.output), samples = int(ao.samples);
             if (ImGui::Combo("Method", &method, "Off\0SSAO\0HBAO\0MSAO\0RTAO\0"))
             {
@@ -165,7 +162,7 @@ int main(int argc, char** argv)
               40.f * float(framebuffer[0]) / std::max(1.f, logical.x > 0 ? logical.x : float(options.window.width)));
 #endif
             const uint32_t width  = std::max(2u, uint32_t(framebuffer[0] * scale)),
-                           height = std::max(2u, uint32_t((float(framebuffer[1]) * .8f - headerPixels) * scale));
+                           height = std::max(2u, uint32_t((float(framebuffer[1]) - headerPixels) * scale));
             const bool motion     = std::memcmp(&camera, &previousCamera, sizeof(camera))
                                 || previousSize != std::array<uint32_t, 2>{width, height};
             const auto now = example::FrameMeter::Clock::now();

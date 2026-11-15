@@ -1,3 +1,4 @@
+import { openExampleParameters, assertFloatingParameters } from './ExamplePanel.mjs'
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5202'
@@ -13,14 +14,16 @@ try {
   p.on('pageerror', (e) => errors.push(e.message))
   await p.goto(base + '/examples/postprocessing')
   await p.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
+  await openExampleParameters(p)
   const canvas = p.locator('canvas'),
     panel = p.getByRole('region', { name: '后处理参数', exact: true }),
     bar = p.getByLabel('渲染性能')
   await canvas.scrollIntoViewIfNeeded()
+  await assertFloatingParameters(p, canvas, bar)
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
-  if (a.y + a.height > c.y + 1 || u.y < c.y + c.height - 1) throw Error('UI overlaps render')
+  if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('UI overlaps render')
   for (const tone of ['linear', 'reinhard', 'aces']) {
     await p.getByRole('combobox', { name: '色调映射', exact: true }).selectOption(tone)
     await p.waitForTimeout(200)

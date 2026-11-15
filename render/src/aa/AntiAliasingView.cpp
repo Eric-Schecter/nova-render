@@ -86,8 +86,9 @@ namespace render
         ScreenSpaceReflectionSettings     reflections;
         bool                              planarScene = false;
         PlanarReflectionSettings          planar;
-        bool                              probeScene = false, probeDirty = true;
+        bool                              probeScene    = false;
         uint32_t                          probeCaptures = 0;
+        std::array<bool, 4>               probeDirty{true, true, true, true};
         ReflectionProbeSettings           probe;
         bool                              hdrScene       = false;
         float                             sceneIntensity = 1;
@@ -231,14 +232,21 @@ namespace render
     void AntiAliasingView::SetReflectionProbe(const ReflectionProbeSettings& value)
     {
         detail::ValidateProbe(value);
-        const auto& old = impl_->probe;
-        if (!impl_->probeScene || old.position != value.position)
-            impl_->probeDirty = true;
+        const auto& old    = impl_->probe;
+        const auto  before = detail::EffectiveProbes(old), after = detail::EffectiveProbes(value);
+        for (size_t i = 0; i < after.size(); i++)
+            if (!impl_->probeScene || i >= before.size() || before[i].position != after[i].position)
+                impl_->probeDirty[i] = true;
+        if (!impl_->probeScene || before != after)
+        {
+            auto data = detail::ReflectionProbeMetadata(value);
+            impl_->device->SetReflectionEnvironment(data, detail::AAProbeData);
+        }
         if (
-          !impl_->probeScene || old.position != value.position || old.boxMin != value.boxMin
-          || old.boxMax != value.boxMax || old.enabled != value.enabled || old.boxProjection != value.boxProjection
-          || old.roughness != value.roughness || old.intensity != value.intensity
-          || old.blendDistance != value.blendDistance || old.debug != value.debug)
+          !impl_->probeScene || before != after || old.enabled != value.enabled
+          || old.smoothBlending != value.smoothBlending || old.boxProjection != value.boxProjection
+          || old.roughness != value.roughness || old.intensity != value.intensity || old.debug != value.debug
+          || old.debugProbe != value.debugProbe)
             ResetHistory();
         impl_->probeScene = true;
         impl_->probe      = value;
@@ -249,7 +257,14 @@ namespace render
     }
     void AntiAliasingView::UpdateProbe()
     {
-        impl_->probeDirty = true;
+        impl_->probeDirty.fill(true);
+        ResetHistory();
+    }
+    void AntiAliasingView::UpdateProbe(uint32_t index)
+    {
+        if (index >= detail::EffectiveProbes(impl_->probe).size())
+            throw std::out_of_range("Probe index out of range");
+        impl_->probeDirty[index] = true;
         ResetHistory();
     }
     uint32_t AntiAliasingView::GetProbeCaptureCount() const
@@ -294,14 +309,14 @@ namespace render
         auto data  = detail::LoadEnvironmentFile(path);
         auto atlas = detail::ReflectionEnvironmentAtlas(data.get());
         impl_->device->SetReflectionEnvironment(atlas);
-        impl_->probeDirty = true;
+        impl_->probeDirty.fill(true);
         ResetHistory();
     }
     void AntiAliasingView::UseDefaultReflectionEnvironment()
     {
         auto atlas = detail::ReflectionEnvironmentAtlas();
         impl_->device->SetReflectionEnvironment(atlas);
-        impl_->probeDirty = true;
+        impl_->probeDirty.fill(true);
         ResetHistory();
     }
     const Image& AntiAliasingView::DrawFrame(uint32_t w, uint32_t h)
@@ -369,7 +384,8 @@ namespace render
         if (s.reflectionScene)
         {
             if (s.probeScene)
-                detail::AppendProbePasses(passes, u, s.probeDirty, method == AAMethod::MSAA, taa, s.settings.split);
+                detail::AppendProbePasses(
+                  passes, u, s.probe, s.probeDirty, method == AAMethod::MSAA, taa, s.settings.split);
             else if (s.planarScene)
                 detail::AppendPlanarPasses(passes, u, s.planar, method == AAMethod::MSAA, taa, s.settings.split);
             else
@@ -445,11 +461,13 @@ namespace render
         if ((!s.shadow && !s.hdrScene && !s.reflectionScene) || s.settings.split)
             display->sources[3] = post.baseline;
         s.image = s.device->Draw(passes);
-        if (s.probeScene && s.probeDirty)
-        {
-            s.probeDirty = false;
-            s.probeCaptures++;
-        }
+        if (s.probeScene)
+            for (size_t i = 0; i < detail::EffectiveProbes(s.probe).size(); i++)
+                if (s.probeDirty[i])
+                {
+                    s.probeDirty[i] = false;
+                    s.probeCaptures++;
+                }
         s.previous       = s.camera;
         s.previousTime   = s.time;
         s.previousJitter = jitter;

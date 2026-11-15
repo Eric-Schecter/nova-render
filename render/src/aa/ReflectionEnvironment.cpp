@@ -1,4 +1,4 @@
-#include "ScreenSpaceReflections.hpp"
+#include "ReflectionProbe.hpp"
 namespace render::detail
 {
     namespace
@@ -78,5 +78,27 @@ namespace render::detail
                 }
         }
         return out;
+    }
+    AATextureData ReflectionProbeMetadata(const ReflectionProbeSettings& s)
+    {
+        AATextureData data{20, 1, std::vector<unsigned char>(20 * 8), true};
+        const auto    volumes = EffectiveProbes(s);
+        for (size_t i = 0; i < volumes.size(); i++)
+        {
+            const auto&                v       = volumes[i];
+            const std::array<float, 4> rows[5] = {
+              {v.position[0], v.position[1], v.position[2], v.enabled ? 1.f : 0.f},
+              {v.boxMin[0], v.boxMin[1], v.boxMin[2], v.blendDistance},
+              {v.boxMax[0], v.boxMax[1], v.boxMax[2], v.intensity},
+              {v.influenceMin[0], v.influenceMin[1], v.influenceMin[2], 0},
+              {v.influenceMax[0], v.influenceMax[1], v.influenceMax[2], 0}};
+            for (size_t row = 0; row < 5; row++)
+                for (size_t c = 0; c < 4; c++)
+                {
+                    const uint16_t h = Half(rows[row][c]);
+                    std::memcpy(data.pixels.data() + ((i * 5 + row) * 4 + c) * 2, &h, 2);
+                }
+        }
+        return data;
     }
 } // namespace render::detail

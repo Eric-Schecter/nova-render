@@ -1,3 +1,4 @@
+import { openExampleParameters, assertFloatingParameters } from './ExamplePanel.mjs'
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5203'
@@ -13,15 +14,16 @@ try {
   p.on('pageerror', (e) => errors.push(e.message))
   await p.goto(base + '/examples/ssr')
   await p.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
+  await openExampleParameters(p)
   const canvas = p.locator('canvas'),
     panel = p.getByRole('region', { name: 'SSR 参数', exact: true }),
     bar = p.getByLabel('渲染性能')
   await canvas.scrollIntoViewIfNeeded()
+  await assertFloatingParameters(p, canvas, bar)
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
-  if (a.y + a.height > c.y + 1 || u.y < c.y + c.height - 1)
-    throw Error('SSR controls overlap render')
+  if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('SSR controls overlap render')
   await p.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption('off')
   for (const debug of [
     'normals',
@@ -76,7 +78,7 @@ try {
     throw Error('SSR docs missing')
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS twelfth SSR page, hierarchy/surface diagnostics, environment fallback/switching, six AA, post, metrics, nonoverlapping controls, mobile, hide/show and disposal',
+    'PASS twelfth SSR page, hierarchy/surface diagnostics, environment fallback/switching, six AA, post, metrics, floating controls, mobile, hide/show and disposal',
   )
 } finally {
   await b.close()

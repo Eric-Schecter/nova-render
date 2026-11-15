@@ -163,7 +163,8 @@ Geometry probeGeometry(uint id, float time)
     }
     if (id >= 7020)
     {
-        uint marker = id - 7020, axis = marker / 36, face = (marker % 36) / 6, q = tri[marker % 6],
+        uint probeIndex = (id - 7020) / 108;
+        uint marker = (id - 7020) % 108, axis = marker / 36, face = (marker % 36) / 6, q = tri[marker % 6],
              normalAxis = face / 2;
         float  sign     = (face & 1) ? 1 : -1;
         float2 uv       = float2(q & 1, (q >> 1) & 1) * 2 - 1;
@@ -173,16 +174,18 @@ Geometry probeGeometry(uint id, float time)
         float3 local = normalAxis == 0   ? float3(sign, uv)
                        : normalAxis == 1 ? float3(uv.x, sign, uv.y)
                                          : float3(uv, sign);
-        g.p          = aa[11].xyz + local * size * .5;
-        g.color      = float3(1, .6, .015);
+        g.p          = probeMeta(probeIndex, 0).xyz + local * size * .5;
+        g.color      = aa[9].w > 1.5 ? probeTint(probeIndex) : float3(1, .6, .015);
         g.roughness  = 2;
         return g;
     }
     id -= 108;
     uint  object = id / 2304, k = id % 2304, cell = k / 6, q = tri[k % 6];
     float u = (float(cell % 24) + float(q & 1)) / 24 * 2 * PI, v = (float(cell / 24) + float((q >> 1) & 1)) / 16 * PI;
-    g.normal    = float3(sin(v) * cos(u), cos(v), sin(v) * sin(u));
-    g.p         = float3(-2.5 + object * 2.5 + sin(time) * .25, -.2, .9) + g.normal * .75;
+    g.normal = float3(sin(v) * cos(u), cos(v), sin(v) * sin(u));
+    g.p      = float3(-2.5 + object * 2.5 + sin(time) * .25, -.2, .9) + g.normal * .75;
+    if (aa[9].w > 1.5)
+        g.p = float3(object == 1 ? sin(time) * 3 : -2.5 + object * 2.5, -.2, object == 1 ? 1.6 : -.5) + g.normal * .75;
     g.color     = float3(.025, .028, .035);
     g.roughness = aa[8].w;
     return g;
@@ -286,7 +289,7 @@ struct Varying
 Varying VSMain(uint id : SV_VertexID)
 {
     Varying o;
-    uint    skyStart = probeScene() ? 7158 : planarScene() ? 7608 : 7602;
+    uint    skyStart = probeScene() ? uint(7050 + 108 * aa[9].w) : planarScene() ? 7608 : 7602;
     o.sky            = id >= skyStart ? 1 : 0;
     if (o.sky)
     {
@@ -552,7 +555,7 @@ float4 PSMain(Varying i)
     return 0;
 #else
     if (probeScene() && aa[9].z > 2.5)
-        return rgbL(hiz3.SampleLevel(LinearSampler, i.uv, 0).rgb * aa[2].z);
+        return rgbL(probeTexture(uint(aa[10].x), i.uv).rgb * aa[2].z);
     float  z  = sceneDepth.SampleLevel(PointSampler, i.uv, 0).r;
     float4 nr = surface.SampleLevel(PointSampler, i.uv, 0);
     if (planarScene() && aa[5].y < 0)
@@ -587,23 +590,39 @@ float4 PSMain(Varying i)
     {
         if (nr.w > 1.5)
             return rgbL(base);
-        float3 distances = min(p - aa[12].xyz, aa[13].xyz - p);
-        float  edge      = min(min(distances.x, distances.y), distances.z);
-        float  influence = aa[8].x > .5 && edge >= -.0001 ? (aa[9].y > .0001 ? smoothstep(0, aa[9].y, edge) : 1) : 0;
-        float3 corrected = direction;
-        if (influence > 0 && aa[8].z > .5)
+        float3 accumulated = 0, tint = 0;
+        float  sum = 0;
+        for (uint index = 0; index < uint(aa[9].w); index++)
         {
-            float3 safe = float3(
-              direction.x >= 0 ? max(direction.x, .00001) : min(direction.x, -.00001),
-              direction.y >= 0 ? max(direction.y, .00001) : min(direction.y, -.00001),
-              direction.z >= 0 ? max(direction.z, .00001) : min(direction.z, -.00001));
-            float3 exits = max((aa[12].xyz - p) / safe, (aa[13].xyz - p) / safe);
-            float  t     = min(min(exits.x, exits.y), exits.z);
-            corrected    = normalize(p + direction * t - aa[11].xyz);
+            float4 origin = probeMeta(index, 0), boxMin = probeMeta(index, 1), boxMax = probeMeta(index, 2);
+            float3 influenceMin = probeMeta(index, 3).xyz, influenceMax = probeMeta(index, 4).xyz;
+            float3 distances = min(p - influenceMin, influenceMax - p);
+            float  edge      = min(min(distances.x, distances.y), distances.z);
+            float  weight    = aa[8].x > .5 && origin.w > .5 && edge >= -.0001
+                                 ? (aa[9].y > .5 && boxMin.w > .0001 ? smoothstep(0, boxMin.w, edge) : 1)
+                                 : 0;
+            if (weight <= 0)
+                continue;
+            float3 corrected = direction;
+            if (aa[8].z > .5 && all(p >= boxMin.xyz - .0001) && all(p <= boxMax.xyz + .0001))
+            {
+                float3 safe = float3(
+                  direction.x >= 0 ? max(direction.x, .00001) : min(direction.x, -.00001),
+                  direction.y >= 0 ? max(direction.y, .00001) : min(direction.y, -.00001),
+                  direction.z >= 0 ? max(direction.z, .00001) : min(direction.z, -.00001));
+                float3 exits    = max((boxMin.xyz - p) / safe, (boxMax.xyz - p) / safe);
+                float  distance = min(min(exits.x, exits.y), exits.z);
+                corrected       = normalize(p + direction * distance - origin.xyz);
+            }
+            accumulated += probeSample(corrected, saturate(nr.w), index) * boxMax.w * weight;
+            tint += (aa[9].w < 1.5 ? float3(0, 1, 0) : probeTint(index)) * weight;
+            sum += weight;
         }
+        float coverage = saturate(sum);
         if (aa[9].z > 1.5)
-            return rgbL(float3(1 - influence, influence, 0));
-        float3 reflection = lerp(fallback, probeSample(corrected, saturate(nr.w)) * aa[2].z, influence);
+            return rgbL(
+              lerp(aa[9].w < 1.5 ? float3(1, 0, 0) : float3(.15, .15, .15), tint / max(sum, .00001), coverage));
+        float3 reflection = lerp(fallback, accumulated / max(sum, .00001) * aa[2].z, coverage);
         float  f0         = nr.w <= 1 ? .92 : .035;
         float  fresnel    = f0 + (1 - f0) * pow(1 - saturate(abs(dot(n, v))), 5);
         return rgbL(aa[9].z > .5 ? reflection : base + reflection * fresnel * aa[9].x);

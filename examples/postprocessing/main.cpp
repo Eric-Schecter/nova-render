@@ -1,3 +1,4 @@
+#include "../common/FloatingPanel.hpp"
 #include "../common/PerformancePanel.hpp"
 #include "../common/ProceduralOptions.hpp"
 #include <chrono>
@@ -32,15 +33,9 @@ int main(int argc, char** argv)
         panel.showBuiltinPanel = false;
 #ifdef NOVA_EXAMPLE_UI
         panel.drawUI = [&] {
-            const auto  display = ImGui::GetIO().DisplaySize;
-            const float y       = 40 + (display.y - 40) * .70f;
-            ImGui::SetNextWindowPos({0, y});
-            ImGui::SetNextWindowSize({display.x, display.y - y});
-            ImGui::Begin(
-              "HDR and Bloom",
-              nullptr,
-              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-            if (ImGui::BeginTable("Post-processing controls", 3, ImGuiTableFlags_SizingStretchSame))
+            example::PlaceFloatingPanel();
+            ImGui::Begin("HDR and Bloom", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+            if (ImGui::BeginTable("Post-processing controls", 1, ImGuiTableFlags_SizingStretchSame))
             {
                 ImGui::TableNextColumn();
                 changed |= ImGui::Checkbox("Post-processing", &post.enabled);
@@ -157,7 +152,7 @@ int main(int argc, char** argv)
 #endif
             const float viewportH = std::max(1.f, float(fb[1]) - inset);
 #ifdef NOVA_EXAMPLE_UI
-            const float sceneH = viewportH * .70f;
+            const float sceneH = viewportH;
 #else
             const float sceneH = viewportH;
 #endif

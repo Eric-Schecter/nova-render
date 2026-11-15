@@ -117,7 +117,7 @@ namespace render::detail
                                    bytesPerRow:data.width * 4];
                 }
             }
-            void SetReflectionEnvironment(const AATextureData& data) override
+            void SetReflectionEnvironment(const AATextureData& data, int slot) override
             {
                 auto d        = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
                                                                             width:data.width
@@ -132,7 +132,7 @@ namespace render::detail
                            mipmapLevel:0
                              withBytes:data.pixels.data()
                            bytesPerRow:data.width * 8];
-                textures[AASsrEnvironment] = texture;
+                textures[slot] = texture;
             }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
@@ -144,7 +144,7 @@ namespace render::detail
             {
                 const auto used = AAUsed(passes);
                 for (int i = 0; i < AAResourceCount; i++)
-                    if (i != AAArea && i != AASearch && i != AASsrEnvironment)
+                    if (i != AAArea && i != AASearch && i != AASsrEnvironment && i != AAProbeData)
                     {
                         if (!used[i])
                         {
@@ -283,6 +283,7 @@ namespace render::detail
                             [e setDepthStencilState:depthState];
                         for (int b = 0; b < 16; b++)
                             [e setFragmentTexture:textures[p.sources[b]] atIndex:b < 8 ? b + 1 : b + 3];
+                        [e setVertexTexture:textures[p.sources[10]] atIndex:13];
                         [e setFragmentSamplerState:linear atIndex:9];
                         [e setFragmentSamplerState:point atIndex:10];
                         [e drawPrimitives:MTLPrimitiveTypeTriangle

@@ -42,6 +42,29 @@ namespace render
     {
         impl_->view.UpdateProbe();
     }
+    void ReflectionProbeView::UpdateProbe(uint32_t index)
+    {
+        impl_->view.UpdateProbe(index);
+    }
+    void ReflectionProbeView::SetReflectionProbes(const std::vector<ReflectionProbeVolume>& probes)
+    {
+        auto settings       = GetReflectionProbe();
+        settings.probes     = probes;
+        settings.debugProbe = std::min(settings.debugProbe, uint32_t(probes.empty() ? 0 : probes.size() - 1));
+        SetReflectionProbe(settings);
+    }
+    std::vector<ReflectionProbeVolume> ReflectionProbeView::GetReflectionProbes() const
+    {
+        auto settings = GetReflectionProbe();
+        if (!settings.probes.empty())
+            return settings.probes;
+        ReflectionProbeVolume v;
+        v.position = settings.position;
+        v.boxMin = v.influenceMin = settings.boxMin;
+        v.boxMax = v.influenceMax = settings.boxMax;
+        v.blendDistance           = settings.blendDistance;
+        return {v};
+    }
     uint32_t ReflectionProbeView::GetProbeCaptureCount() const
     {
         return impl_->view.GetProbeCaptureCount();

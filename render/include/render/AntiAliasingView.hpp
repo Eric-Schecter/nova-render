@@ -41,6 +41,7 @@ namespace render
         void                     SetReflectionProbe(const ReflectionProbeSettings& value);
         ReflectionProbeSettings  GetReflectionProbe() const;
         void                     UpdateProbe();
+        void                     UpdateProbe(uint32_t index);
         uint32_t                 GetProbeCaptureCount() const;
         void                     SetPlanarReflections(const PlanarReflectionSettings& value);
         PlanarReflectionSettings GetPlanarReflections() const;

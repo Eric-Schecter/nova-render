@@ -718,7 +718,7 @@ namespace render::detail
                 if (!external.device)
                     instanceApi.vkDestroyInstance(instance, nullptr);
             }
-            void SetReflectionEnvironment(const AATextureData& data) override
+            void SetReflectionEnvironment(const AATextureData& data, int slot) override
             {
                 auto  next    = MakeTexture(data.width, data.height, VK_FORMAT_R16G16B16A16_SFLOAT);
                 auto  staging = MakeBuffer(data.pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -735,8 +735,8 @@ namespace render::detail
                 Transition(next, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                 End();
                 Destroy(staging);
-                Destroy(textures[AASsrEnvironment]);
-                textures[AASsrEnvironment] = next;
+                Destroy(textures[slot]);
+                textures[slot] = next;
             }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
@@ -753,7 +753,7 @@ namespace render::detail
             {
                 const auto used = AAUsed(passes);
                 for (int i = 0; i < AAResourceCount; i++)
-                    if (i != AAArea && i != AASearch && i != AASsrEnvironment)
+                    if (i != AAArea && i != AASearch && i != AASsrEnvironment && i != AAProbeData)
                     {
                         if (!used[i])
                         {

@@ -1,5 +1,7 @@
 import {
   copyProbe,
+  effectiveProbes,
+  probeMetadata,
   defaultReflectionProbe,
   packProbeUniforms,
   appendProbePasses,
@@ -115,9 +117,9 @@ export async function createAntiAliasingView({
   let reflections = defaultScreenSpaceReflections()
   let planar = defaultPlanarReflections()
   let probe = defaultReflectionProbe(),
-    probeDirty = true,
     probeCaptures = 0,
-    probeRevision = 0
+    probeRevision = [1, 1, 1, 1],
+    probeCaptured = [0, 0, 0, 0]
   let postSettings = { ...defaultPostProcessing(), enabled: hdrScene || reflectionScene },
     postState = { frames: 0, last: 0 },
     sceneIntensity = 1
@@ -159,7 +161,9 @@ export async function createAntiAliasingView({
       entries: Array.from({ length: 19 }, (_, i) => ({
         binding: i,
         visibility:
-          i === 0 ? GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT : GPUShaderStage.FRAGMENT,
+          i === 0 || i === 13
+            ? GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT
+            : GPUShaderStage.FRAGMENT,
         ...(i === 0
           ? { buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 256 } }
           : i !== 9 && i !== 10
@@ -236,19 +240,22 @@ export async function createAntiAliasingView({
     if (!borrowedDevice) device.destroy()
     throw error
   }
-  function uploadReflectionEnvironment(data) {
+  function uploadReflectionEnvironment(data, slot = 64) {
     const next = device.createTexture({
-      size: [256, 256],
+      size: [data.width, data.height],
       format: 'rgba16float',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
-    device.queue.writeTexture({ texture: next }, data.pixels, { bytesPerRow: 256 * 8 }, [256, 256])
-    textures[64]?.destroy()
-    textures[64] = next
-    probeDirty = true
-    probeRevision++
+    device.queue.writeTexture({ texture: next }, data.pixels, { bytesPerRow: data.width * 8 }, [
+      data.width,
+      data.height,
+    ])
+    textures[slot]?.destroy()
+    textures[slot] = next
+    if (slot === 64) probeRevision = probeRevision.map((v) => v + 1)
   }
   if (reflectionScene) uploadReflectionEnvironment(reflectionEnvironmentAtlas())
+  if (probeScene) uploadReflectionEnvironment(probeMetadata(probe), 77)
   function reset() {
     frames = 0
     previousJitter = [0, 0]
@@ -260,8 +267,8 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 74; i++)
-      if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && i !== 73) {
+    for (let i = 0; i < 78; i++)
+      if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
       }
@@ -353,7 +360,15 @@ export async function createAntiAliasingView({
       if (!luma) p.u[26] = 1
     }
     if (probeScene) {
-      appendProbePasses(passes, u, probeDirty, settings.method === 'msaa', taa, settings.split)
+      appendProbePasses(
+        passes,
+        u,
+        probe,
+        probeRevision.map((v, i) => v !== probeCaptured[i]),
+        settings.method === 'msaa',
+        taa,
+        settings.split,
+      )
     } else if (reflectionScene) {
       ;(planarScene ? appendPlanarPasses : appendReflectionPasses)(
         passes,
@@ -463,8 +478,8 @@ export async function createAntiAliasingView({
       throw Error('AA dimensions exceed the view limit')
     resize(w, h)
     const { passes, jitter } = plan()
-    const captureRevision = probeRevision,
-      capturing = passes.some((p) => p.program === 21)
+    const captureRevision = [...probeRevision],
+      capturing = passes.filter((p) => p.program === 21).map((p) => p.target - 73)
     const used = new Set([DUMMY])
     for (const p of passes) {
       used.add(p.target)
@@ -481,8 +496,8 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 74; i++) {
-      if (i === AREA || i === SEARCH || i === 64) continue
+    for (let i = 0; i < 78; i++) {
+      if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -661,10 +676,11 @@ export async function createAntiAliasingView({
     await device.queue.onSubmittedWorkDone()
     const error = await device.popErrorScope()
     if (error) throw Error(error.message)
-    if (probeScene && capturing) {
-      probeDirty = probeRevision !== captureRevision
-      probeCaptures++
-    }
+    if (probeScene)
+      for (const index of capturing) {
+        probeCaptured[index] = captureRevision[index]
+        probeCaptures++
+      }
     external?.finish()
     previous = { ...camera }
     previousTime = time
@@ -675,17 +691,33 @@ export async function createAntiAliasingView({
   return {
     getReflectionProbe: () => copyProbe(probe),
     setReflectionProbe(value) {
-      const next = copyProbe({ ...probe, ...value })
-      if (JSON.stringify(next.position) !== JSON.stringify(probe.position)) {
-        probeDirty = true
-        probeRevision++
-      }
+      const next = copyProbe({ ...probe, ...value }),
+        before = effectiveProbes(probe),
+        after = effectiveProbes(next)
+      after.forEach((v, i) => {
+        if (!before[i] || JSON.stringify(v.position) !== JSON.stringify(before[i].position))
+          probeRevision[i]++
+      })
+      if (JSON.stringify(before) !== JSON.stringify(after))
+        uploadReflectionEnvironment(probeMetadata(next), 77)
       if (JSON.stringify(next) !== JSON.stringify(probe)) reset()
       probe = next
     },
-    updateProbe() {
-      probeDirty = true
-      probeRevision++
+    setReflectionProbes(volumes) {
+      this.setReflectionProbe({
+        probes: volumes,
+        debugProbe: Math.min(probe.debugProbe, Math.max(0, volumes.length - 1)),
+      })
+    },
+    getReflectionProbes: () => effectiveProbes(copyProbe(probe)),
+    updateProbe(index) {
+      if (
+        index !== undefined &&
+        (!Number.isInteger(index) || index < 0 || index >= effectiveProbes(probe).length)
+      )
+        throw Error('Probe index out of range')
+      if (index === undefined) probeRevision = probeRevision.map((v) => v + 1)
+      else probeRevision[index]++
       reset()
     },
     getProbeCaptureCount: () => probeCaptures,

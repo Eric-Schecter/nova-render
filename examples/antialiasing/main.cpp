@@ -1,3 +1,4 @@
+#include "../common/FloatingPanel.hpp"
 #include "../common/PerformancePanel.hpp"
 #include "../common/ProceduralOptions.hpp"
 #include <chrono>
@@ -29,14 +30,8 @@ int main(int argc, char** argv)
         panel.showBuiltinPanel = false;
 #ifdef NOVA_EXAMPLE_UI
         panel.drawUI = [&] {
-            const auto  display = ImGui::GetIO().DisplaySize;
-            const float y       = 40 + (display.y - 40) * .76f;
-            ImGui::SetNextWindowPos({0, y});
-            ImGui::SetNextWindowSize({display.x, display.y - y});
-            ImGui::Begin(
-              "Anti-aliasing",
-              nullptr,
-              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+            example::PlaceFloatingPanel();
+            ImGui::Begin("Anti-aliasing", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
             int method = int(settings.method);
             if (ImGui::Combo("Method", &method, names, 6))
             {
@@ -117,7 +112,7 @@ int main(int argc, char** argv)
 #endif
             const float viewportH = std::max(1.f, float(fb[1]) - inset);
 #ifdef NOVA_EXAMPLE_UI
-            const float sceneH = viewportH * .76f;
+            const float sceneH = viewportH;
 #else
             const float sceneH = viewportH;
 #endif

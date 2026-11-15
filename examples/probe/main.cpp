@@ -1,4 +1,6 @@
+#include "../common/FloatingPanel.hpp"
 #include "../common/PerformancePanel.hpp"
+#include "../common/ProbeVolumes.hpp"
 #include "../common/ProceduralOptions.hpp"
 #include <chrono>
 #include <cmath>
@@ -20,46 +22,51 @@ int main(int argc, char** argv)
         auto                        settings    = view.GetAntiAliasing();
         auto                        post        = view.GetPostProcessing();
         auto                        reflections = view.GetReflectionProbe();
-        int                         environment = 0, pendingEnvironment = -1;
-        auto                        camera = view.GetCamera();
+        int                         environment = 0, pendingEnvironment = -1, selectedProbe = 0;
+        reflections.probes = example::RoomProbes();
+        view.SetReflectionProbe(reflections);
+        auto camera = view.GetCamera();
         window.SetCamera(camera);
         window.EnableOrbitControls();
         example::PerformancePanel    performance;
-        bool                         playing = false, changed = true, reset = false, cameraChanged = false;
-        float                        scale = .75f, speed = .35f, time = 0;
+        bool                         playing = true, changed = true, reset = false, cameraChanged = false;
+        float                        scale = .75f, speed = .6f, time = 0;
         int                          settle  = 32;
         const char*                  names[] = {"Off", "FXAA", "SMAA 1x", "MSAA 4x", "SSAA 2x2", "TAA"};
         render::ParameterPanelConfig panel;
         panel.showBuiltinPanel = false;
 #ifdef NOVA_EXAMPLE_UI
         panel.drawUI = [&] {
-            const auto  display = ImGui::GetIO().DisplaySize;
-            const float y       = 40 + (display.y - 40) * .70f;
-            ImGui::SetNextWindowPos({0, y});
-            ImGui::SetNextWindowSize({display.x, display.y - y});
-            ImGui::Begin(
-              "Reflection probes",
-              nullptr,
-              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+            example::PlaceFloatingPanel();
+            ImGui::Begin("Reflection probes", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
             if (ImGui::BeginTabBar("Reflection controls"))
             {
                 if (ImGui::BeginTabItem("Reflection probe"))
                 {
-                    if (ImGui::BeginTable("Probe controls", 3, ImGuiTableFlags_SizingStretchSame))
+                    if (ImGui::BeginTable("Probe controls", 1, ImGuiTableFlags_SizingStretchSame))
                     {
                         ImGui::TableNextColumn();
                         changed |= ImGui::Checkbox("Local cubemap", &reflections.enabled);
                         changed |= ImGui::Checkbox("Box projection", &reflections.boxProjection);
                         changed |= ImGui::SliderFloat("Roughness", &reflections.roughness, 0, 1);
                         changed |= ImGui::SliderFloat("Reflection intensity", &reflections.intensity, 0, 2);
-                        changed |= ImGui::SliderFloat("Boundary blend", &reflections.blendDistance, 0, 2);
+                        changed |= ImGui::Checkbox("Smooth blending", &reflections.smoothBlending);
+                        if (ImGui::Combo("Active probe", &selectedProbe, "Red\0Green\0Blue\0"))
+                        {
+                            reflections.debugProbe = uint32_t(selectedProbe);
+                            changed                = true;
+                        }
+                        auto& volume = reflections.probes[size_t(selectedProbe)];
+                        changed |= ImGui::Checkbox("Probe enabled", &volume.enabled);
+                        changed |= ImGui::SliderFloat("Boundary blend", &volume.blendDistance, 0, 2);
+                        changed |= ImGui::SliderFloat("Probe intensity", &volume.intensity, 0, 2);
                         ImGui::TableNextColumn();
-                        changed |= ImGui::SliderFloat("Probe X", &reflections.position[0], -3, 3);
-                        changed |= ImGui::SliderFloat("Probe Y", &reflections.position[1], -.5f, 2.5f);
-                        changed |= ImGui::SliderFloat("Probe Z", &reflections.position[2], -3, 3);
+                        changed |= ImGui::SliderFloat("Probe X", &volume.position[0], -3, 3);
+                        changed |= ImGui::SliderFloat("Probe Y", &volume.position[1], -.5f, 2.5f);
+                        changed |= ImGui::SliderFloat("Probe Z", &volume.position[2], -3, 3);
                         if (ImGui::Button("Refresh probe"))
                         {
-                            view.UpdateProbe();
+                            view.UpdateProbe(uint32_t(selectedProbe));
                             changed = true;
                         }
                         ImGui::Text("Captures: %u", view.GetProbeCaptureCount());
@@ -75,14 +82,15 @@ int main(int argc, char** argv)
                               &environment,
                               "Studio (procedural HDR)\0Venice sunset\0Kloppenheim\0Studio small\0"))
                             pendingEnvironment = environment;
-                        ImGui::TextUnformatted("Static room capture, cached between frames");
+                        ImGui::TextUnformatted("Red / Green / Blue probe regions");
+                        changed |= ImGui::SliderFloat("Travel phase", &time, 0, 6.28318f);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
                 }
                 if (ImGui::BeginTabItem("Post-processing"))
                 {
-                    if (ImGui::BeginTable("Post controls", 3, ImGuiTableFlags_SizingStretchSame))
+                    if (ImGui::BeginTable("Post controls", 1, ImGuiTableFlags_SizingStretchSame))
                     {
                         ImGui::TableNextColumn();
                         changed |= ImGui::Checkbox("Post-processing", &post.enabled);
@@ -208,7 +216,7 @@ int main(int argc, char** argv)
 #endif
             const float viewportH = std::max(1.f, float(fb[1]) - inset);
 #ifdef NOVA_EXAMPLE_UI
-            const float sceneH = viewportH * .70f;
+            const float sceneH = viewportH;
 #else
             const float sceneH = viewportH;
 #endif
