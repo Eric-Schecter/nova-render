@@ -13,7 +13,7 @@ foreach(pass RANGE 0 8)
         endif()
         set(base "${SHADER_OUTPUT_DIR}/aa-${pass}.${stage}")
         set(source "${PROJECT_SOURCE_DIR}/render/shaders/antialiasing.hlsl")
-        set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
+        set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/texture-filtering.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
         if(NOVA_ENABLE_VULKAN)
             add_custom_command(OUTPUT "${base}.spv"
                 COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.1 ${invert} -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.spv"

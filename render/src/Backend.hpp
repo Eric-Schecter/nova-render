@@ -3,6 +3,8 @@
 #include "Color.hpp"
 #include "ModelData.hpp"
 #include "ParameterPanel.hpp"
+#include "TextureFiltering.hpp"
+#include "aa/RasterAA.hpp"
 #include "path/PathTracing.hpp"
 #include "render/Renderer.hpp"
 #include <cmath>
@@ -34,6 +36,8 @@ namespace render::detail
               || state.time > clips[state.clip].duration || !std::isfinite(state.speed) || state.speed < .1f
               || state.speed > 4)
                 throw std::invalid_argument("Invalid animation state");
+            if (state.clip != animation.state.clip || std::abs(state.time - animation.state.time) > .25f)
+                rasterAA.Reset();
             animation.state = state;
             animation.Apply();
         }
@@ -52,11 +56,36 @@ namespace render::detail
             if (mode != value)
             {
                 mode = value;
+                rasterAA.Reset();
                 pathSession.Reset();
             }
         }
         RenderMode GetRenderMode() const { return mode; }
-        void       SetPathTracing(const PathTracingSettings& value)
+        void       SetAntiAliasing(const AntiAliasingSettings& value)
+        {
+            if (
+              static_cast<unsigned>(value.method) > 5 || !std::isfinite(value.historyWeight) || value.historyWeight < 0
+              || value.historyWeight > .98f || !std::isfinite(value.zoom) || value.zoom < 1 || value.zoom > 8)
+                throw std::invalid_argument("Invalid AA settings");
+            if (
+              rasterSettings.method != value.method || rasterSettings.historyWeight != value.historyWeight
+              || rasterSettings.zoom != value.zoom || rasterSettings.split != value.split)
+                rasterAA.Reset();
+            rasterSettings = value;
+            if (!model && value.method != AAMethod::Off)
+            {
+                LoadModel(EmptyModelData());
+                aaTriangle = true;
+            }
+        }
+        AntiAliasingSettings GetAntiAliasing() const { return rasterSettings; }
+        const Image&         GetRasterAAImage() const { return rasterAA.image; }
+        uint32_t             GetAntiAliasingHistoryFrames() const
+        {
+            return rasterSettings.method == AAMethod::TAA ? rasterAA.frames : 0;
+        }
+
+        void SetPathTracing(const PathTracingSettings& value)
         {
             ValidatePathTracing(value);
             pathSettings = value;
@@ -84,6 +113,8 @@ namespace render::detail
         {
             if (data != model)
             {
+                rasterAA.Reset();
+                aaTriangle = false;
                 animation.Load(std::move(data));
                 model = animation.Model();
             }
@@ -92,10 +123,16 @@ namespace render::detail
         }
         virtual void LoadEnvironment(std::shared_ptr<const EnvironmentData> data)
         {
+            rasterAA.Reset();
             environment = std::move(data);
             LoadModel(model ? model : EmptyModelData());
         }
-        void                SetEnvironment(const EnvironmentSettings& value) { environmentSettings = value; }
+        void SetEnvironment(const EnvironmentSettings& value)
+        {
+            if (std::memcmp(&environmentSettings, &value, sizeof(value)) != 0)
+                rasterAA.Reset();
+            environmentSettings = value;
+        }
         EnvironmentSettings GetEnvironment() const { return environmentSettings; }
         bool                EnableParameterPanel(GLFWwindow* window, bool enabled)
         {
@@ -140,12 +177,34 @@ namespace render::detail
 #endif
         }
         std::array<float, 4> GetClearColor() const { return clearColor; }
-        void                 SetClearColor(const std::array<float, 4>& value) { clearColor = value; }
-        OrbitCamera          GetCamera() const { return camera; }
-        void                 SetDirectionalLight(const DirectionalLight& value) { directionalLight = value; }
-        DirectionalLight     GetDirectionalLight() const { return directionalLight; }
-        void                 SetLighting(LightingMode value) { lighting = value; }
-        void                 SetCamera(const OrbitCamera& value) { camera = value; }
+        void                 SetClearColor(const std::array<float, 4>& value)
+        {
+            if (clearColor != value)
+                rasterAA.Reset();
+            clearColor = value;
+        }
+        OrbitCamera GetCamera() const { return camera; }
+        void        SetDirectionalLight(const DirectionalLight& value)
+        {
+            if (std::memcmp(&directionalLight, &value, sizeof(value)) != 0)
+                rasterAA.Reset();
+            directionalLight = value;
+        }
+        DirectionalLight GetDirectionalLight() const { return directionalLight; }
+        void             SetLighting(LightingMode value)
+        {
+            if (lighting != value)
+                rasterAA.Reset();
+            lighting = value;
+        }
+        void SetCamera(const OrbitCamera& value)
+        {
+            if (
+              std::abs(value.yaw - camera.yaw) > 20 || std::abs(value.pitch - camera.pitch) > 20
+              || std::abs(value.distance - camera.distance) > 2 || value.exposure != camera.exposure)
+                rasterAA.Reset();
+            camera = value;
+        }
 
       protected:
         uint32_t SceneTopInset(uint32_t height) const
@@ -162,6 +221,9 @@ namespace render::detail
 #endif
             return 0;
         }
+        AntiAliasingSettings rasterSettings;
+        detail::RasterAA     rasterAA;
+        bool                 aaTriangle = false;
         std::optional<Image> presentedImage;
         RenderMode           mode = RenderMode::Raster;
         PathTracingSettings  pathSettings;
@@ -173,7 +235,24 @@ namespace render::detail
             if (presentedImage)
                 return &*presentedImage;
             if (mode == RenderMode::Raster)
-                return nullptr;
+            {
+                if (rasterSettings.method == AAMethod::Off && !aaTriangle)
+                    return nullptr;
+                if (!rasterAA.device)
+                    CreateRasterAADevice();
+                rasterAA.current = MakeSceneUniforms(
+                  *model,
+                  camera,
+                  float(width) / height,
+                  lighting,
+                  directionalLight,
+                  environment.get(),
+                  environmentSettings);
+                const auto& image =
+                  rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle);
+                rasterAA.previousJoints = model->jointMatrices;
+                return &image;
+            }
             const auto uniform = MakeSceneUniforms(
               *model,
               camera,
@@ -186,6 +265,7 @@ namespace render::detail
               model, environment, uniform, pathSettings, ClearColorForTarget(true), width, height);
         }
 
+        virtual void         CreateRasterAADevice() { throw std::runtime_error("Raster AA backend not implemented"); }
         std::array<float, 4> ClearColorForTarget(bool srgb) const
         {
             auto result = clearColor;
@@ -202,7 +282,7 @@ namespace render::detail
         {
             const auto previous = animation.state;
             parameterPanel->Draw(
-              bool(model),
+              bool(model) && !aaTriangle,
               lighting,
               camera,
               directionalLight,

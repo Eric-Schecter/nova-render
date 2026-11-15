@@ -97,7 +97,10 @@ await writeFile(
 // Built-in AA library only: flatten vendored headers, preserve original notices on disk.
 const aaSource = await readFile('render/shaders/antialiasing.hlsl', 'utf8')
 for (let pass = 0; pass < 9; pass++) {
-  let source = aaSource
+  let source = aaSource.replace(
+    '#include "texture-filtering.hlsli"',
+    await readFile('render/shaders/texture-filtering.hlsli', 'utf8'),
+  )
   for (const [file, needed] of [
     ['third_party/fxaa/FXAA.hlsli', pass === 2],
     ['third_party/smaa/SMAA.hlsl', pass >= 4 && pass <= 6],
@@ -125,3 +128,15 @@ for (const [name, channels] of [
   await writeFile('docs/public/generated/smaa-' + name.toLowerCase() + '.bin', rgba)
 }
 console.log('AA HLSL and SMAA reference tables generated')
+
+const rasterSource =
+  '#define NOVA_RASTER_AA 1\n' + (await readFile('render/shaders/model.hlsl', 'utf8'))
+for (const [name, vertexEntry, fragmentEntry] of [
+  ['model-aa', 'VSMain', 'PSMain'],
+  ['sky-aa', 'SkyVSMain', 'SkyPSMain'],
+  ['model-motion', 'MotionVSMain', 'MotionPSMain'],
+  ['sky-motion', 'SkyVSMain', 'SkyMotionPSMain'],
+]) {
+  const data = await compile(rasterSource, { model: true, vertexEntry, fragmentEntry })
+  await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
+}

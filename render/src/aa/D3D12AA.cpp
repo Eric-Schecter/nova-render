@@ -446,7 +446,7 @@ namespace render::detail
             }
         };
     } // namespace
-    std::unique_ptr<AADevice> CreateD3D12AA(const RendererConfig& c)
+    std::unique_ptr<AADevice> CreateD3D12AA(const RendererConfig& c,const AAExternalScene&)
     {
         return std::make_unique<D3D12AA>(c);
     }

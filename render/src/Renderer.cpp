@@ -263,6 +263,18 @@ namespace render
         detail::ValidateCamera(camera);
         impl_->backend->SetCamera(camera);
     }
+    void Renderer::SetAntiAliasing(const AntiAliasingSettings& settings)
+    {
+        impl_->backend->SetAntiAliasing(settings);
+    }
+    AntiAliasingSettings Renderer::GetAntiAliasing() const
+    {
+        return impl_->backend->GetAntiAliasing();
+    }
+    uint32_t Renderer::GetAntiAliasingHistoryFrames() const
+    {
+        return impl_->backend->GetAntiAliasingHistoryFrames();
+    }
     void Renderer::WaitIdle()
     {
         impl_->backend->WaitIdle();

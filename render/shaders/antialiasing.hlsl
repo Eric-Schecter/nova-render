@@ -1,7 +1,8 @@
+#include "texture-filtering.hlsli"
 // Nova AA laboratory. Scene geometry and all reconstruction passes are shared by native and web.
 cbuffer AAParameters : register(b0)
 {
-    float4 aa[5];
+    float4 aa[8];
 }
 Texture2D<float4> colorTex : register(t1);
 Texture2D<float4> edgeTex : register(t2);
@@ -19,6 +20,21 @@ SamplerState      PointSampler : register(s10);
 float3 gammaRGB(float3 c)
 {
     return pow(saturate(c), 1.0 / 2.2);
+}
+float3 decodeSRGB(float3 c)
+{
+    return float3(
+      c.x <= .04045 ? c.x / 12.92 : pow((c.x + .055) / 1.055, 2.4),
+      c.y <= .04045 ? c.y / 12.92 : pow((c.y + .055) / 1.055, 2.4),
+      c.z <= .04045 ? c.z / 12.92 : pow((c.z + .055) / 1.055, 2.4));
+}
+float3 encodeSRGB(float3 c)
+{
+    c = max(c, 0);
+    return float3(
+      c.x <= .0031308 ? c.x * 12.92 : 1.055 * pow(c.x, 1 / 2.4) - .055,
+      c.y <= .0031308 ? c.y * 12.92 : 1.055 * pow(c.y, 1 / 2.4) - .055,
+      c.z <= .0031308 ? c.z * 12.92 : 1.055 * pow(c.z, 1 / 2.4) - .055);
 }
 float4 rgbL(float3 c)
 {
@@ -125,11 +141,13 @@ struct SceneOutput
 SceneOutput PSMain(Varying i)
 {
     SceneOutput o;
-    float3      c = i.color;
+    float3      c                = i.color;
+    float2      checkerFootprint = fwidth(i.uv);
     if (i.material == 1)
     {
-        float checker = fmod(abs(floor(i.uv.x) + floor(i.uv.y)), 2);
-        c             = lerp(float3(.015, .022, .03), float3(.8, .82, .85), checker);
+        float checker =
+          aa[6].y > .5 ? filteredChecker(i.uv, checkerFootprint) : fmod(abs(floor(i.uv.x) + floor(i.uv.y)), 2);
+        c = lerp(float3(.015, .022, .03), float3(.8, .82, .85), checker);
     }
     o.color     = rgbL(c * aa[2].z);
     float2 cur  = i.current.xy / i.current.w * float2(.5, -.5) + .5,
@@ -167,7 +185,10 @@ float4 PSMain(Varying i)
     float2 uv = i.uv, texel = 1 / aa[0].xy;
 #if AA_PASS == 1
     // Linear downsample: SSAA resolves every 2x2 shading sample, not just coverage.
-    return colorTex.SampleLevel(LinearSampler, uv, 0);
+    float4 value = colorTex.SampleLevel(LinearSampler, uv * aa[5].xy + aa[5].zw, 0);
+    if (aa[6].z > 1.5)
+        value.rgb = decodeSRGB(value.rgb);
+    return aa[6].x > .5 ? rgbL(value.rgb) : value;
 #elif AA_PASS == 2
     FxaaTex t = {LinearSampler, colorTex};
     return FxaaPixelShader(uv, 0, t, t, t, texel, 0, 0, 0, .75, .166, .0833, 0, 0, 0, 0);
@@ -210,7 +231,7 @@ float4 PSMain(Varying i)
         c = historyTex.SampleLevel(PointSampler, uv, 0).rgb;
     if (aa[3].w > .5 && abs(i.uv.x - .5) < texel.x)
         c = float3(.2, .5, .8);
-    return float4(gammaRGB(c), 1);
+    return float4(aa[6].z > .5 ? encodeSRGB(c) : gammaRGB(c), 1);
 #endif
 }
 #endif

@@ -252,16 +252,115 @@ namespace render::detail
         id<MTLBuffer>                          skinInputs, jointPalette;
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
-        id<MTLTexture>                         environmentTexture, backgroundTexture, pathDisplay;
-        id<MTLRenderPipelineState>             skyPipeline;
-        id<MTLDepthStencilState>               skyDepthState;
-        id<MTLBuffer>                          vertices;
-        id<MTLRenderPipelineState>             modelPipeline;
-        id<MTLDepthStencilState>               depthState;
-        id<MTLTexture>                         depth;
-        std::array<id<MTLTexture>, 5>          modelTextures{};
-        id<MTLSamplerState>                    modelSampler;
-        void                                   UploadPathImage(const ModelImage& image)
+        id<MTLRenderPipelineState>             aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion;
+        id<MTLBuffer>                          aaPreviousPalette;
+        id<MTLRenderPipelineState>             AAPipeline(const char* file, uint32_t samples)
+        {
+            const auto bytes = LoadShader(settings.shaderDirectory, file);
+            NSData*    data  = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+            auto       blob =
+              dispatch_data_create(data.bytes, data.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                (void)data;
+              });
+            NSError* error   = nil;
+            auto     library = [device newLibraryWithData:blob error:&error];
+            if (!library)
+                throw metalError("Load raster AA shader", error);
+            auto desc                            = [MTLRenderPipelineDescriptor new];
+            desc.vertexFunction                  = [library newFunctionWithName:@"vertexMain"];
+            desc.fragmentFunction                = [library newFunctionWithName:@"fragmentMain"];
+            desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
+            desc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
+            desc.sampleCount                     = samples;
+            auto pipeline                        = [device newRenderPipelineStateWithDescriptor:desc error:&error];
+            if (!pipeline)
+                throw metalError("Create raster AA pipeline", error);
+            return pipeline;
+        }
+        void CreateRasterAADevice() override
+        {
+            AAExternalScene external;
+            external.device = (__bridge void*)device;
+            external.draw   = [this](const AAPass& pass, void* encoder, void*) {
+                id<MTLRenderCommandEncoder> e      = (__bridge id<MTLRenderCommandEncoder>)encoder;
+                const int                   sample = pass.multisampled ? 1 : 0;
+                if (aaTriangle)
+                {
+                    if (!aaTrianglePipeline[sample])
+                        aaTrianglePipeline[sample] = AAPipeline("triangle.metallib", sample ? 4 : 1);
+                    [e setRenderPipelineState:aaTrianglePipeline[sample]];
+                    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+                    return;
+                }
+                const auto& current  = rasterAA.current;
+                const auto& previous = rasterAA.frames ? rasterAA.previous : current;
+                const auto& joints   = rasterAA.frames ? rasterAA.previousJoints : model->jointMatrices;
+                size_t      bytes    = std::max(size_t(64), joints.size() * sizeof(JointMatrix));
+                if (!aaPreviousPalette || aaPreviousPalette.length < bytes)
+                    aaPreviousPalette = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+                if (!joints.empty())
+                    std::memcpy(aaPreviousPalette.contents, joints.data(), joints.size() * sizeof(JointMatrix));
+                [e setVertexBytes:&current length:sizeof(current) atIndex:0];
+                [e setFragmentBytes:&current length:sizeof(current) atIndex:0];
+                [e setVertexBytes:&previous length:sizeof(previous) atIndex:15];
+                [e setFragmentBytes:&previous length:sizeof(previous) atIndex:15];
+                [e setVertexBuffer:vertices offset:0 atIndex:1];
+                [e setVertexBuffer:skinInputs offset:0 atIndex:11];
+                [e setVertexBuffer:jointPalette offset:0 atIndex:12];
+                [e setVertexBuffer:aaPreviousPalette offset:0 atIndex:16];
+                for (NSUInteger i = 0; i < 5; i++)
+                    [e setFragmentTexture:modelTextures[i] atIndex:2 + i];
+                [e setFragmentTexture:environmentTexture atIndex:8];
+                [e setFragmentTexture:backgroundTexture atIndex:9];
+                [e setFragmentSamplerState:modelSampler atIndex:7];
+                const bool motion = pass.program == -2;
+                if (environment && environmentSettings.showBackground)
+                {
+                    if (motion)
+                    {
+                        if (!aaSkyMotion)
+                            aaSkyMotion = AAPipeline("sky-motion.metallib", 1);
+                        [e setRenderPipelineState:aaSkyMotion];
+                    }
+                    else
+                    {
+                        if (!aaSky[sample])
+                            aaSky[sample] = AAPipeline("skybox.metallib", sample ? 4 : 1);
+                        [e setRenderPipelineState:aaSky[sample]];
+                    }
+                    [e setDepthStencilState:skyDepthState];
+                    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+                }
+                if (!model->vertices.empty())
+                {
+                    if (motion)
+                    {
+                        if (!aaMotion)
+                            aaMotion = AAPipeline("model-motion.metallib", 1);
+                        [e setRenderPipelineState:aaMotion];
+                    }
+                    else
+                    {
+                        if (!aaModel[sample])
+                            aaModel[sample] = AAPipeline("model.metallib", sample ? 4 : 1);
+                        [e setRenderPipelineState:aaModel[sample]];
+                    }
+                    [e setDepthStencilState:depthState];
+                    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:model->vertices.size()];
+                }
+            };
+            rasterAA.device = CreateMetalAA(settings, external);
+        }
+        id<MTLTexture>                environmentTexture, backgroundTexture, pathDisplay;
+        id<MTLRenderPipelineState>    skyPipeline;
+        id<MTLDepthStencilState>      skyDepthState;
+        id<MTLBuffer>                 vertices;
+        id<MTLRenderPipelineState>    modelPipeline;
+        id<MTLDepthStencilState>      depthState;
+        id<MTLTexture>                depth;
+        std::array<id<MTLTexture>, 5> modelTextures{};
+        id<MTLSamplerState>           modelSampler;
+        void                          UploadPathImage(const ModelImage& image)
         {
             if (!pathDisplay || pathDisplay.width != image.width || pathDisplay.height != image.height)
             {
@@ -325,21 +424,27 @@ namespace render::detail
                   model->jointMatrices.size() * sizeof(JointMatrix));
             for (size_t i = 0; i < 5; ++i)
             {
-                const auto&           image = model->images[i];
-                MTLTextureDescriptor* texture =
-                  [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                                     width:image.width
-                                                                    height:image.height
-                                                                 mipmapped:NO];
+                const auto  levels  = MaterialMipmaps(model->images[i], i);
+                const auto& image   = levels[0];
+                auto        texture = [MTLTextureDescriptor
+                  texture2DDescriptorWithPixelFormat:(i == 0 || i == 4) ? MTLPixelFormatRGBA8Unorm_sRGB
+                                                                               : MTLPixelFormatRGBA8Unorm
+                                               width:image.width
+                                              height:image.height
+                                           mipmapped:levels.size() > 1];
                 texture.usage       = MTLTextureUsageShaderRead;
                 texture.storageMode = MTLStorageModeShared;
                 modelTextures[i]    = [device newTextureWithDescriptor:texture];
                 if (!modelTextures[i])
-                    throw std::runtime_error("Create model material texture failed");
-                [modelTextures[i] replaceRegion:MTLRegionMake2D(0, 0, image.width, image.height)
-                                    mipmapLevel:0
-                                      withBytes:image.pixels.data()
-                                    bytesPerRow:image.width * 4];
+                    throw std::runtime_error("Create material mip texture failed");
+                for (size_t level = 0; level < levels.size(); level++)
+                {
+                    const auto& mip = levels[level];
+                    [modelTextures[i] replaceRegion:MTLRegionMake2D(0, 0, mip.width, mip.height)
+                                        mipmapLevel:level
+                                          withBytes:mip.pixels.data()
+                                        bytesPerRow:mip.width * 4];
+                }
             }
             const auto& environmentData = environment ? *environment : FallbackEnvironment();
             auto        uploadCube      = [&](const std::vector<EnvironmentMip>& mips) -> id<MTLTexture> {
@@ -390,12 +495,12 @@ namespace render::detail
                 if (!skyDepthState)
                     throw std::runtime_error("Create skybox depth state failed");
             }
-            MTLSamplerDescriptor* sampler = [MTLSamplerDescriptor new];
-            sampler.minFilter             = MTLSamplerMinMagFilterLinear;
-            sampler.magFilter             = MTLSamplerMinMagFilterLinear;
-            sampler.mipFilter             = MTLSamplerMipFilterLinear;
-            sampler.lodMaxClamp =
-              float(std::max(environmentData.mips.size(), BackgroundMips(environmentData).size()) - 1);
+            MTLSamplerDescriptor* sampler        = [MTLSamplerDescriptor new];
+            sampler.minFilter                    = MTLSamplerMinMagFilterLinear;
+            sampler.magFilter                    = MTLSamplerMinMagFilterLinear;
+            sampler.mipFilter                    = MTLSamplerMipFilterLinear;
+            sampler.maxAnisotropy                = 8;
+            sampler.lodMaxClamp                  = 32;
             sampler.sAddressMode                 = MTLSamplerAddressModeRepeat;
             sampler.tAddressMode                 = MTLSamplerAddressModeRepeat;
             modelSampler                         = [device newSamplerStateWithDescriptor:sampler];

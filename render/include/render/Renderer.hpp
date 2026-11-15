@@ -1,5 +1,6 @@
 #pragma once
 #include "Animation.hpp"
+#include "AntiAliasing.hpp"
 #include "Image.hpp"
 #include "Model.hpp"
 #include "ParameterPanel.hpp"
@@ -57,6 +58,9 @@ namespace render
         void                       Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
         FrameResult                DrawFrame();
         void                       WaitIdle();
+        void                       SetAntiAliasing(const AntiAliasingSettings& settings);
+        AntiAliasingSettings       GetAntiAliasing() const;
+        uint32_t                   GetAntiAliasingHistoryFrames() const;
         std::vector<AnimationClip> GetAnimations() const;
         AnimationState             GetAnimationState() const;
         void                       SetAnimationState(const AnimationState& state);

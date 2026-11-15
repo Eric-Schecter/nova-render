@@ -47,7 +47,13 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
     depth,
     depthMS,
     depthBaseline
-  let settings = { method: 'taa', historyWeight: 0.9, zoom: 1, split: true },
+  let settings = {
+      method: 'taa',
+      historyWeight: 0.9,
+      zoom: 1,
+      split: true,
+      textureFiltering: true,
+    },
     camera = { yaw: 20, pitch: 15, distance: 6.2, exposure: 1 },
     previous = { ...camera },
     time = 0,
@@ -89,7 +95,7 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
         visibility:
           i === 0 ? GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT : GPUShaderStage.FRAGMENT,
         ...(i === 0
-          ? { buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 80 } }
+          ? { buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 128 } }
           : i < 9
             ? { texture: { sampleType: 'float' } }
             : { sampler: { type: i === 9 ? 'filtering' : 'non-filtering' } }),
@@ -211,6 +217,18 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
       prev.distance,
       camera.pitch * rad,
       prev.pitch * rad,
+      1,
+      1,
+      0,
+      0,
+      0,
+      settings.textureFiltering ? 1 : 0,
+      0,
+      0,
+      0.012,
+      0.02,
+      0.035,
+      0.1,
     ]
     const passes = [],
       add = (program, target) => {
@@ -310,7 +328,7 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
           binding: i,
           resource:
             i === 0
-              ? { buffer: uniform, size: 80 }
+              ? { buffer: uniform, size: 128 }
               : i < 9
                 ? textures[p.sources[i - 1]].createView()
                 : i === 9
@@ -349,10 +367,16 @@ export async function createAntiAliasingView({ canvas, shaderDirectory = '/gener
         !Number.isFinite(next.zoom) ||
         next.zoom < 1 ||
         next.zoom > 8 ||
-        typeof next.split !== 'boolean'
+        typeof next.split !== 'boolean' ||
+        typeof next.textureFiltering !== 'boolean'
       )
         throw Error('Invalid AA settings')
-      if (next.method !== settings.method || next.historyWeight !== settings.historyWeight) reset()
+      if (
+        next.method !== settings.method ||
+        next.historyWeight !== settings.historyWeight ||
+        next.textureFiltering !== settings.textureFiltering
+      )
+        reset()
       settings = next
     },
     getCamera: () => ({ ...camera }),

@@ -834,7 +834,7 @@ namespace render::detail
             }
         };
     } // namespace
-    std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig& c)
+    std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig& c,const AAExternalScene&)
     {
         return std::make_unique<VulkanAA>(c);
     }

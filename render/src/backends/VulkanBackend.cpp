@@ -204,7 +204,11 @@ namespace render::detail
             queueInfo.queueFamilyIndex = queueFamily;
             queueInfo.queueCount       = 1;
             queueInfo.pQueuePriorities = &priority;
+            VkPhysicalDeviceFeatures supported{}, features{};
+            vkGetPhysicalDeviceFeatures(physical, &supported);
+            features.samplerAnisotropy = supported.samplerAnisotropy;
             VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+            info.pEnabledFeatures        = &features;
             info.queueCreateInfoCount    = 1;
             info.pQueueCreateInfos       = &queueInfo;
             info.enabledExtensionCount   = static_cast<uint32_t>(enabled.size());

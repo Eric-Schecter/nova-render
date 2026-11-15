@@ -228,6 +228,13 @@ export async function showAntiAliasing(canvas, shaderDirectory = '/generated/', 
     methods,
   )
   control(
+    'Texture filtering',
+    '棋盘过滤',
+    'checkbox',
+    () => view.getAntiAliasing().textureFiltering,
+    (v) => controller.setAntiAliasing({ textureFiltering: v }),
+  )
+  control(
     'Animate',
     '播放运动',
     'checkbox',

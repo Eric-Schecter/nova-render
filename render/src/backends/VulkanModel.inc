@@ -197,16 +197,29 @@ void uploadModel()
     modelBuffer(modelUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     for (size_t i = 0; i < 5; ++i)
     {
-        const auto& src = model->images[i];
-        auto&       dst = modelTextures[i];
-        modelBuffer(modelStaging, src.pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, src.pixels.data());
+        const auto                     mips = MaterialMipmaps(model->images[i], i);
+        const auto&                    src  = mips[0];
+        auto&                          dst  = modelTextures[i];
+        std::vector<unsigned char>     pixels;
+        std::vector<VkBufferImageCopy> copies;
+        for (uint32_t level = 0; level < mips.size(); level++)
+        {
+            VkBufferImageCopy c{};
+            c.bufferOffset     = pixels.size();
+            c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+            c.imageExtent      = {mips[level].width, mips[level].height, 1};
+            copies.push_back(c);
+            pixels.insert(pixels.end(), mips[level].pixels.begin(), mips[level].pixels.end());
+        }
+        modelBuffer(modelStaging, pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, pixels.data());
         modelImage(
           dst,
           src.width,
           src.height,
-          VK_FORMAT_R8G8B8A8_UNORM,
+          (i == 0 || i == 4) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-          VK_IMAGE_ASPECT_COLOR_BIT);
+          VK_IMAGE_ASPECT_COLOR_BIT,
+          uint32_t(mips.size()));
         check(vkResetCommandBuffer(cmd, 0), "Reset upload command");
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         check(vkBeginCommandBuffer(cmd, &begin), "Begin upload");
@@ -215,8 +228,8 @@ void uploadModel()
         barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image                                             = dst.image;
-        barrier.subresourceRange                                  = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        barrier.dstAccessMask                                     = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, uint32_t(mips.size()), 0, 1};
+        barrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
         vkCmdPipelineBarrier(
           cmd,
           VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -228,10 +241,13 @@ void uploadModel()
           nullptr,
           1,
           &barrier);
-        VkBufferImageCopy copy{};
-        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        copy.imageExtent      = {src.width, src.height, 1};
-        vkCmdCopyBufferToImage(cmd, modelStaging.buffer, dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+        vkCmdCopyBufferToImage(
+          cmd,
+          modelStaging.buffer,
+          dst.image,
+          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          uint32_t(copies.size()),
+          copies.data());
         barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -262,7 +278,13 @@ void uploadModel()
     sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
     sampler.mipmapMode                    = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler.maxLod = float(std::max(env.mips.size(), BackgroundMips(env).size()) - 1);
+    sampler.maxLod                                                     = 32;
+    VkPhysicalDeviceFeatures features{};
+    vkGetPhysicalDeviceFeatures(physical, &features);
+    sampler.anisotropyEnable = features.samplerAnisotropy;
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    sampler.maxAnisotropy = std::min(8.f, properties.limits.maxSamplerAnisotropy);
     check(vkCreateSampler(device, &sampler, nullptr, &modelSampler), "Create model sampler");
     std::array<VkDescriptorSetLayoutBinding, 13> bindings{};
     for (uint32_t i = 0; i < 13; ++i)

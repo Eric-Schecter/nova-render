@@ -149,11 +149,19 @@ float2 environmentBRDF(float roughness, float nv)
     float  a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
     return float2(-1.04, 1.04) * a004 + r.zw;
 }
+float3 encodeDisplayRGB(float3 c)
+{
+    c = max(c, 0);
+    return float3(
+      c.x <= .0031308 ? 12.92 * c.x : 1.055 * pow(c.x, 1 / 2.4) - .055,
+      c.y <= .0031308 ? 12.92 * c.y : 1.055 * pow(c.y, 1 / 2.4) - .055,
+      c.z <= .0031308 ? 12.92 * c.z : 1.055 * pow(c.z, 1 / 2.4) - .055);
+}
 float3 displayRadiance(float3 color)
 {
     color = 1 - exp(-max(color, 0) * eyeExposure.w);
-#ifdef NOVA_WEB_OUTPUT
-    color = pow(color, 1.0 / 2.2);
+#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
+    color = encodeDisplayRGB(color);
 #endif
     return color;
 }
@@ -190,12 +198,12 @@ float4 SkyPSMain(SkyOut input)
 float4 PSMain(VertexOut input)
   : SV_Target
 {
-    float3 base = pow(max(baseTexture.Sample(textureSampler, input.uv).rgb, 0), 2.2) * baseColorFactor.rgb;
+    float3 base = baseTexture.Sample(textureSampler, input.uv).rgb * baseColorFactor.rgb;
     if (emissiveFactor.w < 0.5)
     {
         // Base color only: no lighting, AO, emissive, exposure or tone mapping.
-#ifdef NOVA_WEB_OUTPUT
-        base = pow(max(base, 0), 1.0 / 2.2);
+#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
+        base = encodeDisplayRGB(base);
 #endif
         return float4(base, 1);
     }
@@ -239,6 +247,55 @@ float4 PSMain(VertexOut input)
         color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
         color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
     }
-    color += pow(max(emissiveTexture.Sample(textureSampler, input.uv).rgb, 0), 2.2) * emissiveFactor.rgb;
+    color += emissiveTexture.Sample(textureSampler, input.uv).rgb * emissiveFactor.rgb;
     return float4(displayRadiance(color), 1);
+}
+
+// TAA uses the previous camera and skin palette, not a screen-space history blend.
+[[vk::binding(15, 0)]] cbuffer PreviousScene : register(b15)
+{
+    float4x4 previousViewProjection;
+    float4   previousSceneRest[20];
+}
+[[vk::binding(16, 0)]] StructuredBuffer<JointMatrix> previousJoints : register(t16);
+struct MotionOut
+{
+    float4 position : SV_Position;
+    float4 current : TEXCOORD0;
+    float4 previous : TEXCOORD1;
+};
+MotionOut MotionVSMain(uint id : SV_VertexID)
+{
+    Vertex current = skinVertex(id), old = vertices[id];
+    if (skyParams.w > .5)
+    {
+        SkinInput input    = skinInputs[id];
+        float4    position = 0;
+        [unroll] for (uint j = 0; j < 4; j++)
+        {
+            JointMatrix m      = previousJoints[input.joints[j]];
+            float4x4    matrix = transpose(float4x4(m.c0, m.c1, m.c2, m.c3));
+            position += mul(matrix, input.position) * input.weights[j];
+        }
+        old.position = float4(position.xyz, 1);
+    }
+    MotionOut o;
+    o.current  = mul(viewProjection, current.position);
+    o.previous = mul(previousViewProjection, old.position);
+    o.position = o.current;
+    return o;
+}
+float4 MotionPSMain(MotionOut input)
+  : SV_Target
+{
+    float2 current = input.current.xy / input.current.w * float2(.5, -.5) + .5,
+           old     = input.previous.xy / input.previous.w * float2(.5, -.5) + .5;
+    return float4(old - current, input.current.w / 16, .125);
+}
+float4 SkyMotionPSMain(SkyOut input)
+  : SV_Target
+{
+    float4 previous = mul(previousViewProjection, float4(input.direction, 0));
+    float2 uv       = previous.xy / max(previous.w, .00001) * float2(.5, -.5) + .5;
+    return float4(uv - input.uv, 1, 1);
 }

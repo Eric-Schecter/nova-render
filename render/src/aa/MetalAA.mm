@@ -8,6 +8,7 @@ namespace render::detail
     {
         class MetalAA final : public AADevice
         {
+            AAExternalScene            external;
             id<MTLDevice>              device;
             id<MTLCommandQueue>        queue;
             id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline;
@@ -51,9 +52,10 @@ namespace render::detail
             }
 
           public:
-            explicit MetalAA(const RendererConfig& config)
+            explicit MetalAA(const RendererConfig& config, const AAExternalScene& borrowed)
+              : external(borrowed)
             {
-                device = MTLCreateSystemDefaultDevice();
+                device = external.device ? (__bridge id<MTLDevice>)external.device : MTLCreateSystemDefaultDevice();
                 if (!device)
                     throw std::runtime_error("Metal AA device unavailable");
                 if (![device supportsTextureSampleCount:4])
@@ -104,32 +106,58 @@ namespace render::detail
             }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
-                if (width == w && height == h && super == ss)
-                    return;
                 width  = w;
                 height = h;
                 super  = ss;
+            }
+            void Ensure(const std::vector<AAPass>& passes)
+            {
+                const auto used = AAUsed(passes);
                 for (int i = 0; i < AAResourceCount; i++)
                     if (i != AAArea && i != AASearch)
                     {
-                        const bool     big = i == AAColor || i == AAMotion;
-                        const uint32_t tw  = i == AADummy ? 1 : w * (big && ss ? 2 : 1),
-                                       th  = i == AADummy ? 1 : h * (big && ss ? 2 : 1);
-                        textures[i] =
-                          Texture(tw, th, MTLPixelFormatRGBA16Float, (i == AAMultiColor || i == AAMultiMotion) ? 4 : 1);
+                        if (!used[i])
+                        {
+                            textures[i] = nil;
+                            continue;
+                        }
+                        const auto spec = AAResourceSpec(i, width, height, super, bool(external.draw));
+                        if (!textures[i] || textures[i].width != spec.width || textures[i].height != spec.height)
+                            textures[i] = Texture(spec.width, spec.height, MTLPixelFormatRGBA16Float, spec.samples);
                     }
-                depth         = Texture(w * (ss ? 2 : 1), h * (ss ? 2 : 1), MTLPixelFormatDepth32Float);
-                depthMS       = Texture(w, h, MTLPixelFormatDepth32Float, 4);
-                depthBaseline = Texture(w, h, MTLPixelFormatDepth32Float);
+                bool needed[3]{};
+                for (const auto& p : passes)
+                    if (p.program <= 0)
+                    {
+                        const int k       = (p.target == AABaseline || p.target == AARawBaseline) ? 2
+                                            : p.multisampled                                      ? 1
+                                                                                                  : 0;
+                        needed[k]         = true;
+                        auto&      d      = k == 2 ? depthBaseline : k == 1 ? depthMS : depth;
+                        const auto target = textures[p.target];
+                        if (!d || d.width != target.width || d.height != target.height)
+                            d = Texture(
+                              uint32_t(target.width),
+                              uint32_t(target.height),
+                              MTLPixelFormatDepth32Float,
+                              k == 1 ? 4 : 1);
+                    }
+                if (!needed[0])
+                    depth = nil;
+                if (!needed[1])
+                    depthMS = nil;
+                if (!needed[2])
+                    depthBaseline = nil;
             }
             Image Draw(const std::vector<AAPass>& passes) override
             {
                 @autoreleasepool
                 {
+                    Ensure(passes);
                     auto command = [queue commandBuffer];
                     // Clear history/dummy inputs before sampling, even on the first invalid-history frame.
                     for (int i : {AAHistoryA, AAHistoryB, AAPrevMotion, AADummy})
-                        if (passes.front().uniforms[3][0] < .5f || i == AADummy)
+                        if (textures[i] && (passes.front().uniforms[3][0] < .5f || i == AADummy))
                         {
                             auto d                            = [MTLRenderPassDescriptor renderPassDescriptor];
                             d.colorAttachments[0].texture     = textures[i];
@@ -141,14 +169,21 @@ namespace render::detail
                     for (const auto& p : passes)
                     {
                         auto       d     = [MTLRenderPassDescriptor renderPassDescriptor];
-                        const bool scene = p.program == 0, baseline = p.target == AABaseline;
-                        for (int a = 0; a < (scene ? 2 : 1); a++)
+                        const bool scene = p.program <= 0, nativeScene = p.program < 0,
+                                   baseline   = p.target == AABaseline || p.target == AARawBaseline;
+                        const int attachments = p.program == 0 ? 2 : 1;
+                        for (int a = 0; a < attachments; a++)
                         {
                             auto      c      = d.colorAttachments[a];
                             const int target = p.target + (a ? 1 : 0);
-                            c.texture        = textures[p.multisampled ? AAMultiColor + a : target];
-                            c.loadAction     = MTLLoadActionClear;
-                            c.clearColor  = a ? MTLClearColorMake(0, 0, 1, 1) : MTLClearColorMake(.012, .02, .035, .1);
+                            c.texture =
+                              textures[p.multisampled ? (nativeScene ? AARawMultiColor : AAMultiColor) + a : target];
+                            c.loadAction = MTLLoadActionClear;
+                            c.clearColor =
+                              (a || p.program == -2 || p.program == -3)
+                                ? MTLClearColorMake(0, 0, 1, 1)
+                                : MTLClearColorMake(
+                                    p.uniforms[7][0], p.uniforms[7][1], p.uniforms[7][2], p.uniforms[7][3]);
                             c.storeAction = p.multisampled ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
                             if (p.multisampled)
                                 c.resolveTexture = textures[target];
@@ -160,7 +195,24 @@ namespace render::detail
                             d.depthAttachment.clearDepth  = 1;
                             d.depthAttachment.storeAction = MTLStoreActionDontCare;
                         }
-                        auto e = [command renderCommandEncoderWithDescriptor:d];
+                        auto       e  = [command renderCommandEncoderWithDescriptor:d];
+                        const auto rt = textures[p.target];
+                        if (nativeScene)
+                        {
+                            [e setViewport:MTLViewport{
+                                             1 + p.uniforms[1][0],
+                                             1 + p.uniforms[1][1],
+                                             double(rt.width - 2),
+                                             double(rt.height - 2),
+                                             0,
+                                             1}];
+                            [e setCullMode:MTLCullModeNone];
+                            [e setDepthStencilState:depthState];
+                            if (p.program != -3)
+                                external.draw(p, (__bridge void*)e, nullptr);
+                            [e endEncoding];
+                            continue;
+                        }
                         [e setRenderPipelineState:p.multisampled ? sceneMS : pipelines[p.program]];
                         const auto target = textures[p.target];
                         [e setViewport:MTLViewport{0, 0, double(target.width), double(target.height), 0, 1}];
@@ -198,8 +250,8 @@ namespace render::detail
             }
         };
     } // namespace
-    std::unique_ptr<AADevice> CreateMetalAA(const RendererConfig& c)
+    std::unique_ptr<AADevice> CreateMetalAA(const RendererConfig& c, const AAExternalScene& external)
     {
-        return std::make_unique<MetalAA>(c);
+        return std::make_unique<MetalAA>(c, external);
     }
 } // namespace render::detail

@@ -1,7 +1,9 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <render/AntiAliasingView.hpp>
 namespace render::detail
 {
@@ -24,9 +26,14 @@ namespace render::detail
         AAMultiColor,
         AAMultiMotion,
         AADummy,
+        AARawColor,
+        AARawMotion,
+        AARawMultiColor,
+        AARawMultiMotion,
+        AARawBaseline,
         AAResourceCount
     };
-    using AAUniforms = std::array<std::array<float, 4>, 5>;
+    using AAUniforms = std::array<std::array<float, 4>, 8>;
     struct AAPass
     {
         int                program = 0, target = 0;
@@ -34,6 +41,52 @@ namespace render::detail
         AAUniforms         uniforms{};
         bool               multisampled = false;
     };
+
+    struct AAExternalScene
+    {
+        void*                                            instance    = nullptr;
+        void*                                            physical    = nullptr;
+        void*                                            device      = nullptr;
+        uint32_t                                         queueFamily = 0;
+        std::function<void(const AAPass&, void*, void*)> draw;
+    };
+    struct AASpec
+    {
+        uint32_t width, height, samples;
+    };
+    inline AASpec AAResourceSpec(int id, uint32_t w, uint32_t h, bool ss, bool external)
+    {
+        if (id == AADummy)
+            return {1, 1, 1};
+        bool big = external ? (id == AARawColor || id == AARawMotion || id == AARawMultiColor || id == AARawMultiMotion)
+                            : (id == AAColor || id == AAMotion);
+        uint32_t pad = id >= AARawColor ? 2 : 0;
+        return {
+          w * (ss && big ? 2 : 1) + pad,
+          h * (ss && big ? 2 : 1) + pad,
+          (id == AAMultiColor || id == AAMultiMotion || id == AARawMultiColor || id == AARawMultiMotion) ? 4u : 1u};
+    }
+    inline std::array<bool, AAResourceCount> AAUsed(const std::vector<AAPass>& passes)
+    {
+        std::array<bool, AAResourceCount> used{};
+        used[AADummy] = true;
+        for (const auto& p : passes)
+        {
+            used[p.target] = true;
+            for (int source : p.sources)
+                used[source] = true;
+            if (p.program == 0)
+                used[p.target + 1] = true;
+            if (p.multisampled)
+            {
+                if (p.program < 0)
+                    used[AARawMultiColor] = true;
+                else
+                    used[AAMultiColor] = used[AAMultiMotion] = true;
+            }
+        }
+        return used;
+    }
     struct AATextureData
     {
         uint32_t                   width, height;
@@ -49,7 +102,7 @@ namespace render::detail
         virtual void  Resize(uint32_t width, uint32_t height, bool supersampled) = 0;
         virtual Image Draw(const std::vector<AAPass>& passes)                    = 0;
     };
-    std::unique_ptr<AADevice> CreateMetalAA(const RendererConfig&);
-    std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig&);
-    std::unique_ptr<AADevice> CreateD3D12AA(const RendererConfig&);
+    std::unique_ptr<AADevice> CreateMetalAA(const RendererConfig&, const AAExternalScene& = {});
+    std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig&, const AAExternalScene& = {});
+    std::unique_ptr<AADevice> CreateD3D12AA(const RendererConfig&, const AAExternalScene& = {});
 } // namespace render::detail

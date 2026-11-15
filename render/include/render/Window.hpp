@@ -22,12 +22,16 @@ namespace render
       public:
         explicit Window(const WindowConfig& config = {});
         ~Window();
-        Window(const Window&)                               = delete;
-        Window&                    operator=(const Window&) = delete;
-        bool                       PollEvents(); // false after closing the window or pressing Escape.
-        std::array<uint32_t, 2>    GetFramebufferSize() const;
-        FrameResult                DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
-        void                       WaitIdle();
+        Window(const Window&)                            = delete;
+        Window&                 operator=(const Window&) = delete;
+        bool                    PollEvents(); // false after closing the window or pressing Escape.
+        std::array<uint32_t, 2> GetFramebufferSize() const;
+        FrameResult             DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
+        void                    WaitIdle();
+        void                    SetAntiAliasing(const AntiAliasingSettings& settings);
+        AntiAliasingSettings    GetAntiAliasing() const;
+        uint32_t                GetAntiAliasingHistoryFrames() const;
+
         std::vector<AnimationClip> GetAnimations() const;
         AnimationState             GetAnimationState() const;
         void                       SetAnimationState(const AnimationState& state);

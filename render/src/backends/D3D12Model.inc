@@ -130,14 +130,15 @@ void UploadModel()
     const auto stride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     for (size_t i = 0; i < 5; ++i)
     {
-        const auto&         image = model->images[i];
+        const auto          levels = MaterialMipmaps(model->images[i], i);
+        const auto&         image  = levels[0];
         D3D12_RESOURCE_DESC desc{};
         desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         desc.Width            = image.width;
         desc.Height           = image.height;
         desc.DepthOrArraySize = 1;
-        desc.MipLevels        = 1;
-        desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.MipLevels        = UINT16(levels.size());
+        desc.Format           = (i == 0 || i == 4) ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.SampleDesc.Count = 1;
         D3D12_HEAP_PROPERTIES properties{};
         properties.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -150,28 +151,35 @@ void UploadModel()
             nullptr,
             IID_PPV_ARGS(&modelTextures[i])),
           "Create model texture");
-        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
-        UINT                               rows    = 0;
-        UINT64                             rowSize = 0, total = 0;
-        device->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, &rows, &rowSize, &total);
+        std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(levels.size());
+        UINT64                                          total = 0;
+        device->GetCopyableFootprints(&desc, 0, UINT(levels.size()), 0, footprints.data(), nullptr, nullptr, &total);
         modelUploads[i]    = uploadBuffer(total);
         void*       mapped = nullptr;
         D3D12_RANGE read{0, 0};
-        checkHR(modelUploads[i]->Map(0, &read, &mapped), "Map model texture");
-        for (UINT row = 0; row < rows; ++row)
-            std::memcpy(
-              static_cast<unsigned char*>(mapped) + footprint.Offset + row * footprint.Footprint.RowPitch,
-              image.pixels.data() + row * image.width * 4,
-              image.width * 4);
+        checkHR(modelUploads[i]->Map(0, &read, &mapped), "Map material mips");
+        for (size_t level = 0; level < levels.size(); level++)
+        {
+            const auto& mip = levels[level];
+            const auto& fp  = footprints[level];
+            for (UINT y = 0; y < mip.height; y++)
+                std::memcpy(
+                  static_cast<unsigned char*>(mapped) + fp.Offset + y * fp.Footprint.RowPitch,
+                  mip.pixels.data() + size_t(y) * mip.width * 4,
+                  mip.width * 4);
+        }
         modelUploads[i]->Unmap(0, nullptr);
-        D3D12_TEXTURE_COPY_LOCATION source{};
-        source.pResource       = modelUploads[i].Get();
-        source.Type            = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        source.PlacedFootprint = footprint;
-        D3D12_TEXTURE_COPY_LOCATION target{};
-        target.pResource = modelTextures[i].Get();
-        target.Type      = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        commands->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
+        for (UINT level = 0; level < levels.size(); level++)
+        {
+            D3D12_TEXTURE_COPY_LOCATION source{}, target{};
+            source.pResource        = modelUploads[i].Get();
+            source.Type             = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            source.PlacedFootprint  = footprints[level];
+            target.pResource        = modelTextures[i].Get();
+            target.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            target.SubresourceIndex = level;
+            commands->CopyTextureRegion(&target, 0, 0, 0, &source, nullptr);
+        }
         D3D12_RESOURCE_BARRIER barrier{};
         barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier.Transition.pResource   = modelTextures[i].Get();
@@ -183,7 +191,7 @@ void UploadModel()
         view.Format                  = desc.Format;
         view.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
         view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        view.Texture2D.MipLevels     = 1;
+        view.Texture2D.MipLevels     = UINT(levels.size());
         device->CreateShaderResourceView(modelTextures[i].Get(), &view, handle);
         handle.ptr += stride;
     }
@@ -228,9 +236,9 @@ void UploadModel()
         params[3 + i].ShaderVisibility          = D3D12_SHADER_VISIBILITY_VERTEX;
     }
     D3D12_STATIC_SAMPLER_DESC sampler{};
-    sampler.Filter   = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler.Filter   = D3D12_FILTER_ANISOTROPIC;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.MaxAnisotropy                                  = 1;
+    sampler.MaxAnisotropy                                  = 8;
     sampler.ComparisonFunc                                 = D3D12_COMPARISON_FUNC_ALWAYS;
     sampler.MaxLOD                                         = D3D12_FLOAT32_MAX;
     sampler.ShaderVisibility                               = D3D12_SHADER_VISIBILITY_PIXEL;

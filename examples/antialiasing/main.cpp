@@ -43,6 +43,7 @@ int main(int argc, char** argv)
                 settings.method = render::AAMethod(method);
                 changed         = true;
             }
+            changed |= ImGui::Checkbox("Texture filtering", &settings.textureFiltering);
             changed |= ImGui::Checkbox("Animate", &playing);
             ImGui::SameLine();
             changed |= ImGui::Checkbox("Split: Off | selected AA", &settings.split);

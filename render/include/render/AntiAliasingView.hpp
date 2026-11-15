@@ -1,23 +1,8 @@
 #pragma once
+#include "AntiAliasing.hpp"
 #include "Renderer.hpp"
 namespace render
 {
-    enum class AAMethod
-    {
-        Off,
-        FXAA,
-        SMAA,
-        MSAA,
-        SSAA,
-        TAA
-    };
-    struct AntiAliasingSettings
-    {
-        AAMethod method        = AAMethod::TAA;
-        float    historyWeight = .9f;
-        float    zoom          = 1;
-        bool     split         = true;
-    };
     // Independent raster laboratory: procedural rails, fine checkerboard and moving spokes.
     // Uses genuine 4x render-target MSAA; no ray-tracing requirement or external scene asset.
     class AntiAliasingView

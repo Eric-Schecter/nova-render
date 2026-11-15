@@ -1,3 +1,4 @@
+import { materialMipmaps } from './TextureFiltering.js'
 import { createAnimationPlayer } from './AnimationData.js'
 import { createPathView } from './PathView.js'
 import { loadGLB, sceneUniforms } from './ModelData.js'
@@ -64,10 +65,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         'Nova joint palette',
       ),
       textures = []
-    for (const image of data.images) {
+    for (const [slot, image] of data.images.entries()) {
+      const levels = materialMipmaps(image, slot)
       const texture = device.createTexture({
         size: [image.width, image.height],
-        format: 'rgba8unorm',
+        mipLevelCount: levels.length,
+        format: slot===0||slot===4?'rgba8unorm-srgb':'rgba8unorm',
         usage:
           GPUTextureUsage.TEXTURE_BINDING |
           GPUTextureUsage.COPY_DST |
@@ -75,17 +78,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       })
       resources.push(texture)
       textures.push(texture)
-      if (image.bitmap)
-        device.queue.copyExternalImageToTexture(
-          { source: image.bitmap, flipY: false },
-          { texture },
-          [image.width, image.height],
+      for (const [mipLevel, mip] of levels.entries())
+        device.queue.writeTexture(
+          { texture, mipLevel },
+          mip.pixels,
+          { bytesPerRow: mip.width * 4 },
+          [mip.width, mip.height],
         )
-      else
-        device.queue.writeTexture({ texture }, image.pixels, { bytesPerRow: image.width * 4 }, [
-          image.width,
-          image.height,
-        ])
     }
     cube = cubeTexture(device, fallbackEnvironment)
     backgroundCube = cubeTexture(device, fallbackEnvironment)
@@ -122,6 +121,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       minFilter: 'linear',
       magFilter: 'linear',
       mipmapFilter: 'linear',
+      maxAnisotropy: 8,
       addressModeU: 'repeat',
       addressModeV: 'repeat',
     })

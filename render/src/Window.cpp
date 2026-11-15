@@ -247,6 +247,18 @@ namespace render
     {
         impl_->renderer->SetCamera(camera);
     }
+    void Window::SetAntiAliasing(const AntiAliasingSettings& settings)
+    {
+        impl_->renderer->SetAntiAliasing(settings);
+    }
+    AntiAliasingSettings Window::GetAntiAliasing() const
+    {
+        return impl_->renderer->GetAntiAliasing();
+    }
+    uint32_t Window::GetAntiAliasingHistoryFrames() const
+    {
+        return impl_->renderer->GetAntiAliasingHistoryFrames();
+    }
     void Window::WaitIdle()
     {
         impl_->renderer->WaitIdle();

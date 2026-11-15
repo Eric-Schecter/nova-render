@@ -43,7 +43,7 @@ try {
       }
       const error = (a, b) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length
       for (let i = 0; i < methods.length; i++) {
-        v.setAntiAliasing({ method: methods[i], split: false })
+        v.setAntiAliasing({ method: methods[i], split: false, textureFiltering: false })
         if (v.getHistoryFrames() !== 0) throw Error('History mode reset failed')
         for (let f = 0; f < (i === 5 ? 8 : 1); f++) await v.drawFrame(128, 96)
         const values = await pixels(),

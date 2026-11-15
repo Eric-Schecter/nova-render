@@ -78,6 +78,8 @@ namespace render
     AntiAliasingView::AntiAliasingView(const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
     {
+        impl_->settings.method = AAMethod::TAA;
+        impl_->settings.split  = true;
         impl_->camera.yaw      = 20;
         impl_->camera.pitch    = 15;
         impl_->camera.distance = 6.2f;
@@ -102,7 +104,9 @@ namespace render
           static_cast<unsigned>(s.method) > 5 || !std::isfinite(s.historyWeight) || s.historyWeight < 0
           || s.historyWeight > .98f || !std::isfinite(s.zoom) || s.zoom < 1 || s.zoom > 8)
             throw std::invalid_argument("Invalid AA settings");
-        if (impl_->settings.method != s.method || impl_->settings.historyWeight != s.historyWeight)
+        if (
+          impl_->settings.method != s.method || impl_->settings.historyWeight != s.historyWeight
+          || impl_->settings.textureFiltering != s.textureFiltering)
             ResetHistory();
         impl_->settings = s;
     }
@@ -166,8 +170,10 @@ namespace render
         const auto  prev = s.frames ? s.previous : s.camera;
         const float rad  = .01745329252f;
         u[2]             = {s.camera.yaw * rad, prev.yaw * rad, s.camera.exposure, s.frames ? s.previousTime : s.time};
-        u[3] = {s.frames ? 1.f : 0.f, s.settings.historyWeight, s.settings.zoom, s.settings.split ? 1.f : 0.f};
-        u[4] = {s.camera.distance, prev.distance, s.camera.pitch * rad, prev.pitch * rad};
+        u[3]    = {s.frames ? 1.f : 0.f, s.settings.historyWeight, s.settings.zoom, s.settings.split ? 1.f : 0.f};
+        u[4]    = {s.camera.distance, prev.distance, s.camera.pitch * rad, prev.pitch * rad};
+        u[5]    = {1, 1, 0, 0};
+        u[6][1] = s.settings.textureFiltering ? 1.f : 0.f;
         std::vector<detail::AAPass> passes;
         auto                        pass = [&](int program, int target) {
             detail::AAPass p;

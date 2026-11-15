@@ -6,7 +6,14 @@ import { promisify } from 'node:util'
 const exec = promisify(execFile)
 export async function compile(
   source,
-  { model = false, sky = false, compute = false, computeEntry = 'CSMain' } = {},
+  {
+    model = false,
+    sky = false,
+    compute = false,
+    computeEntry = 'CSMain',
+    vertexEntry,
+    fragmentEntry,
+  } = {},
 ) {
   if (typeof source !== 'string' || Buffer.byteLength(source) > 65536)
     throw Error('HLSL 限制为 64 KiB')
@@ -28,8 +35,8 @@ export async function compile(
     for (const [stage, entry, profile] of compute
       ? [['compute', computeEntry, 'cs_6_0']]
       : [
-          ['vert', sky ? 'SkyVSMain' : 'VSMain', 'vs_6_0'],
-          ['frag', sky ? 'SkyPSMain' : 'PSMain', 'ps_6_0'],
+          ['vert', vertexEntry || (sky ? 'SkyVSMain' : 'VSMain'), 'vs_6_0'],
+          ['frag', fragmentEntry || (sky ? 'SkyPSMain' : 'PSMain'), 'ps_6_0'],
         ]) {
       const spv = join(dir, stage + '.spv'),
         wgsl = join(dir, stage + '.wgsl')
