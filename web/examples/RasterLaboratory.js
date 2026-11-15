@@ -9,6 +9,8 @@ export async function showRasterLaboratory(
     onError,
     createView = Nova.createAntiAliasingView,
     initialPlaying = true,
+    initialScale = 0.5,
+    showSplit = true,
     showChecker = true,
     extraControls,
     panelLabel = '抗锯齿参数',
@@ -25,7 +27,7 @@ export async function showRasterLaboratory(
   style.textContent = `.aa-laboratory{width:100%;min-width:0}.aa-laboratory canvas{display:block;width:100%;aspect-ratio:1.65;height:auto;image-rendering:auto}.aa-parameters{margin-top:12px;padding:12px;background:#181e29;border:1px solid #3c4659;border-radius:7px;color:#e1e6f0;font:12px/1.4 system-ui;color-scheme:dark;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px}.aa-parameters label{display:flex;flex-direction:column;gap:5px;min-width:0}.aa-parameters select,.aa-parameters input,.aa-parameters button{font:inherit;box-sizing:border-box;width:100%;background:#25324b;color:inherit;border:1px solid #465776;border-radius:4px;padding:5px}.aa-parameters input[type=checkbox]{width:auto;align-self:flex-start}.aa-parameters input[type=range]{accent-color:#819eff}.aa-note{grid-column:1/-1;color:#b9ccff}`
   host.append(style)
   let playing = initialPlaying,
-    scale = 0.5,
+    scale = initialScale,
     speed = 0.35,
     time = 0,
     frame = 0,
@@ -34,6 +36,7 @@ export async function showRasterLaboratory(
     disposed = false,
     lastTime,
     settle = 32,
+    settleUntil = 0,
     failure = false
   let oldWidth = 0,
     oldHeight = 0
@@ -62,6 +65,11 @@ export async function showRasterLaboratory(
       r.top < innerHeight
     )
   }
+  const needsSettling = () =>
+    (view.getAntiAliasing().method === 'taa' && settle > 0) ||
+    (view.getPostProcessing?.().enabled &&
+      view.getPostProcessing().autoExposure &&
+      performance.now() < settleUntil)
   const stats = () => ({
     ...meter.snapshot(
       !visible()
@@ -70,7 +78,7 @@ export async function showRasterLaboratory(
           ? 'rendering'
           : playing
             ? 'rendering'
-            : view.getAntiAliasing().method === 'taa' && settle > 0
+            : needsSettling()
               ? 'accumulating'
               : 'idle',
     ),
@@ -84,7 +92,7 @@ export async function showRasterLaboratory(
   }
   function schedule() {
     if (frame || disposed || failure) return
-    if (dirty || playing || (view.getAntiAliasing().method === 'taa' && settle > 0))
+    if (dirty || playing || needsSettling())
       frame = requestAnimationFrame(() => {
         frame = 0
         controller.drawFrame().catch(report)
@@ -93,6 +101,8 @@ export async function showRasterLaboratory(
   function changed() {
     dirty = true
     settle = 32
+    if (view.getPostProcessing?.().enabled && view.getPostProcessing().autoExposure)
+      settleUntil = performance.now() + 8000 / view.getPostProcessing().adaptationRate
     fields.forEach((f) => f())
     schedule()
   }
@@ -194,8 +204,7 @@ export async function showRasterLaboratory(
         dirty = true
         settle = 32
       }
-      if (!dirty && !playing && !(view.getAntiAliasing().method === 'taa' && settle > 0))
-        return 'cached'
+      if (!dirty && !playing && !needsSettling()) return 'cached'
       busy = true
       dirty = false
       const start = performance.now()
@@ -272,26 +281,28 @@ export async function showRasterLaboratory(
     },
     [0.05, 1, 0.05],
   )
-  control(
-    'Split: Off | selected AA',
-    '分割对比',
-    'checkbox',
-    () => view.getAntiAliasing().split,
-    (v) => controller.setAntiAliasing({ split: v }),
-  )
-  control(
-    'Zoom',
-    '局部放大',
-    'select',
-    () => view.getAntiAliasing().zoom,
-    (v) => controller.setAntiAliasing({ zoom: Number(v) }),
-    [
-      ['1', '1×'],
-      ['2', '2×'],
-      ['4', '4×'],
-      ['8', '8×'],
-    ],
-  )
+  if (showSplit)
+    control(
+      'Split: Off | selected AA',
+      '分割对比',
+      'checkbox',
+      () => view.getAntiAliasing().split,
+      (v) => controller.setAntiAliasing({ split: v }),
+    )
+  if (showSplit)
+    control(
+      'Zoom',
+      '局部放大',
+      'select',
+      () => view.getAntiAliasing().zoom,
+      (v) => controller.setAntiAliasing({ zoom: Number(v) }),
+      [
+        ['1', '1×'],
+        ['2', '2×'],
+        ['4', '4×'],
+        ['8', '8×'],
+      ],
+    )
   control(
     'Render scale',
     '渲染比例',
@@ -318,7 +329,9 @@ export async function showRasterLaboratory(
   panel.append(reset)
   const note = document.createElement('div')
   note.className = 'aa-note'
-  note.textContent = 'Split：左侧 Off，右侧所选 AA。拖动旋转，滚轮缩放。'
+  note.textContent = showSplit
+    ? 'Split：左侧 Off，右侧所选 AA。拖动旋转，滚轮缩放。'
+    : '拖动旋转，滚轮缩放。'
   panel.append(note)
   const orbit = Nova.attachOrbitControls(canvas, {
     getCamera: () => controller.getCamera(),

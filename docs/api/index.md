@@ -21,3 +21,5 @@
 - [抗锯齿](./antialiasing)：Off、FXAA、SMAA 1x、MSAA 4x、SSAA 2×2 与 TAA 的独立光栅测试台。
 
 - [阴影](./shadows)：Hard Shadow、PCF、PCSS 的独立程序化场景，支持六档 AA。
+
+- [后处理](./postprocessing)：HDR、手动／自动曝光、Bloom 与颜色调整。

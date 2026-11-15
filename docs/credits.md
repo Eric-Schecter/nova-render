@@ -51,3 +51,5 @@ GPU 蒙皮回归测试用的小机器人、关节、权重、两个动画片段�
 ## 抗锯齿参考代码
 
 SMAA 1x 与查找表来自 [SMAA 作者仓库](https://github.com/iryoku/smaa)，保留原始许可；整合只替换 sampler 绑定及文本编码。FXAA 3.11 复用原 Nova 内的 NVIDIA / Timothy Lottes 参考实现，保留版权与免责声明。副本与集成说明位于 `render/shaders/third_party` 和 `assets/AntiAliasing/README.md`。测试台几何由 Nova 生成，无第三方模型资源。
+
+第十一例的 ACES 拟合曲线参考 Krzysztof Narkowicz 的 [ACES Filmic Tone Mapping Curve](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/)。该拟合曲线上游允许 CC0 或 MIT，此处按 CC0 使用。暗室、灯带、材质物体与后处理管线为项目内程序化实现。

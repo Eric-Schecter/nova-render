@@ -32,6 +32,7 @@ export default defineConfig({
           { text: '08 · 环境遮蔽 AO', link: '/examples/ambient-occlusion' },
           { text: '09 · 抗锯齿', link: '/examples/antialiasing' },
           { text: '10 · 阴影', link: '/examples/shadows' },
+          { text: '11 · HDR 与后处理', link: '/examples/postprocessing' },
         ],
       },
       {
@@ -47,6 +48,7 @@ export default defineConfig({
           { text: '环境遮蔽 AO', link: '/api/ambient-occlusion' },
           { text: '抗锯齿', link: '/api/antialiasing' },
           { text: '阴影', link: '/api/shadows' },
+          { text: '后处理', link: '/api/postprocessing' },
           { text: '参数面板', link: '/api/ui' },
           { text: '类型与配置', link: '/api/types' },
           { text: '后端查询与选择', link: '/api/selection' },
