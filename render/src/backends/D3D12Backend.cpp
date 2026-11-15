@@ -207,7 +207,9 @@ namespace render::detail
                 std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
                 modelJoints->Unmap(0, nullptr);
             }
-            const auto* path = DrawPathFrame(width, height);
+            const auto  topInset    = SceneTopInset(height);
+            const auto  sceneHeight = height - topInset;
+            const auto* path        = DrawPathFrame(width, sceneHeight);
             if (path)
                 UploadPathImage(*path);
             if (model)
@@ -215,7 +217,7 @@ namespace render::detail
                 auto u = MakeSceneUniforms(
                   *model,
                   camera,
-                  float(width) / height,
+                  float(width) / sceneHeight,
                   lighting,
                   directionalLight,
                   environment.get(),
@@ -260,7 +262,7 @@ namespace render::detail
                 commands->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
                 commands->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
             }
-            D3D12_VIEWPORT viewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};
+            D3D12_VIEWPORT viewport{0, float(topInset), float(width), float(sceneHeight), 0, 1};
             D3D12_RECT     scissor{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
             commands->RSSetViewports(1, &viewport);
             commands->RSSetScissorRects(1, &scissor);

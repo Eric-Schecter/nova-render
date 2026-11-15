@@ -103,6 +103,12 @@ if(NOVA_ENABLE_UI)
 endif()
 add_executable(nova_lighting examples/lighting/main.cpp)
 target_link_libraries(nova_lighting PRIVATE Nova::Render)
+if(NOVA_ENABLE_UI)
+    foreach(example_target nova_triangle nova_helmet nova_lighting nova_environment nova_animation)
+        target_link_libraries(${example_target} PRIVATE imgui::imgui)
+        target_compile_definitions(${example_target} PRIVATE NOVA_EXAMPLE_UI=1)
+    endforeach()
+endif()
 if(APPLE)
     set_target_properties(nova_triangle PROPERTIES MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.nova.triangle"

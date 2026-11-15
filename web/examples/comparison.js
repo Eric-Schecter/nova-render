@@ -1,3 +1,5 @@
+import { createFrameMeter } from './FrameMeter.js'
+import { attachPerformanceBar } from './PerformancePanel.js'
 import * as Nova from '../src/Nova.js'
 import { modelChoices } from './AssetChoices.js'
 import { attachComparisonPanel } from './ComparisonPanel.js'
@@ -11,6 +13,9 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
   const grid = document.createElement('div')
   grid.className = 'comparison-grid'
   host.append(style, grid)
+  const meter = createFrameMeter()
+  let drawing = false,
+    metrics
   let views = [],
     labels = [],
     disposed = false,
@@ -130,6 +135,25 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
     }
   }
   const controller = {
+    getPerformanceStats: () => {
+      const r = grid.getBoundingClientRect()
+      const hidden =
+        document.hidden ||
+        host.closest('[aria-hidden="true"],[inert]') ||
+        !r.width ||
+        r.bottom < 0 ||
+        r.top > innerHeight
+      return {
+        ...meter.snapshot(
+          hidden
+            ? 'paused'
+            : drawing || progress.some((p) => !p.complete)
+              ? 'accumulating'
+              : 'idle',
+        ),
+        accumulatedFrames: progress[0].samples,
+      }
+    },
     getProgress: () => progress.map((p) => ({ ...p })),
     getModel: () => currentModel,
     isLoading: () => loading,
@@ -188,6 +212,9 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
           previousSize = size
           reset()
         }
+        const updating = progress.some((p) => !p.complete),
+          updateStart = performance.now()
+        drawing = updating
         for (let i = 0; i < 4; i++)
           if (!progress[i].complete) {
             const start = performance.now()
@@ -200,6 +227,24 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
                 ? p.milliseconds >= budget.milliseconds
                 : p.samples >= budget.samples
           }
+        if (updating)
+          meter.record(updateStart, {
+            width:
+              Math.max(
+                1,
+                Math.round(grid.querySelector('canvas').width * settings.resolutionScale),
+              ) * 2,
+            height:
+              Math.max(
+                1,
+                Math.round(grid.querySelector('canvas').height * settings.resolutionScale),
+              ) * 2,
+            scale: settings.resolutionScale,
+            samples: 1,
+            method: 'Comparison (4 views)',
+          })
+        drawing = false
+        metrics?.refresh()
         updateLabels()
         panel?.refresh()
         schedule()
@@ -210,6 +255,7 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
       disposed = true
       if (frame) cancelAnimationFrame(frame)
       orbit?.dispose()
+      metrics?.dispose()
       panel?.dispose()
       views.forEach((v) => v.dispose())
       grid.remove()
@@ -217,6 +263,7 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
     },
   }
   try {
+    metrics = attachPerformanceBar(host, () => controller.getPerformanceStats())
     await load(modelURL)
     orbit = Nova.attachOrbitControls(grid, {
       getCamera: () => controller.getCamera(),

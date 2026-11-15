@@ -121,8 +121,10 @@ namespace render::detail
         }
         const auto  display = ImGui::GetIO().DisplaySize;
         const float width   = std::min(250.0f, std::max(80.0f, display.x - 24));
-        ImGui::SetNextWindowPos({std::max(0.0f, display.x - width - 12), 12}, ImGuiCond_Always);
-        ImGui::SetNextWindowSizeConstraints({width, 0}, {width, std::max(40.0f, display.y - 24)});
+        ImGui::SetNextWindowPos(
+          {std::max(0.0f, display.x - width - 12), 12 + assets.config.sceneTopInset}, ImGuiCond_Always);
+        ImGui::SetNextWindowSizeConstraints(
+          {width, 0}, {width, std::max(40.0f, display.y - 24 - assets.config.sceneTopInset)});
         ImGui::SetNextWindowCollapsed(display.x < 520, ImGuiCond_Once);
         const bool open = ImGui::Begin(
           "Parameters",

@@ -1,5 +1,6 @@
 #include "../common/AssetChoices.hpp"
 #include "../common/ModelOptions.hpp"
+#include "../common/PerformancePanel.hpp"
 #include <iostream>
 
 int main(int argc, char** argv)
@@ -20,9 +21,11 @@ int main(int argc, char** argv)
         window.SetRayTracing(options.path);
         window.SetRenderMode(options.mode);
         window.EnableOrbitControls();
+        example::PerformancePanel    performance;
         render::ParameterPanelConfig panel;
         panel.models       = example::ModelChoices(options.modelPath);
         panel.environments = example::EnvironmentChoices(options.environmentPath);
+        performance.Attach(panel);
         window.EnableParameterPanel(panel);
         int frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
@@ -32,7 +35,7 @@ int main(int argc, char** argv)
                 camera.yaw = 20.0f + frames * 0.25f;
                 window.SetCamera(camera);
             }
-            if (window.DrawFrame() == render::FrameResult::Rendered)
+            if (performance.DrawFrame(window, window.GetFramebufferSize()) == render::FrameResult::Rendered)
                 ++frames;
         }
         window.WaitIdle();

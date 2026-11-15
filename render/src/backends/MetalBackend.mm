@@ -169,21 +169,23 @@ namespace render::detail
                       model->jointMatrices.size() * sizeof(JointMatrix));
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
-                const auto* path                    = DrawPathFrame(width, height);
+                const auto  topInset                = SceneTopInset(height);
+                const auto  sceneHeight             = height - topInset;
+                const auto* path                    = DrawPathFrame(width, sceneHeight);
                 if (path)
                     UploadPathImage(*path);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
                 [encoder setRenderPipelineState:model ? modelPipeline : pipeline];
-                [encoder setViewport:MTLViewport{0, 0, double(width), double(height), 0, 1}];
+                [encoder setViewport:MTLViewport{0, double(topInset), double(width), double(sceneHeight), 0, 1}];
                 [encoder setCullMode:MTLCullModeNone];
                 if (model)
                 {
                     auto uniforms = MakeSceneUniforms(
                       *model,
                       camera,
-                      float(width) / height,
+                      float(width) / sceneHeight,
                       lighting,
                       directionalLight,
                       environment.get(),

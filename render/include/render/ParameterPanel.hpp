@@ -18,5 +18,7 @@ namespace render
         // Submit UI only; defer renderer mutations until after DrawFrame().
         std::function<void()> drawUI;
         bool                  showBuiltinPanel = true;
+        // Logical pixels reserved above the scene for application UI (requires UI build).
+        float sceneTopInset = 0;
     };
 } // namespace render

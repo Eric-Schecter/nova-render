@@ -420,3 +420,5 @@ node scripts/webgpu/check-ao.mjs
 ```
 
 模型来源与完整许可见 `assets/SponzaWhite/`，接口见 `docs/api/ambient-occlusion.md`，页面为 `/examples/ambient-occlusion`。
+
+所有八个例子均提供独立性能条（FPS、Draw、P95、内部尺寸与采样），C++ 与网页口径一致，详见 [编写示例](docs/guide/integration.md#例子性能指标)。C++ 示例计时等待 GPU 完成，库的默认绘制流程不增加同步。

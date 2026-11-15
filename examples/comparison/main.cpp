@@ -1,5 +1,6 @@
 #include "../common/AssetChoices.hpp"
 #include "../common/ModelOptions.hpp"
+#include "../common/PerformancePanel.hpp"
 #include "ComparisonScene.hpp"
 #include <iostream>
 #ifdef NOVA_EXAMPLE_UI
@@ -28,9 +29,11 @@ int main(int argc, char** argv)
         window.SetCamera(camera);
         scene.SetCamera(camera);
         window.EnableOrbitControls();
-        const auto            choices   = example::ModelChoices(options.modelPath);
-        std::filesystem::path modelPath = options.modelPath, requested;
-        bool                  reset = false, settingsChanged = false, budgetChanged = false, cameraChanged = false;
+        const auto                choices   = example::ModelChoices(options.modelPath);
+        std::filesystem::path     modelPath = options.modelPath, requested;
+        bool                      reset = false, settingsChanged = false, budgetChanged = false, cameraChanged = false;
+        example::PerformancePanel performance;
+        performance.method = "Comparison (4 views)";
 #ifdef NOVA_EXAMPLE_UI
         render::ParameterPanelConfig panel;
         panel.showBuiltinPanel = false;
@@ -53,8 +56,10 @@ int main(int argc, char** argv)
                 ImGui::GetBackgroundDrawList()->AddText(
                   {(display.x - std::min(display.x, display.y * .8f)) / 2
                      + float(i % 2) * std::min(display.x, display.y * .8f) / 2 + 5,
-                   (display.y * .8f - std::min(display.x, display.y * .8f)) / 2
-                     + float(i / 2) * std::min(display.x, display.y * .8f) / 2 + 5},
+                   40
+                     + ((display.y * .8f - std::min(display.x, display.y * .8f)) / 2
+                        + float(i / 2) * std::min(display.x, display.y * .8f) / 2 + 5)
+                         * (display.y - 40) / display.y},
                   IM_COL32_WHITE,
                   label);
             }
@@ -121,6 +126,7 @@ int main(int argc, char** argv)
             ImGui::TextUnformatted("Emitter-only | no denoising | drag scene to orbit");
             ImGui::End();
         };
+        performance.Attach(panel);
         window.EnableParameterPanel(panel);
 #endif
         int frames = 0;
@@ -157,12 +163,21 @@ int main(int argc, char** argv)
             scene.SetCamera(camera);
             const auto framebuffer = window.GetFramebufferSize();
             if (!framebuffer[0] || !framebuffer[1])
+            {
+                performance.active = false;
+                performance.meter.FPS(false);
                 continue;
-            const float   outputScale = std::min(1.f, 1024.f / float(std::max(framebuffer[0], framebuffer[1])));
-            const auto    width       = std::max(2u, uint32_t(float(framebuffer[0]) * outputScale));
-            const auto    height      = std::max(2u, uint32_t(float(framebuffer[1]) * outputScale));
-            const auto    tile        = std::max(1u, std::min(width / 2, uint32_t(float(height) * .4f)));
-            const auto&   grid        = scene.DrawFrame(tile);
+            }
+            const float outputScale = std::min(1.f, 1024.f / float(std::max(framebuffer[0], framebuffer[1])));
+            const auto  width       = std::max(2u, uint32_t(float(framebuffer[0]) * outputScale));
+            const auto  height      = std::max(2u, uint32_t(float(framebuffer[1]) * outputScale));
+            const auto  tile        = std::max(1u, std::min(width / 2, uint32_t(float(height) * .4f)));
+            const bool  updating    = performance.width != std::max(1u, uint32_t(tile * settings.resolutionScale)) * 2
+                                  || std::any_of(scene.Progress().begin(), scene.Progress().end(), [](const auto& p) {
+                                         return !p.complete;
+                                     });
+            const auto    start = example::FrameMeter::Clock::now();
+            const auto&   grid  = scene.DrawFrame(tile);
             render::Image image;
             image.width  = std::max(grid.width, uint32_t(float(width) * settings.resolutionScale));
             image.height = std::max(grid.height, uint32_t(float(height) * settings.resolutionScale));
@@ -176,7 +191,19 @@ int main(int argc, char** argv)
                   size_t(grid.width) * 4);
             window.PresentImage(image);
             if (window.DrawFrame() == render::FrameResult::Rendered)
+            {
+                window.WaitIdle();
+                if (updating)
+                    performance.meter.Record(start);
+                performance.active = std::any_of(
+                  scene.Progress().begin(), scene.Progress().end(), [](const auto& p) { return !p.complete; });
+                performance.width       = grid.width;
+                performance.height      = grid.height;
+                performance.scale       = settings.resolutionScale;
+                performance.samples     = 1;
+                performance.accumulated = scene.Progress()[0].samples;
                 ++frames;
+            }
         }
         window.WaitIdle();
         for (const auto& p : scene.Progress())

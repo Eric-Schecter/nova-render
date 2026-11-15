@@ -1,3 +1,4 @@
+#include "../common/PerformancePanel.hpp"
 #include "render/Renderer.hpp"
 #include <GLFW/glfw3.h>
 #include <cstdlib>
@@ -99,7 +100,10 @@ int main(int argc, char** argv)
         glfwSetFramebufferSizeCallback(window.get(), [](GLFWwindow* w, int width, int height) {
             static_cast<render::Renderer*>(glfwGetWindowUserPointer(w))->Resize(width, height);
         });
-        renderer.EnableParameterPanel();
+        example::PerformancePanel    performance;
+        render::ParameterPanelConfig panel;
+        performance.Attach(panel);
+        renderer.EnableParameterPanel(panel);
         int  frames      = 0;
         bool firstResize = false, secondResize = false, suspendTest = false;
         while (!glfwWindowShouldClose(window.get()))
@@ -135,7 +139,7 @@ int main(int argc, char** argv)
             if (glfwGetWindowAttrib(window.get(), GLFW_ICONIFIED))
                 width = height = 0;
             renderer.Resize(width, height);
-            if (renderer.DrawFrame() == render::FrameResult::Rendered)
+            if (performance.DrawFrame(renderer, {uint32_t(width), uint32_t(height)}) == render::FrameResult::Rendered)
                 ++frames;
             else
                 glfwWaitEventsTimeout(0.05);

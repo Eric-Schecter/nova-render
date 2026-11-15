@@ -1,3 +1,4 @@
+import { instrumentRenderer } from './PerformancePanel.js'
 import * as Nova from '../src/Nova.js'
 import { modelChoices } from './AssetChoices.js'
 
@@ -8,7 +9,10 @@ export async function showHelmet(
   camera,
   { onChange, onError } = {},
 ) {
-  const renderer = await Nova.createRenderer({ canvas, shaderDirectory })
+  const renderer = instrumentRenderer(
+    await Nova.createRenderer({ canvas, shaderDirectory }),
+    canvas,
+  )
   try {
     await renderer.loadModel(modelURL)
     renderer.setCamera(camera)

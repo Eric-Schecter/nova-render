@@ -555,7 +555,9 @@ namespace render::detail
                 std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
                 vkUnmapMemory(device, modelJoints.memory);
             }
-            const auto* path = DrawPathFrame(extent.width, extent.height);
+            const auto  topInset    = SceneTopInset(extent.height);
+            const auto  sceneHeight = extent.height - topInset;
+            const auto* path        = DrawPathFrame(extent.width, sceneHeight);
             if (path)
                 UploadPathImage(*path);
             if (model)
@@ -563,7 +565,7 @@ namespace render::detail
                 auto uniform = MakeSceneUniforms(
                   *model,
                   camera,
-                  float(extent.width) / extent.height,
+                  float(extent.width) / sceneHeight,
                   lighting,
                   directionalLight,
                   environment.get(),
@@ -601,7 +603,7 @@ namespace render::detail
             pass.pClearValues      = clearValues;
             vkCmdBeginRenderPass(cmd, &pass, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            VkViewport viewport{0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height), 0, 1};
+            VkViewport viewport{0, float(topInset), float(extent.width), float(sceneHeight), 0, 1};
             VkRect2D   scissor{{0, 0}, extent};
             vkCmdSetViewport(cmd, 0, 1, &viewport);
             vkCmdSetScissor(cmd, 0, 1, &scissor);

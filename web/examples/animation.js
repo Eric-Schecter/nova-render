@@ -1,3 +1,4 @@
+import { instrumentRenderer } from './PerformancePanel.js'
 import * as Nova from '../src/Nova.js'
 import { environmentChoices } from './AssetChoices.js'
 export async function showAnimation(
@@ -11,7 +12,10 @@ export async function showAnimation(
     environmentURL = modelURL.slice(0, modelURL.lastIndexOf('/') + 1) + 'venice_sunset.bin',
   } = {},
 ) {
-  const renderer = await Nova.createRenderer({ canvas, shaderDirectory })
+  const renderer = instrumentRenderer(
+    await Nova.createRenderer({ canvas, shaderDirectory }),
+    canvas,
+  )
   try {
     await renderer.loadModel(modelURL)
     renderer.setLighting('pbr')

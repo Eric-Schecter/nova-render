@@ -1,5 +1,6 @@
 #include "../common/AssetChoices.hpp"
 #include "../common/ModelOptions.hpp"
+#include "../common/PerformancePanel.hpp"
 #include <chrono>
 #include <iostream>
 int main(int argc, char** argv)
@@ -20,8 +21,10 @@ int main(int argc, char** argv)
         camera.distance = 3;
         window.SetCamera(camera);
         window.EnableOrbitControls();
+        example::PerformancePanel    performance;
         render::ParameterPanelConfig panel;
         panel.environments = example::EnvironmentChoices(options.environmentPath);
+        performance.Attach(panel);
         window.EnableParameterPanel(panel);
         if (window.GetAnimations().empty())
             throw std::runtime_error("Load a GLB with skeletal animation clips");
@@ -32,7 +35,7 @@ int main(int argc, char** argv)
             const auto now = std::chrono::steady_clock::now();
             window.UpdateAnimation(std::chrono::duration<float>(now - previous).count());
             previous = now;
-            if (window.DrawFrame() == render::FrameResult::Rendered)
+            if (performance.DrawFrame(window, window.GetFramebufferSize()) == render::FrameResult::Rendered)
                 ++frames;
         }
         window.WaitIdle();

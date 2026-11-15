@@ -148,6 +148,20 @@ namespace render::detail
         void                 SetCamera(const OrbitCamera& value) { camera = value; }
 
       protected:
+        uint32_t SceneTopInset(uint32_t height) const
+        {
+#ifdef NOVA_HAS_UI
+            if (panelEnabled && parameterPanel)
+            {
+                const auto& io = ImGui::GetIO();
+                const float inset =
+                  std::isfinite(assets.config.sceneTopInset) ? std::clamp(assets.config.sceneTopInset, 0.f, 256.f) : 0;
+                const float pixels = inset * io.DisplayFramebufferScale.y;
+                return std::min(height > 0 ? height - 1 : 0, uint32_t(pixels));
+            }
+#endif
+            return 0;
+        }
         std::optional<Image> presentedImage;
         RenderMode           mode = RenderMode::Raster;
         PathTracingSettings  pathSettings;
