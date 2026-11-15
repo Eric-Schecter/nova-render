@@ -23,3 +23,5 @@
 - [阴影](./shadows)：Hard Shadow、PCF、PCSS 的独立程序化场景，支持六档 AA。
 
 - [后处理](./postprocessing)：HDR、手动／自动曝光、Bloom 与颜色调整。
+
+- [屏幕空间反射 SSR](./ssr)：深度金字塔、法线／粗糙度与环境反射回退。

@@ -142,14 +142,15 @@ export async function showRasterLaboratory(
       kind === 'range' ? 'input' : 'change',
       () => {
         try {
-          set(
+          const result = set(
             kind === 'checkbox'
               ? input.checked
               : kind === 'select'
                 ? input.value
                 : Number(input.value),
           )
-          changed()
+          if (result?.then) result.then(changed).catch(report)
+          else changed()
         } catch (e) {
           report(e)
         }
