@@ -354,7 +354,8 @@ namespace render::detail
         if (environment)
             for (int k = 0; k < 9; ++k)
                 std::copy(environment->irradiance[k].begin(), environment->irradiance[k].end(), result.irradiance[k]);
-        result.emissive[3] = lighting == LightingMode::PBR ? 1.0f : 0.0f;
+        result.irradiance[0][3] = 0; // Reserved raw-HDR flag; environment padding must not enable it.
+        result.emissive[3]      = lighting == LightingMode::PBR ? 1.0f : 0.0f;
         return result;
     }
 } // namespace render::detail

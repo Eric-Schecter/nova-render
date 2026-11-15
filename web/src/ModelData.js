@@ -399,7 +399,7 @@ export function sceneUniforms(
     settings.showBackground ? 1 : 0,
     0,
     data.animation ? 1 : 0,
-    ...(environment?.irradiance || new Float32Array(36)),
+    ...(environment?.irradiance || new Float32Array(36)).map((v, i) => (i === 3 ? 0 : v)),
   ])
 }
 
