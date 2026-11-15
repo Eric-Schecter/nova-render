@@ -286,7 +286,7 @@ void uploadModel()
     vkGetPhysicalDeviceProperties(physical, &properties);
     sampler.maxAnisotropy = std::min(8.f, properties.limits.maxSamplerAnisotropy);
     check(vkCreateSampler(device, &sampler, nullptr, &modelSampler), "Create model sampler");
-    std::array<VkDescriptorSetLayoutBinding, 13> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 15> bindings{};
     for (uint32_t i = 0; i < 13; ++i)
     {
         bindings[i].binding         = i;
@@ -299,13 +299,16 @@ void uploadModel()
                                       : (i == 1 || i >= 11) ? VK_SHADER_STAGE_VERTEX_BIT
                                                             : VK_SHADER_STAGE_FRAGMENT_BIT;
     }
+    bindings[13] = {
+      15, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    bindings[14] = {16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
     VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 13;
+    layoutInfo.bindingCount = 15;
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
     VkDescriptorPoolSize sizes[] = {
-      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
       {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};

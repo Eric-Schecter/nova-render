@@ -334,6 +334,117 @@ namespace render::detail
         ComPtr<ID3D12PipelineState>       pipeline;
 
 #include "D3D12Model.inc"
+        ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion;
+        ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
+        size_t                      aaPreviousPaletteBytes = 0;
+        ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
+        {
+            auto vert = LoadShader(settings.shaderDirectory, (std::string(file) + ".vert.dxil").c_str()),
+                 frag = LoadShader(settings.shaderDirectory, (std::string(file) + ".frag.dxil").c_str());
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC info{};
+            info.pRootSignature                    = triangle ? root.Get() : modelRoot.Get();
+            info.VS                                = {vert.data(), vert.size()};
+            info.PS                                = {frag.data(), frag.size()};
+            info.RasterizerState.FillMode          = D3D12_FILL_MODE_SOLID;
+            info.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;
+            info.RasterizerState.DepthClipEnable   = TRUE;
+            info.RasterizerState.MultisampleEnable = samples > 1;
+            auto& blend                            = info.BlendState.RenderTarget[0];
+            blend.SrcBlend = blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+            blend.DestBlend = blend.DestBlendAlpha = D3D12_BLEND_ZERO;
+            blend.BlendOp = blend.BlendOpAlpha     = D3D12_BLEND_OP_ADD;
+            blend.LogicOp                          = D3D12_LOGIC_OP_NOOP;
+            blend.RenderTargetWriteMask            = D3D12_COLOR_WRITE_ENABLE_ALL;
+            info.DepthStencilState.DepthEnable     = TRUE;
+            info.DepthStencilState.DepthWriteMask  = sky ? D3D12_DEPTH_WRITE_MASK_ZERO : D3D12_DEPTH_WRITE_MASK_ALL;
+            info.DepthStencilState.DepthFunc       = sky ? D3D12_COMPARISON_FUNC_ALWAYS : D3D12_COMPARISON_FUNC_LESS;
+            info.DepthStencilState.StencilReadMask = info.DepthStencilState.StencilWriteMask = 255;
+            auto& face         = info.DepthStencilState.FrontFace;
+            face.StencilFailOp = face.StencilDepthFailOp = face.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+            face.StencilFunc                                                  = D3D12_COMPARISON_FUNC_ALWAYS;
+            info.DepthStencilState.BackFace                                   = face;
+            info.SampleMask                                                   = UINT_MAX;
+            info.PrimitiveTopologyType                                        = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+            info.NumRenderTargets                                             = 1;
+            info.RTVFormats[0]                                                = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            info.DSVFormat                                                    = DXGI_FORMAT_D32_FLOAT;
+            info.SampleDesc.Count                                             = samples;
+            ComPtr<ID3D12PipelineState> result;
+            checkHR(device->CreateGraphicsPipelineState(&info, IID_PPV_ARGS(&result)), "Create raster AA pipeline");
+            return result;
+        }
+        void CreateRasterAADevice() override
+        {
+            AAExternalScene external;
+            external.device = device.Get();
+            external.draw   = [this](const AAPass& pass, void* command, void*) {
+                auto* cmd    = static_cast<ID3D12GraphicsCommandList*>(command);
+                int   sample = pass.multisampled ? 1 : 0;
+                if (aaTriangle)
+                {
+                    if (!aaTrianglePipeline[sample])
+                        aaTrianglePipeline[sample] = AAPipeline("triangle", false, sample ? 4 : 1, true);
+                    cmd->SetGraphicsRootSignature(root.Get());
+                    cmd->SetPipelineState(aaTrianglePipeline[sample].Get());
+                    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    cmd->DrawInstanced(3, 1, 0, 0);
+                    return;
+                }
+                const auto& current  = rasterAA.current;
+                const auto& previous = rasterAA.frames ? rasterAA.previous : current;
+                const auto& palette  = rasterAA.frames ? rasterAA.previousJoints : model->jointMatrices;
+                if (!aaPreviousUniform)
+                    aaPreviousUniform = uploadBuffer(512);
+                size_t bytes = std::max(size_t(64), palette.size() * sizeof(JointMatrix));
+                if (bytes > aaPreviousPaletteBytes)
+                {
+                    aaPreviousPalette      = uploadBuffer(bytes);
+                    aaPreviousPaletteBytes = bytes;
+                }
+                auto write = [&](ID3D12Resource* buffer, const void* data, size_t size) {
+                    if (!size)
+                        return;
+                    void*       mapped;
+                    D3D12_RANGE range{0, 0};
+                    checkHR(buffer->Map(0, &range, &mapped), "Map raster AA input");
+                    std::memcpy(mapped, data, size);
+                    buffer->Unmap(0, nullptr);
+                };
+                write(modelUniform.Get(), &current, sizeof(current));
+                write(aaPreviousUniform.Get(), &previous, sizeof(previous));
+                write(aaPreviousPalette.Get(), palette.data(), palette.size() * sizeof(JointMatrix));
+                ID3D12DescriptorHeap* heaps[] = {modelHeap.Get()};
+                cmd->SetDescriptorHeaps(1, heaps);
+                cmd->SetGraphicsRootSignature(modelRoot.Get());
+                cmd->SetGraphicsRootConstantBufferView(0, modelUniform->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootShaderResourceView(1, modelVertices->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
+                cmd->SetGraphicsRootShaderResourceView(3, modelSkin->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootConstantBufferView(5, aaPreviousUniform->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootShaderResourceView(6, aaPreviousPalette->GetGPUVirtualAddress());
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                bool motion = pass.program == -2;
+                if (environment && environmentSettings.showBackground)
+                {
+                    auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
+                    if (!pipeline)
+                        pipeline = AAPipeline(motion ? "sky-motion" : "skybox", true, sample ? 4 : 1);
+                    cmd->SetPipelineState(pipeline.Get());
+                    cmd->DrawInstanced(3, 1, 0, 0);
+                }
+                if (!model->vertices.empty())
+                {
+                    auto& pipeline = motion ? aaMotion : aaModel[sample];
+                    if (!pipeline)
+                        pipeline = AAPipeline(motion ? "model-motion" : "model", false, sample ? 4 : 1);
+                    cmd->SetPipelineState(pipeline.Get());
+                    cmd->DrawInstanced(UINT(model->vertices.size()), 1, 0, 0);
+                }
+            };
+            rasterAA.device = CreateD3D12AA(settings, external);
+        }
+
 
         void CollectMessages()
         {

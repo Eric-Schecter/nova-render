@@ -18,6 +18,9 @@ int main(int argc, char** argv)
         std::filesystem::create_directories(directory);
         render::AntiAliasingView     view(config);
         render::AntiAliasingSettings settings;
+        if (!settings.textureFiltering)
+            throw std::runtime_error("Filtering must default on");
+        settings.textureFiltering          = false;
         settings.split                     = false;
         const char*                names[] = {"off", "fxaa", "smaa", "msaa", "ssaa", "taa"};
         std::vector<unsigned char> off;

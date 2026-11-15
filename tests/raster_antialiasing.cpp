@@ -46,7 +46,22 @@ int main(int argc, char** argv)
             if (backend->ValidationErrorCount())
                 throw std::runtime_error("GPU validation errors");
         };
+        if (argc < 3)
+            throw std::runtime_error("Expected API and assets directory");
         const std::filesystem::path assets = argv[2];
+        for (unsigned method = 1; method < 6; method++)
+        {
+            render::AntiAliasingSettings aa;
+            aa.method = render::AAMethod(method);
+            backend->SetAntiAliasing(aa);
+            draw();
+        }
+        {
+            render::AntiAliasingSettings aa;
+            backend->SetAntiAliasing(aa);
+            draw();
+        }
+
         backend->LoadModel(render::detail::LoadGLB(assets / "DamagedHelmet/DamagedHelmet.glb"));
         for (unsigned method = 0; method < 6; method++)
         {
@@ -85,6 +100,15 @@ int main(int argc, char** argv)
                     throw std::runtime_error("Camera cut retained history");
             }
             std::cout << "AA method " << method << " passed\n";
+        }
+        backend->LoadEnvironment(render::detail::LoadEnvironmentFile(assets / "Environment/venice_sunset.nenv"));
+        backend->SetLighting(render::LightingMode::PBR);
+        for (unsigned method = 1; method < 6; method++)
+        {
+            render::AntiAliasingSettings aa;
+            aa.method = render::AAMethod(method);
+            backend->SetAntiAliasing(aa);
+            draw();
         }
         backend->LoadModel(render::detail::LoadGLB(assets / "Fox/Fox.glb"));
         render::AntiAliasingSettings settings;

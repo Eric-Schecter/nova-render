@@ -201,7 +201,7 @@ namespace render::detail
         {
             if (
               std::abs(value.yaw - camera.yaw) > 20 || std::abs(value.pitch - camera.pitch) > 20
-              || std::abs(value.distance - camera.distance) > 2 || value.exposure != camera.exposure)
+              || std::abs(value.distance - camera.distance) > 2 || value.exposure != camera.exposure || value.target != camera.target)
                 rasterAA.Reset();
             camera = value;
         }
@@ -280,7 +280,12 @@ namespace render::detail
         bool                            panelEnabled = false;
         void                            DrawParameterPanel()
         {
-            const auto previous = animation.state;
+            const auto previous       = animation.state;
+            const auto previousAA     = rasterSettings;
+            const auto oldClear       = clearColor;
+            const auto oldCamera      = camera;
+            const auto oldLight       = directionalLight;
+            const auto oldEnvironment = environmentSettings;
             parameterPanel->Draw(
               bool(model) && !aaTriangle,
               lighting,
@@ -295,7 +300,24 @@ namespace render::detail
               pathSettings,
               pathSession.Samples(),
               animation.Clips(),
-              animation.state);
+              animation.state,
+              rasterSettings);
+            const auto nextAA = rasterSettings;
+            rasterSettings    = previousAA;
+            if (nextAA.method != previousAA.method)
+                SetAntiAliasing(nextAA);
+            if (
+              oldClear != clearColor || oldCamera.exposure != camera.exposure
+              || std::abs(oldCamera.yaw - camera.yaw) > 20 || std::abs(oldCamera.pitch - camera.pitch) > 20
+              || std::abs(oldCamera.distance - camera.distance) > 2 || oldLight.direction != directionalLight.direction
+              || oldLight.color != directionalLight.color || oldLight.intensity != directionalLight.intensity
+              || oldEnvironment.rotation != environmentSettings.rotation
+              || oldEnvironment.intensity != environmentSettings.intensity
+              || oldEnvironment.backgroundIntensity != environmentSettings.backgroundIntensity
+              || oldEnvironment.showBackground != environmentSettings.showBackground)
+                rasterAA.Reset();
+            if (previous.clip != animation.state.clip || std::abs(previous.time - animation.state.time) > .25f)
+                rasterAA.Reset();
             if (previous.clip != animation.state.clip || previous.time != animation.state.time)
                 animation.Apply();
         }

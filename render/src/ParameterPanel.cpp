@@ -105,7 +105,8 @@ namespace render::detail
       PathTracingSettings&              path,
       uint32_t                          samples,
       const std::vector<AnimationClip>& clips,
-      AnimationState&                   animation)
+      AnimationState&                   animation,
+      AntiAliasingSettings&             aa)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -135,6 +136,11 @@ namespace render::detail
         size     = ImGui::GetWindowSize();
         if (open)
         {
+            ImGui::BeginDisabled(mode != RenderMode::Raster);
+            int method = int(aa.method);
+            if (ImGui::Combo("Anti-aliasing", &method, "Off\0FXAA\0SMAA 1x\0MSAA 4x\0SSAA 2x2\0TAA\0"))
+                aa.method = AAMethod(method);
+            ImGui::EndDisabled();
             auto chooseAsset = [](
                                  const char*                           label,
                                  const std::vector<AssetChoice>&       choices,

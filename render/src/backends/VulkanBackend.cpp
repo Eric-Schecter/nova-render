@@ -97,6 +97,170 @@ namespace render::detail
         VkFence                    fence       = VK_NULL_HANDLE;
 
 #include "VulkanModel.inc"
+        ModelBuffer aaPreviousUniform, aaPreviousPalette;
+        size_t      aaPreviousPaletteBytes = 0;
+        VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{};
+        VkPipeline  AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
+        {
+            const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
+                       fragment = shader((std::string(name) + ".frag.spv").c_str());
+            VkPipelineShaderStageCreateInfo stages[2]{};
+            for (int i = 0; i < 2; i++)
+            {
+                stages[i]        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+                stages[i].stage  = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
+                stages[i].module = i ? fragment : vertex;
+                stages[i].pName  = i ? (std::string(name) == "model-motion" ? "MotionPSMain"
+                                        : std::string(name) == "sky-motion" ? "SkyMotionPSMain"
+                                        : sky                               ? "SkyPSMain"
+                                                                            : "PSMain")
+                                     : (std::string(name) == "model-motion" ? "MotionVSMain"
+                                        : sky                               ? "SkyVSMain"
+                                                                            : "VSMain");
+            }
+            VkPipelineVertexInputStateCreateInfo   input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+            VkPipelineInputAssemblyStateCreateInfo assembly{
+              VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+            assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+            viewport.viewportCount = viewport.scissorCount = 1;
+            VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+            raster.polygonMode = VK_POLYGON_MODE_FILL;
+            raster.lineWidth   = 1;
+            raster.cullMode    = VK_CULL_MODE_NONE;
+            VkPipelineMultisampleStateCreateInfo sampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+            sampling.rasterizationSamples = samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
+            VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+            depth.depthTestEnable  = VK_TRUE;
+            depth.depthWriteEnable = !sky;
+            depth.depthCompareOp   = sky ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS;
+            VkPipelineColorBlendAttachmentState color{};
+            color.colorWriteMask = 15;
+            VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+            blend.attachmentCount                     = 1;
+            blend.pAttachments                        = &color;
+            VkDynamicState                   states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+            VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+            dynamic.dynamicStateCount = 2;
+            dynamic.pDynamicStates    = states;
+            VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+            info.stageCount          = 2;
+            info.pStages             = stages;
+            info.pVertexInputState   = &input;
+            info.pInputAssemblyState = &assembly;
+            info.pViewportState      = &viewport;
+            info.pRasterizationState = &raster;
+            info.pMultisampleState   = &sampling;
+            info.pDepthStencilState  = &depth;
+            info.pColorBlendState    = &blend;
+            info.pDynamicState       = &dynamic;
+            info.layout              = layout;
+            info.renderPass          = targetPass;
+            VkPipeline result;
+            const auto status = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &result);
+            vkDestroyShaderModule(device, vertex, nullptr);
+            vkDestroyShaderModule(device, fragment, nullptr);
+            check(status, "Create raster AA pipeline");
+            return result;
+        }
+        void CreateRasterAADevice() override
+        {
+            AAExternalScene external;
+            external.instance    = reinterpret_cast<void*>(instance);
+            external.physical    = reinterpret_cast<void*>(physical);
+            external.device      = reinterpret_cast<void*>(device);
+            external.queueFamily = queueFamily;
+            external.draw        = [this](const AAPass& pass, void* command, void* targetPass) {
+                auto      cmd        = reinterpret_cast<VkCommandBuffer>(command);
+                auto      renderPass = reinterpret_cast<VkRenderPass>(targetPass);
+                const int sample     = pass.multisampled ? 1 : 0;
+                if (aaTriangle)
+                {
+                    if (!aaTrianglePipeline[sample])
+                        aaTrianglePipeline[sample] = AAPipeline("triangle", false, sample ? 4 : 1, renderPass);
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, aaTrianglePipeline[sample]);
+                    vkCmdDraw(cmd, 3, 1, 0, 0);
+                    return;
+                }
+                const auto& current  = rasterAA.current;
+                const auto& previous = rasterAA.frames ? rasterAA.previous : current;
+                const auto& palette  = rasterAA.frames ? rasterAA.previousJoints : model->jointMatrices;
+                if (!aaPreviousUniform.buffer)
+                    modelBuffer(aaPreviousUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+                size_t bytes = std::max(size_t(64), palette.size() * sizeof(JointMatrix));
+                if (bytes > aaPreviousPaletteBytes)
+                {
+                    destroyModelBuffer(aaPreviousPalette);
+                    modelBuffer(aaPreviousPalette, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                    aaPreviousPaletteBytes = bytes;
+                }
+                auto write = [&](ModelBuffer& buffer, const void* data, size_t size) {
+                    if (!size)
+                        return;
+                    void* mapped;
+                    check(vkMapMemory(device, buffer.memory, 0, size, 0, &mapped), "Map raster AA input");
+                    std::memcpy(mapped, data, size);
+                    vkUnmapMemory(device, buffer.memory);
+                };
+                write(modelUniform, &current, sizeof(current));
+                write(aaPreviousUniform, &previous, sizeof(previous));
+                write(aaPreviousPalette, palette.data(), palette.size() * sizeof(JointMatrix));
+                VkDescriptorBufferInfo buffers[] = {
+                  {aaPreviousUniform.buffer, 0, sizeof(SceneUniforms)}, {aaPreviousPalette.buffer, 0, VK_WHOLE_SIZE}};
+                VkWriteDescriptorSet writes[2]{};
+                for (int i = 0; i < 2; i++)
+                {
+                    auto& w           = writes[i];
+                    w                 = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    w.dstSet          = modelSet;
+                    w.dstBinding      = i ? 16 : 15;
+                    w.descriptorCount = 1;
+                    w.descriptorType  = i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                    w.pBufferInfo     = &buffers[i];
+                }
+                if (pass.target == AARawBaseline || (pass.target == AARawColor && !rasterSettings.split))
+                    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
+                const bool motion = pass.program == -2;
+                if (environment && environmentSettings.showBackground)
+                {
+                    auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
+                    if (!pipeline)
+                        pipeline = AAPipeline(motion ? "sky-motion" : "skybox", true, sample ? 4 : 1, renderPass);
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                    vkCmdDraw(cmd, 3, 1, 0, 0);
+                }
+                if (!model->vertices.empty())
+                {
+                    auto& pipeline = motion ? aaMotion : aaModel[sample];
+                    if (!pipeline)
+                        pipeline = AAPipeline(motion ? "model-motion" : "model", false, sample ? 4 : 1, renderPass);
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                    vkCmdDraw(cmd, uint32_t(model->vertices.size()), 1, 0, 0);
+                }
+            };
+            rasterAA.device = CreateVulkanAA(config, external);
+        }
+        void DestroyRasterAA()
+        {
+            rasterAA.Clear();
+            for (auto pipeline : aaModel)
+                if (pipeline)
+                    vkDestroyPipeline(device, pipeline, nullptr);
+            for (auto pipeline : aaSky)
+                if (pipeline)
+                    vkDestroyPipeline(device, pipeline, nullptr);
+            for (auto pipeline : aaTrianglePipeline)
+                if (pipeline)
+                    vkDestroyPipeline(device, pipeline, nullptr);
+            if (aaMotion)
+                vkDestroyPipeline(device, aaMotion, nullptr);
+            if (aaSkyMotion)
+                vkDestroyPipeline(device, aaSkyMotion, nullptr);
+            destroyModelBuffer(aaPreviousUniform);
+            destroyModelBuffer(aaPreviousPalette);
+        }
+
 
         void initInstance()
         {
@@ -694,6 +858,7 @@ namespace render::detail
             if (device)
             {
                 vkDeviceWaitIdle(device);
+                DestroyRasterAA();
                 destroySwapchain();
                 destroyModel();
                 if (fence)

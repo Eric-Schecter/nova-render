@@ -29,6 +29,7 @@ namespace render::detail
         };
         class VulkanAA final : public AADevice
         {
+            AAExternalScene                       external;
             uint32_t                              validationErrors = 0;
             VkDebugUtilsMessengerEXT              messenger{};
             static VKAPI_ATTR VkBool32 VKAPI_CALL Debug(
@@ -87,7 +88,7 @@ namespace render::detail
             VkDescriptorSetLayout            setLayout{};
             VkPipelineLayout                 layout{};
             VkPipeline                       pipelines[9]{}, sceneMS{};
-            VkRenderPass                     scenePass{}, msPass{}, postPass{};
+            VkRenderPass                     scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{};
             VkSampler                        linear{}, point{};
             Texture                          textures[AAResourceCount], depth, depthMS, depthBaseline;
             Buffer                           uniforms, readback;
@@ -215,9 +216,9 @@ namespace render::detail
                 api.vkCmdClearColorImage(command, t.image, t.layout, &c, 1, &range);
                 Transition(t, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             }
-            VkRenderPass MakePass(bool scene, bool ms)
+            VkRenderPass MakePass(bool scene, bool ms, bool borrowedScene = false)
             {
-                const uint32_t                       n = scene ? 2 : 1;
+                const uint32_t                       n = borrowedScene ? 1 : scene ? 2 : 1;
                 std::vector<VkAttachmentDescription> attachments;
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -255,8 +256,8 @@ namespace render::detail
                 VkAttachmentReference colors[2] =
                   {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
                                       resolves[2] =
-                                        {{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                                         {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+                                        {{n, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+                                         {n + 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
                                       depthRef{
                                         uint32_t(attachments.size() - 1),
                                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
@@ -340,7 +341,8 @@ namespace render::detail
             }
 
           public:
-            explicit VulkanAA(const RendererConfig& config)
+            explicit VulkanAA(const RendererConfig& config, const AAExternalScene& borrowed)
+              : external(borrowed)
             {
                 try
                 {
@@ -354,108 +356,124 @@ namespace render::detail
             }
             void Initialize(const RendererConfig& config)
             {
-                Check(volkInitialize());
-                std::vector<const char*> extensions;
-                uint32_t                 count = 0;
-                Check(vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr));
-                std::vector<VkExtensionProperties> ext(count);
-                Check(vkEnumerateInstanceExtensionProperties(nullptr, &count, ext.data()));
-                bool portability = std::any_of(ext.begin(), ext.end(), [](const auto& e) {
-                    return std::strcmp(e.extensionName, "VK_KHR_portability_enumeration") == 0;
-                });
-                if (portability)
-                    extensions.push_back("VK_KHR_portability_enumeration");
-                uint32_t layerCount = 0;
-                Check(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
-                std::vector<VkLayerProperties> layers(layerCount);
-                Check(vkEnumerateInstanceLayerProperties(&layerCount, layers.data()));
-                const bool validation =
-                  config.enableValidation
-                  && std::any_of(
-                    layers.begin(),
-                    layers.end(),
-                    [](const auto& l) { return std::strcmp(l.layerName, "VK_LAYER_KHRONOS_validation") == 0; })
-                  && std::any_of(ext.begin(), ext.end(), [](const auto& e) {
-                         return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
-                     });
-                if (validation)
-                    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-                const char*       layer = "VK_LAYER_KHRONOS_validation";
-                VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-                app.apiVersion       = VK_API_VERSION_1_1;
-                app.pApplicationName = "Nova AA";
-                VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-                info.pApplicationInfo = &app;
-                if (validation)
+                if (!external.device)
                 {
-                    info.enabledLayerCount   = 1;
-                    info.ppEnabledLayerNames = &layer;
-                }
-                info.enabledExtensionCount   = uint32_t(extensions.size());
-                info.ppEnabledExtensionNames = extensions.data();
-                if (portability)
-                    info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-                Check(vkCreateInstance(&info, nullptr, &instance));
-                instanceApi.Load(instance);
-                if (validation)
-                {
-                    VkDebugUtilsMessengerCreateInfoEXT debug{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
-                    debug.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-                    debug.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-                                        | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-                                        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-                    debug.pfnUserCallback = Debug;
-                    debug.pUserData       = this;
-                    auto create           = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-                      vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
-                    Check(create(instance, &debug, nullptr, &messenger));
-                }
-                Check(instanceApi.vkEnumeratePhysicalDevices(instance, &count, nullptr));
-                std::vector<VkPhysicalDevice> devices(count);
-                Check(instanceApi.vkEnumeratePhysicalDevices(instance, &count, devices.data()));
-                for (auto candidate : devices)
-                {
-                    uint32_t n = 0;
-                    instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, nullptr);
-                    std::vector<VkQueueFamilyProperties> q(n);
-                    instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, q.data());
-                    for (uint32_t f = 0; f < n; f++)
-                        if (q[f].queueFlags & VK_QUEUE_GRAPHICS_BIT)
-                        {
-                            physical = candidate;
-                            family   = f;
+                    Check(volkInitialize());
+                    std::vector<const char*> extensions;
+                    uint32_t                 count = 0;
+                    Check(vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr));
+                    std::vector<VkExtensionProperties> ext(count);
+                    Check(vkEnumerateInstanceExtensionProperties(nullptr, &count, ext.data()));
+                    bool portability = std::any_of(ext.begin(), ext.end(), [](const auto& e) {
+                        return std::strcmp(e.extensionName, "VK_KHR_portability_enumeration") == 0;
+                    });
+                    if (portability)
+                        extensions.push_back("VK_KHR_portability_enumeration");
+                    uint32_t layerCount = 0;
+                    Check(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
+                    std::vector<VkLayerProperties> layers(layerCount);
+                    Check(vkEnumerateInstanceLayerProperties(&layerCount, layers.data()));
+                    const bool validation =
+                      config.enableValidation
+                      && std::any_of(
+                        layers.begin(),
+                        layers.end(),
+                        [](const auto& l) { return std::strcmp(l.layerName, "VK_LAYER_KHRONOS_validation") == 0; })
+                      && std::any_of(ext.begin(), ext.end(), [](const auto& e) {
+                             return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+                         });
+                    if (validation)
+                        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+                    const char*       layer = "VK_LAYER_KHRONOS_validation";
+                    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+                    app.apiVersion       = VK_API_VERSION_1_1;
+                    app.pApplicationName = "Nova AA";
+                    VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+                    info.pApplicationInfo = &app;
+                    if (validation)
+                    {
+                        info.enabledLayerCount   = 1;
+                        info.ppEnabledLayerNames = &layer;
+                    }
+                    info.enabledExtensionCount   = uint32_t(extensions.size());
+                    info.ppEnabledExtensionNames = extensions.data();
+                    if (portability)
+                        info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+                    Check(vkCreateInstance(&info, nullptr, &instance));
+                    instanceApi.Load(instance);
+                    if (validation)
+                    {
+                        VkDebugUtilsMessengerCreateInfoEXT debug{
+                          VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+                        debug.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+                        debug.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+                                            | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+                                            | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+                        debug.pfnUserCallback = Debug;
+                        debug.pUserData       = this;
+                        auto create           = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+                          vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
+                        Check(create(instance, &debug, nullptr, &messenger));
+                    }
+                    Check(instanceApi.vkEnumeratePhysicalDevices(instance, &count, nullptr));
+                    std::vector<VkPhysicalDevice> devices(count);
+                    Check(instanceApi.vkEnumeratePhysicalDevices(instance, &count, devices.data()));
+                    for (auto candidate : devices)
+                    {
+                        uint32_t n = 0;
+                        instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, nullptr);
+                        std::vector<VkQueueFamilyProperties> q(n);
+                        instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, q.data());
+                        for (uint32_t f = 0; f < n; f++)
+                            if (q[f].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+                            {
+                                physical = candidate;
+                                family   = f;
+                                break;
+                            }
+                        if (physical)
                             break;
-                        }
-                    if (physical)
-                        break;
+                    }
+                    if (!physical)
+                        throw std::runtime_error("Vulkan AA graphics device unavailable");
+                    VkPhysicalDeviceProperties props;
+                    instanceApi.vkGetPhysicalDeviceProperties(physical, &props);
+                    if (!(props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts
+                          & VK_SAMPLE_COUNT_4_BIT))
+                        throw std::runtime_error("Vulkan AA requires 4x MSAA");
+                    uniformStride = std::max(VkDeviceSize(256), props.limits.minUniformBufferOffsetAlignment);
+                    instanceApi.vkGetPhysicalDeviceMemoryProperties(physical, &memory);
+                    float                   priority = 1;
+                    VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+                    qi.queueFamilyIndex = family;
+                    qi.queueCount       = 1;
+                    qi.pQueuePriorities = &priority;
+                    extensions.clear();
+                    Check(instanceApi.vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, nullptr));
+                    ext.resize(count);
+                    Check(instanceApi.vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, ext.data()));
+                    for (const auto& e : ext)
+                        if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0)
+                            extensions.push_back("VK_KHR_portability_subset");
+                    VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+                    di.queueCreateInfoCount    = 1;
+                    di.pQueueCreateInfos       = &qi;
+                    di.enabledExtensionCount   = uint32_t(extensions.size());
+                    di.ppEnabledExtensionNames = extensions.data();
+                    Check(instanceApi.vkCreateDevice(physical, &di, nullptr, &device));
                 }
-                if (!physical)
-                    throw std::runtime_error("Vulkan AA graphics device unavailable");
-                VkPhysicalDeviceProperties props;
-                instanceApi.vkGetPhysicalDeviceProperties(physical, &props);
-                if (!(props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts
-                      & VK_SAMPLE_COUNT_4_BIT))
-                    throw std::runtime_error("Vulkan AA requires 4x MSAA");
-                uniformStride = std::max(VkDeviceSize(256), props.limits.minUniformBufferOffsetAlignment);
-                instanceApi.vkGetPhysicalDeviceMemoryProperties(physical, &memory);
-                float                   priority = 1;
-                VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-                qi.queueFamilyIndex = family;
-                qi.queueCount       = 1;
-                qi.pQueuePriorities = &priority;
-                extensions.clear();
-                Check(instanceApi.vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, nullptr));
-                ext.resize(count);
-                Check(instanceApi.vkEnumerateDeviceExtensionProperties(physical, nullptr, &count, ext.data()));
-                for (const auto& e : ext)
-                    if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0)
-                        extensions.push_back("VK_KHR_portability_subset");
-                VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-                di.queueCreateInfoCount    = 1;
-                di.pQueueCreateInfos       = &qi;
-                di.enabledExtensionCount   = uint32_t(extensions.size());
-                di.ppEnabledExtensionNames = extensions.data();
-                Check(instanceApi.vkCreateDevice(physical, &di, nullptr, &device));
+                else
+                {
+                    instance = reinterpret_cast<VkInstance>(external.instance);
+                    physical = reinterpret_cast<VkPhysicalDevice>(external.physical);
+                    device   = reinterpret_cast<VkDevice>(external.device);
+                    family   = external.queueFamily;
+                    instanceApi.Load(instance);
+                    VkPhysicalDeviceProperties props{};
+                    instanceApi.vkGetPhysicalDeviceProperties(physical, &props);
+                    uniformStride = std::max(VkDeviceSize(256), props.limits.minUniformBufferOffsetAlignment);
+                    instanceApi.vkGetPhysicalDeviceMemoryProperties(physical, &memory);
+                }
                 // Never overwrite the window backend's global Volk dispatch.
                 const auto getDeviceProc =
                   reinterpret_cast<PFN_vkGetDeviceProcAddr>(vkGetInstanceProcAddr(instance, "vkGetDeviceProcAddr"));
@@ -600,9 +618,11 @@ namespace render::detail
                 Check(api.vkCreateSampler(device, &si, nullptr, &linear));
                 si.magFilter = si.minFilter = VK_FILTER_NEAREST;
                 Check(api.vkCreateSampler(device, &si, nullptr, &point));
-                scenePass = MakePass(true, false);
-                msPass    = MakePass(true, true);
-                postPass  = MakePass(false, false);
+                scenePass      = MakePass(true, false);
+                msPass         = MakePass(true, true);
+                postPass       = MakePass(false, false);
+                externalPass   = MakePass(true, false, true);
+                externalMSPass = MakePass(true, true, true);
                 for (int i = 0; i < 9; i++)
                     pipelines[i] = Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
@@ -640,7 +660,8 @@ namespace render::detail
                         destroy(instance, messenger, nullptr);
                     }
                     if (instance)
-                        instanceApi.vkDestroyInstance(instance, nullptr);
+                        if (!external.device)
+                            instanceApi.vkDestroyInstance(instance, nullptr);
                     return;
                 }
                 api.vkDeviceWaitIdle(device);
@@ -656,7 +677,7 @@ namespace render::detail
                         api.vkDestroyPipeline(device, p, nullptr);
                 if (sceneMS)
                     api.vkDestroyPipeline(device, sceneMS, nullptr);
-                for (auto p : {scenePass, msPass, postPass})
+                for (auto p : {scenePass, msPass, postPass, externalPass, externalMSPass})
                     if (p)
                         api.vkDestroyRenderPass(device, p, nullptr);
                 for (auto s : {linear, point})
@@ -670,44 +691,78 @@ namespace render::detail
                     api.vkDestroyDescriptorSetLayout(device, setLayout, nullptr);
                 if (pool)
                     api.vkDestroyCommandPool(device, pool, nullptr);
-                api.vkDestroyDevice(device, nullptr);
+                if (!external.device)
+                    api.vkDestroyDevice(device, nullptr);
                 if (messenger)
                 {
                     auto destroy = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
                       vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
                     destroy(instance, messenger, nullptr);
                 }
-                instanceApi.vkDestroyInstance(instance, nullptr);
+                if (!external.device)
+                    instanceApi.vkDestroyInstance(instance, nullptr);
             }
             void Resize(uint32_t w, uint32_t h, bool ss) override
             {
-                if (w == width && h == height && ss == supersampled)
-                    return;
+                if (w != width || h != height)
+                {
+                    Destroy(readback);
+                    readback = MakeBuffer(size_t(w) * h * 8, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+                }
                 width        = w;
                 height       = h;
                 supersampled = ss;
+            }
+            void Ensure(const std::vector<AAPass>& passes)
+            {
+                const auto used = AAUsed(passes);
                 for (int i = 0; i < AAResourceCount; i++)
                     if (i != AAArea && i != AASearch)
                     {
-                        Destroy(textures[i]);
-                        bool big    = i == AAColor || i == AAMotion;
-                        textures[i] = MakeTexture(
-                          i == AADummy ? 1 : w * (ss && big ? 2 : 1),
-                          i == AADummy ? 1 : h * (ss && big ? 2 : 1),
-                          VK_FORMAT_R16G16B16A16_SFLOAT,
-                          i == AAMultiColor || i == AAMultiMotion ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
+                        if (!used[i])
+                        {
+                            Destroy(textures[i]);
+                            continue;
+                        }
+                        const auto spec = AAResourceSpec(i, width, height, supersampled, bool(external.draw));
+                        if (textures[i].width != spec.width || textures[i].height != spec.height)
+                        {
+                            Destroy(textures[i]);
+                            textures[i] = MakeTexture(
+                              spec.width,
+                              spec.height,
+                              VK_FORMAT_R16G16B16A16_SFLOAT,
+                              spec.samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
+                        }
                     }
-                Destroy(depth);
-                Destroy(depthMS);
-                Destroy(depthBaseline);
-                depth         = MakeTexture(w * (ss ? 2 : 1), h * (ss ? 2 : 1), VK_FORMAT_D32_SFLOAT);
-                depthMS       = MakeTexture(w, h, VK_FORMAT_D32_SFLOAT, VK_SAMPLE_COUNT_4_BIT);
-                depthBaseline = MakeTexture(w, h, VK_FORMAT_D32_SFLOAT);
-                Destroy(readback);
-                readback = MakeBuffer(size_t(w) * h * 8, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+                bool needed[3]{};
+                for (const auto& p : passes)
+                    if (p.program <= 0)
+                    {
+                        int k     = (p.target == AABaseline || p.target == AARawBaseline) ? 2 : p.multisampled ? 1 : 0;
+                        needed[k] = true;
+                        auto&       d = k == 2 ? depthBaseline : k == 1 ? depthMS : depth;
+                        const auto& t = textures[p.target];
+                        if (d.width != t.width || d.height != t.height)
+                        {
+                            Destroy(d);
+                            d = MakeTexture(
+                              t.width,
+                              t.height,
+                              VK_FORMAT_D32_SFLOAT,
+                              k == 1 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
+                        }
+                    }
+                if (!needed[0])
+                    Destroy(depth);
+                if (!needed[1])
+                    Destroy(depthMS);
+                if (!needed[2])
+                    Destroy(depthBaseline);
             }
             Image Draw(const std::vector<AAPass>& passes) override
             {
+                Ensure(passes);
                 Check(api.vkResetDescriptorPool(device, descriptorPool, 0));
                 void* mapped;
                 Check(api.vkMapMemory(device, uniforms.memory, 0, VK_WHOLE_SIZE, 0, &mapped));
@@ -717,23 +772,26 @@ namespace render::detail
                 api.vkUnmapMemory(device, uniforms.memory);
                 Begin();
                 for (int i : {AAHistoryA, AAHistoryB, AAPrevMotion, AADummy})
-                    if (passes.front().uniforms[3][0] < .5f || i == AADummy)
+                    if (textures[i].image && (passes.front().uniforms[3][0] < .5f || i == AADummy))
                         Clear(textures[i]);
                 std::vector<VkFramebuffer> framebuffers;
                 for (size_t index = 0; index < passes.size(); index++)
                 {
-                    const auto&              p      = passes[index];
-                    bool                     scene  = p.program == 0;
-                    auto&                    target = textures[p.target];
+                    const auto&              p           = passes[index];
+                    bool                     scene       = p.program <= 0;
+                    const bool               nativeScene = p.program < 0;
+                    const int                attachments = p.program == 0 ? 2 : 1;
+                    auto&                    target      = textures[p.target];
                     std::vector<VkImageView> views;
-                    for (int a = 0; a < (scene ? 2 : 1); a++)
+                    for (int a = 0; a < attachments; a++)
                     {
-                        auto& t = textures[p.multisampled ? AAMultiColor + a : p.target + a];
+                        auto& t =
+                          textures[p.multisampled ? (nativeScene ? AARawMultiColor : AAMultiColor) + a : p.target + a];
                         Transition(t, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
                         views.push_back(t.view);
                     }
                     if (p.multisampled)
-                        for (int a = 0; a < 2; a++)
+                        for (int a = 0; a < attachments; a++)
                         {
                             auto& t = textures[p.target + a];
                             Transition(t, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -741,7 +799,9 @@ namespace render::detail
                         }
                     if (scene)
                     {
-                        auto& t = p.target == AABaseline ? depthBaseline : p.multisampled ? depthMS : depth;
+                        auto& t = (p.target == AABaseline || p.target == AARawBaseline) ? depthBaseline
+                                  : p.multisampled                                      ? depthMS
+                                                                                        : depth;
                         Transition(t, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
                         views.push_back(t.view);
                     }
@@ -782,7 +842,9 @@ namespace render::detail
                         }
                     }
                     api.vkUpdateDescriptorSets(device, 11, writes.data(), 0, nullptr);
-                    VkRenderPass            renderPass = scene ? (p.multisampled ? msPass : scenePass) : postPass;
+                    VkRenderPass            renderPass = nativeScene ? (p.multisampled ? externalMSPass : externalPass)
+                                                         : scene     ? (p.multisampled ? msPass : scenePass)
+                                                                     : postPass;
                     VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
                     fb.renderPass      = renderPass;
                     fb.attachmentCount = uint32_t(views.size());
@@ -794,7 +856,9 @@ namespace render::detail
                     Check(api.vkCreateFramebuffer(device, &fb, nullptr, &framebuffer));
                     framebuffers.push_back(framebuffer);
                     VkClearValue clears[5]{};
-                    clears[0].color = {{.012f, .02f, .035f, .1f}};
+                    std::copy(p.uniforms[7].begin(), p.uniforms[7].end(), clears[0].color.float32);
+                    if (p.program == -2 || p.program == -3)
+                        clears[0].color = {{0, 0, 1, 1}};
                     clears[1].color = {{0, 0, 1, 1}};
                     if (scene)
                         clears[views.size() - 1].depthStencil = {1, 0};
@@ -805,6 +869,23 @@ namespace render::detail
                     begin.clearValueCount   = uint32_t(views.size());
                     begin.pClearValues      = clears;
                     api.vkCmdBeginRenderPass(command, &begin, VK_SUBPASS_CONTENTS_INLINE);
+                    if (nativeScene)
+                    {
+                        VkViewport viewport{
+                          1 + p.uniforms[1][0],
+                          1 + p.uniforms[1][1],
+                          float(target.width - 2),
+                          float(target.height - 2),
+                          0,
+                          1};
+                        VkRect2D scissor{{0, 0}, {target.width, target.height}};
+                        api.vkCmdSetViewport(command, 0, 1, &viewport);
+                        api.vkCmdSetScissor(command, 0, 1, &scissor);
+                        if (p.program != -3)
+                            external.draw(p, reinterpret_cast<void*>(command), reinterpret_cast<void*>(renderPass));
+                        api.vkCmdEndRenderPass(command);
+                        continue;
+                    }
                     api.vkCmdBindPipeline(
                       command, VK_PIPELINE_BIND_POINT_GRAPHICS, p.multisampled ? sceneMS : pipelines[p.program]);
                     api.vkCmdBindDescriptorSets(
@@ -834,8 +915,8 @@ namespace render::detail
             }
         };
     } // namespace
-    std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig& c,const AAExternalScene&)
+    std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig& c, const AAExternalScene& borrowed)
     {
-        return std::make_unique<VulkanAA>(c);
+        return std::make_unique<VulkanAA>(c, borrowed);
     }
 } // namespace render::detail

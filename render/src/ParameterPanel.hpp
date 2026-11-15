@@ -1,5 +1,6 @@
 #pragma once
 #include "render/Animation.hpp"
+#include "render/AntiAliasing.hpp"
 #include "render/Model.hpp"
 #include "render/ParameterPanel.hpp"
 #include "render/RenderMode.hpp"
@@ -46,7 +47,8 @@ namespace render::detail
           PathTracingSettings&              path,
           uint32_t                          samples,
           const std::vector<AnimationClip>& clips,
-          AnimationState&                   animation);
+          AnimationState&                   animation,
+          AntiAliasingSettings&             aa);
         bool WantsMouse() const;
         bool WantsKeyboard() const;
 

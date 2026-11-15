@@ -46,7 +46,17 @@ namespace example
                 accumulated                          = ray ? target.GetAccumulatedSamples() : 0;
                 static constexpr const char* names[] = {"PT", "BDPT", "Photon mapping", "MLT"};
                 method                               = ray ? names[static_cast<unsigned>(path.integrator)] : "Raster";
-                float inset                          = 0;
+                if (!ray)
+                {
+                    const auto                   aa        = target.GetAntiAliasing();
+                    static constexpr const char* aaNames[] = {
+                      "Raster", "FXAA", "SMAA 1x", "MSAA 4x", "SSAA 2x2", "TAA"};
+                    method      = aaNames[unsigned(aa.method)];
+                    scale       = aa.method == render::AAMethod::SSAA ? 2 : 1;
+                    samples     = aa.method == render::AAMethod::SSAA || aa.method == render::AAMethod::MSAA ? 4 : 1;
+                    accumulated = target.GetAntiAliasingHistoryFrames();
+                }
+                float inset = 0;
 #ifdef NOVA_EXAMPLE_UI
                 inset = 40 * ImGui::GetIO().DisplayFramebufferScale.y;
 #endif

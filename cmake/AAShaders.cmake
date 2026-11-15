@@ -16,13 +16,13 @@ foreach(pass RANGE 0 8)
         set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/texture-filtering.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
         if(NOVA_ENABLE_VULKAN)
             add_custom_command(OUTPUT "${base}.spv"
-                COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.1 ${invert} -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.spv"
+                COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 ${invert} -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.spv"
                 DEPENDS ${dependencies} VERBATIM)
             list(APPEND SHADER_OUTPUTS "${base}.spv")
         endif()
         if(APPLE)
             add_custom_command(OUTPUT "${base}.air"
-                COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.1 -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.metal.spv"
+                COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.metal.spv"
                 COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${base}.metal.spv" --msl --msl-version 20100 --msl-decoration-binding --output "${base}.metal"
                 COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.1 -c "${base}.metal" -o "${base}.air"
                 DEPENDS ${dependencies} VERBATIM)

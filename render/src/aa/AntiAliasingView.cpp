@@ -174,6 +174,7 @@ namespace render
         u[4]    = {s.camera.distance, prev.distance, s.camera.pitch * rad, prev.pitch * rad};
         u[5]    = {1, 1, 0, 0};
         u[6][1] = s.settings.textureFiltering ? 1.f : 0.f;
+        u[7]    = {.012f, .02f, .035f, .1f};
         std::vector<detail::AAPass> passes;
         auto                        pass = [&](int program, int target) {
             detail::AAPass p;
