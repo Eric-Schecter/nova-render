@@ -1,6 +1,7 @@
 #include "../../../assets/AntiAliasing/AreaTex.h"
 #include "../../../assets/AntiAliasing/SearchTex.h"
 #include "AADevice.hpp"
+#include "PostProcessing.hpp"
 #include "render/ShadowView.hpp"
 #include <algorithm>
 #include <optional>
@@ -77,6 +78,10 @@ namespace render
         uint32_t                          frames = 0, width = 0, height = 0;
         Image                             image;
         std::optional<ShadowSettings>     shadow;
+        PostProcessingSettings            post;
+        detail::PostProcessingState       postState;
+        bool                              hdrScene       = false;
+        float                             sceneIntensity = 1;
     };
     AntiAliasingView::AntiAliasingView(const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
@@ -176,6 +181,36 @@ namespace render
           || old->lightDirection != value.lightDirection)
             ResetHistory();
     }
+    void AntiAliasingView::SetPostProcessing(const PostProcessingSettings& v)
+    {
+        detail::ValidatePostProcessing(v);
+        if (v.enabled != impl_->post.enabled || v.autoExposure != impl_->post.autoExposure)
+            impl_->postState.Reset();
+        impl_->post = v;
+    }
+    PostProcessingSettings AntiAliasingView::GetPostProcessing() const
+    {
+        return impl_->post;
+    }
+    void AntiAliasingView::ConfigureHDRScene()
+    {
+        impl_->hdrScene       = true;
+        impl_->settings.split = false;
+        impl_->camera         = {0, 0, 6.2f, 1};
+        ResetHistory();
+    }
+    void AntiAliasingView::ConfigureSceneIntensity(float v)
+    {
+        if (!std::isfinite(v) || v < .05f || v > 20)
+            throw std::invalid_argument("Invalid scene intensity");
+        if (v != impl_->sceneIntensity)
+            ResetHistory();
+        impl_->sceneIntensity = v;
+    }
+    float AntiAliasingView::GetSceneIntensity() const
+    {
+        return impl_->sceneIntensity;
+    }
     const Image& AntiAliasingView::DrawFrame(uint32_t w, uint32_t h)
     {
         if (!w || !h || w > 2048 || h > 2048)
@@ -212,6 +247,14 @@ namespace render
             u[10]          = {sh.filterRadius, 0, float(6 + 19 * 36 + 3 * 16 * 24 * 6), 0};
             u[7]           = {.025f, .035f, .055f, 1};
         }
+        if (s.hdrScene)
+        {
+            u[10][2] = float(6 + 19 * 36 + 3 * 16 * 24 * 6);
+            u[14][2] = s.sceneIntensity;
+            u[7]     = {.002f, .003f, .005f, 1};
+        }
+        if (s.post.enabled || s.hdrScene)
+            u[6][2] = 1;
         std::vector<detail::AAPass> passes;
         auto                        pass = [&](int program, int target) {
             detail::AAPass p;
@@ -227,40 +270,22 @@ namespace render
             auto* p        = pass(9, detail::AAShadowMap);
             p->uniforms[7] = {1, 0, 0, 1};
         }
-        if (!s.shadow || s.settings.split)
+        if ((!s.shadow && !s.hdrScene) || s.settings.split)
         {
-            auto* baseline        = pass(s.shadow ? 10 : 0, detail::AABaseline);
+            auto* baseline        = pass(s.hdrScene ? 16 : s.shadow ? 10 : 0, detail::AABaseline);
             baseline->uniforms[1] = {};
             if (shadowed)
                 baseline->sources[0] = detail::AAShadowMap;
         }
-        auto* color         = pass(s.shadow ? 10 : 0, detail::AAColor);
+        auto* color         = pass(s.hdrScene ? 16 : s.shadow ? 10 : 0, detail::AAColor);
         color->multisampled = method == AAMethod::MSAA;
         if (shadowed)
             color->sources[0] = detail::AAShadowMap;
         int filtered = detail::AAColor;
-        if (method == AAMethod::FXAA)
-        {
-            pass(2, detail::AAFiltered)->sources[0] = detail::AAColor;
-            filtered                                = detail::AAFiltered;
-        }
         if (method == AAMethod::SSAA)
         {
             pass(1, detail::AAFiltered)->sources[0] = detail::AAColor;
             filtered                                = detail::AAFiltered;
-        }
-        if (method == AAMethod::SMAA)
-        {
-            pass(3, detail::AAGamma)->sources[0] = detail::AAColor;
-            pass(4, detail::AAEdges)->sources[0] = detail::AAGamma;
-            auto* p                              = pass(5, detail::AAWeights);
-            p->sources[1]                        = detail::AAEdges;
-            p->sources[6]                        = detail::AAArea;
-            p->sources[7]                        = detail::AASearch;
-            p                                    = pass(6, detail::AAFiltered);
-            p->sources[0]                        = detail::AAColor;
-            p->sources[2]                        = detail::AAWeights;
-            filtered                             = detail::AAFiltered;
         }
         if (taa)
         {
@@ -272,10 +297,32 @@ namespace render
             p->sources[5]                             = detail::AAPrevMotion;
             pass(1, detail::AAPrevMotion)->sources[0] = detail::AAMotion;
         }
+        const int baselineSource =
+          ((!s.shadow && !s.hdrScene) || s.settings.split) ? detail::AABaseline : detail::AADummy;
+        const auto post = detail::AppendPostProcessing(passes, filtered, baselineSource, w, h, s.post, s.postState, u);
+        filtered        = post.color;
+        if (method == AAMethod::FXAA)
+        {
+            pass(2, detail::AAFiltered)->sources[0] = filtered;
+            filtered                                = detail::AAFiltered;
+        }
+        if (method == AAMethod::SMAA)
+        {
+            pass(3, detail::AAGamma)->sources[0] = filtered;
+            pass(4, detail::AAEdges)->sources[0] = detail::AAGamma;
+            auto* p                              = pass(5, detail::AAWeights);
+            p->sources[1]                        = detail::AAEdges;
+            p->sources[6]                        = detail::AAArea;
+            p->sources[7]                        = detail::AASearch;
+            p                                    = pass(6, detail::AAFiltered);
+            p->sources[0]                        = filtered;
+            p->sources[2]                        = detail::AAWeights;
+            filtered                             = detail::AAFiltered;
+        }
         auto* display       = pass(8, detail::AAOutput);
         display->sources[0] = filtered;
-        if (!s.shadow || s.settings.split)
-            display->sources[3] = detail::AABaseline;
+        if ((!s.shadow && !s.hdrScene) || s.settings.split)
+            display->sources[3] = post.baseline;
         s.image          = s.device->Draw(passes);
         s.previous       = s.camera;
         s.previousTime   = s.time;

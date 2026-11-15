@@ -61,7 +61,22 @@ namespace render::detail
             }
         }
         RenderMode GetRenderMode() const { return mode; }
-        void       SetAntiAliasing(const AntiAliasingSettings& value)
+        void       SetPostProcessing(const PostProcessingSettings& settings)
+        {
+            ValidatePostProcessing(settings);
+            if (settings.enabled != postSettings.enabled || settings.autoExposure != postSettings.autoExposure)
+                rasterAA.postState.Reset();
+            if (settings.enabled != postSettings.enabled)
+                rasterAA.Reset();
+            postSettings = settings;
+            if (!model && settings.enabled)
+            {
+                LoadModel(EmptyModelData());
+                aaTriangle = true;
+            }
+        }
+        PostProcessingSettings GetPostProcessing() const { return postSettings; }
+        void                   SetAntiAliasing(const AntiAliasingSettings& value)
         {
             if (
               static_cast<unsigned>(value.method) > 5 || !std::isfinite(value.historyWeight) || value.historyWeight < 0
@@ -201,7 +216,8 @@ namespace render::detail
         {
             if (
               std::abs(value.yaw - camera.yaw) > 20 || std::abs(value.pitch - camera.pitch) > 20
-              || std::abs(value.distance - camera.distance) > 2 || value.exposure != camera.exposure || value.target != camera.target)
+              || std::abs(value.distance - camera.distance) > 2 || value.exposure != camera.exposure
+              || value.target != camera.target)
                 rasterAA.Reset();
             camera = value;
         }
@@ -221,22 +237,23 @@ namespace render::detail
 #endif
             return 0;
         }
-        AntiAliasingSettings rasterSettings;
-        detail::RasterAA     rasterAA;
-        bool                 aaTriangle = false;
-        std::optional<Image> presentedImage;
-        RenderMode           mode = RenderMode::Raster;
-        PathTracingSettings  pathSettings;
-        PathSession          pathSession;
-        GraphicsAPI          pathAPI = GraphicsAPI::Auto;
-        RendererConfig       pathConfig;
-        const ModelImage*    DrawPathFrame(uint32_t width, uint32_t height)
+        AntiAliasingSettings   rasterSettings;
+        PostProcessingSettings postSettings;
+        detail::RasterAA       rasterAA;
+        bool                   aaTriangle = false;
+        std::optional<Image>   presentedImage;
+        RenderMode             mode = RenderMode::Raster;
+        PathTracingSettings    pathSettings;
+        PathSession            pathSession;
+        GraphicsAPI            pathAPI = GraphicsAPI::Auto;
+        RendererConfig         pathConfig;
+        const ModelImage*      DrawPathFrame(uint32_t width, uint32_t height)
         {
             if (presentedImage)
                 return &*presentedImage;
             if (mode == RenderMode::Raster)
             {
-                if (rasterSettings.method == AAMethod::Off && !aaTriangle)
+                if (rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled)
                     return nullptr;
                 if (!rasterAA.device)
                     CreateRasterAADevice();
@@ -248,8 +265,9 @@ namespace render::detail
                   directionalLight,
                   environment.get(),
                   environmentSettings);
+                rasterAA.current.irradiance[0][3] = postSettings.enabled ? 1.f : 0.f;
                 const auto& image =
-                  rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle);
+                  rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }

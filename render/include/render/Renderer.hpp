@@ -4,6 +4,7 @@
 #include "Image.hpp"
 #include "Model.hpp"
 #include "ParameterPanel.hpp"
+#include "PostProcessing.hpp"
 #include "RenderMode.hpp"
 #include <cstdint>
 #include <filesystem>
@@ -58,6 +59,8 @@ namespace render
         void                       Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
         FrameResult                DrawFrame();
         void                       WaitIdle();
+        void                       SetPostProcessing(const PostProcessingSettings& settings);
+        PostProcessingSettings     GetPostProcessing() const;
         void                       SetAntiAliasing(const AntiAliasingSettings& settings);
         AntiAliasingSettings       GetAntiAliasing() const;
         uint32_t                   GetAntiAliasingHistoryFrames() const;

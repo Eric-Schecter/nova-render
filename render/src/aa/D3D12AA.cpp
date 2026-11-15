@@ -42,7 +42,7 @@ namespace render::detail
             uint64_t                           serial = 0;
             ComPtr<ID3D12RootSignature>        root;
             ComPtr<ID3D12DescriptorHeap>       rtvHeap, dsvHeap, srvHeap;
-            ComPtr<ID3D12PipelineState>        pipelines[11], sceneMS, shadowMS;
+            ComPtr<ID3D12PipelineState>        pipelines[17], sceneMS, shadowMS, hdrMS;
             ComPtr<ID3D12Resource>             uniforms, readback;
             Texture                            textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             UINT                               rtvStride = 0, dsvStride = 0, srvStride = 0;
@@ -177,7 +177,7 @@ namespace render::detail
                 d.SampleMask            = UINT_MAX;
                 d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
                 d.SampleDesc.Count      = samples;
-                d.NumRenderTargets      = (program == 0 || program == 10) ? 2 : 1;
+                d.NumRenderTargets      = (program == 0 || program == 10 || program == 16) ? 2 : 1;
                 for (UINT i = 0; i < d.NumRenderTargets; i++)
                 {
                     d.RTVFormats[i] = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -192,8 +192,8 @@ namespace render::detail
                 d.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;
                 d.RasterizerState.DepthClipEnable   = TRUE;
                 d.RasterizerState.MultisampleEnable = samples > 1;
-                d.DepthStencilState.DepthEnable     = program == 0 || program == 9 || program == 10;
-                d.DepthStencilState.DepthWriteMask  = (program == 0 || program == 9 || program == 10)
+                d.DepthStencilState.DepthEnable     = program == 0 || program == 9 || program == 10 || program == 16;
+                d.DepthStencilState.DepthWriteMask  = (program == 0 || program == 9 || program == 10 || program == 16)
                                                         ? D3D12_DEPTH_WRITE_MASK_ALL
                                                         : D3D12_DEPTH_WRITE_MASK_ZERO;
                 d.DepthStencilState.DepthFunc       = D3D12_COMPARISON_FUNC_LESS;
@@ -202,8 +202,8 @@ namespace render::detail
                   d.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
                 d.DepthStencilState.FrontFace.StencilFunc     = D3D12_COMPARISON_FUNC_ALWAYS;
                 d.DepthStencilState.BackFace                  = d.DepthStencilState.FrontFace;
-                d.DSVFormat =
-                  (program == 0 || program == 9 || program == 10) ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
+                d.DSVFormat = (program == 0 || program == 9 || program == 10 || program == 16) ? DXGI_FORMAT_D32_FLOAT
+                                                                                               : DXGI_FORMAT_UNKNOWN;
                 ComPtr<ID3D12PipelineState> result;
                 Check(device->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&result)));
                 return result;
@@ -281,17 +281,18 @@ namespace render::detail
                 heap.NumDescriptors = 4;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&dsvHeap)));
                 heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-                heap.NumDescriptors = 16 * 8;
+                heap.NumDescriptors = 64 * 8;
                 heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&srvHeap)));
                 rtvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
                 dsvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-                uniforms  = Buffer(256 * 16, D3D12_HEAP_TYPE_UPLOAD);
-                for (int i = 0; i < 11; i++)
+                uniforms  = Buffer(256 * 64, D3D12_HEAP_TYPE_UPLOAD);
+                for (int i = 0; i < 17; i++)
                     pipelines[i] = Pipeline(i, 1, c);
                 sceneMS  = Pipeline(0, 4, c);
                 shadowMS = Pipeline(10, 4, c);
+                hdrMS    = Pipeline(16, 4, c);
                 for (int i = AAArea; i <= AASearch; i++)
                 {
                     const auto table = AALookup(i == AAArea);
@@ -358,7 +359,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16))
                     {
                         int k         = p.program == 9                                          ? 3
                                         : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -411,11 +412,11 @@ namespace render::detail
                 commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 for (size_t index = 0; index < passes.size(); index++)
                 {
-                    const auto&                 p           = passes[index];
-                    const bool                  scene       = (p.program <= 0 || p.program == 9 || p.program == 10);
-                    const bool                  nativeScene = p.program < 0;
-                    const int                   attachments = (p.program == 0 || p.program == 10) ? 2 : 1;
-                    auto&                       target      = textures[p.target];
+                    const auto& p           = passes[index];
+                    const bool  scene       = (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16);
+                    const bool  nativeScene = p.program < 0;
+                    const int   attachments = (p.program == 0 || p.program == 10 || p.program == 16) ? 2 : 1;
+                    auto&       target      = textures[p.target];
                     D3D12_CPU_DESCRIPTOR_HANDLE targets[2];
                     for (int a = 0; a < attachments; a++)
                     {
@@ -468,7 +469,9 @@ namespace render::detail
                         commands->SetDescriptorHeaps(1, aaHeaps);
                         commands->SetGraphicsRootSignature(root.Get());
                         commands->SetPipelineState(
-                          p.multisampled ? (p.program == 10 ? shadowMS.Get() : sceneMS.Get())
+                          p.multisampled ? (p.program == 16   ? hdrMS.Get()
+                                            : p.program == 10 ? shadowMS.Get()
+                                                              : sceneMS.Get())
                                          : pipelines[p.program].Get());
                         auto cpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
                         cpu.ptr += index * 8 * srvStride;
@@ -494,9 +497,9 @@ namespace render::detail
                         commands->RSSetViewports(1, &vp);
                         commands->RSSetScissorRects(1, &scissor);
                         commands->DrawInstanced(
-                          p.program >= 9 ? uint32_t(p.uniforms[10][2])
-                          : scene        ? 79 * 6
-                                         : 3,
+                          (p.program == 9 || p.program == 10 || p.program == 16) ? uint32_t(p.uniforms[10][2])
+                          : scene                                                ? 79 * 6
+                                                                                 : 3,
                           1,
                           0,
                           0);

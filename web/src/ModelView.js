@@ -196,7 +196,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     }
     const pipeline = await pipelineFor(shader)
     return {
-      async prepareAA(camera, width, height, lighting, light, settings, frames) {
+      async prepareAA(camera, width, height, lighting, light, settings, frames, postSettings) {
         if (!aaPipelines) {
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
           const packages = await Promise.all(
@@ -223,6 +223,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
         )
+        currentScene[63] = postSettings?.enabled ? 1 : 0
         device.queue.writeBuffer(uniform, 0, currentScene)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
         if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)

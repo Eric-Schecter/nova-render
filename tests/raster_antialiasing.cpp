@@ -121,6 +121,19 @@ int main(int argc, char** argv)
         draw();
         if (backend->GetAntiAliasingHistoryFrames() != 2)
             throw std::runtime_error("Skinning TAA history failed");
+        render::PostProcessingSettings post;
+        post.enabled      = true;
+        post.autoExposure = true;
+        backend->SetPostProcessing(post);
+        for (unsigned method = 0; method < 6; method++)
+        {
+            settings.method = render::AAMethod(method);
+            backend->SetAntiAliasing(settings);
+            draw();
+        }
+        post.enabled = false;
+        backend->SetPostProcessing(post);
+        draw();
         backend.reset();
         glfwDestroyWindow(window);
         glfwTerminate();

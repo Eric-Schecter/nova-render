@@ -24,6 +24,14 @@ namespace render
         impl_->view.SetCamera(camera);
     }
     ShadowView::~ShadowView() = default;
+    void ShadowView::SetPostProcessing(const PostProcessingSettings& s)
+    {
+        impl_->view.SetPostProcessing(s);
+    }
+    PostProcessingSettings ShadowView::GetPostProcessing() const
+    {
+        return impl_->view.GetPostProcessing();
+    }
     void ShadowView::SetShadowSettings(const ShadowSettings& value)
     {
         impl_->view.ConfigureShadow(value);

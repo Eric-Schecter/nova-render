@@ -1,3 +1,4 @@
+import { defaultPostProcessing, copyPostProcessing } from './PostProcessing.js'
 import { createAntiAliasingView } from './AntiAliasingView.js'
 import { defaultAmbientOcclusion, copyAmbientOcclusion } from './AmbientOcclusion.js'
 import { defaultPathTracing, validatePathTracing } from './PathView.js'
@@ -30,11 +31,26 @@ class Renderer {
   #triangleShader
   #triangleAA = {}
   #aaView
+  #postSettings = defaultPostProcessing()
+  #postRemaining = 0
+  getPostProcessing() {
+    this.#check()
+    return { ...this.#postSettings }
+  }
+  setPostProcessing(value) {
+    this.#check()
+    const next = copyPostProcessing({ ...this.#postSettings, ...value })
+    if (next.enabled !== this.#postSettings.enabled) this.#resetAA()
+    this.#postSettings = next
+    this.#aaView?.setPostProcessing(next)
+    this.#postRemaining = next.enabled && next.autoExposure ? 480 : 0
+  }
   #aaRemaining = 0
   #aaSettings = { method: 'off', historyWeight: 0.9, zoom: 1, split: false, textureFiltering: true }
   #resetAA() {
     this.#aaView?.resetHistory()
     this.#aaRemaining = 32
+    if (this.#postSettings.enabled && this.#postSettings.autoExposure) this.#postRemaining = 480
   }
   #taaActive() {
     return (
@@ -91,6 +107,7 @@ class Renderer {
                 this.#directionalLight,
                 this.#environmentSettings,
                 frames,
+                this.#postSettings,
               )
             else if (!this.#triangleAA[settings.method === 'msaa' ? 4 : 1]) {
               const count = settings.method === 'msaa' ? 4 : 1,
@@ -134,9 +151,11 @@ class Renderer {
         scene,
       })
       this.#aaView.setAntiAliasing(this.#aaSettings)
+      this.#aaView.setPostProcessing(this.#postSettings)
     }
     await this.#aaView.drawFrame(width, height)
     this.#aaRemaining = Math.max(0, this.#aaRemaining - 1)
+    this.#postRemaining = Math.max(0, this.#postRemaining - 1)
   }
   #renderMode = 'raster'
   #pathSettings = defaultPathTracing()
@@ -306,6 +325,7 @@ class Renderer {
     )
       this.#resetAA()
     this.#aaRemaining = 32
+    if (this.#postSettings.enabled && this.#postSettings.autoExposure) this.#postRemaining = 480
     this.#model.setAnimationState(value)
     this.#animationLastTime = undefined
     this.#parameterPanel?.refresh()
@@ -387,7 +407,8 @@ class Renderer {
       (this.#renderMode === 'raster' &&
         !this.#aoSettings.enabled &&
         !this.#animationPlaying() &&
-        !this.#taaActive()) ||
+        !this.#taaActive() &&
+        this.#postRemaining <= 0) ||
       this.#pathFrame
     )
       return
@@ -398,7 +419,8 @@ class Renderer {
         (this.#renderMode === 'raster' &&
           !this.#aoSettings.enabled &&
           !this.#animationPlaying() &&
-          !this.#taaActive())
+          !this.#taaActive() &&
+          this.#postRemaining <= 0)
       )
         return
       const rect = this.#canvas.getBoundingClientRect()
@@ -469,6 +491,7 @@ class Renderer {
     )
       this.#resetAA()
     this.#aaRemaining = 32
+    if (this.#postSettings.enabled && this.#postSettings.autoExposure) this.#postRemaining = 480
     this.#camera = { ...value, target: [...(value.target || [0, 0, 0])] }
     this.#parameterPanel?.refresh()
   }
@@ -659,7 +682,7 @@ class Renderer {
       if (
         this.#renderMode === 'raster' &&
         !this.#aoSettings.enabled &&
-        this.#aaSettings.method !== 'off'
+        (this.#aaSettings.method !== 'off' || this.#postSettings.enabled)
       )
         await this.#drawAA(width, height)
       else if (this.#model) {
@@ -736,3 +759,5 @@ class Renderer {
 export { createAntiAliasingView } from './AntiAliasingView.js'
 
 export { createShadowView } from './ShadowView.js'
+
+export { createPostProcessingView } from './PostProcessingView.js'

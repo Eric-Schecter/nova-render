@@ -32,7 +32,14 @@ namespace render::detail
         AARawMultiMotion,
         AARawBaseline,
         AAShadowMap,
-        AAResourceCount
+        AABloomDown0    = 23,
+        AABloomUp0      = 28,
+        AALuminance0    = 32,
+        AAExposureA     = 38,
+        AAExposureB     = 39,
+        AAPostColor     = 40,
+        AAPostBaseline  = 41,
+        AAResourceCount = 42
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -57,6 +64,23 @@ namespace render::detail
     };
     inline AASpec AAResourceSpec(int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024)
     {
+        if (id >= AABloomDown0 && id < AABloomDown0 + 5)
+        {
+            uint32_t d = 2u << (id - AABloomDown0);
+            return {(w + d - 1) / d, (h + d - 1) / d, 1};
+        }
+        if (id >= AABloomUp0 && id < AABloomUp0 + 4)
+        {
+            uint32_t d = 2u << (id - AABloomUp0);
+            return {(w + d - 1) / d, (h + d - 1) / d, 1};
+        }
+        if (id >= AALuminance0 && id < AALuminance0 + 6)
+        {
+            uint32_t d = 1u << (2 * (id - AALuminance0 + 1));
+            return {(w + d - 1) / d, (h + d - 1) / d, 1};
+        }
+        if (id == AAExposureA || id == AAExposureB)
+            return {1, 1, 1};
         if (id == AAShadowMap)
             return {shadowSize, shadowSize, 1};
         if (id == AADummy)
@@ -78,7 +102,7 @@ namespace render::detail
             used[p.target] = true;
             for (int source : p.sources)
                 used[source] = true;
-            if (p.program == 0 || p.program == 10)
+            if (p.program == 0 || p.program == 10 || p.program == 16)
                 used[p.target + 1] = true;
             if (p.multisampled)
             {

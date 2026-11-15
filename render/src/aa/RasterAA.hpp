@@ -1,6 +1,7 @@
 #pragma once
 #include "AADevice.hpp"
 #include "ModelData.hpp"
+#include "PostProcessing.hpp"
 namespace render::detail
 {
     class RasterAA
@@ -12,6 +13,7 @@ namespace render::detail
         std::vector<JointMatrix>  previousJoints;
         std::array<float, 2>      lastJitter{};
         Image                     image;
+        PostProcessingState       postState;
         void                      Reset()
         {
             frames     = 0;
@@ -20,16 +22,18 @@ namespace render::detail
         void Clear()
         {
             device.reset();
+            postState.Reset();
             Reset();
             width = height = 0;
             previousJoints.clear();
         }
         const Image& Render(
-          uint32_t                    w,
-          uint32_t                    h,
-          const AntiAliasingSettings& settings,
-          const std::array<float, 4>& clear,
-          bool                        triangle = false)
+          uint32_t                      w,
+          uint32_t                      h,
+          const AntiAliasingSettings&   settings,
+          const std::array<float, 4>&   clear,
+          bool                          triangle     = false,
+          const PostProcessingSettings& postSettings = {})
         {
             if (w != width || h != height)
             {
@@ -92,24 +96,6 @@ namespace render::detail
               h * (settings.method == AAMethod::SSAA ? 2 : 1),
               true);
             int filtered = AAColor;
-            if (settings.method == AAMethod::FXAA)
-            {
-                add(2, AAFiltered)->sources[0] = AAColor;
-                filtered                       = AAFiltered;
-            }
-            if (settings.method == AAMethod::SMAA)
-            {
-                add(3, AAGamma)->sources[0] = AAColor;
-                add(4, AAEdges)->sources[0] = AAGamma;
-                auto* p                     = add(5, AAWeights);
-                p->sources[1]               = AAEdges;
-                p->sources[6]               = AAArea;
-                p->sources[7]               = AASearch;
-                p                           = add(6, AAFiltered);
-                p->sources[0]               = AAColor;
-                p->sources[2]               = AAWeights;
-                filtered                    = AAFiltered;
-            }
             if (taa)
             {
                 add(triangle ? -3 : -2, AARawMotion);
@@ -122,10 +108,31 @@ namespace render::detail
                 p->sources[5]                    = AAPrevMotion;
                 add(1, AAPrevMotion)->sources[0] = AAMotion;
             }
+            const auto post = AppendPostProcessing(
+              passes, filtered, settings.split ? AABaseline : AADummy, w, h, postSettings, postState, u);
+            filtered = post.color;
+            if (settings.method == AAMethod::FXAA)
+            {
+                add(2, AAFiltered)->sources[0] = filtered;
+                filtered                       = AAFiltered;
+            }
+            if (settings.method == AAMethod::SMAA)
+            {
+                add(3, AAGamma)->sources[0] = filtered;
+                add(4, AAEdges)->sources[0] = AAGamma;
+                auto* p                     = add(5, AAWeights);
+                p->sources[1]               = AAEdges;
+                p->sources[6]               = AAArea;
+                p->sources[7]               = AASearch;
+                p                           = add(6, AAFiltered);
+                p->sources[0]               = filtered;
+                p->sources[2]               = AAWeights;
+                filtered                    = AAFiltered;
+            }
             auto* p       = add(8, AAOutput);
             p->sources[0] = filtered;
             if (settings.split)
-                p->sources[3] = AABaseline;
+                p->sources[3] = post.baseline;
             device->Resize(w, h, settings.method == AAMethod::SSAA);
             image      = device->Draw(passes);
             lastJitter = jitter;

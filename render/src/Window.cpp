@@ -247,6 +247,14 @@ namespace render
     {
         impl_->renderer->SetCamera(camera);
     }
+    void Window::SetPostProcessing(const PostProcessingSettings& settings)
+    {
+        impl_->renderer->SetPostProcessing(settings);
+    }
+    PostProcessingSettings Window::GetPostProcessing() const
+    {
+        return impl_->renderer->GetPostProcessing();
+    }
     void Window::SetAntiAliasing(const AntiAliasingSettings& settings)
     {
         impl_->renderer->SetAntiAliasing(settings);

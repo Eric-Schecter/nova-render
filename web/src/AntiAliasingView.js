@@ -1,3 +1,9 @@
+import {
+  defaultPostProcessing,
+  copyPostProcessing,
+  appendPostProcessing,
+  postResourceSize,
+} from './PostProcessing.js'
 import { defaultShadowSettings, copyShadowSettings } from './ShadowSettings.js'
 // Raster-only AA laboratory. All scene shading and reconstruction comes from shared HLSL.
 const names = ['off', 'fxaa', 'smaa', 'msaa', 'ssaa', 'taa']
@@ -35,6 +41,7 @@ export async function createAntiAliasingView({
   context: borrowedContext,
   scene: external,
   shadowScene = false,
+  hdrScene = false,
 } = {}) {
   if (!canvas) throw Error('AA requires a canvas')
   const adapter = borrowedDevice ? null : await navigator.gpu?.requestAdapter()
@@ -60,7 +67,7 @@ export async function createAntiAliasingView({
       method: external ? 'off' : 'taa',
       historyWeight: 0.9,
       zoom: 1,
-      split: !external && !shadowScene,
+      split: !external && !shadowScene && !hdrScene,
       textureFiltering: true,
     },
     camera = { yaw: 20, pitch: 15, distance: 6.2, exposure: 1 },
@@ -72,6 +79,13 @@ export async function createAntiAliasingView({
     camera = { ...camera, yaw: 28, pitch: 30, distance: 8 }
     previous = { ...camera }
   }
+  if (hdrScene) {
+    camera = { yaw: 0, pitch: 0, distance: 6.2, exposure: 1 }
+    previous = { ...camera }
+  }
+  let postSettings = { ...defaultPostProcessing(), enabled: hdrScene },
+    postState = { frames: 0, last: 0 },
+    sceneIntensity = 1
   let shadowSettings = defaultShadowSettings()
   let tail = Promise.resolve(),
     lost
@@ -96,12 +110,13 @@ export async function createAntiAliasingView({
     pipelines = [],
     sceneMS,
     shadowMS,
+    hdrMS,
     displayPipeline,
     linear,
     point
   try {
     uniform = device.createBuffer({
-      size: 256 * 16,
+      size: 256 * 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
     layout = device.createBindGroupLayout({
@@ -127,13 +142,16 @@ export async function createAntiAliasingView({
         fragment: {
           module: device.createShaderModule({ code: data.frag }),
           entryPoint: 'PSMain',
-          targets: Array.from({ length: program === 0 || program === 10 ? 2 : 1 }, () => ({
-            format: targetFormat,
-          })),
+          targets: Array.from(
+            { length: program === 0 || program === 10 || program === 16 ? 2 : 1 },
+            () => ({
+              format: targetFormat,
+            }),
+          ),
         },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
         multisample: { count },
-        ...([0, 9, 10].includes(program)
+        ...([0, 9, 10, 16].includes(program)
           ? {
               depthStencil: {
                 format: 'depth32float',
@@ -144,9 +162,10 @@ export async function createAntiAliasingView({
           : {}),
       })
     }
-    for (let i = 0; i < (shadowScene ? 11 : 9); i++) pipelines.push(await pipeline(i))
+    for (let i = 0; i < 17; i++) pipelines.push(await pipeline(i))
     sceneMS = await pipeline(0, 4)
     if (shadowScene) shadowMS = await pipeline(10, 4)
+    if (hdrScene) hdrMS = await pipeline(16, 4)
     displayPipeline = await pipeline(8, 1, format)
     linear = device.createSampler({
       minFilter: 'linear',
@@ -188,8 +207,8 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 23; i++)
-      if (i !== AREA && i !== SEARCH) {
+    for (let i = 0; i < 42; i++)
+      if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39) {
         textures[i]?.destroy()
         textures[i] = undefined
       }
@@ -257,6 +276,12 @@ export async function createAntiAliasingView({
       u.splice(40, 4, sh.filterRadius, 0, 6 + 19 * 36 + 3 * 16 * 24 * 6, 0)
       u.splice(28, 4, 0.025, 0.035, 0.055, 1)
     }
+    if (hdrScene) {
+      u[42] = 6 + 19 * 36 + 3 * 16 * 24 * 6
+      u[58] = sceneIntensity
+      u.splice(28, 4, 0.002, 0.003, 0.005, 1)
+    }
+    if (postSettings.enabled || hdrScene) u[26] = 1
     const passes = [],
       add = (program, target) => {
         const p = { program, target, sources: Array(8).fill(DUMMY), u: [...u] }
@@ -280,6 +305,12 @@ export async function createAntiAliasingView({
       add(-1, 17).ms = settings.method === 'msaa'
       const scale = settings.method === 'ssaa' ? 2 : 1
       crop(C, 17, width * scale, height * scale, true)
+    } else if (hdrScene) {
+      if (settings.split) {
+        const p = add(16, B)
+        p.u.splice(4, 4, 0, 0, 0, 0)
+      }
+      add(16, C).ms = settings.method === 'msaa'
     } else if (shadowScene) {
       const shadowed = shadowSettings.method !== 'off'
       if (shadowed) add(9, 22).u.splice(28, 4, 1, 0, 0, 1)
@@ -296,24 +327,8 @@ export async function createAntiAliasingView({
       add(0, C).ms = settings.method === 'msaa'
     }
     let filtered = C
-    if (settings.method === 'fxaa') {
-      add(2, F).sources[0] = C
-      filtered = F
-    }
     if (!external && settings.method === 'ssaa') {
       add(1, F).sources[0] = C
-      filtered = F
-    }
-    if (settings.method === 'smaa') {
-      add(3, G).sources[0] = C
-      add(4, E).sources[0] = G
-      const p = add(5, W)
-      p.sources[1] = E
-      p.sources[6] = AREA
-      p.sources[7] = SEARCH
-      const b = add(6, F)
-      b.sources[0] = C
-      b.sources[2] = W
       filtered = F
     }
     if (taa) {
@@ -329,9 +344,37 @@ export async function createAntiAliasingView({
       p.sources[5] = PM
       add(1, PM).sources[0] = M
     }
+    const baselineSource = (!shadowScene && !hdrScene) || settings.split ? B : DUMMY
+    const post = appendPostProcessing(
+      passes,
+      filtered,
+      baselineSource,
+      width,
+      height,
+      postSettings,
+      postState,
+      u,
+    )
+    filtered = post.color
+    if (settings.method === 'fxaa') {
+      add(2, F).sources[0] = filtered
+      filtered = F
+    }
+    if (settings.method === 'smaa') {
+      add(3, G).sources[0] = filtered
+      add(4, E).sources[0] = G
+      const p = add(5, W)
+      p.sources[1] = E
+      p.sources[6] = AREA
+      p.sources[7] = SEARCH
+      const b = add(6, F)
+      b.sources[0] = filtered
+      b.sources[2] = W
+      filtered = F
+    }
     const p = add(8, O)
     p.sources[0] = filtered
-    if (!shadowScene || settings.split) p.sources[3] = B
+    if ((!shadowScene && !hdrScene) || settings.split) p.sources[3] = post.baseline
     return { passes, jitter }
   }
   async function draw(w, h) {
@@ -351,13 +394,13 @@ export async function createAntiAliasingView({
     for (const p of passes) {
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
-      if (p.program === 0 || p.program === 10) used.add(p.target + 1)
+      if (p.program === 0 || p.program === 10 || p.program === 16) used.add(p.target + 1)
       if (p.ms) {
         used.add(external ? 19 : MC)
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 23; i++) {
+    for (let i = 0; i < 42; i++) {
       if (i === AREA || i === SEARCH) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -366,7 +409,7 @@ export async function createAntiAliasingView({
       }
       const big = superSample && (external ? i === 17 || i === 18 : i === C || i === M)
       const raw = external && i >= 17 && i <= 21
-      const tw =
+      let tw =
           i === 22
             ? shadowSettings.resolution
             : i === DUMMY
@@ -374,6 +417,7 @@ export async function createAntiAliasingView({
               : w * (big ? 2 : 1) + (raw ? 2 : 0),
         th =
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
+      if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
         textures[i].destroy()
         textures[i] = undefined
@@ -426,11 +470,11 @@ export async function createAntiAliasingView({
       }
     function render(p, index, present = false) {
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
-      const scene = p.program <= 0 || p.program === 9 || p.program === 10,
+      const scene = p.program <= 0 || p.program === 9 || p.program === 10 || p.program === 16,
         native = p.program < 0,
         target = textures[p.target]
       const colorAttachments = Array.from(
-        { length: p.program === 0 || p.program === 10 ? 2 : 1 },
+        { length: p.program === 0 || p.program === 10 || p.program === 16 ? 2 : 1 },
         (_, a) => ({
           view: present
             ? context.getCurrentTexture().createView()
@@ -471,9 +515,11 @@ export async function createAntiAliasingView({
         present
           ? displayPipeline
           : p.ms
-            ? p.program === 10
-              ? shadowMS
-              : sceneMS
+            ? p.program === 16
+              ? hdrMS
+              : p.program === 10
+                ? shadowMS
+                : sceneMS
             : pipelines[p.program],
       )
       const group = device.createBindGroup({
@@ -491,7 +537,9 @@ export async function createAntiAliasingView({
         })),
       })
       pass.setBindGroup(0, group, [index * 256])
-      pass.draw(p.program >= 9 ? p.u[42] : scene ? 79 * 6 : 3)
+      pass.draw(
+        p.program === 9 || p.program === 10 || p.program === 16 ? p.u[42] : scene ? 79 * 6 : 3,
+      )
       pass.end()
     }
     passes.forEach((p, i) => render(p, i))
@@ -510,6 +558,22 @@ export async function createAntiAliasingView({
     return 'rendered'
   }
   return {
+    getPostProcessing: () => ({ ...postSettings }),
+    setPostProcessing(value) {
+      check()
+      const next = copyPostProcessing({ ...postSettings, ...value })
+      if (next.enabled !== postSettings.enabled || next.autoExposure !== postSettings.autoExposure)
+        postState = { frames: 0, last: 0 }
+      postSettings = next
+    },
+    getSceneIntensity: () => sceneIntensity,
+    setSceneIntensity(value) {
+      check()
+      if (!Number.isFinite(value) || value < 0.05 || value > 20)
+        throw Error('Invalid scene intensity')
+      if (value !== sceneIntensity) reset()
+      sceneIntensity = value
+    },
     getShadowSettings: () => copyShadowSettings(shadowSettings),
     setShadowSettings(value) {
       check()

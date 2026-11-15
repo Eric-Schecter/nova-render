@@ -263,6 +263,14 @@ namespace render
         detail::ValidateCamera(camera);
         impl_->backend->SetCamera(camera);
     }
+    void Renderer::SetPostProcessing(const PostProcessingSettings& settings)
+    {
+        impl_->backend->SetPostProcessing(settings);
+    }
+    PostProcessingSettings Renderer::GetPostProcessing() const
+    {
+        return impl_->backend->GetPostProcessing();
+    }
     void Renderer::SetAntiAliasing(const AntiAliasingSettings& settings)
     {
         impl_->backend->SetAntiAliasing(settings);

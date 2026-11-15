@@ -1,6 +1,7 @@
 #pragma once
 #include "Animation.hpp"
 #include "Image.hpp"
+#include "PostProcessing.hpp"
 #include "RenderMode.hpp"
 #include "Renderer.hpp"
 #include <string>
@@ -28,6 +29,8 @@ namespace render
         std::array<uint32_t, 2> GetFramebufferSize() const;
         FrameResult             DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
         void                    WaitIdle();
+        void                    SetPostProcessing(const PostProcessingSettings& settings);
+        PostProcessingSettings  GetPostProcessing() const;
         void                    SetAntiAliasing(const AntiAliasingSettings& settings);
         AntiAliasingSettings    GetAntiAliasing() const;
         uint32_t                GetAntiAliasingHistoryFrames() const;

@@ -159,6 +159,8 @@ float3 encodeDisplayRGB(float3 c)
 }
 float3 displayRadiance(float3 color)
 {
+    if (irradiance[0].w > .5)
+        return max(color, 0) * eyeExposure.w;
     color = 1 - exp(-max(color, 0) * eyeExposure.w);
 #if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
     color = encodeDisplayRGB(color);

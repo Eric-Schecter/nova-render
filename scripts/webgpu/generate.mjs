@@ -148,3 +148,14 @@ for (const pass of [9, 10]) {
   await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
 }
 console.log('Shadow map and shadow scene HLSL generated')
+
+for (let pass = 11; pass <= 16; pass++) {
+  const data = await compile(
+    '#define AA_PASS ' +
+      pass +
+      '\n' +
+      (await readFile('render/shaders/postprocessing.hlsl', 'utf8')),
+  )
+  await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
+}
+console.log('HDR post-processing HLSL generated')

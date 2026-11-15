@@ -1,5 +1,6 @@
 #pragma once
 #include "AntiAliasing.hpp"
+#include "PostProcessing.hpp"
 #include "Renderer.hpp"
 namespace render
 {
@@ -10,19 +11,25 @@ namespace render
       public:
         explicit AntiAliasingView(const RendererConfig& config = {});
         ~AntiAliasingView();
-        AntiAliasingView(const AntiAliasingView&)               = delete;
-        AntiAliasingView&    operator=(const AntiAliasingView&) = delete;
-        void                 SetAntiAliasing(const AntiAliasingSettings& settings);
-        AntiAliasingSettings GetAntiAliasing() const;
-        void                 SetCamera(const OrbitCamera& camera);
-        OrbitCamera          GetCamera() const;
-        void                 SetTime(float seconds);
-        void                 ResetHistory();
-        uint32_t             GetHistoryFrames() const;
-        const Image&         DrawFrame(uint32_t width, uint32_t height);
+        AntiAliasingView(const AntiAliasingView&)                 = delete;
+        AntiAliasingView&      operator=(const AntiAliasingView&) = delete;
+        void                   SetPostProcessing(const PostProcessingSettings& value);
+        PostProcessingSettings GetPostProcessing() const;
+        float                  GetSceneIntensity() const;
+        void                   SetAntiAliasing(const AntiAliasingSettings& settings);
+        AntiAliasingSettings   GetAntiAliasing() const;
+        void                   SetCamera(const OrbitCamera& camera);
+        OrbitCamera            GetCamera() const;
+        void                   SetTime(float seconds);
+        void                   ResetHistory();
+        uint32_t               GetHistoryFrames() const;
+        const Image&           DrawFrame(uint32_t width, uint32_t height);
 
       private:
         friend class ShadowView;
+        friend class PostProcessingView;
+        void ConfigureHDRScene();
+        void ConfigureSceneIntensity(float value);
         void ConfigureShadow(const struct ShadowSettings& value);
         struct Impl;
         std::unique_ptr<Impl> impl_;

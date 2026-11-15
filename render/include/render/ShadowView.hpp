@@ -25,18 +25,20 @@ namespace render
       public:
         explicit ShadowView(const RendererConfig& config = {});
         ~ShadowView();
-        ShadowView(const ShadowView&)                     = delete;
-        ShadowView&          operator=(const ShadowView&) = delete;
-        void                 SetShadowSettings(const ShadowSettings& value);
-        ShadowSettings       GetShadowSettings() const;
-        void                 SetAntiAliasing(const AntiAliasingSettings& value);
-        AntiAliasingSettings GetAntiAliasing() const;
-        void                 SetCamera(const OrbitCamera& value);
-        OrbitCamera          GetCamera() const;
-        void                 SetTime(float seconds);
-        void                 ResetHistory();
-        uint32_t             GetHistoryFrames() const;
-        const Image&         DrawFrame(uint32_t width, uint32_t height);
+        ShadowView(const ShadowView&)                       = delete;
+        ShadowView&            operator=(const ShadowView&) = delete;
+        void                   SetPostProcessing(const PostProcessingSettings& settings);
+        PostProcessingSettings GetPostProcessing() const;
+        void                   SetShadowSettings(const ShadowSettings& value);
+        ShadowSettings         GetShadowSettings() const;
+        void                   SetAntiAliasing(const AntiAliasingSettings& value);
+        AntiAliasingSettings   GetAntiAliasing() const;
+        void                   SetCamera(const OrbitCamera& value);
+        OrbitCamera            GetCamera() const;
+        void                   SetTime(float seconds);
+        void                   ResetHistory();
+        uint32_t               GetHistoryFrames() const;
+        const Image&           DrawFrame(uint32_t width, uint32_t height);
 
       private:
         struct Impl;
