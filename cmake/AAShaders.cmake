@@ -1,5 +1,5 @@
 # Independent raster AA shaders. No ray-query requirement.
-foreach(pass RANGE 0 8)
+foreach(pass RANGE 0 10)
     set(aa_air)
     foreach(stage vert frag)
         if(stage STREQUAL "vert")
@@ -13,6 +13,9 @@ foreach(pass RANGE 0 8)
         endif()
         set(base "${SHADER_OUTPUT_DIR}/aa-${pass}.${stage}")
         set(source "${PROJECT_SOURCE_DIR}/render/shaders/antialiasing.hlsl")
+        if(pass GREATER_EQUAL 9)
+            set(source "${PROJECT_SOURCE_DIR}/render/shaders/shadows.hlsl")
+        endif()
         set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/texture-filtering.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
         if(NOVA_ENABLE_VULKAN)
             add_custom_command(OUTPUT "${base}.spv"

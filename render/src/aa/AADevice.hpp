@@ -31,9 +31,10 @@ namespace render::detail
         AARawMultiColor,
         AARawMultiMotion,
         AARawBaseline,
+        AAShadowMap,
         AAResourceCount
     };
-    using AAUniforms = std::array<std::array<float, 4>, 8>;
+    using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
     {
         int                program = 0, target = 0;
@@ -54,13 +55,15 @@ namespace render::detail
     {
         uint32_t width, height, samples;
     };
-    inline AASpec AAResourceSpec(int id, uint32_t w, uint32_t h, bool ss, bool external)
+    inline AASpec AAResourceSpec(int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024)
     {
+        if (id == AAShadowMap)
+            return {shadowSize, shadowSize, 1};
         if (id == AADummy)
             return {1, 1, 1};
         bool big = external ? (id == AARawColor || id == AARawMotion || id == AARawMultiColor || id == AARawMultiMotion)
                             : (id == AAColor || id == AAMotion);
-        uint32_t pad = id >= AARawColor ? 2 : 0;
+        uint32_t pad = id >= AARawColor && id <= AARawBaseline ? 2 : 0;
         return {
           w * (ss && big ? 2 : 1) + pad,
           h * (ss && big ? 2 : 1) + pad,
@@ -75,7 +78,7 @@ namespace render::detail
             used[p.target] = true;
             for (int source : p.sources)
                 used[source] = true;
-            if (p.program == 0)
+            if (p.program == 0 || p.program == 10)
                 used[p.target + 1] = true;
             if (p.multisampled)
             {

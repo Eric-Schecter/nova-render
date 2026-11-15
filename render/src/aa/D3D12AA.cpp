@@ -42,9 +42,9 @@ namespace render::detail
             uint64_t                           serial = 0;
             ComPtr<ID3D12RootSignature>        root;
             ComPtr<ID3D12DescriptorHeap>       rtvHeap, dsvHeap, srvHeap;
-            ComPtr<ID3D12PipelineState>        pipelines[9], sceneMS;
+            ComPtr<ID3D12PipelineState>        pipelines[11], sceneMS, shadowMS;
             ComPtr<ID3D12Resource>             uniforms, readback;
-            Texture                            textures[AAResourceCount], depth, depthMS, depthBaseline;
+            Texture                            textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             UINT                               rtvStride = 0, dsvStride = 0, srvStride = 0;
             uint32_t                           width = 0, height = 0;
             bool                               supersampled = false;
@@ -177,7 +177,7 @@ namespace render::detail
                 d.SampleMask            = UINT_MAX;
                 d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
                 d.SampleDesc.Count      = samples;
-                d.NumRenderTargets      = program == 0 ? 2 : 1;
+                d.NumRenderTargets      = (program == 0 || program == 10) ? 2 : 1;
                 for (UINT i = 0; i < d.NumRenderTargets; i++)
                 {
                     d.RTVFormats[i] = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -192,16 +192,18 @@ namespace render::detail
                 d.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;
                 d.RasterizerState.DepthClipEnable   = TRUE;
                 d.RasterizerState.MultisampleEnable = samples > 1;
-                d.DepthStencilState.DepthEnable     = program == 0;
-                d.DepthStencilState.DepthWriteMask =
-                  program == 0 ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+                d.DepthStencilState.DepthEnable     = program == 0 || program == 9 || program == 10;
+                d.DepthStencilState.DepthWriteMask  = (program == 0 || program == 9 || program == 10)
+                                                        ? D3D12_DEPTH_WRITE_MASK_ALL
+                                                        : D3D12_DEPTH_WRITE_MASK_ZERO;
                 d.DepthStencilState.DepthFunc       = D3D12_COMPARISON_FUNC_LESS;
                 d.DepthStencilState.StencilReadMask = d.DepthStencilState.StencilWriteMask = 255;
                 d.DepthStencilState.FrontFace.StencilFailOp   = d.DepthStencilState.FrontFace.StencilDepthFailOp =
                   d.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
                 d.DepthStencilState.FrontFace.StencilFunc     = D3D12_COMPARISON_FUNC_ALWAYS;
                 d.DepthStencilState.BackFace                  = d.DepthStencilState.FrontFace;
-                d.DSVFormat = program == 0 ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
+                d.DSVFormat =
+                  (program == 0 || program == 9 || program == 10) ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
                 ComPtr<ID3D12PipelineState> result;
                 Check(device->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&result)));
                 return result;
@@ -276,7 +278,7 @@ namespace render::detail
                 heap.NumDescriptors = AAResourceCount;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&rtvHeap)));
                 heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-                heap.NumDescriptors = 3;
+                heap.NumDescriptors = 4;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&dsvHeap)));
                 heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
                 heap.NumDescriptors = 16 * 8;
@@ -286,9 +288,10 @@ namespace render::detail
                 dsvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 uniforms  = Buffer(256 * 16, D3D12_HEAP_TYPE_UPLOAD);
-                for (int i = 0; i < 9; i++)
+                for (int i = 0; i < 11; i++)
                     pipelines[i] = Pipeline(i, 1, c);
-                sceneMS = Pipeline(0, 4, c);
+                sceneMS  = Pipeline(0, 4, c);
+                shadowMS = Pipeline(10, 4, c);
                 for (int i = AAArea; i <= AASearch; i++)
                 {
                     const auto table = AALookup(i == AAArea);
@@ -341,7 +344,8 @@ namespace render::detail
                             textures[i] = {};
                             continue;
                         }
-                        const auto spec = AAResourceSpec(i, width, height, supersampled, bool(external.draw));
+                        const auto spec = AAResourceSpec(
+                          i, width, height, supersampled, bool(external.draw), uint32_t(passes.front().uniforms[8][1]));
                         if (
                           !textures[i].resource || textures[i].width != spec.width || textures[i].height != spec.height)
                         {
@@ -352,13 +356,16 @@ namespace render::detail
                                 changed = true;
                         }
                     }
-                bool needed[3]{};
+                bool needed[4]{};
                 for (const auto& p : passes)
-                    if (p.program <= 0)
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10))
                     {
-                        int k     = (p.target == AABaseline || p.target == AARawBaseline) ? 2 : p.multisampled ? 1 : 0;
-                        needed[k] = true;
-                        auto&       d = k == 2 ? depthBaseline : k == 1 ? depthMS : depth;
+                        int k         = p.program == 9                                          ? 3
+                                        : (p.target == AABaseline || p.target == AARawBaseline) ? 2
+                                        : p.multisampled                                        ? 1
+                                                                                                : 0;
+                        needed[k]     = true;
+                        auto&       d = k == 3 ? depthShadow : k == 2 ? depthBaseline : k == 1 ? depthMS : depth;
                         const auto& t = textures[p.target];
                         if (!d.resource || d.width != t.width || d.height != t.height)
                         {
@@ -366,6 +373,8 @@ namespace render::detail
                             device->CreateDepthStencilView(d.resource.Get(), nullptr, DSV(k));
                         }
                     }
+                if (!needed[3])
+                    depthShadow = {};
                 if (!needed[0])
                     depth = {};
                 if (!needed[1])
@@ -403,9 +412,9 @@ namespace render::detail
                 for (size_t index = 0; index < passes.size(); index++)
                 {
                     const auto&                 p           = passes[index];
-                    const bool                  scene       = p.program <= 0;
+                    const bool                  scene       = (p.program <= 0 || p.program == 9 || p.program == 10);
                     const bool                  nativeScene = p.program < 0;
-                    const int                   attachments = p.program == 0 ? 2 : 1;
+                    const int                   attachments = (p.program == 0 || p.program == 10) ? 2 : 1;
                     auto&                       target      = textures[p.target];
                     D3D12_CPU_DESCRIPTOR_HANDLE targets[2];
                     for (int a = 0; a < attachments; a++)
@@ -423,12 +432,17 @@ namespace render::detail
                         }
                         commands->ClearRenderTargetView(targets[a], colors[a], 0, nullptr);
                     }
-                    auto dsv = DSV((p.target == AABaseline || p.target == AARawBaseline) ? 2 : p.multisampled ? 1 : 0);
+                    auto dsv = DSV(
+                      p.program == 9                                          ? 3
+                      : (p.target == AABaseline || p.target == AARawBaseline) ? 2
+                      : p.multisampled                                        ? 1
+                                                                              : 0);
                     if (scene)
                     {
-                        auto& d = (p.target == AABaseline || p.target == AARawBaseline) ? depthBaseline
-                                  : p.multisampled                                      ? depthMS
-                                                                                        : depth;
+                        auto& d = p.program == 9                                          ? depthShadow
+                                  : (p.target == AABaseline || p.target == AARawBaseline) ? depthBaseline
+                                  : p.multisampled                                        ? depthMS
+                                                                                          : depth;
                         Transition(d, D3D12_RESOURCE_STATE_DEPTH_WRITE);
                         commands->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1, 0, 0, nullptr);
                     }
@@ -453,7 +467,9 @@ namespace render::detail
                         ID3D12DescriptorHeap* aaHeaps[] = {srvHeap.Get()};
                         commands->SetDescriptorHeaps(1, aaHeaps);
                         commands->SetGraphicsRootSignature(root.Get());
-                        commands->SetPipelineState(p.multisampled ? sceneMS.Get() : pipelines[p.program].Get());
+                        commands->SetPipelineState(
+                          p.multisampled ? (p.program == 10 ? shadowMS.Get() : sceneMS.Get())
+                                         : pipelines[p.program].Get());
                         auto cpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
                         cpu.ptr += index * 8 * srvStride;
                         auto gpu = srvHeap->GetGPUDescriptorHandleForHeapStart();
@@ -477,7 +493,13 @@ namespace render::detail
                         D3D12_RECT     scissor{0, 0, LONG(target.width), LONG(target.height)};
                         commands->RSSetViewports(1, &vp);
                         commands->RSSetScissorRects(1, &scissor);
-                        commands->DrawInstanced(scene ? 79 * 6 : 3, 1, 0, 0);
+                        commands->DrawInstanced(
+                          p.program >= 9 ? uint32_t(p.uniforms[10][2])
+                          : scene        ? 79 * 6
+                                         : 3,
+                          1,
+                          0,
+                          0);
                     }
                     if (p.multisampled)
                         for (int a = 0; a < attachments; a++)

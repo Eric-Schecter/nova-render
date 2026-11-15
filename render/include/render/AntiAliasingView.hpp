@@ -22,6 +22,8 @@ namespace render
         const Image&         DrawFrame(uint32_t width, uint32_t height);
 
       private:
+        friend class ShadowView;
+        void ConfigureShadow(const struct ShadowSettings& value);
         struct Impl;
         std::unique_ptr<Impl> impl_;
     };

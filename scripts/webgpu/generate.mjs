@@ -140,3 +140,11 @@ for (const [name, vertexEntry, fragmentEntry] of [
   const data = await compile(rasterSource, { model: true, vertexEntry, fragmentEntry })
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
 }
+
+for (const pass of [9, 10]) {
+  const data = await compile(
+    '#define AA_PASS ' + pass + '\n' + (await readFile('render/shaders/shadows.hlsl', 'utf8')),
+  )
+  await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
+}
+console.log('Shadow map and shadow scene HLSL generated')

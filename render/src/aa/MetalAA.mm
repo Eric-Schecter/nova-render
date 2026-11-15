@@ -11,8 +11,8 @@ namespace render::detail
             AAExternalScene            external;
             id<MTLDevice>              device;
             id<MTLCommandQueue>        queue;
-            id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline;
-            id<MTLRenderPipelineState> pipelines[9], sceneMS;
+            id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
+            id<MTLRenderPipelineState> pipelines[11], sceneMS, shadowMS;
             id<MTLSamplerState>        linear, point;
             id<MTLDepthStencilState>   depthState;
             uint32_t                   width = 0, height = 0;
@@ -39,11 +39,13 @@ namespace render::detail
                 d.fragmentFunction                = [library newFunctionWithName:@"PSMain"];
                 d.sampleCount                     = samples;
                 d.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
-                if (program == 0)
+                if (program == 0 || program == 10)
                 {
                     d.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
                     d.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
                 }
+                if (program == 9)
+                    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
                 NSError* error = nil;
                 auto     p     = [device newRenderPipelineStateWithDescriptor:d error:&error];
                 if (!p)
@@ -61,7 +63,7 @@ namespace render::detail
                 if (![device supportsTextureSampleCount:4])
                     throw std::runtime_error("Metal AA requires 4x MSAA support");
                 queue = [device newCommandQueue];
-                for (int i = 0; i < 9; i++)
+                for (int i = 0; i < 11; i++)
                 {
                     const auto data =
                       LoadShader(config.shaderDirectory, ("aa-" + std::to_string(i) + ".metallib").c_str());
@@ -77,6 +79,8 @@ namespace render::detail
                     pipelines[i] = Pipeline(lib, i, 1);
                     if (i == 0)
                         sceneMS = Pipeline(lib, 0, 4);
+                    if (i == 10)
+                        shadowMS = Pipeline(lib, 10, 4);
                 }
                 auto sampler      = [MTLSamplerDescriptor new];
                 sampler.minFilter = sampler.magFilter = MTLSamplerMinMagFilterLinear;
@@ -121,19 +125,21 @@ namespace render::detail
                             textures[i] = nil;
                             continue;
                         }
-                        const auto spec = AAResourceSpec(i, width, height, super, bool(external.draw));
+                        const auto spec = AAResourceSpec(
+                          i, width, height, super, bool(external.draw), uint32_t(passes.front().uniforms[8][1]));
                         if (!textures[i] || textures[i].width != spec.width || textures[i].height != spec.height)
                             textures[i] = Texture(spec.width, spec.height, MTLPixelFormatRGBA16Float, spec.samples);
                     }
-                bool needed[3]{};
+                bool needed[4]{};
                 for (const auto& p : passes)
-                    if (p.program <= 0)
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10))
                     {
-                        const int k       = (p.target == AABaseline || p.target == AARawBaseline) ? 2
-                                            : p.multisampled                                      ? 1
-                                                                                                  : 0;
+                        const int k       = p.program == 9                                          ? 3
+                                            : (p.target == AABaseline || p.target == AARawBaseline) ? 2
+                                            : p.multisampled                                        ? 1
+                                                                                                    : 0;
                         needed[k]         = true;
-                        auto&      d      = k == 2 ? depthBaseline : k == 1 ? depthMS : depth;
+                        auto&      d      = k == 3 ? depthShadow : k == 2 ? depthBaseline : k == 1 ? depthMS : depth;
                         const auto target = textures[p.target];
                         if (!d || d.width != target.width || d.height != target.height)
                             d = Texture(
@@ -142,6 +148,8 @@ namespace render::detail
                               MTLPixelFormatDepth32Float,
                               k == 1 ? 4 : 1);
                     }
+                if (!needed[3])
+                    depthShadow = nil;
                 if (!needed[0])
                     depth = nil;
                 if (!needed[1])
@@ -168,10 +176,11 @@ namespace render::detail
                         }
                     for (const auto& p : passes)
                     {
-                        auto       d     = [MTLRenderPassDescriptor renderPassDescriptor];
-                        const bool scene = p.program <= 0, nativeScene = p.program < 0,
-                                   baseline   = p.target == AABaseline || p.target == AARawBaseline;
-                        const int attachments = p.program == 0 ? 2 : 1;
+                        auto       d           = [MTLRenderPassDescriptor renderPassDescriptor];
+                        const bool scene       = (p.program <= 0 || p.program == 9 || p.program == 10),
+                                   nativeScene = p.program < 0,
+                                   baseline    = p.target == AABaseline || p.target == AARawBaseline;
+                        const int attachments  = (p.program == 0 || p.program == 10) ? 2 : 1;
                         for (int a = 0; a < attachments; a++)
                         {
                             auto      c      = d.colorAttachments[a];
@@ -190,7 +199,10 @@ namespace render::detail
                         }
                         if (scene)
                         {
-                            d.depthAttachment.texture     = baseline ? depthBaseline : p.multisampled ? depthMS : depth;
+                            d.depthAttachment.texture     = p.program == 9   ? depthShadow
+                                                            : baseline       ? depthBaseline
+                                                            : p.multisampled ? depthMS
+                                                                             : depth;
                             d.depthAttachment.loadAction  = MTLLoadActionClear;
                             d.depthAttachment.clearDepth  = 1;
                             d.depthAttachment.storeAction = MTLStoreActionDontCare;
@@ -213,7 +225,8 @@ namespace render::detail
                             [e endEncoding];
                             continue;
                         }
-                        [e setRenderPipelineState:p.multisampled ? sceneMS : pipelines[p.program]];
+                        [e setRenderPipelineState:p.multisampled ? (p.program == 10 ? shadowMS : sceneMS)
+                                                                 : pipelines[p.program]];
                         const auto target = textures[p.target];
                         [e setViewport:MTLViewport{0, 0, double(target.width), double(target.height), 0, 1}];
                         [e setCullMode:MTLCullModeNone];
@@ -225,7 +238,11 @@ namespace render::detail
                             [e setFragmentTexture:textures[p.sources[b]] atIndex:b + 1];
                         [e setFragmentSamplerState:linear atIndex:9];
                         [e setFragmentSamplerState:point atIndex:10];
-                        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:scene ? 79 * 6 : 3];
+                        [e drawPrimitives:MTLPrimitiveTypeTriangle
+                              vertexStart:0
+                              vertexCount:p.program >= 9 ? uint32_t(p.uniforms[10][2])
+                                          : scene        ? 79 * 6
+                                                         : 3];
                         [e endEncoding];
                     }
                     const size_t row = (size_t(width) * 8 + 255) & ~size_t(255);

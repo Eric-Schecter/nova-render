@@ -1,7 +1,9 @@
 #include "../../../assets/AntiAliasing/AreaTex.h"
 #include "../../../assets/AntiAliasing/SearchTex.h"
 #include "AADevice.hpp"
+#include "render/ShadowView.hpp"
 #include <algorithm>
+#include <optional>
 #include <stdexcept>
 namespace render::detail
 {
@@ -74,6 +76,7 @@ namespace render
         std::array<float, 2>              previousJitter{};
         uint32_t                          frames = 0, width = 0, height = 0;
         Image                             image;
+        std::optional<ShadowSettings>     shadow;
     };
     AntiAliasingView::AntiAliasingView(const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
@@ -147,6 +150,32 @@ namespace render
     {
         return impl_->settings.method == AAMethod::TAA ? impl_->frames : 0;
     }
+    void AntiAliasingView::ConfigureShadow(const ShadowSettings& value)
+    {
+        float length = 0;
+        for (float c : value.lightDirection)
+        {
+            if (!std::isfinite(c))
+                throw std::invalid_argument("Invalid light direction");
+            length += c * c;
+        }
+        if (
+          unsigned(value.method) > 3
+          || (value.resolution != 512 && value.resolution != 1024 && value.resolution != 2048)
+          || !std::isfinite(value.depthBias) || value.depthBias < 0 || value.depthBias > .02f
+          || !std::isfinite(value.normalBias) || value.normalBias < 0 || value.normalBias > .1f
+          || !std::isfinite(value.filterRadius) || value.filterRadius < 1 || value.filterRadius > 6
+          || !std::isfinite(value.lightSize) || value.lightSize < .01f || value.lightSize > 1.5f || length < .0001f)
+            throw std::invalid_argument("Invalid shadow settings");
+        const auto old = impl_->shadow;
+        impl_->shadow  = value;
+        if (
+          !old || old->method != value.method || old->resolution != value.resolution
+          || old->depthBias != value.depthBias || old->normalBias != value.normalBias
+          || old->filterRadius != value.filterRadius || old->lightSize != value.lightSize
+          || old->lightDirection != value.lightDirection)
+            ResetHistory();
+    }
     const Image& AntiAliasingView::DrawFrame(uint32_t w, uint32_t h)
     {
         if (!w || !h || w > 2048 || h > 2048)
@@ -175,6 +204,14 @@ namespace render
         u[5]    = {1, 1, 0, 0};
         u[6][1] = s.settings.textureFiltering ? 1.f : 0.f;
         u[7]    = {.012f, .02f, .035f, .1f};
+        if (s.shadow)
+        {
+            const auto& sh = *s.shadow;
+            u[8]           = {float(sh.method), float(sh.resolution), sh.depthBias, sh.normalBias};
+            u[9]           = {sh.lightDirection[0], sh.lightDirection[1], sh.lightDirection[2], sh.lightSize};
+            u[10]          = {sh.filterRadius, 0, float(6 + 19 * 36 + 3 * 16 * 24 * 6), 0};
+            u[7]           = {.025f, .035f, .055f, 1};
+        }
         std::vector<detail::AAPass> passes;
         auto                        pass = [&](int program, int target) {
             detail::AAPass p;
@@ -184,10 +221,24 @@ namespace render
             passes.push_back(p);
             return &passes.back();
         };
-        auto* baseline                         = pass(0, detail::AABaseline);
-        baseline->uniforms[1]                  = {};
-        pass(0, detail::AAColor)->multisampled = method == AAMethod::MSAA;
-        int filtered                           = detail::AAColor;
+        const bool shadowed = s.shadow && s.shadow->method != ShadowMethod::Off;
+        if (shadowed)
+        {
+            auto* p        = pass(9, detail::AAShadowMap);
+            p->uniforms[7] = {1, 0, 0, 1};
+        }
+        if (!s.shadow || s.settings.split)
+        {
+            auto* baseline        = pass(s.shadow ? 10 : 0, detail::AABaseline);
+            baseline->uniforms[1] = {};
+            if (shadowed)
+                baseline->sources[0] = detail::AAShadowMap;
+        }
+        auto* color         = pass(s.shadow ? 10 : 0, detail::AAColor);
+        color->multisampled = method == AAMethod::MSAA;
+        if (shadowed)
+            color->sources[0] = detail::AAShadowMap;
+        int filtered = detail::AAColor;
         if (method == AAMethod::FXAA)
         {
             pass(2, detail::AAFiltered)->sources[0] = detail::AAColor;
@@ -223,11 +274,12 @@ namespace render
         }
         auto* display       = pass(8, detail::AAOutput);
         display->sources[0] = filtered;
-        display->sources[3] = detail::AABaseline;
-        s.image             = s.device->Draw(passes);
-        s.previous          = s.camera;
-        s.previousTime      = s.time;
-        s.previousJitter    = jitter;
+        if (!s.shadow || s.settings.split)
+            display->sources[3] = detail::AABaseline;
+        s.image          = s.device->Draw(passes);
+        s.previous       = s.camera;
+        s.previousTime   = s.time;
+        s.previousJitter = jitter;
         s.frames++;
         return s.image;
     }

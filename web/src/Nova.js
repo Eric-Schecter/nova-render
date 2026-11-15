@@ -734,3 +734,5 @@ class Renderer {
 }
 
 export { createAntiAliasingView } from './AntiAliasingView.js'
+
+export { createShadowView } from './ShadowView.js'

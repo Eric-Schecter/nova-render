@@ -2,7 +2,7 @@
 // Nova AA laboratory. Scene geometry and all reconstruction passes are shared by native and web.
 cbuffer AAParameters : register(b0)
 {
-    float4 aa[8];
+    float4 aa[16];
 }
 Texture2D<float4> colorTex : register(t1);
 Texture2D<float4> edgeTex : register(t2);
