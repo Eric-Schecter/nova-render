@@ -140,8 +140,12 @@ namespace render::detail
                     candidate.name.clear();
                     if (!(common == candidate))
                         throw std::runtime_error("Materials must share core PBR factors and texture atlas");
-                    const auto glass    = dielectric(gltf.materials.at(p.material));
-                    const int  position = p.attributes.at("POSITION"), uv = p.attributes.at("TEXCOORD_0");
+                    const auto glass     = dielectric(gltf.materials.at(p.material));
+                    const int  position  = p.attributes.at("POSITION"),
+                              uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
+                    const auto& material = gltf.materials.at(p.material);
+                    if(uv<0 && (material.pbrMetallicRoughness.baseColorTexture.index>=0||material.pbrMetallicRoughness.metallicRoughnessTexture.index>=0||material.normalTexture.index>=0||material.occlusionTexture.index>=0||material.emissiveTexture.index>=0))
+                        throw std::runtime_error("Textured material requires TEXCOORD_0");
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto count =
                       p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
@@ -176,7 +180,7 @@ namespace render::detail
                         }
                         const glm::vec3 pos = glm::vec3(matrix * glm::vec4(vec3(gltf, position, v), 1));
                         const glm::vec3 n   = glm::normalize(normals * localNormal);
-                        const glm::vec2 t   = vec2(gltf, uv, v);
+                        const glm::vec2 t   = uv >= 0 ? vec2(gltf, uv, v) : glm::vec2(0);
                         for (int k = 0; k < 3; ++k)
                             if (!std::isfinite(pos[k]) || !std::isfinite(n[k]))
                                 throw std::runtime_error("Non-finite model data");
@@ -260,6 +264,9 @@ namespace render::detail
     }
     void ValidateCamera(const OrbitCamera& c)
     {
+        for (float v : c.target)
+            if (!std::isfinite(v))
+                throw std::invalid_argument("Camera target must be finite");
         if (
           !std::isfinite(c.yaw) || !std::isfinite(c.pitch) || !std::isfinite(c.distance) || !std::isfinite(c.exposure)
           || std::abs(c.pitch) > 85 || c.distance < 1.5f || c.distance > 100 || c.exposure <= 0 || c.exposure > 16)
@@ -300,12 +307,14 @@ namespace render::detail
       const EnvironmentSettings& settings)
     {
         const float     yaw = glm::radians(camera.yaw), pitch = glm::radians(camera.pitch);
-        const glm::vec3 eye(
-          camera.distance * std::cos(pitch) * std::sin(yaw),
-          camera.distance * std::sin(pitch),
-          camera.distance * std::cos(pitch) * std::cos(yaw));
+        const glm::vec3 target(camera.target[0], camera.target[1], camera.target[2]);
+        const glm::vec3 eye = target
+                              + glm::vec3(
+                                camera.distance * std::cos(pitch) * std::sin(yaw),
+                                camera.distance * std::sin(pitch),
+                                camera.distance * std::cos(pitch) * std::cos(yaw));
         const auto vp = glm::perspectiveRH_ZO(glm::radians(45.0f), aspect, 0.01f, 200.0f)
-                        * glm::lookAtRH(eye, glm::vec3(0), glm::vec3(0, 1, 0));
+                        * glm::lookAtRH(eye, target, glm::vec3(0, 1, 0));
         SceneUniforms result{};
         std::memcpy(result.viewProjection, glm::value_ptr(vp), 64);
         result.eyeExposure[0] = eye.x;
@@ -323,8 +332,9 @@ namespace render::detail
             result.lightColorIntensity[k] = light.color[k];
         }
         result.lightColorIntensity[3] = light.intensity;
-        const glm::vec3 forward = glm::normalize(-eye), right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0))),
-                        up = glm::cross(right, forward);
+        const glm::vec3 forward       = glm::normalize(target - eye),
+                        right         = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0))),
+                        up            = glm::cross(right, forward);
         for (int k = 0; k < 3; ++k)
         {
             result.cameraRight[k]   = right[k];

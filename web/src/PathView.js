@@ -1,3 +1,4 @@
+import { copyAmbientOcclusion } from './AmbientOcclusion.js'
 import { buildLightSampling } from './LightSampling.js'
 import { buildBVH } from './BVH.js'
 import { sceneUniforms } from './ModelData.js'
@@ -147,6 +148,9 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       shader('mlt-reduce'),
       shader('mlt-mutate'),
     ])
+    const aoKernels = await Promise.all(
+      ['ao-prepare', 'ao-pyramid', 'ao-main', 'ao-filter'].map(shader),
+    )
     async function module(code) {
       const m = device.createShaderModule({ code })
       const info = await m.getCompilationInfo()
@@ -165,6 +169,17 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: await module(kernel.compute), entryPoint: 'CSMain' },
     })
+    const aoPipelines = []
+    for (let i = 0; i < 4; i++)
+      aoPipelines.push(
+        await device.createComputePipelineAsync({
+          layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
+          compute: {
+            module: await module(aoKernels[i].compute),
+            entryPoint: ['AOPrepare', 'AOPyramid', 'AOMain', 'AOFilter'][i],
+          },
+        }),
+      )
     const denoise = await device.createComputePipelineAsync({
       layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: await module(filter.compute), entryPoint: 'DenoiseMain' },
@@ -247,16 +262,21 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
         environment,
         settings,
         path,
+        ao,
       ) {
         if (disposed) throw Error('Path view disposed')
         validatePathTracing(path)
-        const w = Math.max(1, Math.round(fullWidth * path.resolutionScale)),
-          h = Math.max(1, Math.round(fullHeight * path.resolutionScale))
+        if (ao) ao = copyAmbientOcclusion(ao)
+        const useAO = !!ao?.enabled,
+          scale = useAO ? ao.resolutionScale : path.resolutionScale
+        const w = Math.max(1, Math.round(fullWidth * scale)),
+          h = Math.max(1, Math.round(fullHeight * scale))
         if (w * h > 16000000 || w * h * 16 > device.limits.maxStorageBufferBindingSize)
           throw Error('Path resolution exceeds WebGPU buffer limit')
         const photonCount = path.photonsPerIteration ?? 8192
-        const requiredScratch =
-          path.integrator === 'mlt'
+        const requiredScratch = useAO
+          ? w * h * 32
+          : path.integrator === 'mlt'
             ? (14 * w * h +
                 16 +
                 (path.mltBootstrapSamples ?? 262144) * 2 +
@@ -334,6 +354,17 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           values[123] = path.mltLargeStepProbability ?? 0.3
           values[127] = path.mltMutationScale ?? 0.01
         }
+        if (useAO) {
+          words[100] = 1
+          words[103] = 64 | (ao.denoise ? 1 : 0) | (linearOutput ? 4 : 0)
+          values[104] = ao.radius
+          values[105] = ao.bias
+          values[106] = ao.strength
+          words[107] = ['disabled', 'ssao', 'hbao', 'msao', 'rtao'].indexOf(ao.method)
+          words[115] = ['composite', 'occlusion', 'depth', 'normals'].indexOf(ao.output)
+          words[119] = ao.samples
+          words[123] = ao.seed
+        }
         const signature = Array.from(words).join(',')
         if (signature !== previous || samples > 1000000) {
           samples = 0
@@ -355,7 +386,16 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           presentGroup = group(presentLayout, [output, params])
         }
         const encoder = device.createCommandEncoder()
-        if (path.integrator === 'mlt') {
+        if (useAO && !samples) {
+          for (let stage = 0; stage < (ao.method === 'msao' ? 2 : 1); stage++) {
+            const prep = encoder.beginComputePass()
+            prep.setPipeline(aoPipelines[stage])
+            prep.setBindGroup(0, computeGroup)
+            prep.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+            prep.end()
+          }
+        }
+        if (!useAO && path.integrator === 'mlt') {
           for (let stage = samples ? 2 : 0; stage < 3; stage++) {
             const mltPass = encoder.beginComputePass()
             mltPass.setPipeline(mltPipelines[stage])
@@ -377,7 +417,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
             mltPass.end()
           }
         }
-        if (path.integrator === 'photon-mapping') {
+        if (!useAO && path.integrator === 'photon-mapping') {
           for (let i = 0; i < 2; i++) {
             const photonPass = encoder.beginComputePass()
             photonPass.setPipeline(photonPipelines[i])
@@ -387,13 +427,13 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           }
         }
         const pass = encoder.beginComputePass()
-        pass.setPipeline(compute)
+        pass.setPipeline(useAO ? aoPipelines[2] : compute)
         pass.setBindGroup(0, computeGroup)
         pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
         pass.end()
-        if (path.denoise) {
+        if (useAO ? ao.denoise : path.denoise) {
           const filterPass = encoder.beginComputePass()
-          filterPass.setPipeline(denoise)
+          filterPass.setPipeline(useAO ? aoPipelines[3] : denoise)
           filterPass.setBindGroup(0, computeGroup)
           filterPass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
           filterPass.end()
@@ -415,7 +455,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           display.end()
         }
         device.queue.submit([encoder.finish()])
-        samples += path.samplesPerFrame
+        samples += useAO ? 1 : path.samplesPerFrame
       },
       present(context, rectangle, clear = true) {
         if (!presentGroup) return

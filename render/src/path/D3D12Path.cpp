@@ -27,7 +27,7 @@ namespace render::detail
             ComPtr<ID3D12GraphicsCommandList4> commands;
             ComPtr<ID3D12Fence>                fence;
             ComPtr<ID3D12RootSignature>        root;
-            ComPtr<ID3D12PipelineState>        mltPipelines[3];
+            ComPtr<ID3D12PipelineState>        mltPipelines[3], aoPipelines[4];
             ComPtr<ID3D12PipelineState>        pipeline, denoisePipeline, photonClearPipeline, photonPipeline;
             ComPtr<ID3D12Resource> params, vertices, texels, sky, blas, tlas, instances, scratch, accumulation, output,
               readback, guides;
@@ -183,6 +183,17 @@ namespace render::detail
                     pso.CS           = {bytes.data(), bytes.size()};
                     Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&mltPipelines[i])));
                 }
+                const char* aoFiles[] = {
+                  "ao-prepare.compute.dxil",
+                  "ao-pyramid.compute.dxil",
+                  "ao-main.compute.dxil",
+                  "ao-filter.compute.dxil"};
+                for (int i = 0; i < 4; i++)
+                {
+                    const auto bytes = LoadShader(config.shaderDirectory, aoFiles[i]);
+                    pso.CS           = {bytes.data(), bytes.size()};
+                    Check(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&aoPipelines[i])));
+                }
 
                 const PathUniforms zero{};
                 params = Upload(&zero, sizeof(zero));
@@ -301,6 +312,21 @@ namespace render::detail
                 commands->SetComputeRootUnorderedAccessView(5, accumulation->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(6, output->GetGPUVirtualAddress());
                 commands->SetComputeRootUnorderedAccessView(7, guides->GetGPUVirtualAddress());
+                if ((uniforms.options[3] & 64u) && !uniforms.frame[0])
+                {
+                    commands->SetPipelineState(aoPipelines[0].Get());
+                    commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
+                    Barrier(guides.Get());
+                    uint32_t method;
+                    std::memcpy(&method, &uniforms.clear[3], 4);
+                    if (method == 3)
+                    {
+                        commands->SetPipelineState(aoPipelines[1].Get());
+                        commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
+                        Barrier(guides.Get());
+                    }
+                }
+                commands->SetPipelineState((uniforms.options[3] & 64u) ? aoPipelines[2].Get() : pipeline.Get());
                 if (uniforms.options[3] & 32u)
                 {
                     uint32_t boot;
@@ -311,7 +337,12 @@ namespace render::detail
                         const uint32_t count = stage == 0   ? std::max(width * height, boot)
                                                : stage == 1 ? 1
                                                             : std::min(1024u, width * height);
-                        commands->Dispatch(stage==0?std::min((count+63)/64,1024u):stage == 1 ? 1 : (count + 63) / 64, stage==0?(count+65535)/65536:1, 1);
+                        commands->Dispatch(
+                          stage == 0   ? std::min((count + 63) / 64, 1024u)
+                          : stage == 1 ? 1
+                                       : (count + 63) / 64,
+                          stage == 0 ? (count + 65535) / 65536 : 1,
+                          1);
                         Barrier(guides.Get());
                     }
                     commands->SetPipelineState(pipeline.Get());
@@ -332,7 +363,8 @@ namespace render::detail
                     Barrier(accumulation.Get());
                     Barrier(guides.Get());
                     Barrier(output.Get());
-                    commands->SetPipelineState(denoisePipeline.Get());
+                    commands->SetPipelineState(
+                      (uniforms.options[3] & 64u) ? aoPipelines[3].Get() : denoisePipeline.Get());
                     commands->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
                 }
                 transition.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;

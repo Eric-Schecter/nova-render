@@ -1,3 +1,4 @@
+import { defaultAmbientOcclusion, copyAmbientOcclusion } from './AmbientOcclusion.js'
 import { defaultPathTracing, validatePathTracing } from './PathView.js'
 import { defaultEnvironment, copyEnvironment, loadEnvironmentFile } from './EnvironmentData.js'
 import { attachParameterPanel } from './ParameterPanel.js'
@@ -27,6 +28,7 @@ class Renderer {
   #pipeline
   #renderMode = 'raster'
   #pathSettings = defaultPathTracing()
+  #aoSettings = defaultAmbientOcclusion()
   #continuous = true
   #pathFrame = 0
   #pathError
@@ -195,6 +197,19 @@ class Renderer {
   #animationPlaying() {
     return !!this.#model?.animations.length && this.#model.animationState.playing
   }
+  setAmbientOcclusion(value) {
+    this.#check()
+    const next = copyAmbientOcclusion(value)
+    if (next.enabled && !this.getCapabilities().rayTracing)
+      throw Error(this.getCapabilities().reason)
+    this.#aoSettings = next
+    this.resetAccumulation()
+    this.#parameterPanel?.refresh()
+  }
+  getAmbientOcclusion() {
+    this.#check()
+    return { ...this.#aoSettings }
+  }
   getRayTracing() {
     return this.getPathTracing()
   }
@@ -246,13 +261,17 @@ class Renderer {
       !this.#continuous ||
       this.#disposed ||
       this.#pathError ||
-      (this.#renderMode === 'raster' && !this.#animationPlaying()) ||
+      (this.#renderMode === 'raster' && !this.#aoSettings.enabled && !this.#animationPlaying()) ||
       this.#pathFrame
     )
       return
     this.#pathFrame = requestAnimationFrame((timestamp) => {
       this.#pathFrame = 0
-      if (this.#disposed || (this.#renderMode === 'raster' && !this.#animationPlaying())) return
+      if (
+        this.#disposed ||
+        (this.#renderMode === 'raster' && !this.#aoSettings.enabled && !this.#animationPlaying())
+      )
+        return
       const rect = this.#canvas.getBoundingClientRect()
       if (
         document.hidden ||
@@ -309,12 +328,12 @@ class Renderer {
     this.#check()
     const value = { ...this.#camera, ...camera }
     validateCamera(value)
-    this.#camera = value
+    this.#camera = { ...value, target: [...(value.target || [0, 0, 0])] }
     this.#parameterPanel?.refresh()
   }
   getCamera() {
     this.#check()
-    return { ...this.#camera }
+    return { ...this.#camera, target: [...(this.#camera.target || [0, 0, 0])] }
   }
   enableParameterPanel(options = {}) {
     this.#check()
@@ -490,7 +509,7 @@ class Renderer {
     let failure
     try {
       if (this.#model) {
-        if (this.#renderMode === 'ray-tracing')
+        if (this.#renderMode === 'ray-tracing' || this.#aoSettings.enabled)
           await this.#model.drawPath(
             this.#camera,
             this.#clear,
@@ -500,6 +519,7 @@ class Renderer {
             this.#directionalLight,
             this.#environmentSettings,
             this.#pathSettings,
+            this.#aoSettings,
           )
         else
           this.#model.draw(

@@ -408,3 +408,15 @@ node scripts/webgpu/check-mlt.mjs
 公开参数和使用方法见 `docs/api/render-mode.md`，实际四栏截图与说明见 `docs/guide/integrator-comparison.md`。
 
 最终 MLT 回归：Mac 46 项中 41 项通过、5 项因 MoltenVK 缺少光追而跳过；Ubuntu 的相关 4 项及修复后 MLT 复验通过；Windows WARP 1.0.22 的 MLT 与四栏测试通过，原模式和 BDPT 回归也通过。补充 GPU bootstrap CDF 索引边界检查，修复链初始化误读材质缓冲区及模式专属 scratch 的潜在越界。Chrome 解析目标、三种子、分批一致性、玻璃收敛、原生/网页能量一致性与四栏像素检查通过。安装后的独立竖向窗口调用、无 UI 构建和静态文档通过；Windows 真机 GPU 尚未验证。
+
+## 第八例：环境遮蔽
+
+Intel Sponza 白模约 4.76 MB，25 万三角形，无纹理与运行时解码依赖。SSAO、HBAO、MSAO、RTAO 共用 `ambient-occlusion.hlsl`，通过 `SetAmbientOcclusion` / `setAmbientOcclusion` 配置；不新增 Mode。算法、显示、滤波及相机预设由例子面板控制。原生深度前置使用现有 RayQuery，网页使用 compute BVH，屏幕空间方法仅使用前置深度。
+
+```sh
+./build/nova_ao assets/SponzaWhite/SponzaWhite.glb --api metal
+ctest --test-dir build -R ao-metal --output-on-failure
+node scripts/webgpu/check-ao.mjs
+```
+
+模型来源与完整许可见 `assets/SponzaWhite/`，接口见 `docs/api/ambient-occlusion.md`，页面为 `/examples/ambient-occlusion`。

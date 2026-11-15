@@ -189,7 +189,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       resetAccumulation() {
         pathView?.reset()
       },
-      async drawPath(camera, clear, width, height, lighting, light, settings, path) {
+      async drawPath(camera, clear, width, height, lighting, light, settings, path, ao) {
         if (disposed) throw Error('Model has been disposed')
         if (!data.vertices.length) throw Error('Path tracing requires a loaded model')
         if (!pathView) {
@@ -215,6 +215,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
           path,
+          ao,
         )
       },
       async loadEnvironment(next, skyURL) {

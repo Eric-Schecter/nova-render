@@ -2,6 +2,10 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import { showAO } from '../../../web/examples/ao.js'
+import aoJS from '../../../web/examples/ao.js?raw'
+import aoCPP from '../../../examples/ao/main.cpp?raw'
+import aoHLSL from '../../../render/shaders/ambient-occlusion.hlsl?raw'
 import { showWeekend } from '../../../web/examples/weekend.js'
 import weekendJS from '../../../web/examples/weekend.js?raw'
 import { showComparison } from '../../../web/examples/comparison.js'
@@ -27,40 +31,47 @@ const props = defineProps({
   animation: Boolean,
   comparison: Boolean,
   weekend: Boolean,
+  ao: Boolean,
 })
-const jsSource = props.weekend
-  ? weekendJS
-  : props.comparison
-    ? comparisonJS
-    : props.animation
-      ? animationJS
-      : props.environment
-        ? environmentJS
-        : props.lighting
-          ? lightingJS
-          : helmetJS
-const cppSource = props.weekend
-  ? environmentCPP
-  : props.comparison
-    ? comparisonCPP
-    : props.animation
-      ? animationCPP
-      : props.environment
-        ? environmentCPP
-        : props.lighting
-          ? lightingCPP
-          : helmetCPP
-const showExample = props.weekend
-  ? showWeekend
-  : props.comparison
-    ? showComparison
-    : props.animation
-      ? showAnimation
-      : props.environment
-        ? showEnvironment
-        : props.lighting
-          ? showLighting
-          : showHelmet
+const jsSource = props.ao
+  ? aoJS
+  : props.weekend
+    ? weekendJS
+    : props.comparison
+      ? comparisonJS
+      : props.animation
+        ? animationJS
+        : props.environment
+          ? environmentJS
+          : props.lighting
+            ? lightingJS
+            : helmetJS
+const cppSource = props.ao
+  ? aoCPP
+  : props.weekend
+    ? environmentCPP
+    : props.comparison
+      ? comparisonCPP
+      : props.animation
+        ? animationCPP
+        : props.environment
+          ? environmentCPP
+          : props.lighting
+            ? lightingCPP
+            : helmetCPP
+const showExample = props.ao
+  ? showAO
+  : props.weekend
+    ? showWeekend
+    : props.comparison
+      ? showComparison
+      : props.animation
+        ? showAnimation
+        : props.environment
+          ? showEnvironment
+          : props.lighting
+            ? showLighting
+            : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('加载模型…'),
@@ -100,13 +111,15 @@ onMounted(async () => {
     const next = await showExample(
       canvas.value,
       withBase(
-        props.weekend
-          ? '/generated/WeekendSpheres.glb'
-          : props.comparison
-            ? '/generated/CornellCaustics.glb'
-            : props.animation
-              ? '/generated/Fox.glb'
-              : '/generated/DamagedHelmet.glb',
+        props.ao
+          ? '/generated/SponzaWhite.glb'
+          : props.weekend
+            ? '/generated/WeekendSpheres.glb'
+            : props.comparison
+              ? '/generated/CornellCaustics.glb'
+              : props.animation
+                ? '/generated/Fox.glb'
+                : '/generated/DamagedHelmet.glb',
       ),
       withBase('/generated/'),
       {
@@ -149,15 +162,17 @@ onBeforeUnmount(() => {
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
       <strong>{{
-        comparison
-          ? '积分器对比'
-          : animation
-            ? '骨骼动画'
-            : environment
-              ? '天空盒与环境光'
-              : lighting
-                ? 'PBR 光照'
-                : '模型加载'
+        ao
+          ? '环境遮蔽 AO'
+          : comparison
+            ? '积分器对比'
+            : animation
+              ? '骨骼动画'
+              : environment
+                ? '天空盒与环境光'
+                : lighting
+                  ? 'PBR 光照'
+                  : '模型加载'
       }}</strong>
       <div>
         <button
@@ -188,7 +203,11 @@ onBeforeUnmount(() => {
         language="javascript"
         readonly
       />
-      <HlslEditor v-else :model-value="props.comparison ? rayHlslSource : hlslSource" readonly />
+      <HlslEditor
+        v-else
+        :model-value="props.ao ? aoHLSL : props.comparison ? rayHlslSource : hlslSource"
+        readonly
+      />
     </div>
     <div
       id="helmet-preview"

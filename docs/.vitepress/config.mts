@@ -29,6 +29,7 @@ export default defineConfig({
           { text: '05 · 骨骼动画', link: '/examples/skeletal-animation' },
           { text: '06 · 积分器对比', link: '/examples/integrators' },
           { text: '07 · 多球场景', link: '/examples/weekend-spheres' },
+          { text: '08 · 环境遮蔽 AO', link: '/examples/ambient-occlusion' },
         ],
       },
       {
@@ -41,6 +42,7 @@ export default defineConfig({
           { text: '骨骼动画', link: '/api/animation' },
           { text: '天空盒与环境光', link: '/api/environment' },
           { text: '渲染模式', link: '/api/render-mode' },
+          { text: '环境遮蔽 AO', link: '/api/ambient-occlusion' },
           { text: '参数面板', link: '/api/ui' },
           { text: '类型与配置', link: '/api/types' },
           { text: '后端查询与选择', link: '/api/selection' },

@@ -1,5 +1,6 @@
 #pragma once
 #include "ModelData.hpp"
+#include "render/AmbientOcclusion.hpp"
 #include "render/Renderer.hpp"
 #include <algorithm>
 #include <cstring>
@@ -16,6 +17,8 @@ namespace render::detail
     static_assert(sizeof(PathUniforms) == 512, "HLSL path parameter layout");
     inline size_t PathScratchBytes(const PathUniforms& p)
     {
+        if (p.options[3] & 64u)
+            return size_t(p.frame[1]) * p.frame[2] * 32;
         if (p.options[3] & 32u)
         {
             uint32_t bootstrap;
@@ -47,6 +50,7 @@ namespace render::detail
     std::unique_ptr<PathDevice> CreateMetalPathDevice(const RendererConfig&);
     std::unique_ptr<PathDevice> CreateVulkanPathDevice(const RendererConfig&);
     std::unique_ptr<PathDevice> CreateD3D12PathDevice(const RendererConfig&);
+    void                        ValidateAmbientOcclusion(const AmbientOcclusionSettings&);
     void                        ValidatePathTracing(const PathTracingSettings&);
     class PathSession
     {
@@ -62,9 +66,10 @@ namespace render::detail
              std::shared_ptr<const EnvironmentData> environment,
              const SceneUniforms&,
              const PathTracingSettings&,
-             const std::array<float, 4>& clear,
-             uint32_t                    width,
-             uint32_t                    height);
+             const std::array<float, 4>&     clear,
+             uint32_t                        width,
+             uint32_t                        height,
+             const AmbientOcclusionSettings* ao = nullptr);
         void     Reset() { samples = 0; }
         uint32_t Samples() const { return samples; }
 

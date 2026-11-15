@@ -48,7 +48,7 @@ namespace example
         {
             if (
               camera.yaw == value.yaw && camera.pitch == value.pitch && camera.distance == value.distance
-              && camera.exposure == value.exposure)
+              && camera.target == value.target && camera.exposure == value.exposure)
                 return;
             for (auto& v : views)
                 v->SetCamera(value);

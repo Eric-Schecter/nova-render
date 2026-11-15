@@ -6,6 +6,16 @@
 #include <stdexcept>
 namespace render::detail
 {
+    void ValidateAmbientOcclusion(const AmbientOcclusionSettings& s)
+    {
+        if (
+          int(s.method) < 0 || int(s.method) > 4 || int(s.output) < 0 || int(s.output) > 3 || !std::isfinite(s.radius)
+          || s.radius < .001f || s.radius > 1 || !std::isfinite(s.bias) || s.bias < 0 || s.bias > .05f
+          || !std::isfinite(s.strength) || s.strength < 0 || s.strength > 4 || s.samples < 4 || s.samples > 64
+          || !std::isfinite(s.resolutionScale) || s.resolutionScale < .25f || s.resolutionScale > 1)
+            throw std::invalid_argument("Invalid ambient occlusion settings");
+    }
+
     void ValidatePathTracing(const PathTracingSettings& settings)
     {
         if (
@@ -65,9 +75,12 @@ namespace render::detail
       const PathTracingSettings&             settings,
       const std::array<float, 4>&            clear,
       uint32_t                               width,
-      uint32_t                               height)
+      uint32_t                               height,
+      const AmbientOcclusionSettings*        ao)
     {
         ValidatePathTracing(settings);
+        if (ao)
+            ValidateAmbientOcclusion(*ao);
         if (!device || !capabilities.pathTracing)
             throw std::runtime_error("Path tracing device unavailable");
         if (!model || model->vertices.empty())
@@ -98,6 +111,11 @@ namespace render::detail
           std::max(1u, uint32_t(width * settings.resolutionScale)),
           std::max(1u, uint32_t(height * settings.resolutionScale)),
           settings.maxBounces};
+        if (ao && ao->enabled)
+        {
+            params.frame[1] = std::max(1u, uint32_t(float(width) * ao->resolutionScale));
+            params.frame[2] = std::max(1u, uint32_t(float(height) * ao->resolutionScale));
+        }
         if (uint64_t(params.frame[1]) * params.frame[2] > 16u * 1024u * 1024u)
             throw std::invalid_argument("Path image exceeds 16 million pixels; reduce resolution scale");
         params.options = {
@@ -118,6 +136,17 @@ namespace render::detail
             std::memcpy(&params.images[3][3], &settings.mltLargeStepProbability, 4);
             std::memcpy(&params.images[4][3], &settings.mltMutationScale, 4);
         }
+        if (ao && ao->enabled)
+        {
+            params.options[0] = 1;
+            params.options[3] = 64u | (ao->denoise ? 1u : 0u) | (linearOutput ? 4u : 0u);
+            params.clear      = {ao->radius, ao->bias, ao->strength, 0};
+            const auto method = uint32_t(ao->method);
+            std::memcpy(&params.clear[3], &method, 4);
+            params.images[1][3] = uint32_t(ao->output);
+            params.images[2][3] = ao->samples;
+            params.images[3][3] = ao->seed;
+        }
         if (std::memcmp(&params, &previous, sizeof(params)) || samples > 1000000)
         {
             samples  = 0;
@@ -128,7 +157,7 @@ namespace render::detail
         image.width     = params.frame[1];
         image.height    = params.frame[2];
         image.pixels    = std::move(pixels);
-        samples += settings.samplesPerFrame;
+        samples += params.options[0];
         return image;
     }
 } // namespace render::detail

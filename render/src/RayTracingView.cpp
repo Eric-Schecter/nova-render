@@ -12,6 +12,7 @@ namespace render
         std::shared_ptr<const detail::EnvironmentData> environment;
         EnvironmentSettings                            environmentSettings;
         RayTracingSettings                             settings;
+        AmbientOcclusionSettings                       ao;
     };
     RayTracingView::RayTracingView(const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
@@ -76,6 +77,16 @@ namespace render
         impl_->settings = settings;
         impl_->session.Reset();
     }
+    void RayTracingView::SetAmbientOcclusion(const AmbientOcclusionSettings& value)
+    {
+        detail::ValidateAmbientOcclusion(value);
+        impl_->ao = value;
+        impl_->session.Reset();
+    }
+    AmbientOcclusionSettings RayTracingView::GetAmbientOcclusion() const
+    {
+        return impl_->ao;
+    }
     void RayTracingView::ResetAccumulation()
     {
         impl_->session.Reset();
@@ -101,6 +112,6 @@ namespace render
           impl_->environment.get(),
           impl_->environmentSettings);
         return impl_->session.Render(
-          impl_->model, impl_->environment, scene, impl_->settings, {0, 0, 0, 1}, width, height);
+          impl_->model, impl_->environment, scene, impl_->settings, {0, 0, 0, 1}, width, height, &impl_->ao);
     }
 } // namespace render

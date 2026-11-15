@@ -215,6 +215,8 @@ namespace render::detail
             std::array<VkPipeline, 2>               photonPipelines{};
             std::array<VkShaderModule, 3>           mltShaders{};
             std::array<VkPipeline, 3>               mltPipelines{};
+            std::array<VkPipeline, 4>               aoPipelines{};
+            std::array<VkShaderModule, 4>           aoShaders{};
             std::vector<Buffer>                     buffers;
             std::vector<VkAccelerationStructureKHR> structures;
             ~Context()
@@ -222,6 +224,12 @@ namespace render::detail
                 if (device)
                 {
                     api.vkDeviceWaitIdle(device);
+                    for (auto p : aoPipelines)
+                        if (p)
+                            api.vkDestroyPipeline(device, p, nullptr);
+                    for (auto m : aoShaders)
+                        if (m)
+                            api.vkDestroyShaderModule(device, m, nullptr);
                     for (auto p : mltPipelines)
                         if (p)
                             api.vkDestroyPipeline(device, p, nullptr);
@@ -583,6 +591,22 @@ namespace render::detail
                     Check(c.api.vkCreateComputePipelines(
                       c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.mltPipelines[i]));
                 }
+                const char* aoFiles[] = {
+                  "ao-prepare.compute.spv", "ao-pyramid.compute.spv", "ao-main.compute.spv", "ao-filter.compute.spv"};
+                const char* aoEntries[] = {"AOPrepare", "AOPyramid", "AOMain", "AOFilter"};
+                for (size_t i = 0; i < 4; i++)
+                {
+                    const auto            bytes = LoadShader(config.shaderDirectory, aoFiles[i]);
+                    std::vector<uint32_t> code(bytes.size() / 4);
+                    std::memcpy(code.data(), bytes.data(), bytes.size());
+                    module.codeSize = bytes.size();
+                    module.pCode    = code.data();
+                    Check(c.api.vkCreateShaderModule(c.device, &module, nullptr, &c.aoShaders[i]));
+                    pipeline.stage.module = c.aoShaders[i];
+                    pipeline.stage.pName  = aoEntries[i];
+                    Check(c.api.vkCreateComputePipelines(
+                      c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.aoPipelines[i]));
+                }
             }
             void Submit()
             {
@@ -814,6 +838,42 @@ namespace render::detail
                 c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipeline);
                 c.api.vkCmdBindDescriptorSets(
                   cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.pipelineLayout, 0, 1, &set, 0, nullptr);
+                if ((uniforms.options[3] & 64u) && !uniforms.frame[0])
+                {
+                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.aoPipelines[0]);
+                    c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
+                    c.api.vkCmdPipelineBarrier(
+                      cmd,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      0,
+                      1,
+                      &barrier,
+                      0,
+                      nullptr,
+                      0,
+                      nullptr);
+                    uint32_t method;
+                    std::memcpy(&method, &uniforms.clear[3], 4);
+                    if (method == 3)
+                    {
+                        c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.aoPipelines[1]);
+                        c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
+                        c.api.vkCmdPipelineBarrier(
+                          cmd,
+                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                          0,
+                          1,
+                          &barrier,
+                          0,
+                          nullptr,
+                          0,
+                          nullptr);
+                    }
+                }
+                c.api.vkCmdBindPipeline(
+                  cmd, VK_PIPELINE_BIND_POINT_COMPUTE, (uniforms.options[3] & 64u) ? c.aoPipelines[2] : c.pipeline);
                 if (uniforms.options[3] & 32u)
                 {
                     uint32_t boot;
@@ -824,7 +884,13 @@ namespace render::detail
                         const uint32_t count = stage == 0   ? std::max(width * height, boot)
                                                : stage == 1 ? 1
                                                             : std::min(1024u, width * height);
-                        c.api.vkCmdDispatch(cmd, stage==0?std::min((count+63)/64,1024u):stage == 1 ? 1 : (count + 63) / 64, stage==0?(count+65535)/65536:1, 1);
+                        c.api.vkCmdDispatch(
+                          cmd,
+                          stage == 0   ? std::min((count + 63) / 64, 1024u)
+                          : stage == 1 ? 1
+                                       : (count + 63) / 64,
+                          stage == 0 ? (count + 65535) / 65536 : 1,
+                          1);
                         c.api.vkCmdPipelineBarrier(
                           cmd,
                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -883,7 +949,10 @@ namespace render::detail
                       nullptr,
                       0,
                       nullptr);
-                    c.api.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c.denoisePipeline);
+                    c.api.vkCmdBindPipeline(
+                      cmd,
+                      VK_PIPELINE_BIND_POINT_COMPUTE,
+                      (uniforms.options[3] & 64u) ? c.aoPipelines[3] : c.denoisePipeline);
                     c.api.vkCmdDispatch(cmd, (width + 7) / 8, (height + 7) / 8, 1);
                 }
                 barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;

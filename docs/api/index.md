@@ -15,3 +15,5 @@
 接口描述对应当前源码。内部 `detail::Backend` 和各平台后端不属于公共 API。当前不承诺跨版本稳定 ABI。
 
 - [离屏视图与图像展示](./render-mode#离屏视图与例子层对比)：`RayTracingView`、`Image`、`PresentImage`，供应用组织多视图。
+
+- [环境遮蔽 AO](./ambient-occlusion)：SSAO、HBAO、MSAO、RTAO 与白模诊断输出。

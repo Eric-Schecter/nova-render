@@ -75,3 +75,21 @@ for (const [name, entry] of [
   })
   await writeFile(`docs/public/generated/${name}.json`, JSON.stringify(shader))
 }
+
+const aoSource = (await readFile('render/shaders/ambient-occlusion.hlsl', 'utf8')).replace(
+  '#include "pathtrace.hlsl"',
+  await readFile('render/shaders/pathtrace.hlsl', 'utf8'),
+)
+for (const [name, entry] of [
+  ['ao-prepare', 'AOPrepare'],
+  ['ao-pyramid', 'AOPyramid'],
+  ['ao-main', 'AOMain'],
+  ['ao-filter', 'AOFilter'],
+]) {
+  const shader = await compile(aoSource, { compute: true, computeEntry: entry })
+  await writeFile(`docs/public/generated/${name}.json`, JSON.stringify(shader))
+}
+await writeFile(
+  'docs/public/generated/SponzaWhite.glb',
+  await readFile('assets/SponzaWhite/SponzaWhite.glb'),
+)

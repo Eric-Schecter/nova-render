@@ -138,6 +138,19 @@ export async function loadGLB(url) {
           )
         if (core(json.materials[p.material]) !== core(json.materials[materialIndex]))
           throw Error('Materials must share core PBR factors and texture atlas')
+        const mat = json.materials[p.material],
+          pbr = mat.pbrMetallicRoughness || {}
+        if (
+          p.attributes.TEXCOORD_0 === undefined &&
+          [
+            pbr.baseColorTexture,
+            pbr.metallicRoughnessTexture,
+            mat.normalTexture,
+            mat.occlusionTexture,
+            mat.emissiveTexture,
+          ].some(Boolean)
+        )
+          throw Error('Textured material requires TEXCOORD_0')
         const extensions = json.materials[p.material].extensions || {},
           transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
           ior = extensions.KHR_materials_ior?.ior ?? 1.5
@@ -181,7 +194,10 @@ export async function loadGLB(url) {
               p.attributes.NORMAL !== undefined
                 ? element(p.attributes.NORMAL, index, 'VEC3', 3)
                 : faceNormal(i),
-            uv = element(p.attributes.TEXCOORD_0, index, 'VEC2', 2)
+            uv =
+              p.attributes.TEXCOORD_0 === undefined
+                ? [0, 0]
+                : element(p.attributes.TEXCOORD_0, index, 'VEC2', 2)
           const world = pos.map(
             (_, r) => m[r] * pos[0] + m[4 + r] * pos[1] + m[8 + r] * pos[2] + m[12 + r],
           )
@@ -282,6 +298,11 @@ export async function loadGLB(url) {
 }
 export function validateCamera(c) {
   if (
+    c.target !== undefined &&
+    (!Array.isArray(c.target) || c.target.length !== 3 || !c.target.every(Number.isFinite))
+  )
+    throw Error('Camera target must contain three finite values')
+  if (
     ![c.yaw, c.pitch, c.distance, c.exposure].every(Number.isFinite) ||
     Math.abs(c.pitch) > 85 ||
     c.distance < 1.5 ||
@@ -303,12 +324,14 @@ export function sceneUniforms(
   const yaw = (camera.yaw * Math.PI) / 180,
     pitch = (camera.pitch * Math.PI) / 180,
     d = camera.distance
+  const target = camera.target || [0, 0, 0]
   const eye = [
     d * Math.cos(pitch) * Math.sin(yaw),
     d * Math.sin(pitch),
     d * Math.cos(pitch) * Math.cos(yaw),
   ]
-  const f = normalize(eye.map((x) => -x)),
+  for (let i = 0; i < 3; i++) eye[i] += target[i]
+  const f = normalize(eye.map((x, i) => target[i] - x)),
     s = normalize(cross(f, [0, 1, 0])),
     u = cross(s, f)
   const view = [

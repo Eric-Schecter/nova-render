@@ -21,7 +21,7 @@ namespace render::detail
             id<MTLDevice>                device;
             id<MTLCommandQueue>          queue;
             id<MTLComputePipelineState>  pipeline, denoisePipeline, photonClearPipeline, photonPipeline;
-            id<MTLComputePipelineState>  mltPipelines[3];
+            id<MTLComputePipelineState>  mltPipelines[3], aoPipelines[4];
             id<MTLAccelerationStructure> blas, tlas;
             id<MTLBuffer>                vertices, texels, sky, params, accumulation, output, guides;
             uint32_t                     width = 0, height = 0;
@@ -90,6 +90,10 @@ namespace render::detail
                 denoisePipeline     = Pipeline(config, "denoise.metallib", @"DenoiseMain");
                 photonClearPipeline = Pipeline(config, "photon-clear.metallib", @"PhotonClear");
                 photonPipeline      = Pipeline(config, "photon-trace.metallib", @"PhotonMain");
+                aoPipelines[0]      = Pipeline(config, "ao-prepare.metallib", @"AOPrepare");
+                aoPipelines[1]      = Pipeline(config, "ao-pyramid.metallib", @"AOPyramid");
+                aoPipelines[2]      = Pipeline(config, "ao-main.metallib", @"AOMain");
+                aoPipelines[3]      = Pipeline(config, "ao-filter.metallib", @"AOFilter");
                 mltPipelines[0]     = Pipeline(config, "mlt-bootstrap.metallib", @"MLTBootstrap");
                 mltPipelines[1]     = Pipeline(config, "mlt-reduce.metallib", @"MLTReduce");
                 mltPipelines[2]     = Pipeline(config, "mlt-mutate.metallib", @"MLTMutate");
@@ -151,6 +155,22 @@ namespace render::detail
                 [encoder setBuffer:accumulation offset:0 atIndex:5];
                 [encoder setBuffer:output offset:0 atIndex:6];
                 [encoder setBuffer:guides offset:0 atIndex:7];
+                if ((uniforms.options[3] & 64u) && !uniforms.frame[0])
+                {
+                    [encoder setComputePipelineState:aoPipelines[0]];
+                    [encoder dispatchThreads:MTLSizeMake(width, height, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+                    [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+                    uint32_t method;
+                    std::memcpy(&method, &uniforms.clear[3], 4);
+                    if (method == 3)
+                    {
+                        [encoder setComputePipelineState:aoPipelines[1]];
+                        [encoder dispatchThreads:MTLSizeMake(width, height, 1)
+                           threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+                        [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+                    }
+                }
+                [encoder setComputePipelineState:(uniforms.options[3] & 64u) ? aoPipelines[2] : pipeline];
                 if (uniforms.options[3] & 32u)
                 {
                     uint32_t boot;
@@ -161,7 +181,10 @@ namespace render::detail
                         const uint32_t count = stage == 0   ? std::max(width * height, boot)
                                                : stage == 1 ? 1
                                                             : std::min(1024u, width * height);
-                        [encoder dispatchThreads:MTLSizeMake(stage==0?std::min(count,65536u):count,stage==0?(count+65535)/65536:1,1)
+                        [encoder dispatchThreads:MTLSizeMake(
+                                                   stage == 0 ? std::min(count, 65536u) : count,
+                                                   stage == 0 ? (count + 65535) / 65536 : 1,
+                                                   1)
                            threadsPerThreadgroup:MTLSizeMake(stage == 1 ? 1 : 64, 1, 1)];
                         [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
                     }
@@ -183,7 +206,7 @@ namespace render::detail
                 if (uniforms.options[3] & 1u)
                 {
                     auto filter = [command computeCommandEncoder];
-                    [filter setComputePipelineState:denoisePipeline];
+                    [filter setComputePipelineState:(uniforms.options[3] & 64u) ? aoPipelines[3] : denoisePipeline];
                     [filter setBuffer:params offset:0 atIndex:1];
                     [filter setBuffer:accumulation offset:0 atIndex:5];
                     [filter setBuffer:output offset:0 atIndex:6];
