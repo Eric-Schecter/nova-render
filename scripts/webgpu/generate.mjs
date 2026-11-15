@@ -93,3 +93,35 @@ await writeFile(
   'docs/public/generated/SponzaWhite.glb',
   await readFile('assets/SponzaWhite/SponzaWhite.glb'),
 )
+
+// Built-in AA library only: flatten vendored headers, preserve original notices on disk.
+const aaSource = await readFile('render/shaders/antialiasing.hlsl', 'utf8')
+for (let pass = 0; pass < 9; pass++) {
+  let source = aaSource
+  for (const [file, needed] of [
+    ['third_party/fxaa/FXAA.hlsli', pass === 2],
+    ['third_party/smaa/SMAA.hlsl', pass >= 4 && pass <= 6],
+  ]) {
+    const text = needed ? await readFile('render/shaders/' + file, 'utf8') : ''
+    source = source.replace(
+      '#include "' + file + '"',
+      text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''),
+    )
+  }
+  const shader = await compile('#define AA_PASS ' + pass + '\n' + source)
+  await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(shader))
+}
+for (const [name, channels] of [
+  ['Area', 2],
+  ['Search', 1],
+]) {
+  const text = await readFile('assets/AntiAliasing/' + name + 'Tex.h', 'utf8')
+  const bytes = [...text.matchAll(/0x([0-9a-f]{2})/gi)].map((m) => parseInt(m[1], 16))
+  const rgba = new Uint8Array((bytes.length / channels) * 4)
+  for (let i = 0; i < bytes.length / channels; i++) {
+    for (let c = 0; c < channels; c++) rgba[i * 4 + c] = bytes[i * channels + c]
+    rgba[i * 4 + 3] = 255
+  }
+  await writeFile('docs/public/generated/smaa-' + name.toLowerCase() + '.bin', rgba)
+}
+console.log('AA HLSL and SMAA reference tables generated')

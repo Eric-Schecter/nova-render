@@ -577,3 +577,5 @@ class Renderer {
     this.#device.destroy()
   }
 }
+
+export { createAntiAliasingView } from './AntiAliasingView.js'

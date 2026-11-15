@@ -1,0 +1,44 @@
+# Independent raster AA shaders. No ray-query requirement.
+foreach(pass RANGE 0 8)
+    set(aa_air)
+    foreach(stage vert frag)
+        if(stage STREQUAL "vert")
+            set(entry VSMain)
+            set(profile vs_6_0)
+            set(invert -fvk-invert-y)
+        else()
+            set(entry PSMain)
+            set(profile ps_6_0)
+            set(invert)
+        endif()
+        set(base "${SHADER_OUTPUT_DIR}/aa-${pass}.${stage}")
+        set(source "${PROJECT_SOURCE_DIR}/render/shaders/antialiasing.hlsl")
+        set(dependencies "${source}" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/FXAA.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/SMAA.hlsl")
+        if(NOVA_ENABLE_VULKAN)
+            add_custom_command(OUTPUT "${base}.spv"
+                COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.1 ${invert} -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.spv"
+                DEPENDS ${dependencies} VERBATIM)
+            list(APPEND SHADER_OUTPUTS "${base}.spv")
+        endif()
+        if(APPLE)
+            add_custom_command(OUTPUT "${base}.air"
+                COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.1 -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.metal.spv"
+                COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${base}.metal.spv" --msl --msl-version 20100 --msl-decoration-binding --output "${base}.metal"
+                COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.1 -c "${base}.metal" -o "${base}.air"
+                DEPENDS ${dependencies} VERBATIM)
+            list(APPEND aa_air "${base}.air")
+        elseif(WIN32)
+            add_custom_command(OUTPUT "${base}.dxil"
+                COMMAND "${NOVA_DXC_EXECUTABLE}" -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.dxil"
+                DEPENDS ${dependencies} VERBATIM)
+            list(APPEND SHADER_OUTPUTS "${base}.dxil")
+        endif()
+    endforeach()
+    if(APPLE)
+        set(output "${SHADER_OUTPUT_DIR}/aa-${pass}.metallib")
+        add_custom_command(OUTPUT "${output}"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metallib ${aa_air} -o "${output}"
+            DEPENDS ${aa_air} VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${output}")
+    endif()
+endforeach()
