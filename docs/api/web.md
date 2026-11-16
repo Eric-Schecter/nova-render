@@ -1,4 +1,4 @@
-# Nova Web
+# Nova Render Web
 
 浏览器适配层位于 `web/src/Nova.js`，当前为项目内模块，尚未发布 npm 包。与桌面接口共享生命周期概念，调用方式遵循 JavaScript 异步习惯。
 

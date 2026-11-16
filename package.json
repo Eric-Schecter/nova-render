@@ -1,5 +1,5 @@
 {
-  "name": "nova-render-docs",
+  "name": "nova-render",
   "private": true,
   "type": "module",
   "engines": {

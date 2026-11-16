@@ -18,7 +18,7 @@ cpSync(join(root, 'web/src'), join(stage, 'src'), { recursive: true })
 cpSync(join(root, 'packages/web/bin'), join(stage, 'bin'), { recursive: true })
 cpSync(join(root, 'packages/web/README.md'), join(stage, 'README.md'))
 const version = readFileSync(join(root, 'CMakeLists.txt'), 'utf8').match(
-  /project\(Nova VERSION ([\d.]+)/,
+  /project\(NovaRender VERSION ([\d.]+)/,
 )[1]
 const assets = readdirSync(join(root, 'docs/public/generated')).filter(
   (f) => f.endsWith('.json') || /^smaa-(area|search)\.bin$/.test(f),
@@ -52,7 +52,7 @@ writeFileSync(
       private: true,
       type: 'module',
       license: 'UNLICENSED',
-      description: 'Nova WebGPU renderer with precompiled shared HLSL shaders',
+      description: 'Nova Render WebGPU renderer with precompiled shared HLSL shaders',
       exports: {
         '.': './src/Nova.js',
         './assets/*': './assets/*',

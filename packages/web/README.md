@@ -1,4 +1,4 @@
-# @nova/render-web
+# Nova Render Web — @nova/render-web
 
 Local development package. Install the generated `.tgz`, then copy its runtime assets:
 

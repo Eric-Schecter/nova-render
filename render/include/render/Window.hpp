@@ -12,7 +12,7 @@ namespace render
     {
         uint32_t       width  = 800;
         uint32_t       height = 600;
-        std::string    title  = "Nova";
+        std::string    title  = "Nova Render";
         RendererConfig renderer;
     };
 

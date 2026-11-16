@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 const archive = resolve(process.argv[2]),
   api = process.argv[3] || 'metal',
   config = process.argv[4] || 'Release'
-const work = mkdtempSync(join(tmpdir(), 'nova-sdk-consumer-')),
+const work = mkdtempSync(join(tmpdir(), 'nova-render-sdk-consumer-')),
   cmake = process.env.CMAKE || 'cmake'
 const run = (args) => execFileSync(cmake, args, { stdio: 'inherit', cwd: work })
 run(['-E', 'tar', 'xf', archive])

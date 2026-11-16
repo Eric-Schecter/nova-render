@@ -7,7 +7,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        const auto     options = example::ParseModelOptions(argc, argv, "Nova | Skybox and Environment", true, true);
+        const auto     options = example::ParseModelOptions(argc, argv, "Nova Render | Skybox and Environment", true, true);
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
         window.SetLighting(render::LightingMode::PBR);

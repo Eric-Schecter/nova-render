@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(NovaConsumer LANGUAGES CXX)
+project(NovaRenderConsumer LANGUAGES CXX)
 find_package(Nova 0.1 CONFIG REQUIRED)
 add_executable(nova_consumer main.cpp)
 target_link_libraries(nova_consumer PRIVATE Nova::Render)

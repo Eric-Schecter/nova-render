@@ -305,7 +305,7 @@ namespace render::detail
             debugInfo.pfnUserCallback = debugMessage;
             debugInfo.pUserData       = &validationErrors;
             VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-            app.pApplicationName         = "Nova Triangle";
+            app.pApplicationName         = "Nova Render";
             app.apiVersion               = VK_API_VERSION_1_0;
             info.pApplicationInfo        = &app;
             info.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());

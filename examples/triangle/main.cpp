@@ -85,7 +85,7 @@ int main(int argc, char** argv)
         GlfwContext glfw;
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window(
-          glfwCreateWindow(800, 600, "Nova | Triangle", nullptr, nullptr), glfwDestroyWindow);
+          glfwCreateWindow(800, 600, "Nova Render | Triangle", nullptr, nullptr), glfwDestroyWindow);
         if (!window)
             throw std::runtime_error("Window creation failed");
         glfwSetKeyCallback(window.get(), [](GLFWwindow* w, int key, int, int action, int) {
@@ -94,7 +94,7 @@ int main(int argc, char** argv)
         });
         render::Renderer  renderer(window.get(), config);
         const std::string title =
-          std::string("Nova | ") + render::GraphicsAPIName(renderer.GetAPI()) + " Triangle" + (warp ? " (WARP)" : "");
+          std::string("Nova Render | ") + render::GraphicsAPIName(renderer.GetAPI()) + " Triangle" + (warp ? " (WARP)" : "");
         glfwSetWindowTitle(window.get(), title.c_str());
         glfwSetWindowUserPointer(window.get(), &renderer);
         glfwSetFramebufferSizeCallback(window.get(), [](GLFWwindow* w, int width, int height) {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(NovaHelmetConsumer LANGUAGES CXX)
+project(NovaRenderHelmetConsumer LANGUAGES CXX)
 find_package(Nova 0.1 CONFIG REQUIRED)
 add_executable(nova_helmet main.cpp)
 target_link_libraries(nova_helmet PRIVATE Nova::Render)

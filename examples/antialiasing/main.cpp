@@ -12,7 +12,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        auto options          = example::ParseProceduralOptions(argc, argv, "Nova | Anti-aliasing");
+        auto options          = example::ParseProceduralOptions(argc, argv, "Nova Render | Anti-aliasing");
         options.window.width  = 1100;
         options.window.height = 900;
         render::Window           window(options.window);

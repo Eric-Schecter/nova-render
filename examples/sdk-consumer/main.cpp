@@ -24,7 +24,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Installed probe API failed");
         render::WindowConfig config;
         config.renderer = renderer;
-        config.title    = "Installed Nova SDK consumer";
+        config.title    = "Installed Nova Render SDK consumer";
         render::Window window(config);
         window.PresentImage(image);
         int frames = 0;

@@ -10,7 +10,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        auto options          = example::ParseModelOptions(argc, argv, "Nova | Integrator comparison scene");
+        auto options          = example::ParseModelOptions(argc, argv, "Nova Render | Integrator comparison scene");
         options.window.width  = 960;
         options.window.height = 1200;
         render::Window           window(options.window);

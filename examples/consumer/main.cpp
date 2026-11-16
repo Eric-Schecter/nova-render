@@ -7,7 +7,7 @@ int main(int argc, char** argv)
     try
     {
         render::WindowConfig config;
-        config.title = "Nova installed consumer";
+        config.title = "Nova Render installed consumer";
         if (argc > 1)
         {
             const std::string api = argv[1];

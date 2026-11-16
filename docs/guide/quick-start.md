@@ -2,7 +2,7 @@
 
 ## 编译
 
-准备 CMake 3.24+、C++17 编译器和 vcpkg。macOS 需要 Xcode / Metal Toolchain 及 Vulkan SDK 的 DXC；Windows 需要 MSVC Build Tools 和 Windows SDK；Linux 需要窗口开发包及 Vulkan 环境。详细环境说明见仓库 README。
+准备 CMake 3.24+、C++17 编译器和 vcpkg。macOS 需要 Xcode / Metal Toolchain 及 Vulkan SDK 的 DXC；Windows 需要 MSVC Build Tools 和 Windows SDK；Linux 需要窗口开发包及 Vulkan 环境。Vulkan 运行时由 GPU 驱动提供；macOS 的 Vulkan 后端使用 MoltenVK，原生 Metal 无需 Vulkan 运行时。
 
 在仓库根目录执行：
 

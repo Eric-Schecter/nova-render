@@ -7,7 +7,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        const auto     options = example::ParseModelOptions(argc, argv, "Nova | Skeletal Animation", true, false, true);
+        const auto     options = example::ParseModelOptions(argc, argv, "Nova Render | Skeletal Animation", true, false, true);
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
         window.SetRenderMode(options.mode);

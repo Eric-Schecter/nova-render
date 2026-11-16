@@ -25,7 +25,7 @@ execFileSync(
   ['--config', join(build, 'CPackConfig.cmake'), '-C', config, '-B', out],
   { stdio: 'inherit' },
 )
-for (const file of readdirSync(out).filter((f) => /^nova-sdk-.*\.(tar\.gz|zip)$/.test(f))) {
+for (const file of readdirSync(out).filter((f) => /^nova-render-sdk-.*\.(tar\.gz|zip)$/.test(f))) {
   const hash = createHash('sha256')
     .update(readFileSync(join(out, file)))
     .digest('hex')

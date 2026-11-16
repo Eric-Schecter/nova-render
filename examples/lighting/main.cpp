@@ -7,7 +7,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        const auto     options = example::ParseModelOptions(argc, argv, "Nova | PBR Lighting", true);
+        const auto     options = example::ParseModelOptions(argc, argv, "Nova Render | PBR Lighting", true);
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
         window.SetLighting(render::LightingMode::PBR);

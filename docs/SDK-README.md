@@ -1,4 +1,4 @@
-# Nova C++ SDK
+# Nova Render C++ SDK
 
 This archive contains a platform-specific C++17 static library, public headers,
 embedded shaders, CMake package files, bundled dependency libraries and notices.

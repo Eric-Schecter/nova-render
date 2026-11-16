@@ -5,7 +5,7 @@ export default defineConfig({
   vite: { plugins: [shaderCompiler()], server: { port: 5173, strictPort: true } },
   lang: 'zh-CN',
   title: 'Nova Render',
-  description: 'C++17 最小渲染模块接口文档：Vulkan、D3D12、Metal 与统一 HLSL。',
+  description: 'Nova Render 跨平台渲染库接口文档：Vulkan、D3D12、Metal 与统一 HLSL。',
   cleanUrls: true,
   lastUpdated: false,
   themeConfig: {
@@ -43,7 +43,7 @@ export default defineConfig({
         items: [
           { text: '总览', link: '/api/' },
           { text: 'Window', link: '/api/window' },
-          { text: 'Nova Web', link: '/api/web' },
+          { text: 'Nova Render Web', link: '/api/web' },
           { text: '模型与相机', link: '/api/model' },
           { text: '骨骼动画', link: '/api/animation' },
           { text: '天空盒与环境光', link: '/api/environment' },

@@ -13,7 +13,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        auto options          = example::ParseProceduralOptions(argc, argv, "Nova | Shadows");
+        auto options          = example::ParseProceduralOptions(argc, argv, "Nova Render | Shadows");
         options.window.width  = 1100;
         options.window.height = 900;
         render::Window     window(options.window);

@@ -1,6 +1,8 @@
 # 作为依赖使用
 
-桌面端使用 C++17 SDK，网页端使用独立 npm 压缩包。版本统一为 CMake 中的 Nova 版本。当前流程只生成本地文件，不创建 GitHub Release 或执行 npm publish。
+项目名称为 **Nova Render**，仓库与工程标识为 `nova-render`（CMake 工程名 `NovaRender`）。`find_package(Nova)`、`Nova::Render` 和 `@nova/render-web` 保持兼容。
+
+桌面端使用 C++17 SDK，网页端使用独立 npm 压缩包。版本统一为 CMake 中的 Nova Render 版本。打包命令只生成本地文件，不自动创建 GitHub Release 或执行 npm publish。发布版本见 [GitHub Releases](https://github.com/Eric-Schecter/nova-render/releases)。
 
 ## C++ SDK
 
@@ -15,7 +17,7 @@ npm run pack:sdk -- --build-dir build/sdk --config Release
 
 也可直接使用 `cmake --build build/sdk --target nova_render` 和 `cpack --config build/sdk/CPackConfig.cmake -C Release`，无需 Node.js。产物在 `build/packages/`（直接调用 CPack 时为 `build/sdk/packages/`）：`.tar.gz`、`.zip` 和脚本生成的 SHA-256 文件。包名包含版本、系统、架构、编译器和配置；`share/Nova/sdk.json` 记录构建信息。
 
-SDK 包含头文件、静态库、内置 shader、依赖库与声明。默认捆绑 GLFW／volk／可选 ImGui，使用方无需 Nova 源码、vcpkg、DXC、SPIRV-Cross 或 Node.js。包必须匹配目标系统、架构、编译器 ABI 和 Windows Runtime；Release SDK 不包含 Debug 版 Nova。
+SDK 包名为 `nova-render-sdk-版本-系统-架构-编译器-配置`，包含头文件、静态库、内置 shader、依赖库与声明。默认捆绑 GLFW／volk／可选 ImGui，使用方无需 Nova 源码、vcpkg、DXC、SPIRV-Cross 或 Node.js。包必须匹配目标系统、架构、编译器 ABI 和 Windows Runtime；Release SDK 不包含 Debug 版 Nova。
 
 解压后，在另一个项目中：
 
@@ -33,7 +35,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 cmake --build build --config Release
 ```
 
-使用方不要传入 Nova 的 vcpkg 工具链。推荐 `render::Window` 管理窗口，无需直接包含 GLFW；外部窗口集成仍可使用底层接口。动态 triplet 的 DLL／动态库必须随应用分发；Windows 独立验证例子会复制 SDK 自带的相应 DLL。
+更换 SDK 目录时使用 `cmake --fresh` 清除旧的 `Nova_DIR` 缓存。使用方不要传入 Nova 的 vcpkg 工具链。推荐 `render::Window` 管理窗口，无需直接包含 GLFW；外部窗口集成仍可使用底层接口。动态 triplet 的 DLL／动态库必须随应用分发；Windows 独立验证例子会复制 SDK 自带的相应 DLL。
 
 原有 `cmake --install build/sdk --prefix /path/to/sdk` 安装方式也保留。若自行管理第三方依赖，可关闭 `NOVA_BUNDLE_DEPENDENCIES`。
 

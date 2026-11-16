@@ -1,5 +1,5 @@
 {
-  "name": "nova-triangle",
+  "name": "nova-render",
   "version-string": "0.1.0",
   "builtin-baseline": "971828fe0920d00c077c7b5d34798bc45b261ec4",
   "dependencies": [
@@ -68,5 +68,6 @@
     "overlay-ports": [
       "./ports"
     ]
-  }
+  },
+  "description": "Nova Render cross-platform rendering library"
 }

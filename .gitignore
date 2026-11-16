@@ -1,17 +1,37 @@
-/build/
+# Build outputs and local package artifacts
+/build*/
+/out/
+/dist/
+/coverage/
 /vcpkg_installed/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+compile_commands.json
 CMakeUserPresets.json
-.DS_Store
 
-/build-windows/
-/.idea/
-
-/build-linux/
-/build-windows-vulkan/
-
-/node_modules/
+# Dependencies and generated documentation/shaders
+node_modules
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 /docs/public/generated/
 
-/build-sdk/
+# Machine-local editor settings, logs and secrets
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+
+# Downloaded release artifacts
+/nova-render-sdk-*.zip
+/nova-render-sdk-*.tar.gz
+/nova-render-web-*.tgz

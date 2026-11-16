@@ -7,7 +7,7 @@ int main(int argc, char** argv)
 {
     try
     {
-        const auto     options = example::ParseModelOptions(argc, argv, "Nova | Model Loading");
+        const auto     options = example::ParseModelOptions(argc, argv, "Nova Render | Model Loading");
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
         render::OrbitCamera camera;
