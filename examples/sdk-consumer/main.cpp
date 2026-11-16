@@ -50,6 +50,14 @@ int main(int argc, char** argv)
             window.SetMaterial(0, material);
             if (window.GetMaterials().front().roughness != .25f)
                 throw std::runtime_error("Installed SDK material API failed");
+            window.SetFog({});
+            render::SceneShadowSettings shadows;
+            shadows.enabled  = true;
+            shadows.softness = 0;
+            window.SetShadows(shadows);
+            window.LoadEnvironment({});
+            if (!window.GetShadows().enabled || window.GetFog().mode != render::FogMode::Off)
+                throw std::runtime_error("Installed atmosphere API failed");
             window.SetScene(assets, instances);
             render::Ray ray;
             ray.origin        = {2, 1, 5};

@@ -47,12 +47,12 @@ Generate from the Nova repository:
 npm run pack:web
 ```
 
-This produces `build/packages/nova-render-web-0.1.0.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
+This produces `build/packages/nova-render-web-0.2.0.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
 
 In another project:
 
 ```sh
-npm install /path/to/nova-render-web-0.1.0.tgz
+npm install /path/to/nova-render-web-0.2.0.tgz
 npx nova-web-assets --out public/nova
 ```
 
@@ -73,7 +73,7 @@ Install the generated `.tgz`, not the documentation package at the repository ro
 ```sh
 node scripts/packaging/check-sdk.mjs /path/to/sdk.tar.gz metal Release
 node scripts/packaging/check-sdk.mjs /path/to/sdk.zip vulkan Release
-node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.1.0.tgz
+node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.2.0.tgz
 ```
 
 Scripts copy consumers outside the repository. Native validation relocates the SDK, checks all imported library locations, then exercises two probes and a window. Web validation installs offline, copies assets and runs triangle/probe APIs in a real WebGPU browser.

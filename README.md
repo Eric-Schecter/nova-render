@@ -51,7 +51,7 @@ Some effects currently use dedicated example scenes rather than arbitrary models
 Download a matching SDK from [Releases](https://github.com/Eric-Schecter/nova-render/releases), extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
 
 ```cmake
-find_package(Nova 0.1 CONFIG REQUIRED)
+find_package(Nova CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE Nova::Render)
 ```
 

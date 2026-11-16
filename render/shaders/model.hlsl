@@ -102,7 +102,12 @@ float3 applyFog(float3 color, float3 position)
                       : 1 - exp(-depth * depth * globals.material.z * globals.material.z);
     float3 fog    = globals.baseColor.rgb;
 #if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
-    fog = encodeDisplayRGB(fog);
+    // Decode the web presentation value before mixing, matching native sRGB render targets.
+    float3 linearColor = float3(
+      color.x <= .04045 ? color.x / 12.92 : pow((color.x + .055) / 1.055, 2.4),
+      color.y <= .04045 ? color.y / 12.92 : pow((color.y + .055) / 1.055, 2.4),
+      color.z <= .04045 ? color.z / 12.92 : pow((color.z + .055) / 1.055, 2.4));
+    return encodeDisplayRGB(lerp(linearColor, fog, saturate(amount)));
 #else
     if (irradiance[0].w > .5)
         fog = -log(max(1 - fog, float3(.00001, .00001, .00001)));

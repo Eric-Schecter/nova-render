@@ -3,7 +3,7 @@
 Local development package. Install the generated `.tgz`, then copy its runtime assets:
 
 ```sh
-npm install /path/to/nova-render-web-0.1.0.tgz
+npm install /path/to/nova-render-web-0.2.0.tgz
 npx nova-web-assets --out public/nova
 ```
 

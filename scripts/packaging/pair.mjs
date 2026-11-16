@@ -57,6 +57,7 @@ try {
       platform: nativeInfo.platform,
       architecture: nativeInfo.architecture,
       configuration: nativeInfo.configuration,
+      uiEnabled: nativeInfo.uiEnabled,
     },
     web: { ...artifact(web), packageName: '@nova/render-web' },
   }

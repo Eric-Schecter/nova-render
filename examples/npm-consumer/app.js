@@ -35,6 +35,11 @@ window.validation = (async () => {
   await renderer.setMaterial(0, material)
   if (renderer.getMaterials()[0].roughness !== 0.25)
     throw Error('Installed npm material API failed')
+  renderer.setFog({ mode: 'off' })
+  renderer.setShadows({ enabled: true, softness: 0 })
+  await renderer.loadEnvironment(null)
+  if (!renderer.getShadows().enabled || renderer.getFog().mode !== 'off')
+    throw Error('Installed atmosphere API failed')
   await renderer.setScene(assets, instances)
   const ray = { origin: [2, 1, 5], direction: [0, 0, -2] }
   const picked = renderer.pickScene(ray)

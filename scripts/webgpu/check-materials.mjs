@@ -1,5 +1,5 @@
 import { chromium } from 'playwright'
-import { realpathSync, mkdirSync, writeFileSync } from 'node:fs'
+import { realpathSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { decode } from './Screenshot.mjs'
 const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5220'
 const browser = await chromium.launch({
@@ -78,6 +78,42 @@ try {
     }
     if (!rejected || renderer.getFog().density !== 1)
       throw Error('Fog validation not transactional')
+    renderer.setFog({ mode: 'off' })
+    await renderer.drawFrame()
+  })
+  const sampleFog = (name) => {
+    const im = decode(readFileSync('build/validation/materials/' + name + '.png'))
+    return [0.33, 0.67].flatMap((x) => {
+      const at = (Math.floor(im.height / 2) * im.width + Math.floor(im.width * x)) * im.channels
+      return Array.from(im.pixels.subarray(at, at + 3))
+    })
+  }
+  await page.evaluate(async () => {
+    renderer.setFog({ mode: 'linear', color: [0.2, 0.4, 0.6], nearDistance: 0, farDistance: 8 })
+    renderer.setAntiAliasing({ method: 'off' })
+    await renderer.drawFrame()
+  })
+  await inspect('fog-partial-direct')
+  const direct = sampleFog('fog-partial-direct')
+  await page.evaluate(async () => {
+    renderer.setAntiAliasing({ method: 'fxaa' })
+    await renderer.drawFrame()
+  })
+  await inspect('fog-partial-aa')
+  const aa = sampleFog('fog-partial-aa')
+  if (direct.some((v, k) => Math.abs(v - aa[k]) > 3))
+    throw Error('Fog direct/AA color mismatch ' + JSON.stringify({ direct, aa }))
+  for (const api of ['metal', 'vulkan']) {
+    const file = 'build/validation/materials/' + api + '-fog-pixels.bin'
+    if (existsSync(file)) {
+      const native = readFileSync(file)
+      if (direct.some((v, k) => Math.abs(v - native[k]) > 3))
+        throw Error(
+          'Native/Web fog mismatch ' + api + JSON.stringify({ direct, native: Array.from(native) }),
+        )
+    }
+  }
+  await page.evaluate(async () => {
     renderer.setFog({ mode: 'off' })
     await renderer.drawFrame()
   })

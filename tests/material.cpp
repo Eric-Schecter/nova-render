@@ -1,5 +1,6 @@
 #include "Backend.hpp"
 #include <GLFW/glfw3.h>
+#include <fstream>
 #include <iostream>
 #include <stb_image_write.h>
 #include <stdexcept>
@@ -101,6 +102,22 @@ int main(int argc, char** argv)
             fogRejected = true;
         }
         Require(fogRejected && backend->GetFog().density == 1, "Fog validation not transactional");
+        fog.mode         = FogMode::Linear;
+        fog.color        = {.2f, .4f, .6f};
+        fog.nearDistance = 0;
+        fog.farDistance  = 8;
+        backend->SetFog(fog);
+        draw();
+        std::filesystem::create_directories("validation/materials");
+        {
+            std::ofstream pixels("validation/materials/" + api + "-fog-pixels.bin", std::ios::binary);
+            const auto&   im = backend->GetRasterAAImage();
+            for (float x : {.33f, .67f})
+            {
+                const size_t at = (size_t(im.height / 2) * im.width + uint32_t(im.width * x)) * 4;
+                pixels.write(reinterpret_cast<const char*>(im.pixels.data() + at), 3);
+            }
+        }
         backend->SetFog({});
         draw();
         Require(count(0, true) > 500 && count(2, false) > 500, "Fog off did not restore materials");
