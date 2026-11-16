@@ -1,3 +1,9 @@
+#ifdef NOVA_D3D12
+cbuffer DrawOffsets : register(b1)
+{
+    uint2 drawOffsets;
+};
+#endif
 struct Vertex
 {
     float4 position;
@@ -218,6 +224,10 @@ struct VertexOut
 };
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
+#ifdef NOVA_D3D12
+    id += drawOffsets.x;
+    instanceId += drawOffsets.y;
+#endif
     Vertex    v = skinVertex(id);
     uint      materialIndex = uint(max(1, v.position.w)) - 1;
     v.position.w            = 1;
@@ -428,6 +438,10 @@ struct MotionOut
 };
 MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
+#ifdef NOVA_D3D12
+    id += drawOffsets.x;
+    instanceId += drawOffsets.y;
+#endif
     Vertex current = skinVertex(id), old = vertices[id];
     if (skyParams.w > .5)
     {

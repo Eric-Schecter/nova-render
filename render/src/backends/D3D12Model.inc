@@ -219,7 +219,7 @@ void UploadModel()
     range.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors     = 8;
     range.BaseShaderRegister = 1;
-    D3D12_ROOT_PARAMETER params[8]{};
+    D3D12_ROOT_PARAMETER params[9]{};
     params[5].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_SRV;
     params[5].Descriptor.ShaderRegister           = 11;
     params[5].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
@@ -245,6 +245,10 @@ void UploadModel()
     params[7].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_SRV;
     params[7].Descriptor.ShaderRegister = 16;
     params[7].ShaderVisibility          = D3D12_SHADER_VISIBILITY_VERTEX;
+    params[8].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    params[8].Constants.ShaderRegister  = 1;
+    params[8].Constants.Num32BitValues  = 2;
+    params[8].ShaderVisibility          = D3D12_SHADER_VISIBILITY_VERTEX;
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter   = D3D12_FILTER_ANISOTROPIC;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -253,7 +257,7 @@ void UploadModel()
     sampler.MaxLOD                                         = D3D12_FLOAT32_MAX;
     sampler.ShaderVisibility                               = D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-    rootDesc.NumParameters     = 8;
+    rootDesc.NumParameters     = 9;
     rootDesc.pParameters       = params;
     rootDesc.NumStaticSamplers = 1;
     rootDesc.pStaticSamplers   = &sampler;

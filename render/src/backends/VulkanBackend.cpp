@@ -252,21 +252,22 @@ namespace render::detail
         void DestroyRasterAA()
         {
             rasterAA.Clear();
-            for (auto pipeline : aaModel)
+            auto release = [&](VkPipeline& pipeline) {
                 if (pipeline)
                     vkDestroyPipeline(device, pipeline, nullptr);
-            for (auto pipeline : aaSky)
-                if (pipeline)
-                    vkDestroyPipeline(device, pipeline, nullptr);
-            for (auto pipeline : aaTrianglePipeline)
-                if (pipeline)
-                    vkDestroyPipeline(device, pipeline, nullptr);
-            if (aaMotion)
-                vkDestroyPipeline(device, aaMotion, nullptr);
-            if (aaSkyMotion)
-                vkDestroyPipeline(device, aaSkyMotion, nullptr);
+                pipeline = VK_NULL_HANDLE;
+            };
+            for (auto& pipeline : aaModel)
+                release(pipeline);
+            for (auto& pipeline : aaSky)
+                release(pipeline);
+            for (auto& pipeline : aaTrianglePipeline)
+                release(pipeline);
+            release(aaMotion);
+            release(aaSkyMotion);
             destroyModelBuffer(aaPreviousUniform);
             destroyModelBuffer(aaPreviousPalette);
+            aaPreviousPaletteBytes = 0;
         }
 
 

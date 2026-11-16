@@ -64,7 +64,7 @@ foreach(stage vert frag)
         set(output "${SHADER_OUTPUT_DIR}/${shader_name}.${stage}.dxil")
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
-            COMMAND "${NOVA_DXC_EXECUTABLE}" -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12=1 -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
             DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     elseif(APPLE)

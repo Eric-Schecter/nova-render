@@ -286,6 +286,8 @@ namespace render::detail
                 commands->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
                 commands->SetGraphicsRootShaderResourceView(5, sceneInstanceBuffer->GetGPUVirtualAddress());
                 commands->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
+                const UINT zeroDrawOffsets[2]{};
+                commands->SetGraphicsRoot32BitConstants(8, 2, zeroDrawOffsets, 0);
             }
             D3D12_VIEWPORT viewport{
               float(rectangle.x), float(rectangle.y), float(sceneWidth), float(sceneHeight), 0, 1};
@@ -304,8 +306,11 @@ namespace render::detail
             {
                 for (const auto& draw : scene.draws)
                     if (draw.instanceCount)
-                        commands->DrawInstanced(
-                          draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+                    {
+                        const UINT offsets[]{draw.firstVertex, draw.firstInstance};
+                        commands->SetGraphicsRoot32BitConstants(8, 2, offsets, 0);
+                        commands->DrawInstanced(draw.vertexCount, draw.instanceCount, 0, 0);
+                    }
             }
             else if (!path && (!model || !model->vertices.empty()))
                 commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
@@ -450,6 +455,8 @@ namespace render::detail
                 ID3D12DescriptorHeap* heaps[] = {modelHeap.Get()};
                 cmd->SetDescriptorHeaps(1, heaps);
                 cmd->SetGraphicsRootSignature(modelRoot.Get());
+                const UINT zeroDrawOffsets[2]{};
+                cmd->SetGraphicsRoot32BitConstants(8, 2, zeroDrawOffsets, 0);
                 cmd->SetGraphicsRootConstantBufferView(0, modelUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(1, modelVertices->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
@@ -478,8 +485,11 @@ namespace render::detail
                     {
                         for (const auto& draw : scene.draws)
                             if (draw.instanceCount)
-                                cmd->DrawInstanced(
-                                  draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+                            {
+                                const UINT offsets[]{draw.firstVertex, draw.firstInstance};
+                                cmd->SetGraphicsRoot32BitConstants(8, 2, offsets, 0);
+                                cmd->DrawInstanced(draw.vertexCount, draw.instanceCount, 0, 0);
+                            }
                     }
                     else
                         cmd->DrawInstanced(UINT(model->vertices.size()), 1, 0, 0);

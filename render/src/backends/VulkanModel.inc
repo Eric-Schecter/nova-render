@@ -364,6 +364,7 @@ void uploadModel()
 void LoadModel(std::shared_ptr<const ModelData> data) override
 {
     WaitIdle();
+    DestroyRasterAA();
     destroySwapchain();
     destroyModel();
     Backend::LoadModel(std::move(data));
