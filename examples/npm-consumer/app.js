@@ -26,11 +26,27 @@ window.validation = (async () => {
     { id: 'right', assetId: 'box', world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -4, 0, 0, 1] },
   ]
   await renderer.setScene(assets, instances)
+  const ray = { origin: [2, 1, 5], direction: [0, 0, -2] }
+  const picked = renderer.pickScene(ray)
+  if (
+    !picked ||
+    picked.id !== 'left' ||
+    picked.distance !== 4 ||
+    picked.position[2] !== 1 ||
+    picked.normal[2] !== 1
+  )
+    throw Error('Installed picking API failed')
+  if (renderer.pickScene({ ...ray, excludeIds: ['left'] }))
+    throw Error('Installed picking exclusion failed')
+  if (!renderer.pickScene({ ...ray, includeIds: ['left'] }))
+    throw Error('Installed picking inclusion failed')
+
   if (renderer.getSceneAssetBounds('box')?.maximum[0] !== 4)
     throw Error('Installed scene source space failed')
   renderer.setAntiAliasing({ method: 'taa' })
   await renderer.drawFrame()
   await renderer.setScene([], [])
+  if (renderer.pickScene(ray)) throw Error('Installed picking clear failed')
   await renderer.drawFrame()
   if (renderer.getSceneAssetBounds('box') !== null) throw Error('Installed scene clear failed')
   await renderer.setScene(assets, instances)

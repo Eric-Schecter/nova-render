@@ -45,3 +45,5 @@ Ordinary raster examples expose `setAntiAliasing({method:'taa'})`, `getAntiAlias
 Published Pages examples load precompiled WGSL. HLSL editing is enabled only in the local development server; JavaScript/C++ source tabs are read-only examples.
 
 See [Camera and viewport](/api/camera) for `setViewCamera`, `getViewCamera`, `setViewport` and `getViewport`.
+
+See [scene picking](./picking) for synchronous instance ray queries and hit data.

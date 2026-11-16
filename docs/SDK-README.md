@@ -40,3 +40,16 @@ Instances share resources by asset ID. `sourceSpace=true` preserves authored glT
 Use `SetViewCamera(Camera)` for complete pose/lens settings and `SetViewport(Viewport{...})` for a framebuffer-pixel rectangle. `SetViewport(std::nullopt)` restores the automatic viewport. Existing `SetCamera(OrbitCamera)` remains available.
 
 See [camera and viewport](https://eric-schecter.github.io/nova-render/api/camera.html) for defaults, validation and examples.
+
+## Scene picking
+
+```cpp
+render::Ray ray;
+ray.origin = {0, 0, 5};
+ray.direction = {0, 0, -1};
+const auto hit = window.PickScene(ray);
+```
+
+This synchronous query returns `std::optional<SceneHit>` for the committed static scene.
+
+Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits contain `id`, world `position`, unit geometric `normal` and world-space `distance`. [Picking API](https://eric-schecter.github.io/nova-render/api/picking.html).

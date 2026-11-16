@@ -68,6 +68,7 @@ export default defineConfig({
           { text: 'Backend selection', link: '/api/selection' },
           { text: 'Renderer', link: '/api/renderer' },
           { text: 'Scene instances', link: '/api/scene' },
+          { text: 'Scene picking', link: '/api/picking' },
           { text: 'Camera and viewport', link: '/api/camera' },
         ],
       },

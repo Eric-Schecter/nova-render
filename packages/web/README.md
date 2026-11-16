@@ -52,3 +52,9 @@ Instances share resources by asset ID. `sourceSpace: true` retains authored glTF
 Use `setViewCamera({ position, orientation, projection, verticalFov, orthographicHeight, nearPlane, farPlane })` for complete pose/lens settings. `setViewport({x,y,width,height})` uses framebuffer pixels; `setViewport(null)` restores the automatic viewport. Existing `setCamera(orbit)` remains available.
 
 See [camera and viewport](https://eric-schecter.github.io/nova-render/api/camera.html) for defaults, validation and examples.
+
+## Scene picking
+
+`renderer.pickScene({origin:[0,0,5],direction:[0,0,-1]})` synchronously returns a hit or `null` for the committed static scene.
+
+Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits contain `id`, world `position`, unit geometric `normal` and world-space `distance`. [Picking API](https://eric-schecter.github.io/nova-render/api/picking.html).

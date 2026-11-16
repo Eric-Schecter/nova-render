@@ -46,3 +46,5 @@ uint32_t ValidationErrorCount() const;
 `EnableParameterPanel(bool)` toggles the optional panel; its configuration overload supplies [model and environment choices](./ui#model-and-environment-choices). For a complete application, see [writing examples](../guide/integration).
 
 See [Camera and viewport](/api/camera) for full pose/lens and viewport APIs; legacy `SetCamera` remains the orbit interface.
+
+See [scene picking](./picking) for synchronous instance ray queries and hit data.

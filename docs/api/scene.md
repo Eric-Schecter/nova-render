@@ -53,7 +53,7 @@ await renderer.drawFrame()
 
 Transform-only updates reuse packed geometry and textures, uploading instance data at draw time. Adding or removing referenced assets rebuilds the packed asset set. IDs plus paths/URLs identify cached assets; changing file contents at the same path is not a hot-reload operation. Validation and asset-loading failures preserve the previous scene. TAA history resets when the scene is updated, preventing stale transforms from ghosting.
 
-This first scene API supports static opaque GLBs with the existing loader's material restrictions, all raster AA methods and HDR post-processing. Animation, picking, scene shadow maps and multi-instance ray tracing are separate features. Ray-tracing capability queries report scene instances as unsupported. Web AO currently uses the single-model BVH path: disable AO before calling `setScene`.
+This first scene API supports static opaque GLBs with the existing loader's material restrictions, all raster AA methods and HDR post-processing. Animation, scene shadow maps and multi-instance ray tracing are separate features. [Scene picking](./picking) queries the committed instance geometry without a GPU readback. Ray-tracing capability queries report scene instances as unsupported. Web AO currently uses the single-model BVH path: disable AO before calling `setScene`.
 
 Materials are packed into five shared texture atlases with 2-pixel gutters. Each asset tile is capped at 2048 pixels; atlases are capped at 8192 pixels per axis and a combined 512 MiB CPU budget. Larger source textures are resampled. Atlas packing and full-mip filtering can affect texture quality; this is not yet a general multi-material system. Device memory and binding limits may impose lower practical scene sizes.
 

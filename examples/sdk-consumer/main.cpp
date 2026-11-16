@@ -39,6 +39,22 @@ int main(int argc, char** argv)
             std::vector<render::SceneInstance>    instances{{"left", "box"}, {"right", "box"}};
             instances[0].world[12] = -4;
             window.SetScene(assets, instances);
+            render::Ray ray;
+            ray.origin        = {2, 1, 5};
+            ray.direction     = {0, 0, -2};
+            const auto picked = window.PickScene(ray);
+            if (
+              !picked || picked->id != "right" || picked->distance != 4 || picked->position[2] != 1
+              || picked->normal[2] != 1)
+                throw std::runtime_error("Installed picking API failed");
+            ray.excludeIds = {"right"};
+            if (window.PickScene(ray))
+                throw std::runtime_error("Installed picking exclusion failed");
+            ray.excludeIds.clear();
+            ray.includeIds = {"right"};
+            if (!window.PickScene(ray))
+                throw std::runtime_error("Installed picking inclusion failed");
+
             window.ClearImage();
             const auto bounds = window.GetSceneAssetBounds("box");
             if (!bounds || bounds->maximum[0] != 4 || bounds->minimum[0] != 0)
@@ -55,6 +71,8 @@ int main(int argc, char** argv)
             window.SetScene(assets, instances);
             window.DrawFrame();
             window.SetScene({}, {});
+            if (window.PickScene(ray))
+                throw std::runtime_error("Installed picking clear failed");
             window.DrawFrame();
             window.WaitIdle();
             if (window.GetSceneAssetBounds("box"))

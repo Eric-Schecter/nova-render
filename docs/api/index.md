@@ -17,3 +17,5 @@ See [writing an example](../guide/integration) and [installing packages](../guid
 - [Scene instances](/api/scene): shared static GLBs, world transforms and original model space.
 
 - [Camera and viewport](/api/camera): complete camera pose, projection, lens and framebuffer rectangles.
+
+- [Scene picking](/api/picking): CPU ray queries, instance filters and world-space hit data.

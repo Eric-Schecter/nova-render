@@ -52,3 +52,5 @@ Use only on the main thread. Copying and moving are disabled. Do not mix Window'
 See [writing an example](../guide/integration) for a complete program. Use the lower-level Renderer when your application manages its own window.
 
 `SetViewCamera` / `GetViewCamera` and `SetViewport` / `GetViewport` forward to the renderer. `GetFramebufferSize()` returns the pixel dimensions used by viewport rectangles. See [camera and viewport](./camera).
+
+See [scene picking](./picking) for synchronous instance ray queries and hit data.
