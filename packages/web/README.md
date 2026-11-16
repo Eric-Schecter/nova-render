@@ -10,7 +10,7 @@ npx nova-web-assets --out public/nova
 ```js
 import { createRenderer, createReflectionProbeView } from '@nova/render-web'
 const renderer = await createRenderer({ canvas, shaderDirectory: '/nova/' })
-const shader = await fetch('/nova/triangle.json').then(r => r.json())
+const shader = await fetch('/nova/triangle.json').then((r) => r.json())
 await renderer.setShader(shader)
 await renderer.drawFrame()
 // renderer.dispose() on teardown
@@ -30,3 +30,19 @@ apps should pass the packaged `vert`/`frag` shader object or use the built-in vi
 
 No public distribution license has been assigned (`UNLICENSED`). Third-party notices
 are in `licenses/`. The generated package is private to prevent accidental publishing.
+
+## Static scene instances
+
+```js
+await renderer.setScene(
+  [{ id: 'model', url: '/model.glb', sourceSpace: true }],
+  [
+    { id: 'first', assetId: 'model' },
+    { id: 'second', assetId: 'model', world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 0, 1] },
+  ],
+)
+const bounds = renderer.getSceneAssetBounds('model')
+await renderer.drawFrame()
+```
+
+Instances share resources by asset ID. `sourceSpace: true` retains authored glTF units and origin; the default normalizes the model. Matrices are column-major; omitted matrices use identity. `setScene([], [])` clears geometry. This API supports static opaque raster scenes; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.

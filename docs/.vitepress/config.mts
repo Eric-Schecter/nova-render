@@ -43,6 +43,7 @@ export default defineConfig({
           { text: '12 · Screen-space reflections', link: '/examples/ssr' },
           { text: '13 · Planar reflections', link: '/examples/planar' },
           { text: '14 · Reflection probes', link: '/examples/probe' },
+          { text: '15 · Scene instances', link: '/examples/scene' },
         ],
       },
       {
@@ -66,6 +67,7 @@ export default defineConfig({
           { text: 'Types and configuration', link: '/api/types' },
           { text: 'Backend selection', link: '/api/selection' },
           { text: 'Renderer', link: '/api/renderer' },
+          { text: 'Scene instances', link: '/api/scene' },
         ],
       },
     ],

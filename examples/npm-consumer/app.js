@@ -20,8 +20,23 @@ window.validation = (async () => {
     values = new Uint16Array(image.pixels.buffer)
   if (view.getProbeCaptureCount() !== 2 || !values.some((v) => v !== values[0]))
     throw Error('Installed reflection API failed')
+  const assets = [{ id: 'box', url: '/models/Red.glb', sourceSpace: true }]
+  const instances = [
+    { id: 'left', assetId: 'box' },
+    { id: 'right', assetId: 'box', world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -4, 0, 0, 1] },
+  ]
+  await renderer.setScene(assets, instances)
+  if (renderer.getSceneAssetBounds('box')?.maximum[0] !== 4)
+    throw Error('Installed scene source space failed')
+  renderer.setAntiAliasing({ method: 'taa' })
+  await renderer.drawFrame()
+  await renderer.setScene([], [])
+  await renderer.drawFrame()
+  if (renderer.getSceneAssetBounds('box') !== null) throw Error('Installed scene clear failed')
+  await renderer.setScene(assets, instances)
+  await renderer.drawFrame()
   document.querySelector('#status').textContent =
-    'PASS installed npm package: triangle, two probes, image readback'
+    'PASS installed npm package: triangle, two probes, scene instances, original model space'
   window.disposeNova = () => {
     renderer.dispose()
     view.dispose()

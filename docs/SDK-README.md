@@ -21,3 +21,16 @@ Sample models and environment maps are not bundled.
 
 This is a local development SDK. No public distribution license has been assigned.
 Third-party notices are under `share/Nova/licenses` and `share/nova/licenses`.
+
+## Static scene instances
+
+```cpp
+std::vector<render::SceneAsset> assets{{"model", "model.glb", true}};
+std::vector<render::SceneInstance> instances{{"first", "model"}, {"second", "model"}};
+instances[1].world[12] = 2.f;
+window.SetScene(assets, instances);
+const auto bounds = window.GetSceneAssetBounds("model");
+window.DrawFrame();
+```
+
+Instances share resources by asset ID. `sourceSpace=true` preserves authored glTF units and origin; the default normalizes the model. Matrices are column-major and default to identity. `SetScene({}, {})` clears geometry. This API supports static opaque raster scenes; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.

@@ -16,6 +16,7 @@ const names = [
   'ssr',
   'planar',
   'probe',
+  'scene',
 ]
 const browser = await chromium.launch({
   channel: 'chrome',
@@ -61,7 +62,7 @@ try {
     console.log('PASS ' + name)
   }
   if (errors.length) throw Error([...new Set(errors)].join('\n'))
-  console.log('All 14 static WebGPU examples passed')
+  console.log(`All ${names.length} static WebGPU examples passed`)
 } finally {
   await browser.close()
 }

@@ -34,6 +34,9 @@ execFileSync(
   [join(work, 'node_modules/@nova/render-web/bin/copy-assets.mjs'), '--out', 'public/nova'],
   { cwd: work, stdio: 'inherit' },
 )
+cpSync(new URL('../../assets/SceneSample/', import.meta.url), join(work, 'models'), {
+  recursive: true,
+})
 const server = spawn(process.execPath, ['server.mjs'], {
   cwd: work,
   stdio: ['ignore', 'pipe', 'inherit'],

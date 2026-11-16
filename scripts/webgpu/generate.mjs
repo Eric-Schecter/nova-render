@@ -173,3 +173,10 @@ for (let pass = 17; pass <= 21; pass++) {
   await writeFile('docs/public/generated/aa-' + pass + '.json', JSON.stringify(data))
 }
 console.log('SSR surface, depth hierarchy, tracing and composition HLSL generated')
+
+for (const color of ['Red', 'Blue']) {
+  await writeFile(
+    `docs/public/generated/Scene${color}.glb`,
+    await readFile(`assets/SceneSample/${color}.glb`),
+  )
+}

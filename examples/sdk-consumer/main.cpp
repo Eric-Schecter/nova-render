@@ -32,9 +32,37 @@ int main(int argc, char** argv)
             if (window.DrawFrame() == render::FrameResult::Rendered)
                 frames++;
         window.WaitIdle();
+        if (argc > 2)
+        {
+            const std::filesystem::path           models = argv[2];
+            const std::vector<render::SceneAsset> assets{{"box", models / "Red.glb", true}};
+            std::vector<render::SceneInstance>    instances{{"left", "box"}, {"right", "box"}};
+            instances[0].world[12] = -4;
+            window.SetScene(assets, instances);
+            window.ClearImage();
+            const auto bounds = window.GetSceneAssetBounds("box");
+            if (!bounds || bounds->maximum[0] != 4 || bounds->minimum[0] != 0)
+                throw std::runtime_error("Installed scene API lost original model space");
+            render::AntiAliasingSettings aa;
+            aa.method = render::AAMethod::TAA;
+            window.SetAntiAliasing(aa);
+            for (int i = 0; i < 3; ++i)
+            {
+                window.PollEvents();
+                window.DrawFrame();
+            }
+            instances[1].world[12] = 1;
+            window.SetScene(assets, instances);
+            window.DrawFrame();
+            window.SetScene({}, {});
+            window.DrawFrame();
+            window.WaitIdle();
+            if (window.GetSceneAssetBounds("box"))
+                throw std::runtime_error("Installed scene clear failed");
+        }
         if (frames != 10 || window.ValidationErrorCount())
             throw std::runtime_error("Installed window API failed");
-        std::cout << "PASS installed SDK: two reflection probes, image readback, window; 10 frames\n";
+        std::cout << "PASS installed SDK: two reflection probes, scene instances and original model space, window\n";
         return 0;
     }
     catch (const std::exception& e)

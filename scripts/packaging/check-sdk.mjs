@@ -36,5 +36,7 @@ const candidates =
     : [join(work, 'build', 'nova_sdk_consumer')]
 const executable = candidates.find(existsSync)
 if (!executable) throw Error('Consumer executable missing')
-execFileSync(executable, [api], { stdio: 'inherit', cwd: work })
+const models = join(work, 'models')
+cpSync(new URL('../../assets/SceneSample/', import.meta.url), models, { recursive: true })
+execFileSync(executable, [api, models], { stdio: 'inherit', cwd: work })
 console.log('PASS relocated SDK consumed outside repository:', work)

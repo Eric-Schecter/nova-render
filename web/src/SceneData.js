@@ -83,7 +83,7 @@ export class SceneData {
         !i.id ||
         ids.has(i.id) ||
         !paths.has(i.assetId) ||
-        !Array.isArray(i.world) ||
+        !(Array.isArray(i.world) || i.world instanceof Float32Array) ||
         i.world.length !== 16 ||
         !Array.from(i.world).every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))) ||
         [3, 7, 11].some((k) => Math.abs(i.world[k]) > 1e-6) ||

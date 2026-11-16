@@ -1,3 +1,4 @@
+import ScenePlayground from './ScenePlayground.vue'
 import './custom.css'
 import DefaultTheme from 'vitepress/theme'
 import ModelPlayground from './ModelPlayground.vue'
@@ -11,6 +12,7 @@ import AntiAliasingPlayground from './AntiAliasingPlayground.vue'
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
+    app.component('ScenePlayground', ScenePlayground)
     app.component('ShaderPlayground', ShaderPlayground)
     app.component('AntiAliasingPlayground', AntiAliasingPlayground)
     app.component('ReflectionProbePlayground', ReflectionProbePlayground)
