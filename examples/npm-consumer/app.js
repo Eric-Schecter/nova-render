@@ -40,6 +40,21 @@ window.validation = (async () => {
   await renderer.loadEnvironment(null)
   if (!renderer.getShadows().enabled || renderer.getFog().mode !== 'off')
     throw Error('Installed atmosphere API failed')
+  const lightCaps = renderer.getLightingCapabilities()
+  if (
+    !lightCaps.point ||
+    !lightCaps.spot ||
+    lightCaps.maxLights !== 16 ||
+    lightCaps.pointShadows ||
+    lightCaps.spotShadows
+  )
+    throw Error('Installed light capabilities mismatch')
+  renderer.setLighting('pbr')
+  renderer.setLights([
+    { id: 'point', type: 'point', position: [1, 2, 3], intensity: 8 },
+    { id: 'spot', type: 'spot', position: [-2, 3, 1], direction: [0, -1, -1], intensity: 8 },
+  ])
+  if (renderer.getLights().length !== 2) throw Error('Installed light collection missing')
   await renderer.setScene(assets, instances)
   const ray = { origin: [2, 1, 5], direction: [0, 0, -2] }
   const picked = renderer.pickScene(ray)
