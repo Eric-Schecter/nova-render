@@ -1,5 +1,6 @@
 #pragma once
 #include "Animation.hpp"
+#include "Atmosphere.hpp"
 #include "Image.hpp"
 #include "Material.hpp"
 #include "PostProcessing.hpp"
@@ -50,6 +51,7 @@ namespace render
         std::optional<SceneHit>    PickScene(const Ray& ray) const;
         std::vector<Material>      GetMaterials(const std::string& assetId = {}) const;
         void SetMaterial(uint32_t slot, const Material& material, const std::string& assetId = {});
+        void                       SetCloseOnEscape(bool enabled);
         void                       LoadModel(const std::filesystem::path& glbPath);
         RendererCapabilities       GetCapabilities() const;
         void                       SetRenderMode(RenderMode mode);
@@ -62,6 +64,8 @@ namespace render
         uint32_t                   GetAccumulatedSamples() const;
         void                       PresentImage(const Image& image);
         void                       ClearImage();
+        void                       SetFog(const FogSettings& settings);
+        FogSettings                GetFog() const;
         void                       LoadEnvironment(const std::filesystem::path& path);
         void                       SetEnvironment(const EnvironmentSettings& settings);
         EnvironmentSettings        GetEnvironment() const;

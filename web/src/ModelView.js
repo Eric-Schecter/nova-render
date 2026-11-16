@@ -1,3 +1,4 @@
+import { copyFog } from './Atmosphere.js'
 import { materialMipmaps } from './TextureFiltering.js'
 import { createAnimationPlayer } from './AnimationData.js'
 import { createPathView } from './PathView.js'
@@ -31,7 +32,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
   const data = suppliedData || (await loadGLB(url)),
     resources = []
   let instanceBuffer,
-    sceneDraws = null
+    sceneDraws = null,
+    rasterGlobals = 0,
+    rasterFog = copyFog()
   let depth,
     cube,
     backgroundCube,
@@ -204,13 +207,29 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       })
     }
     const pipeline = await pipelineFor(shader)
-    if (data.materialRecords?.length) {
-      if (instanceBuffer.size < data.materialRecords.byteLength) {
-        instanceBuffer.destroy()
-        instanceBuffer = makeBuffer(data.materialRecords, GPUBufferUsage.STORAGE, 'Nova materials')
-        bindGroup = group(cube, backgroundCube)
-      } else device.queue.writeBuffer(instanceBuffer, 0, data.materialRecords)
+    function writeGlobals() {
+      const record = new Float32Array(48)
+      record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
+      record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
+      device.queue.writeBuffer(instanceBuffer, rasterGlobals * 192, record)
     }
+    function uploadInstances(bytes, draws) {
+      rasterGlobals = bytes.byteLength / 192
+      const size = Math.max(192, bytes.byteLength + 192)
+      if (instanceBuffer.size < size) {
+        instanceBuffer.destroy()
+        instanceBuffer = makeBuffer(
+          new Uint8Array(size),
+          GPUBufferUsage.STORAGE,
+          'Nova instances and raster settings',
+        )
+        bindGroup = group(cube, backgroundCube)
+      }
+      if (bytes.byteLength) device.queue.writeBuffer(instanceBuffer, 0, bytes)
+      sceneDraws = draws
+      writeGlobals()
+    }
+    uploadInstances(data.materialRecords || new Float32Array(0), null)
     return {
       data,
       async prepareAA(camera, width, height, lighting, light, settings, frames, postSettings) {
@@ -241,6 +260,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           settings,
         )
         currentScene[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
+        currentScene[75] = rasterGlobals + 1
         currentScene[63] = postSettings?.enabled ? 1 : 0
         device.queue.writeBuffer(uniform, 0, currentScene)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
@@ -337,8 +357,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             if (!response.ok) throw Error('Missing skybox shader package: ' + skyURL)
             nextPipeline = await pipelineFor(await response.json(), true)
           }
-          nextCube = cubeTexture(device, next)
-          nextBackgroundCube = cubeTexture(device, { mips: next.backgroundMips || next.mips })
+          nextCube = cubeTexture(device, next || fallbackEnvironment())
+          nextBackgroundCube = cubeTexture(device, {
+            mips: next ? next.backgroundMips || next.mips : fallbackEnvironment().mips,
+          })
           nextGroup = group(nextCube, nextBackgroundCube)
           await device.queue.onSubmittedWorkDone()
         } catch (error) {
@@ -358,19 +380,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         skyPipeline = nextPipeline
         environment = next
       },
+      setRasterSettings(fog) {
+        rasterFog = copyFog(fog)
+        writeGlobals()
+      },
       setInstances(bytes, draws) {
         if (disposed) throw Error('Model has been disposed')
-        if (instanceBuffer.size < Math.max(192, bytes.byteLength)) {
-          instanceBuffer.destroy()
-          instanceBuffer = makeBuffer(
-            new Uint8Array(Math.max(192, bytes.byteLength)),
-            GPUBufferUsage.STORAGE,
-            'Nova instances',
-          )
-          bindGroup = group(cube, backgroundCube)
-        }
-        if (bytes.byteLength) device.queue.writeBuffer(instanceBuffer, 0, bytes)
-        sceneDraws = draws
+        uploadInstances(bytes, draws)
       },
       draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')
@@ -393,6 +409,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           settings,
         )
         values[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
+        values[75] = rasterGlobals + 1
         device.queue.writeBuffer(uniform, 0, values)
         const encoder = device.createCommandEncoder(),
           pass = encoder.beginRenderPass({

@@ -79,6 +79,39 @@ namespace render::detail
                     std::memcpy(&v, record.data(), sizeof(v));
                     rasterInstances.push_back(v);
                 }
+            rasterGlobals = uint32_t(rasterInstances.size());
+            InstanceData globals{};
+            std::copy(fogSettings.color.begin(), fogSettings.color.end(), globals.baseColor);
+            globals.baseColor[3] = float(fogSettings.mode);
+            globals.material[0]  = fogSettings.nearDistance;
+            globals.material[1]  = fogSettings.farDistance;
+            globals.material[2]  = fogSettings.density;
+            rasterInstances.push_back(globals);
+        }
+        FogSettings fogSettings;
+        uint32_t    rasterGlobals = 0;
+        void        SetFog(const FogSettings& value)
+        {
+            if (
+              static_cast<unsigned>(value.mode) > 2 || !std::isfinite(value.nearDistance) || value.nearDistance < 0
+              || !std::isfinite(value.farDistance) || value.farDistance <= value.nearDistance
+              || !std::isfinite(value.density) || value.density < 0 || value.density > 1)
+                throw std::invalid_argument("Invalid fog settings");
+            for (float c : value.color)
+                if (!std::isfinite(c) || c < 0 || c > 1)
+                    throw std::invalid_argument("Invalid fog color");
+            fogSettings = value;
+            RebuildRasterInstances();
+            rasterAA.Reset();
+        }
+        FogSettings GetFog() const { return fogSettings; }
+        void ApplyRasterSettings(SceneUniforms& values) const { values.irradiance[3][3] = float(rasterGlobals + 1); }
+        void ConfigureUI()
+        {
+#ifdef NOVA_HAS_UI
+            if (parameterPanel)
+                parameterPanel->ConfigureUI(assets.config.configureUI);
+#endif
         }
         float MaterialMode() const { return scene.active ? 1.f : model && !model->materialRecords.empty() ? 2.f : 0.f; }
         void        ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
@@ -293,6 +326,24 @@ namespace render::detail
         std::optional<Viewport> GetViewport() const { return viewport; }
         Viewport                SceneViewport(uint32_t width, uint32_t height) const
         {
+#ifdef NOVA_HAS_UI
+            if (!viewport && panelEnabled && parameterPanel && assets.config.sceneViewport)
+            {
+                const auto rect  = assets.config.sceneViewport();
+                const auto scale = ImGui::GetIO().DisplayFramebufferScale;
+                for (float v : rect)
+                    if (!std::isfinite(v))
+                        throw std::invalid_argument("UI scene viewport must be finite");
+                auto pixel = [](float v, float scale) {
+                    return uint32_t(std::clamp(std::round(double(v) * scale), 0.0, double(UINT32_MAX)));
+                };
+                return ResolveViewport(
+                  Viewport{
+                    pixel(rect[0], scale.x), pixel(rect[1], scale.y), pixel(rect[2], scale.x), pixel(rect[3], scale.y)},
+                  width,
+                  height);
+            }
+#endif
             return ResolveViewport(viewport, width, height, SceneTopInset(height));
         }
 
@@ -366,6 +417,7 @@ namespace render::detail
                   environment.get(),
                   environmentSettings);
                 rasterAA.current.lightDirection[3] = MaterialMode();
+                ApplyRasterSettings(rasterAA.current);
                 rasterAA.current.irradiance[0][3] = postSettings.enabled ? 1.f : 0.f;
                 const auto& image =
                   rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings);

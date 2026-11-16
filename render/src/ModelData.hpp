@@ -1,5 +1,6 @@
 #pragma once
 #include "EnvironmentData.hpp"
+#include "render/Atmosphere.hpp"
 #include "render/Image.hpp"
 #include "render/Material.hpp"
 #include "render/Model.hpp"

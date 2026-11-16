@@ -62,6 +62,26 @@ try {
   let counts = await inspect('initial')
   if (counts[0] < 500 || counts[5] < 500) throw Error('Initial independent slots missing ' + counts)
   await page.evaluate(async () => {
+    renderer.setFog({ mode: 'linear', color: [0, 1, 0], nearDistance: 0, farDistance: 1 })
+    await renderer.drawFrame()
+  })
+  counts = await inspect('fog-linear')
+  if (counts[1] < 500 || counts[4] < 500) throw Error('Linear fog missing ' + counts)
+  await page.evaluate(async () => {
+    renderer.setFog({ mode: 'exp2', density: 1 })
+    await renderer.drawFrame()
+    let rejected = false
+    try {
+      renderer.setFog({ farDistance: 0 })
+    } catch {
+      rejected = true
+    }
+    if (!rejected || renderer.getFog().density !== 1)
+      throw Error('Fog validation not transactional')
+    renderer.setFog({ mode: 'off' })
+    await renderer.drawFrame()
+  })
+  await page.evaluate(async () => {
     const m = renderer.getMaterials()[0]
     m.baseColor = [0, 1, 0, 1]
     m.metallic = 0.75

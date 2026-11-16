@@ -1,6 +1,7 @@
 #pragma once
 #include "Animation.hpp"
 #include "AntiAliasing.hpp"
+#include "Atmosphere.hpp"
 #include "Image.hpp"
 #include "Material.hpp"
 #include "Model.hpp"
@@ -91,6 +92,8 @@ namespace render
         uint32_t                   GetAccumulatedSamples() const;
         void                       PresentImage(const Image& image);
         void                       ClearImage();
+        void                       SetFog(const FogSettings& settings);
+        FogSettings                GetFog() const;
         void                       LoadEnvironment(const std::filesystem::path& path);
         void                       SetEnvironment(const EnvironmentSettings& settings);
         EnvironmentSettings        GetEnvironment() const;

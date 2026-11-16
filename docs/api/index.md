@@ -21,3 +21,5 @@ See [writing an example](../guide/integration) and [installing packages](../guid
 - [Scene picking](/api/picking): CPU ray queries, instance filters and world-space hit data.
 
 - [Materials](/api/materials): multiple slots and runtime colors, PBR factors and textures.
+
+- [Atmosphere and integration](./atmosphere): scene fog, environment clearing and optional application UI.

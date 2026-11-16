@@ -213,6 +213,7 @@ namespace render::detail
                       environmentSettings);
                     uniforms.skyParams[2] = path ? 1.0f : 0.0f;
                     uniforms.lightDirection[3] = MaterialMode();
+                    ApplyRasterSettings(uniforms);
                     [encoder setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setFragmentBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];

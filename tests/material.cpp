@@ -76,6 +76,34 @@ int main(int argc, char** argv)
         backend->SetAntiAliasing({AAMethod::FXAA});
         draw();
         Require(count(0, true) > 500 && count(2, false) > 500, "Multislot colors missing");
+        FogSettings fog;
+        fog.mode         = FogMode::Linear;
+        fog.nearDistance = 0;
+        fog.farDistance  = 1;
+        fog.color        = {0, 1, 0};
+        backend->SetFog(fog);
+        draw();
+        Require(count(1, true) > 500 && count(1, false) > 500, "Linear fog did not affect both materials");
+        fog.mode    = FogMode::ExponentialSquared;
+        fog.density = 1;
+        backend->SetFog(fog);
+        draw();
+        Require(count(1, false) > 500, "Exponential fog missing");
+        auto badFog        = fog;
+        badFog.farDistance = 0;
+        bool fogRejected   = false;
+        try
+        {
+            backend->SetFog(badFog);
+        }
+        catch (const std::invalid_argument&)
+        {
+            fogRejected = true;
+        }
+        Require(fogRejected && backend->GetFog().density == 1, "Fog validation not transactional");
+        backend->SetFog({});
+        draw();
+        Require(count(0, true) > 500 && count(2, false) > 500, "Fog off did not restore materials");
         auto slots         = backend->GetMaterials("");
         slots[0].baseColor = {0, 1, 0, 1};
         slots[0].roughness = .2f;

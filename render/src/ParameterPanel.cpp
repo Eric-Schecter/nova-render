@@ -41,6 +41,16 @@ namespace render::detail
             throw std::runtime_error("Initialize parameter UI input failed");
         }
     }
+    void ParameterPanel::ConfigureUI(const std::function<void()>& configure)
+    {
+        if (applicationConfigured || !configure)
+            return;
+        Activate();
+        configure();
+        auto& style = ImGui::GetStyle();
+        std::copy(style.Colors, style.Colors + ImGuiCol_COUNT, displayColors.begin());
+        applicationConfigured = true;
+    }
     ParameterPanel::~ParameterPanel()
     {
         if (context)

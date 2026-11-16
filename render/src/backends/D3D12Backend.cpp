@@ -246,6 +246,7 @@ namespace render::detail
                   environmentSettings);
                 u.skyParams[2]     = path ? 1.0f : 0.0f;
                 u.lightDirection[3] = MaterialMode();
+                ApplyRasterSettings(u);
                 void*       mapped = nullptr;
                 D3D12_RANGE read{0, 0};
                 checkHR(modelUniform->Map(0, &read, &mapped), "Map scene uniforms");

@@ -69,6 +69,7 @@ export default defineConfig({
           { text: 'Renderer', link: '/api/renderer' },
           { text: 'Scene instances', link: '/api/scene' },
           { text: 'Scene picking', link: '/api/picking' },
+          { text: 'Atmosphere and integration', link: '/api/atmosphere' },
           { text: 'Materials', link: '/api/materials' },
           { text: 'Camera and viewport', link: '/api/camera' },
         ],

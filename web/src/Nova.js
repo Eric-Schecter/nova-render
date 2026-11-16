@@ -1,3 +1,4 @@
+import { copyFog } from './Atmosphere.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 export { loadMaterialImage } from './MaterialData.js'
 import { copyViewCamera, cameraFromOrbit, copyViewport, resolveViewport } from './Camera.js'
@@ -192,6 +193,7 @@ class Renderer {
   #modelURL
   #environmentURL
   #environmentSettings = defaultEnvironment()
+  #fogSettings = copyFog()
   #model
   #shaderDirectory
   #camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 }
@@ -377,7 +379,7 @@ class Renderer {
   loadEnvironment(url) {
     return this.#enqueue(async () => {
       this.#check()
-      const environment = await loadEnvironmentFile(url)
+      const environment = url ? await loadEnvironmentFile(url) : null
       this.#check()
       let candidate = this.#model
       try {
@@ -596,6 +598,16 @@ class Renderer {
         this.#canvas.dispatchEvent(new CustomEvent('nova-error', { detail: error }))
       })
     })
+  }
+  setFog(settings) {
+    this.#check()
+    const next = copyFog({ ...this.#fogSettings, ...settings })
+    this.#fogSettings = next
+    this.#resetAA()
+  }
+  getFog() {
+    this.#check()
+    return copyFog(this.#fogSettings)
   }
   setEnvironment(settings) {
     this.#check()
@@ -832,6 +844,7 @@ class Renderer {
   }
   async #drawFrame() {
     this.#check()
+    this.#model?.setRasterSettings(this.#fogSettings)
     if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'

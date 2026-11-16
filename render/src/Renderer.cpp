@@ -236,7 +236,10 @@ namespace render
                     throw std::invalid_argument("Asset choices require a name and path");
         const bool enabled = EnableParameterPanel(true);
         if (enabled)
+        {
             impl_->backend->assets.config = config;
+            impl_->backend->ConfigureUI();
+        }
         return enabled;
     }
     bool Renderer::UIWantsMouse() const
@@ -264,9 +267,17 @@ namespace render
             throw std::invalid_argument("Invalid lighting mode");
         impl_->backend->SetLighting(mode);
     }
+    void Renderer::SetFog(const FogSettings& settings)
+    {
+        impl_->backend->SetFog(settings);
+    }
+    FogSettings Renderer::GetFog() const
+    {
+        return impl_->backend->GetFog();
+    }
     void Renderer::LoadEnvironment(const std::filesystem::path& path)
     {
-        impl_->backend->LoadEnvironment(detail::LoadEnvironmentFile(path));
+        impl_->backend->LoadEnvironment(path.empty() ? nullptr : detail::LoadEnvironmentFile(path));
         impl_->backend->assets.environmentPath = path;
     }
     void Renderer::SetEnvironment(const EnvironmentSettings& settings)

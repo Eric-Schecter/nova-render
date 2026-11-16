@@ -33,6 +33,7 @@ namespace render
         std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window{nullptr, glfwDestroyWindow};
         std::unique_ptr<Renderer>                                 renderer;
         bool                                                      orbitEnabled = false, dragging = false;
+        bool                                                      closeOnEscape = true;
         double                                                    lastX = 0, lastY = 0;
         std::exception_ptr                                        inputError;
         template <class Change>
@@ -69,6 +70,7 @@ namespace render
             glfwSetKeyCallback(window.get(), [](GLFWwindow* w, int key, int, int action, int) {
                 if (
                   key == GLFW_KEY_ESCAPE && action == GLFW_PRESS
+                  && static_cast<Impl*>(glfwGetWindowUserPointer(w))->closeOnEscape
                   && !static_cast<Impl*>(glfwGetWindowUserPointer(w))->renderer->UIWantsKeyboard())
                     glfwSetWindowShouldClose(w, GLFW_TRUE);
             });
@@ -174,6 +176,10 @@ namespace render
     {
         impl_->renderer->SetMaterial(slot, value, id);
     }
+    void Window::SetCloseOnEscape(bool enabled)
+    {
+        impl_->closeOnEscape = enabled;
+    }
     void Window::LoadModel(const std::filesystem::path& path)
     {
         impl_->renderer->LoadModel(path);
@@ -246,6 +252,14 @@ namespace render
     uint32_t Window::GetAccumulatedSamples() const
     {
         return impl_->renderer->GetAccumulatedSamples();
+    }
+    void Window::SetFog(const FogSettings& settings)
+    {
+        impl_->renderer->SetFog(settings);
+    }
+    FogSettings Window::GetFog() const
+    {
+        return impl_->renderer->GetFog();
     }
     void Window::LoadEnvironment(const std::filesystem::path& path)
     {

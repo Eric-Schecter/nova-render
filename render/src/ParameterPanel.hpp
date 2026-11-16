@@ -30,6 +30,7 @@ namespace render::detail
         explicit ParameterPanel(GLFWwindow* window);
         ~ParameterPanel();
         void Activate() const;
+        void ConfigureUI(const std::function<void()>& configure);
         void SetSRGBOutput(bool enabled);
         void CaptureDefaults(
           const OrbitCamera& camera, const DirectionalLight& light, const EnvironmentSettings& environment);
@@ -56,6 +57,7 @@ namespace render::detail
         GLFWwindow*                        window;
         ImGuiContext*                      context     = nullptr;
         bool                               initialized = false;
+        bool                               applicationConfigured = false;
         OrbitCamera                        initialCamera;
         DirectionalLight                   initialLight;
         EnvironmentSettings                initialEnvironment;

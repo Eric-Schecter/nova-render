@@ -33,6 +33,17 @@ int main(int argc, char** argv)
             if (frames != 3)
                 throw std::runtime_error("UI frame did not render");
         };
+        int                          configured = 0, applicationFrames = 0;
+        render::ParameterPanelConfig application;
+        application.configureUI      = [&] { configured++; };
+        application.drawUI           = [&] { applicationFrames++; };
+        application.showBuiltinPanel = false;
+        application.sceneViewport    = [] { return std::array<float, 4>{10, 10, 300, 220}; };
+        window.SetCloseOnEscape(false);
+        window.EnableParameterPanel(application);
+        window.EnableParameterPanel(application);
+        if (configured != 1)
+            throw std::runtime_error("Application UI configuration must run exactly once");
         window.EnableParameterPanel(false);
         if (!window.EnableParameterPanel())
             throw std::runtime_error("UI build unavailable");
@@ -62,6 +73,8 @@ int main(int argc, char** argv)
             throw std::runtime_error("Panel changed API state unexpectedly");
         window.EnableParameterPanel(false);
         draw();
+        if (applicationFrames == 0)
+            throw std::runtime_error("Application UI did not draw");
         window.WaitIdle();
         if (window.ValidationErrorCount())
             throw std::runtime_error("GPU validation error");

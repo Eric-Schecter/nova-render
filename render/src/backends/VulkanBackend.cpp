@@ -783,6 +783,7 @@ namespace render::detail
                   environmentSettings);
                 uniform.skyParams[2] = path ? 1.0f : 0.0f;
                 uniform.lightDirection[3] = MaterialMode();
+                ApplyRasterSettings(uniform);
                 void* mapped         = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));

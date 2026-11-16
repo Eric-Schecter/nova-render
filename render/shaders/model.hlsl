@@ -87,6 +87,28 @@ struct InstanceData
 };
 [[vk::binding(14, 0)]] StructuredBuffer<InstanceData> instances : register(t11);
 
+float3 encodeDisplayRGB(float3 color);
+float3 applyFog(float3 color, float3 position)
+{
+    if (irradiance[3].w < .5)
+        return color;
+    InstanceData globals = instances[uint(irradiance[3].w) - 1];
+    float        mode    = globals.baseColor.w;
+    if (mode < .5)
+        return color;
+    float  depth  = max(0, dot(position - eyeExposure.xyz, cameraForward.xyz));
+    float  amount = mode < 1.5
+                      ? saturate((depth - globals.material.x) / max(.0001, globals.material.y - globals.material.x))
+                      : 1 - exp(-depth * depth * globals.material.z * globals.material.z);
+    float3 fog    = globals.baseColor.rgb;
+#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
+    fog = encodeDisplayRGB(fog);
+#else
+    if (irradiance[0].w > .5)
+        fog = -log(max(1 - fog, float3(.00001, .00001, .00001)));
+#endif
+    return lerp(color, fog, saturate(amount));
+}
 struct VertexOut
 {
     float4                position : SV_Position;
@@ -241,7 +263,7 @@ float4 PSMain(VertexOut input)
 #if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
         base = encodeDisplayRGB(base);
 #endif
-        return float4(base, 1);
+        return float4(applyFog(base, input.worldPosition), 1);
     }
     float3 n   = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
@@ -284,7 +306,7 @@ float4 PSMain(VertexOut input)
         color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
     }
     color += emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
-    return float4(displayRadiance(color), 1);
+    return float4(applyFog(displayRadiance(color), input.worldPosition), 1);
 }
 
 // TAA uses the previous camera and skin palette, not a screen-space history blend.
