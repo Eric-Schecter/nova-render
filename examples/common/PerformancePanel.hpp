@@ -52,7 +52,7 @@ namespace example
                     static constexpr const char* aaNames[] = {
                       "Raster", "FXAA", "SMAA 1x", "MSAA 4x", "SSAA 2x2", "TAA"};
                     method      = aaNames[unsigned(aa.method)];
-                    scale       = aa.method == render::AAMethod::SSAA ? 2 : 1;
+                    scale       = aa.method == render::AAMethod::SSAA ? 2.f : 1.f;
                     samples     = aa.method == render::AAMethod::SSAA || aa.method == render::AAMethod::MSAA ? 4 : 1;
                     accumulated = target.GetAntiAliasingHistoryFrames();
                 }

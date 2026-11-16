@@ -165,7 +165,8 @@ namespace render::detail
                 v.image            = t.image;
                 v.viewType         = VK_IMAGE_VIEW_TYPE_2D;
                 v.format           = format;
-                v.subresourceRange = {t.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                v.subresourceRange = {
+                  VkImageAspectFlags(t.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, 1, 0, 1};
                 Check(api.vkCreateImageView(device, &v, nullptr, &t.view));
                 return t;
             }
@@ -192,7 +193,8 @@ namespace render::detail
                 b.newLayout           = next;
                 b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 b.image                                       = t.image;
-                b.subresourceRange = {t.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                b.subresourceRange                            = {
+                  VkImageAspectFlags(t.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, 1, 0, 1};
                 b.srcAccessMask =
                   t.layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
                 b.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
