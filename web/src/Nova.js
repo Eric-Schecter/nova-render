@@ -1,3 +1,5 @@
+import { packMaterials, validateMaterial } from './MaterialData.js'
+export { loadMaterialImage } from './MaterialData.js'
 import { copyViewCamera, cameraFromOrbit, copyViewport, resolveViewport } from './Camera.js'
 import { createViewportSurface } from './ViewportSurface.js'
 export { cameraFromOrbit } from './Camera.js'
@@ -271,6 +273,66 @@ class Renderer {
       this.#animationLastTime = undefined
       this.#resetAA()
       this.#renderMode = 'raster'
+      this.#parameterPanel?.refresh()
+    })
+  }
+  getMaterials(assetId = '') {
+    this.#check()
+    if (this.#sceneModel) return this.#sceneData.getMaterials(assetId)
+    if (assetId || !this.#model) throw Error('No model material slots')
+    return structuredClone(this.#model.data.materials || [])
+  }
+  setMaterial(slot, material, assetId = '') {
+    material = validateMaterial(material)
+    return this.#enqueue(async () => {
+      this.#check()
+      let sceneData, draws, instances, data
+      if (this.#sceneModel) {
+        sceneData = this.#sceneData.fork()
+        const packed = await sceneData.setMaterial(assetId, slot, material)
+        ;({ draws, instances } = packed)
+        data = packed.model
+      } else {
+        if (
+          assetId ||
+          !this.#model ||
+          !Number.isInteger(slot) ||
+          slot < 0 ||
+          slot >= this.#model.data.materials.length
+        )
+          throw Error('Unknown model material slot')
+        data = { ...this.#model.data, materials: [...this.#model.data.materials] }
+        data.materials[slot] = material
+        packMaterials(data)
+      }
+      const animationState = this.#model.animationState
+      const next = await createModelView(
+        this.#device,
+        this.#context,
+        null,
+        this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
+        data,
+      )
+      try {
+        if (this.#environment)
+          await next.loadEnvironment(
+            this.#environment,
+            this.#shaderDirectory.replace(/\/?$/, '/') + 'skybox.json',
+          )
+        if (sceneData) next.setInstances(instances, draws)
+        if (next.skinned) next.setAnimationState(animationState)
+        this.#check()
+      } catch (e) {
+        next.dispose()
+        throw e
+      }
+      this.#model.dispose()
+      this.#model = next
+      if (sceneData) {
+        this.#sceneData = sceneData
+        this.#sceneModel = data
+      }
+      this.#resetAA()
       this.#parameterPanel?.refresh()
     })
   }

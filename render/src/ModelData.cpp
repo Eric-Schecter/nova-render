@@ -23,7 +23,7 @@ namespace render::detail
 {
     namespace
     {
-        // The initial loader deliberately supports opaque, single-material GLBs.
+        // Opaque embedded GLBs; each primitive keeps its material slot.
         const unsigned char* element(
           const tinygltf::Model& model, int accessorIndex, size_t index, int type, int component)
         {
@@ -95,7 +95,6 @@ namespace render::detail
         };
         auto              animation     = ReadAnimationData(gltf);
         auto              result        = std::make_shared<ModelData>();
-        int               materialIndex = -1;
         glm::vec3         minimum(std::numeric_limits<float>::max()), maximum(-std::numeric_limits<float>::max());
         std::vector<bool> active(gltf.nodes.size(), false);
         std::function<void(int, glm::mat4)> visit = [&](int index, glm::mat4 parent) {
@@ -131,17 +130,8 @@ namespace render::detail
                 {
                     if (p.mode != TINYGLTF_MODE_TRIANGLES || !p.targets.empty())
                         throw std::runtime_error("Only triangle primitives without morph targets are supported");
-                    if (materialIndex == -1)
-                        materialIndex = p.material;
                     if (p.material < 0)
                         throw std::runtime_error("Missing material");
-                    auto common = gltf.materials.at(materialIndex), candidate = gltf.materials.at(p.material);
-                    common.extensions.clear();
-                    candidate.extensions.clear();
-                    common.name.clear();
-                    candidate.name.clear();
-                    if (!(common == candidate))
-                        throw std::runtime_error("Materials must share core PBR factors and texture atlas");
                     const auto glass     = dielectric(gltf.materials.at(p.material));
                     const int  position  = p.attributes.at("POSITION"),
                               uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
@@ -193,7 +183,7 @@ namespace render::detail
                         if (animation)
                             AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix, localNormal);
                         result->vertices.push_back(
-                          {{pos.x, pos.y, pos.z, 1},
+                          {{pos.x, pos.y, pos.z, float(p.material + 1)},
                            {n.x, n.y, n.z, glass[0]},
                            {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]}});
                     }
@@ -226,46 +216,68 @@ namespace render::detail
             animation->scale  = 2.0f / size;
             result->animation = animation;
         }
-        const auto& mat = gltf.materials.at(materialIndex);
-        const auto& pbr = mat.pbrMetallicRoughness;
-        if (mat.alphaMode != "OPAQUE")
-            throw std::runtime_error("Only opaque materials are supported");
-        for (int k = 0; k < 4; ++k)
-            result->baseColor[k] = static_cast<float>(pbr.baseColorFactor[k]);
-        result->material = {
-          static_cast<float>(pbr.metallicFactor),
-          static_cast<float>(pbr.roughnessFactor),
-          static_cast<float>(mat.normalTexture.scale),
-          static_cast<float>(mat.occlusionTexture.strength)};
-        for (int k = 0; k < 3; ++k)
-            result->emissive[k] = static_cast<float>(mat.emissiveFactor[k]);
-        if (
-          pbr.baseColorTexture.texCoord || mat.normalTexture.texCoord || pbr.metallicRoughnessTexture.texCoord
-          || mat.occlusionTexture.texCoord || mat.emissiveTexture.texCoord)
-            throw std::runtime_error("Only TEXCOORD_0 is supported");
-        const int textures[] = {
-          pbr.baseColorTexture.index,
-          mat.normalTexture.index,
-          pbr.metallicRoughnessTexture.index,
-          mat.occlusionTexture.index,
-          mat.emissiveTexture.index};
-        const std::array<std::array<unsigned char, 4>, 5> fallback = {
-          {{255, 255, 255, 255}, {128, 128, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255}, {0, 0, 0, 255}}};
-        for (int i = 0; i < 5; ++i)
+        if (gltf.materials.size() > 128)
+            throw std::runtime_error("At most 128 material slots are supported");
+        for (const auto& sourceMaterial : gltf.materials)
         {
-            auto& dst = result->images[i];
-            dst.pixels.assign(fallback[i].begin(), fallback[i].end());
-            if (textures[i] < 0)
-                continue;
-            const auto& image = gltf.images.at(gltf.textures.at(textures[i]).source);
+            Material slot;
+            slot.name       = sourceMaterial.name;
+            const auto& mat = sourceMaterial;
+            const auto& pbr = mat.pbrMetallicRoughness;
+            if (mat.alphaMode != "OPAQUE")
+                throw std::runtime_error("Only opaque materials are supported");
+            std::array<float, 4> factors;
+            for (int k = 0; k < 4; ++k)
+                slot.baseColor[k] = static_cast<float>(pbr.baseColorFactor[k]);
+            factors = {
+              static_cast<float>(pbr.metallicFactor),
+              static_cast<float>(pbr.roughnessFactor),
+              static_cast<float>(mat.normalTexture.scale),
+              static_cast<float>(mat.occlusionTexture.strength)};
+            for (int k = 0; k < 3; ++k)
+                slot.emissive[k] = static_cast<float>(mat.emissiveFactor[k]);
             if (
-              image.width <= 0 || image.height <= 0 || image.width > 8192 || image.height > 8192 || image.bits != 8
-              || image.component != 4 || image.image.size() != static_cast<size_t>(image.width) * image.height * 4)
-                throw std::runtime_error("Expected RGBA8 glTF image");
-            dst.width  = image.width;
-            dst.height = image.height;
-            dst.pixels = image.image;
+              pbr.baseColorTexture.texCoord || mat.normalTexture.texCoord || pbr.metallicRoughnessTexture.texCoord
+              || mat.occlusionTexture.texCoord || mat.emissiveTexture.texCoord)
+                throw std::runtime_error("Only TEXCOORD_0 is supported");
+            const int textures[] = {
+              pbr.baseColorTexture.index,
+              mat.normalTexture.index,
+              pbr.metallicRoughnessTexture.index,
+              mat.occlusionTexture.index,
+              mat.emissiveTexture.index};
+            const std::array<std::array<unsigned char, 4>, 5> fallback = {
+              {{255, 255, 255, 255}, {128, 128, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255}, {0, 0, 0, 255}}};
+            std::optional<Image>* maps[] = {
+              &slot.baseColorTexture,
+              &slot.normalTexture,
+              &slot.metallicRoughnessTexture,
+              &slot.occlusionTexture,
+              &slot.emissiveTexture};
+            slot.metallic          = factors[0];
+            slot.roughness         = factors[1];
+            slot.normalScale       = factors[2];
+            slot.occlusionStrength = factors[3];
+            for (int i = 0; i < 5; ++i)
+            {
+                ModelImage dst;
+                dst.pixels.assign(fallback[i].begin(), fallback[i].end());
+                if (textures[i] < 0)
+                    continue;
+                const auto& image = gltf.images.at(gltf.textures.at(textures[i]).source);
+                if (
+                  image.width <= 0 || image.height <= 0 || image.width > 8192 || image.height > 8192 || image.bits != 8
+                  || image.component != 4 || image.image.size() != static_cast<size_t>(image.width) * image.height * 4)
+                    throw std::runtime_error("Expected RGBA8 glTF image");
+                dst.width  = image.width;
+                dst.height = image.height;
+                dst.pixels = image.image;
+                *maps[i]   = std::move(dst);
+            }
+            ValidateMaterial(slot);
+            result->materials.push_back(std::move(slot));
         }
+        PackMaterials(*result);
         std::cout << "Model: " << path.filename().string() << "; triangles: " << result->vertices.size() / 3 << '\n';
         return result;
     }

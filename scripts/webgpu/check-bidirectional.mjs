@@ -10,7 +10,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } }),
     errors = []
   page.on('pageerror', (e) => errors.push(e.message))
-  await page.goto('http://127.0.0.1:5173/')
+  await page.goto(process.env.NOVA_TEST_URL || 'http://127.0.0.1:5173/')
   const result = await page.evaluate(
     async (root) => {
       const { loadGLB } = await import(root + '/ModelData.js'),
@@ -105,6 +105,10 @@ try {
         delete normal.bitmap
         normal.width = normal.height = 1
         normal.pixels = new Uint8Array([160, 128, 247, 255])
+        const { packMaterials } = await import(root + '/MaterialData.js')
+        for (const slot of data.materials)
+          slot.normalTexture = { width: 1, height: 1, pixels: new Uint8Array([160, 128, 247, 255]) }
+        packMaterials(data)
         // Cornell's original atlas uses constant UVs per triangle; give each
         // triangle a real UV basis so the new normal map actually takes effect.
         for (let i = 0; i < data.vertices.length; i += 36) {
@@ -179,7 +183,7 @@ try {
     result,
   )
   for (const slug of ['damaged-helmet', 'lighting', 'environment']) {
-    await page.goto('http://127.0.0.1:5173/examples/' + slug)
+    await page.goto((process.env.NOVA_TEST_URL || 'http://127.0.0.1:5173') + '/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
     await page
       .getByRole('combobox', { name: 'Model', exact: true })

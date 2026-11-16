@@ -42,15 +42,37 @@ namespace render::detail
     void PrepareLightSampling(PathScene& scene, bool hdr)
     {
         const auto& model = scene.model;
-        const auto& image = model.images[4];
-        double      mean  = 0;
-        for (size_t i = 0; i < image.pixels.size(); i += 4)
-            mean += Luma(
-              std::pow(image.pixels[i] / 255.0, 2.2) * model.emissive[0],
-              std::pow(image.pixels[i + 1] / 255.0, 2.2) * model.emissive[1],
-              std::pow(image.pixels[i + 2] / 255.0, 2.2) * model.emissive[2]);
-        mean /= std::max(size_t(1), image.pixels.size() / 4);
-        auto emission = [&](double u, double v) {
+        const Image white{1, 1, {255, 255, 255, 255}};
+        struct EmitterImage
+        {
+            const Image*         image;
+            std::array<float, 3> factor;
+            double               mean;
+        };
+        std::vector<EmitterImage> emitters;
+        for (size_t slot = 0; slot < std::max(size_t(1), model.materials.size()); slot++)
+        {
+            const auto* material = model.materials.empty() ? nullptr : &model.materials[slot];
+            const auto& image =
+              material ? (material->emissiveTexture ? *material->emissiveTexture : white) : model.images[4];
+            const auto factor = material
+                                  ? material->emissive
+                                  : std::array<float, 3>{model.emissive[0], model.emissive[1], model.emissive[2]};
+            double     mean   = 0;
+            for (size_t i = 0; i < image.pixels.size(); i += 4)
+                mean += Luma(
+                  std::pow(image.pixels[i] / 255.0, 2.2) * factor[0],
+                  std::pow(image.pixels[i + 1] / 255.0, 2.2) * factor[1],
+                  std::pow(image.pixels[i + 2] / 255.0, 2.2) * factor[2]);
+            emitters.push_back({&image, factor, mean / std::max(size_t(1), image.pixels.size() / 4)});
+        }
+        auto emission = [&](const ModelVertex& vertex, double u, double v) {
+            const auto& source = emitters.at(model.materials.empty() ? 0 : size_t(vertex.position[3]) - 1);
+            if (source.mean == 0)
+                return 0.0;
+            const auto&  image  = *source.image;
+            const auto&  factor = source.factor;
+            const auto   mean   = source.mean;
             const double x = (u - std::floor(u)) * image.width - .5, y = (v - std::floor(v)) * image.height - .5;
             const int    bx = int(std::floor(x)), by = int(std::floor(y));
             double       rgb[3]{};
@@ -64,38 +86,40 @@ namespace render::detail
                         rgb[k] += w * image.pixels[(iy * image.width + ix) * 4 + k] / 255.0;
                 }
             return Luma(
-              std::pow(rgb[0], 2.2) * model.emissive[0],
-              std::pow(rgb[1], 2.2) * model.emissive[1],
-              std::pow(rgb[2], 2.2) * model.emissive[2]);
+                     std::pow(rgb[0], 2.2) * factor[0],
+                     std::pow(rgb[1], 2.2) * factor[1],
+                     std::pow(rgb[2], 2.2) * factor[2])
+                   + mean * 1e-4;
         };
         std::vector<uint32_t> ids;
         std::vector<double>   areas, weights;
-        if (mean > 0)
-            for (size_t i = 0; i < model.vertices.size(); i += 3)
+        for (size_t i = 0; i < model.vertices.size(); i += 3)
+        {
+            const auto& a = model.vertices[i];
+            const auto& b = model.vertices[i + 1];
+            const auto& c = model.vertices[i + 2];
+            double      e[3], f[3], cross[3];
+            for (int k = 0; k < 3; ++k)
             {
-                const auto& a = model.vertices[i];
-                const auto& b = model.vertices[i + 1];
-                const auto& c = model.vertices[i + 2];
-                double      e[3], f[3], cross[3];
-                for (int k = 0; k < 3; ++k)
-                {
-                    e[k] = double(b.position[k]) - a.position[k];
-                    f[k] = double(c.position[k]) - a.position[k];
-                }
-                for (int k = 0; k < 3; ++k)
-                    cross[k] = e[(k + 1) % 3] * f[(k + 2) % 3] - e[(k + 2) % 3] * f[(k + 1) % 3];
-                const double area = .5 * std::sqrt(cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]);
-                if (area <= 1e-16)
-                    continue;
-                // A positive floor keeps textured emitters with missed bright subregions sampleable.
-                const double value =
-                  (emission(a.uv[0], a.uv[1]) + emission(b.uv[0], b.uv[1]) + emission(c.uv[0], c.uv[1])
-                   + emission((double(a.uv[0]) + b.uv[0] + c.uv[0]) / 3, (double(a.uv[1]) + b.uv[1] + c.uv[1]) / 3))
-                  / 4;
-                ids.push_back(uint32_t(i / 3));
-                areas.push_back(area);
-                weights.push_back(area * std::max(value, mean * 1e-4));
+                e[k] = double(b.position[k]) - a.position[k];
+                f[k] = double(c.position[k]) - a.position[k];
             }
+            for (int k = 0; k < 3; ++k)
+                cross[k] = e[(k + 1) % 3] * f[(k + 2) % 3] - e[(k + 2) % 3] * f[(k + 1) % 3];
+            const double area = .5 * std::sqrt(cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]);
+            if (area <= 1e-16)
+                continue;
+            // A positive floor keeps textured emitters with missed bright subregions sampleable.
+            const double value =
+              (emission(a, a.uv[0], a.uv[1]) + emission(a, b.uv[0], b.uv[1]) + emission(a, c.uv[0], c.uv[1])
+               + emission(a, (double(a.uv[0]) + b.uv[0] + c.uv[0]) / 3, (double(a.uv[1]) + b.uv[1] + c.uv[1]) / 3))
+              / 4;
+            if (value <= 0)
+                continue;
+            ids.push_back(uint32_t(i / 3));
+            areas.push_back(area);
+            weights.push_back(area * value);
+        }
         const double        areaPower = 2 * 3.141592653589793 * std::accumulate(weights.begin(), weights.end(), 0.0);
         const auto          areaCDF   = CDF(weights);
         const uint32_t      grid      = hdr ? std::min(64u, scene.sky.size) : 64u;

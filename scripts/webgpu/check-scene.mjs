@@ -53,7 +53,8 @@ try {
         first = await scene.update(assets, instances)
       require(first.model.vertices.length === 72 * 12 &&
         first.draws.length === 2 &&
-        first.instances.length === 144, 'Shared geometry/group layout')
+        first.instances.length ===
+          144 + first.model.materialRecords.length, 'Shared geometry/group layout')
       require(scene.assetBounds('red').maximum[0] === 1, 'Normalized bounds')
       const sourceAssets = assets.map((a) => ({ ...a, sourceSpace: true }))
       const sourceInstances = instances.map((i) => ({

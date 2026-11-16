@@ -20,18 +20,29 @@ function cdf(weights) {
   return result
 }
 export function buildLightSampling(data, images, vertices, originalIds) {
-  const image = data.images[4],
-    pixels = images[4],
-    factor = data.emissive
-  let mean = 0
-  for (let i = 0; i < pixels.length; i += 4)
-    mean += luma(
-      (pixels[i] / 255) ** 2.2 * factor[0],
-      (pixels[i + 1] / 255) ** 2.2 * factor[1],
-      (pixels[i + 2] / 255) ** 2.2 * factor[2],
-    )
-  mean /= Math.max(1, pixels.length / 4)
-  function emission(u, v) {
+  const emitters = Array.from({ length: Math.max(1, data.materials?.length || 0) }, (_, slot) => {
+    const material = data.materials?.[slot],
+      image = material
+        ? material.emissiveTexture || {
+            width: 1,
+            height: 1,
+            pixels: new Uint8Array([255, 255, 255, 255]),
+          }
+        : data.images[4],
+      pixels = material ? image.pixels : images[4],
+      factor = material ? material.emissive : data.emissive
+    let mean = 0
+    for (let i = 0; i < pixels.length; i += 4)
+      mean += luma(
+        (pixels[i] / 255) ** 2.2 * factor[0],
+        (pixels[i + 1] / 255) ** 2.2 * factor[1],
+        (pixels[i + 2] / 255) ** 2.2 * factor[2],
+      )
+    return { image, pixels, factor, mean: mean / Math.max(1, pixels.length / 4) }
+  })
+  function emission(slot, u, v) {
+    const { image, pixels, factor, mean } = emitters[slot]
+    if (mean === 0) return 0
     const x = (u - Math.floor(u)) * image.width - 0.5,
       y = (v - Math.floor(v)) * image.height - 0.5,
       bx = Math.floor(x),
@@ -44,38 +55,43 @@ export function buildLightSampling(data, images, vertices, originalIds) {
           w = (i ? x - bx : 1 - x + bx) * (j ? y - by : 1 - y + by)
         for (let k = 0; k < 3; k++) rgb[k] += (w * pixels[(iy * image.width + ix) * 4 + k]) / 255
       }
-    return luma(rgb[0] ** 2.2 * factor[0], rgb[1] ** 2.2 * factor[1], rgb[2] ** 2.2 * factor[2])
+    return (
+      luma(rgb[0] ** 2.2 * factor[0], rgb[1] ** 2.2 * factor[1], rgb[2] ** 2.2 * factor[2]) +
+      mean * 1e-4
+    )
   }
   const records = [],
     weights = []
-  if (mean > 0)
-    for (let id = 0; id < vertices.length / 36; id++) {
-      const a = id * 36,
-        b = a + 12,
-        c = a + 24,
-        e = [0, 1, 2].map((k) => vertices[b + k] - vertices[a + k]),
-        f = [0, 1, 2].map((k) => vertices[c + k] - vertices[a + k]),
-        cross = [0, 1, 2].map(
-          (k) => e[(k + 1) % 3] * f[(k + 2) % 3] - e[(k + 2) % 3] * f[(k + 1) % 3],
-        ),
-        area = 0.5 * Math.hypot(...cross)
-      if (area <= 1e-16) continue
-      const value =
-        (emission(vertices[a + 8], vertices[a + 9]) +
-          emission(vertices[b + 8], vertices[b + 9]) +
-          emission(vertices[c + 8], vertices[c + 9]) +
-          emission(
-            (vertices[a + 8] + vertices[b + 8] + vertices[c + 8]) / 3,
-            (vertices[a + 9] + vertices[b + 9] + vertices[c + 9]) / 3,
-          )) /
-        4
-      records.push({
-        id,
-        area,
-        weight: area * Math.max(value, mean * 1e-4),
-        original: originalIds[id],
-      })
-    }
+  for (let id = 0; id < vertices.length / 36; id++) {
+    const a = id * 36,
+      b = a + 12,
+      c = a + 24,
+      e = [0, 1, 2].map((k) => vertices[b + k] - vertices[a + k]),
+      f = [0, 1, 2].map((k) => vertices[c + k] - vertices[a + k]),
+      cross = [0, 1, 2].map(
+        (k) => e[(k + 1) % 3] * f[(k + 2) % 3] - e[(k + 2) % 3] * f[(k + 1) % 3],
+      ),
+      area = 0.5 * Math.hypot(...cross)
+    if (area <= 1e-16) continue
+    const slot = Math.max(0, vertices[a + 3] - 1)
+    const value =
+      (emission(slot, vertices[a + 8], vertices[a + 9]) +
+        emission(slot, vertices[b + 8], vertices[b + 9]) +
+        emission(slot, vertices[c + 8], vertices[c + 9]) +
+        emission(
+          slot,
+          (vertices[a + 8] + vertices[b + 8] + vertices[c + 8]) / 3,
+          (vertices[a + 9] + vertices[b + 9] + vertices[c + 9]) / 3,
+        )) /
+      4
+    if (value <= 0) continue
+    records.push({
+      id,
+      area,
+      weight: area * value,
+      original: originalIds[id],
+    })
+  }
   records.sort((a, b) => a.original - b.original)
   records.forEach((r) => weights.push(r.weight))
   const distribution = cdf(weights),

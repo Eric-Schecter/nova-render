@@ -38,7 +38,7 @@ add_custom_command(OUTPUT "${embedded_shader_cpp}"
     COMMAND ${CMAKE_COMMAND} "-DINPUTS=${SHADER_OUTPUTS}" "-DOUTPUT=${embedded_shader_cpp}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     DEPENDS ${SHADER_OUTPUTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake" VERBATIM)
-add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ModelData.cpp render/src/CameraData.cpp render/src/SceneData.cpp render/src/Picking.cpp
+add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ModelData.cpp render/src/MaterialData.cpp render/src/CameraData.cpp render/src/SceneData.cpp render/src/Picking.cpp
     render/src/AnimationData.cpp render/src/ShaderData.cpp "${embedded_shader_cpp}")
 target_sources(nova_render PRIVATE render/src/ParameterPanel.cpp render/src/EnvironmentData.cpp render/src/RayTracingView.cpp render/src/path/PathTracing.cpp render/src/path/LightSampling.cpp render/src/aa/AntiAliasingView.cpp render/src/aa/ShadowView.cpp render/src/aa/PostProcessingView.cpp render/src/aa/ScreenSpaceReflectionView.cpp
     render/src/aa/PlanarReflectionView.cpp
@@ -651,6 +651,22 @@ if(BUILD_TESTING)
     target_link_libraries(nova_scene_data_test PRIVATE Nova::Render)
     target_include_directories(nova_scene_data_test PRIVATE render/src "${NOVA_GLM_INCLUDE_DIR}")
     add_test(NAME scene-data COMMAND nova_scene_data_test "${PROJECT_SOURCE_DIR}/assets")
+    add_executable(nova_material_test tests/material.cpp)
+    target_link_libraries(nova_material_test PRIVATE Nova::Render glfw)
+    target_compile_definitions(nova_material_test PRIVATE GLFW_INCLUDE_NONE $<TARGET_PROPERTY:nova_render,COMPILE_DEFINITIONS>)
+    if(NOVA_ENABLE_UI)
+        target_link_libraries(nova_material_test PRIVATE imgui::imgui)
+    endif()
+    target_include_directories(nova_material_test PRIVATE render/src "${NOVA_GLM_INCLUDE_DIR}")
+    if(APPLE)
+        add_test(NAME material-metal COMMAND nova_material_test metal "${PROJECT_SOURCE_DIR}/assets")
+    elseif(WIN32)
+        add_test(NAME material-dx12-warp COMMAND nova_material_test dx12 "${PROJECT_SOURCE_DIR}/assets")
+    endif()
+    if(NOVA_ENABLE_VULKAN)
+        target_compile_definitions(nova_material_test PRIVATE NOVA_TEST_VULKAN)
+        add_test(NAME material-vulkan COMMAND nova_material_test vulkan "${PROJECT_SOURCE_DIR}/assets")
+    endif()
     add_executable(nova_scene_render_test tests/scene_render.cpp)
     target_link_libraries(nova_scene_render_test PRIVATE Nova::Render glfw)
     target_compile_definitions(nova_scene_render_test PRIVATE GLFW_INCLUDE_NONE $<TARGET_PROPERTY:nova_render,COMPILE_DEFINITIONS>)

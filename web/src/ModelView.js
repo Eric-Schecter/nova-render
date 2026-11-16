@@ -204,7 +204,15 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       })
     }
     const pipeline = await pipelineFor(shader)
+    if (data.materialRecords?.length) {
+      if (instanceBuffer.size < data.materialRecords.byteLength) {
+        instanceBuffer.destroy()
+        instanceBuffer = makeBuffer(data.materialRecords, GPUBufferUsage.STORAGE, 'Nova materials')
+        bindGroup = group(cube, backgroundCube)
+      } else device.queue.writeBuffer(instanceBuffer, 0, data.materialRecords)
+    }
     return {
+      data,
       async prepareAA(camera, width, height, lighting, light, settings, frames, postSettings) {
         if (!aaPipelines) {
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
@@ -232,7 +240,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
         )
-        currentScene[35] = sceneDraws !== null ? 1 : 0
+        currentScene[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
         currentScene[63] = postSettings?.enabled ? 1 : 0
         device.queue.writeBuffer(uniform, 0, currentScene)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
@@ -384,7 +392,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
         )
-        values[35] = sceneDraws !== null ? 1 : 0
+        values[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
         device.queue.writeBuffer(uniform, 0, values)
         const encoder = device.createCommandEncoder(),
           pass = encoder.beginRenderPass({

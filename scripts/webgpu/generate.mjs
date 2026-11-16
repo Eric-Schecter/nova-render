@@ -188,3 +188,8 @@ await writeFile(
   'docs/public/generated/viewport-present.json',
   JSON.stringify(await compile(await readFile('render/shaders/viewport-present.hlsl', 'utf8'))),
 )
+
+await writeFile(
+  'docs/public/generated/MaterialDual.glb',
+  await readFile('assets/MaterialSample/Dual.glb'),
+)

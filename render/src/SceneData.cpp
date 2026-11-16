@@ -42,7 +42,6 @@ namespace render::detail
         if (!model || nextKey != key)
         {
             std::map<std::string, Mesh> next;
-            uint32_t                    tile = 1;
             for (const auto& entry : nextKey)
             {
                 const auto&                      id   = entry.first;
@@ -57,53 +56,22 @@ namespace render::detail
                     data = LoadGLB(path);
                 if (data->animation)
                     throw std::invalid_argument("Scene instances currently require static GLB models");
-                for (const auto& im : data->images)
-                    tile = std::max(tile, std::max(im.width, im.height));
                 auto picking = old != meshes.end() && old->second.data == data ? old->second.picking
                                                                                : std::make_shared<PickMesh>(data);
                 next[id]     = {data, 0, 0, {}, std::move(picking)};
             }
-            // One shared mesh range per asset. Atlas gutter preserves filtering at tile boundaries.
-            tile          = std::min(tile, 2048u);
-            uint32_t cols = std::max(1u, uint32_t(std::ceil(std::sqrt(double(next.size()))))),
-                     rows = std::max(1u, uint32_t((next.size() + cols - 1) / cols)), stride = tile + 4,
-                     w = cols * stride, h = rows * stride;
-            if (w > 8192 || h > 8192 || uint64_t(w) * h * 20 > 512ull * 1024 * 1024)
-                throw std::runtime_error("Scene material atlas exceeds 512 MiB / 8192px limit");
             auto packed = std::make_shared<ModelData>(*EmptyModelData());
-            for (auto& image : packed->images)
-            {
-                image.width  = w;
-                image.height = h;
-                image.pixels.assign(size_t(w) * h * 4, 0);
-            }
-            uint32_t index = 0;
             for (auto& [id, m] : next)
             {
-                uint32_t x = (index % cols) * stride, y = (index / cols) * stride;
-                ++index;
-                m.first = uint32_t(packed->vertices.size());
-                m.count = uint32_t(m.data->vertices.size());
+                m.first     = uint32_t(packed->vertices.size());
+                m.count     = uint32_t(m.data->vertices.size());
+                auto offset = packed->materials.size();
                 packed->vertices.insert(packed->vertices.end(), m.data->vertices.begin(), m.data->vertices.end());
-                m.uv = {float(tile - 1) / w, float(tile - 1) / h, float(x + 2.5f) / w, float(y + 2.5f) / h};
-                for (size_t k = 0; k < 5; ++k)
-                {
-                    const auto& src = m.data->images[k];
-                    auto&       dst = packed->images[k];
-                    for (uint32_t py = 0; py < stride; ++py)
-                        for (uint32_t px = 0; px < stride; ++px)
-                        {
-                            float u = std::clamp((float(px) - 2) / float(std::max(1u, tile - 1)), 0.f, 1.f),
-                                  v = std::clamp((float(py) - 2) / float(std::max(1u, tile - 1)), 0.f, 1.f);
-                            auto sx = std::min(src.width - 1, uint32_t(std::round(u * (src.width - 1)))),
-                                 sy = std::min(src.height - 1, uint32_t(std::round(v * (src.height - 1))));
-                            std::memcpy(
-                              dst.pixels.data() + (size_t(y + py) * w + x + px) * 4,
-                              src.pixels.data() + (size_t(sy) * src.width + sx) * 4,
-                              4);
-                        }
-                }
+                for (size_t i = m.first; i < packed->vertices.size(); i++)
+                    packed->vertices[i].position[3] += float(offset);
+                packed->materials.insert(packed->materials.end(), m.data->materials.begin(), m.data->materials.end());
             }
+            PackMaterials(*packed);
             model  = std::move(packed);
             meshes = std::move(next);
             key    = std::move(nextKey);
@@ -148,7 +116,8 @@ namespace render::detail
                     std::copy(m.data->baseColor.begin(), m.data->baseColor.end(), v.baseColor);
                     std::copy(m.data->material.begin(), m.data->material.end(), v.material);
                     std::copy(m.data->emissive.begin(), m.data->emissive.end(), v.emissive);
-                    std::copy(m.uv.begin(), m.uv.end(), v.uv);
+                    v.uv[0] = float(input.size());
+                    v.uv[3] = -1;
                     for (float value : v.world)
                         if (!std::isfinite(value))
                             throw std::invalid_argument("Instance transform overflows float32");
@@ -164,8 +133,32 @@ namespace render::detail
         draws        = std::move(groups);
         sourceSpaces = std::move(spaces);
         active       = true;
+        assetsSnapshot = assets;
+        inputSnapshot  = input;
     }
 
+    std::vector<Material> SceneData::GetMaterials(const std::string& id) const
+    {
+        auto m = meshes.find(id);
+        if (!active || m == meshes.end())
+            throw std::invalid_argument("Unknown scene asset");
+        return m->second.data->materials;
+    }
+    void SceneData::SetMaterial(const std::string& id, uint32_t slot, const Material& material)
+    {
+        auto next  = *this;
+        auto found = next.meshes.find(id);
+        if (!active || found == next.meshes.end() || slot >= found->second.data->materials.size())
+            throw std::invalid_argument("Unknown scene material slot");
+        auto data = std::make_shared<ModelData>(*found->second.data);
+        ValidateMaterial(material);
+        data->materials[slot] = material;
+        PackMaterials(*data);
+        found->second.data = data;
+        next.model.reset();
+        next.Build(assetsSnapshot, inputSnapshot);
+        *this = std::move(next);
+    }
     std::optional<SceneHit> SceneData::Pick(const Ray& ray) const
     {
         glm::dvec3 origin(ray.origin[0], ray.origin[1], ray.origin[2]),

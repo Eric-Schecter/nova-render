@@ -733,7 +733,7 @@ namespace render::detail
             }
             if (model)
             {
-                size_t bytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+                size_t bytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
                 if (bytes > sceneInstanceBytes)
                 {
                     destroyModelBuffer(sceneInstanceBuffer);
@@ -748,7 +748,7 @@ namespace render::detail
                     write.pBufferInfo     = &info;
                     vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
                 }
-                if (scene.active && !scene.instances.empty())
+                if (!RasterInstances().empty())
                 {
                     void* mapped = nullptr;
                     check(
@@ -756,11 +756,11 @@ namespace render::detail
                         device,
                         sceneInstanceBuffer.memory,
                         0,
-                        scene.instances.size() * sizeof(InstanceData),
+                        RasterInstances().size() * sizeof(InstanceData),
                         0,
                         &mapped),
                       "Map instances");
-                    std::memcpy(mapped, scene.instances.data(), scene.instances.size() * sizeof(InstanceData));
+                    std::memcpy(mapped, RasterInstances().data(), RasterInstances().size() * sizeof(InstanceData));
                     vkUnmapMemory(device, sceneInstanceBuffer.memory);
                 }
             }
@@ -782,7 +782,7 @@ namespace render::detail
                   environment.get(),
                   environmentSettings);
                 uniform.skyParams[2] = path ? 1.0f : 0.0f;
-                uniform.lightDirection[3] = scene.active ? 1.f : 0.f;
+                uniform.lightDirection[3] = MaterialMode();
                 void* mapped         = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));

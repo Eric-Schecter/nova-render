@@ -166,6 +166,14 @@ namespace render
     {
         impl_->renderer->SetScene(assets, instances);
     }
+    std::vector<Material> Window::GetMaterials(const std::string& id) const
+    {
+        return impl_->renderer->GetMaterials(id);
+    }
+    void Window::SetMaterial(uint32_t slot, const Material& value, const std::string& id)
+    {
+        impl_->renderer->SetMaterial(slot, value, id);
+    }
     void Window::LoadModel(const std::filesystem::path& path)
     {
         impl_->renderer->LoadModel(path);

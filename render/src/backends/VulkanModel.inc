@@ -196,7 +196,7 @@ void uploadModel()
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       model->jointMatrices.empty() ? nullptr : model->jointMatrices.data());
     modelBuffer(modelUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    sceneInstanceBytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+    sceneInstanceBytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
     modelBuffer(sceneInstanceBuffer, sceneInstanceBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     for (size_t i = 0; i < 5; ++i)
     {

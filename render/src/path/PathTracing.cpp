@@ -89,6 +89,11 @@ namespace render::detail
         {
             const auto& sky = BackgroundMips(environment ? *environment : FallbackEnvironment()).front();
             PathScene   data{*model, sky, {}, {}};
+            for (const auto& record : model->materialRecords)
+            {
+                const auto* bytes = reinterpret_cast<const unsigned char*>(record.data() + 32);
+                data.texels.insert(data.texels.end(), bytes, bytes + 64);
+            }
             for (size_t i = 0; i < 5; ++i)
             {
                 const auto& texture = model->images[i];

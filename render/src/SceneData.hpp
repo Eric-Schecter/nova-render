@@ -17,6 +17,8 @@ namespace render::detail
     class SceneData
     {
       public:
+        std::vector<Material>            GetMaterials(const std::string& id) const;
+        void                             SetMaterial(const std::string& id, uint32_t slot, const Material& material);
         bool                             active = false;
         std::shared_ptr<const ModelData> model;
         std::vector<InstanceData>        instances;
@@ -27,6 +29,8 @@ namespace render::detail
         void                  Update(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
 
       private:
+        std::vector<SceneAsset>     assetsSnapshot;
+        std::vector<SceneInstance>  inputSnapshot;
         void Build(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
         std::map<std::string, bool> sourceSpaces;
         std::vector<SceneInstance>  pickInstances;

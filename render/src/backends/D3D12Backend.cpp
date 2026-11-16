@@ -212,18 +212,18 @@ namespace render::detail
             }
             if (model)
             {
-                size_t bytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+                size_t bytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
                 if (!sceneInstanceBuffer || bytes > sceneInstanceBytes)
                 {
                     sceneInstanceBuffer = uploadBuffer(bytes);
                     sceneInstanceBytes  = bytes;
                 }
-                if (scene.active && !scene.instances.empty())
+                if (!RasterInstances().empty())
                 {
                     void*       mapped = nullptr;
                     D3D12_RANGE read{0, 0};
                     checkHR(sceneInstanceBuffer->Map(0, &read, &mapped), "Map instances");
-                    std::memcpy(mapped, scene.instances.data(), scene.instances.size() * sizeof(InstanceData));
+                    std::memcpy(mapped, RasterInstances().data(), RasterInstances().size() * sizeof(InstanceData));
                     sceneInstanceBuffer->Unmap(0, nullptr);
                 }
             }
@@ -245,7 +245,7 @@ namespace render::detail
                   environment.get(),
                   environmentSettings);
                 u.skyParams[2]     = path ? 1.0f : 0.0f;
-                u.lightDirection[3] = scene.active ? 1.f : 0.f;
+                u.lightDirection[3] = MaterialMode();
                 void*       mapped = nullptr;
                 D3D12_RANGE read{0, 0};
                 checkHR(modelUniform->Map(0, &read, &mapped), "Map scene uniforms");

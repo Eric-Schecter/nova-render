@@ -26,12 +26,61 @@ namespace render::detail
             if (model != next.model)
                 LoadModel(next.model);
             scene      = std::move(next);
+            RebuildRasterInstances();
             aaTriangle = false;
             presentedImage.reset();
             pathSession.Reset();
             rasterAA.Reset();
             mode = RenderMode::Raster;
         }
+        std::vector<Material> GetMaterials(const std::string& id) const
+        {
+            if (scene.active)
+                return scene.GetMaterials(id);
+            if (!id.empty() || !model)
+                throw std::invalid_argument("No model material slots");
+            return model->materials;
+        }
+        void SetMaterial(uint32_t slot, const Material& value, const std::string& id)
+        {
+            ValidateMaterial(value);
+            if (scene.active)
+            {
+                auto next = scene;
+                next.SetMaterial(id, slot, value);
+                LoadModel(next.model);
+                scene = std::move(next);
+            }
+            else
+            {
+                if (!id.empty() || !model || slot >= model->materials.size())
+                    throw std::invalid_argument("Unknown model material slot");
+                auto next             = std::make_shared<ModelData>(*model);
+                next->materials[slot] = value;
+                PackMaterials(*next);
+                auto state = animation.state;
+                LoadModel(next);
+                if (model->animation)
+                    SetAnimationState(state);
+            }
+            RebuildRasterInstances();
+            pathSession.Reset();
+            rasterAA.Reset();
+        }
+        std::vector<InstanceData>        rasterInstances;
+        const std::vector<InstanceData>& RasterInstances() const { return rasterInstances; }
+        void                             RebuildRasterInstances()
+        {
+            rasterInstances = scene.active ? scene.instances : std::vector<InstanceData>{};
+            if (model)
+                for (const auto& record : model->materialRecords)
+                {
+                    InstanceData v;
+                    std::memcpy(&v, record.data(), sizeof(v));
+                    rasterInstances.push_back(v);
+                }
+        }
+        float MaterialMode() const { return scene.active ? 1.f : model && !model->materialRecords.empty() ? 2.f : 0.f; }
         void        ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
         {
             pathAPI    = api;
@@ -152,6 +201,7 @@ namespace render::detail
                 animation.Load(std::move(data));
                 model = animation.Model();
             }
+            RebuildRasterInstances();
             if (model && model->animation)
                 SetRenderMode(RenderMode::Raster);
         }
@@ -162,6 +212,7 @@ namespace render::detail
             const bool sceneWasActive = scene.active;
             LoadModel(model ? model : EmptyModelData());
             scene.active = sceneWasActive;
+            RebuildRasterInstances();
         }
         void SetEnvironment(const EnvironmentSettings& value)
         {
@@ -314,7 +365,7 @@ namespace render::detail
                   directionalLight,
                   environment.get(),
                   environmentSettings);
-                rasterAA.current.lightDirection[3] = scene.active ? 1.f : 0.f;
+                rasterAA.current.lightDirection[3] = MaterialMode();
                 rasterAA.current.irradiance[0][3] = postSettings.enabled ? 1.f : 0.f;
                 const auto& image =
                   rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings);

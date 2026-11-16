@@ -131,6 +131,9 @@ int main(int argc, char** argv)
         auto mapped             = std::make_shared<ModelData>(*model);
         mapped->images[1].width = mapped->images[1].height = 1;
         mapped->images[1].pixels                           = {160, 128, 247, 255};
+        for (auto& slot : mapped->materials)
+            slot.normalTexture = render::Image{1, 1, {160, 128, 247, 255}};
+        PackMaterials(*mapped);
         for (size_t i = 0; i < mapped->vertices.size(); i += 3)
         {
             const float u = mapped->vertices[i].uv[0], v = mapped->vertices[i].uv[1];
@@ -153,6 +156,9 @@ int main(int argc, char** argv)
         // Without finite emitters, BDPT must preserve the existing environment/delta estimator exactly.
         auto nonEmissive      = std::make_shared<ModelData>(*model);
         nonEmissive->emissive = {0, 0, 0, 0};
+        for (auto& slot : nonEmissive->materials)
+            slot.emissive = {0, 0, 0};
+        PackMaterials(*nonEmissive);
         model                 = nonEmissive;
         environment.intensity = 1;
         light.intensity       = 1;

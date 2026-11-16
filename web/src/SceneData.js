@@ -1,3 +1,4 @@
+import { packMaterials, validateMaterial } from './MaterialData.js'
 import { PickMesh, pickScene } from './Picking.js'
 import { loadGLB, emptyModelData, multiply } from './ModelData.js'
 const cross = (a, b) => [
@@ -101,7 +102,6 @@ export class SceneData {
     const key = JSON.stringify([...referenced].sort().map((id) => [id, paths.get(id)]))
     if (!this.model || key !== this.key) {
       const next = new Map()
-      let tile = 1
       const fresh = []
       try {
         for (const id of [...referenced].sort()) {
@@ -123,72 +123,28 @@ export class SceneData {
               }
           }
           if (data.animation) throw Error('Scene instances currently require static GLB models')
-          for (const image of data.images) tile = Math.max(tile, image.width, image.height)
           next.set(id, {
             data,
             url: paths.get(id),
             picking: previous?.data === data ? previous.picking : new PickMesh(data),
           })
         }
-        tile = Math.min(tile, 2048)
-        const cols = Math.max(1, Math.ceil(Math.sqrt(next.size))),
-          rows = Math.max(1, Math.ceil(next.size / cols)),
-          stride = tile + 4,
-          width = cols * stride,
-          height = rows * stride
-        if (width > 8192 || height > 8192 || width * height * 20 > 512 * 1024 * 1024)
-          throw Error('Scene material atlas exceeds 512 MiB / 8192px limit')
         const packed = emptyModelData()
-        packed.images = Array.from({ length: 5 }, () => ({
-          width,
-          height,
-          pixels: new Uint8Array(width * height * 4),
-        }))
+        packed.materials = []
         let vertexCount = 0
         for (const m of next.values()) vertexCount += m.data.vertices.length
         packed.vertices = new Float32Array(vertexCount)
-        let offset = 0,
-          index = 0
+        let offset = 0
         for (const m of next.values()) {
-          const x = (index % cols) * stride,
-            y = Math.floor(index / cols) * stride
-          index++
           m.first = offset / 12
           m.count = m.data.vertices.length / 12
           packed.vertices.set(m.data.vertices, offset)
+          for (let i = offset + 3; i < offset + m.data.vertices.length; i += 12)
+            packed.vertices[i] += packed.materials.length
+          packed.materials.push(...m.data.materials)
           offset += m.data.vertices.length
-          m.uv = [(tile - 1) / width, (tile - 1) / height, (x + 2.5) / width, (y + 2.5) / height]
-          for (let k = 0; k < 5; k++) {
-            const src = m.data.images[k]
-            let pixels = src.pixels
-            if (src.bitmap) {
-              const canvas = new OffscreenCanvas(src.width, src.height),
-                ctx = canvas.getContext('2d')
-              ctx.drawImage(src.bitmap, 0, 0)
-              pixels = ctx.getImageData(0, 0, src.width, src.height).data
-            }
-            const dst = packed.images[k].pixels
-            for (let py = 0; py < stride; py++) {
-              const sy = Math.min(
-                src.height - 1,
-                Math.round(
-                  Math.max(0, Math.min(1, (py - 2) / Math.max(1, tile - 1))) * (src.height - 1),
-                ),
-              )
-              for (let px = 0; px < stride; px++) {
-                const sx = Math.min(
-                    src.width - 1,
-                    Math.round(
-                      Math.max(0, Math.min(1, (px - 2) / Math.max(1, tile - 1))) * (src.width - 1),
-                    ),
-                  ),
-                  from = (sy * src.width + sx) * 4,
-                  to = ((y + py) * width + x + px) * 4
-                dst.set(pixels.subarray(from, from + 4), to)
-              }
-            }
-          }
         }
+        packMaterials(packed)
         this.model = packed
         this.meshes = next
         this.key = key
@@ -210,7 +166,9 @@ export class SceneData {
         world: multiply(i.world, [half, 0, 0, 0, 0, half, 0, 0, 0, 0, half, 0, ...center, 1]),
       }
     })
-    const instances = new Float32Array(input.length * 48),
+    const instances = new Float32Array(
+        input.length * 48 + (this.model.materialRecords?.length || 0),
+      ),
       draws = []
     let index = 0
     for (const [id, m] of this.meshes) {
@@ -223,7 +181,10 @@ export class SceneData {
             ...m.data.baseColor,
             ...m.data.material,
             ...m.data.emissive,
-            ...m.uv,
+            input.length,
+            0,
+            0,
+            -1,
           ]
           if (!values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
             throw Error('Instance transform overflows float32')
@@ -237,9 +198,29 @@ export class SceneData {
         instanceCount: index - first,
       })
     }
+    instances.set(this.model.materialRecords || [], input.length * 48)
+    this.assetsSnapshot = structuredClone(assets)
+    this.inputSnapshot = structuredClone(input)
     this.pickInstances = effective.map((i) => ({ ...i, world: Array.from(i.world, Math.fround) }))
     this.sourceSpaces = spaces
     return { model: this.model, instances, draws }
+  }
+  getMaterials(id) {
+    const m = this.meshes.get(id)
+    if (!m) throw Error('Unknown scene asset')
+    return structuredClone(m.data.materials)
+  }
+  async setMaterial(id, slot, material) {
+    const m = this.meshes.get(id)
+    if (!m || !Number.isInteger(slot) || slot < 0 || slot >= m.data.materials.length)
+      throw Error('Unknown scene material slot')
+    const data = { ...m.data, materials: [...m.data.materials] }
+    data.materials[slot] = validateMaterial(material)
+    packMaterials(data)
+    this.meshes = new Map(this.meshes)
+    this.meshes.set(id, { ...m, data })
+    this.model = null
+    return this.build(this.assetsSnapshot, this.inputSnapshot)
   }
   fork() {
     return Object.assign(new SceneData(), this)

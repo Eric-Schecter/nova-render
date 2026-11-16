@@ -121,6 +121,34 @@ float4 textureColor(uint index, float2 uv)
       lerp(imagePixel(image, base + int2(0, 1)), imagePixel(image, base + 1), f.x),
       f.y);
 }
+struct SurfaceMaterial
+{
+    float4 base;
+    float4 factors;
+    float4 emission;
+    float4 uv;
+};
+SurfaceMaterial surfaceMaterial(Vertex vertex)
+{
+    SurfaceMaterial m;
+    m.base     = parameters[5];
+    m.factors  = parameters[6];
+    m.emission = parameters[7];
+    m.uv       = float4(1, 1, 0, 0);
+    if (asuint(parameters[27]).x > 0)
+    {
+        uint at    = (uint(max(1, vertex.position.w)) - 1) * 16;
+        m.base     = asfloat(uint4(texels[at], texels[at + 1], texels[at + 2], texels[at + 3]));
+        m.factors  = asfloat(uint4(texels[at + 4], texels[at + 5], texels[at + 6], texels[at + 7]));
+        m.emission = asfloat(uint4(texels[at + 8], texels[at + 9], texels[at + 10], texels[at + 11]));
+        m.uv       = asfloat(uint4(texels[at + 12], texels[at + 13], texels[at + 14], texels[at + 15]));
+    }
+    return m;
+}
+float2 materialUV(float2 uv, SurfaceMaterial m)
+{
+    return frac(uv) * m.uv.xy + m.uv.zw;
+}
 float3 skyPixel(uint face, int2 p, uint size)
 {
     p       = clamp(p, int2(0, 0), int2(size - 1, size - 1));
@@ -444,7 +472,9 @@ bool sampleLight(
         direction   = delta / distance;
         maxDistance = distance - .001;
         pdf         = emitterPdf(primitive, origin, position);
-        radiance    = emitters ? pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb : float3(0, 0, 0);
+        radiance    = emitters ? pow(max(textureColor(4, materialUV(uv, surfaceMaterial(a))).rgb, 0), 2.2)
+                                * surfaceMaterial(a).emission.rgb
+                               : float3(0, 0, 0);
     }
     else
     {
@@ -488,6 +518,8 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     float3 bary = float3(1 - hit.bary.x - hit.bary.y, hit.bary);
     float2 uv   = a.uv.xy * bary.x + b.uv.xy * bary.y + c.uv.xy * bary.z;
     float3 e = b.position.xyz - a.position.xyz, f = c.position.xyz - a.position.xyz;
+    SurfaceMaterial mat       = surfaceMaterial(a);
+    float2          textureUV = materialUV(uv, mat);
     PathVertex p;
     p.position  = origin + direction * hit.distance;
     p.geometric = normalize(cross(e, f));
@@ -499,15 +531,15 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
         float3 t = (e * dv.y - f * du.y) / det, bit = (-e * dv.x + f * du.x) / det;
         t             = normalize(t - p.normal * dot(p.normal, t));
         bit           = normalize(bit - p.normal * dot(p.normal, bit));
-        float3 mapped = textureColor(1, uv).xyz * 2 - 1;
-        mapped.xy *= parameters[6].z;
+        float3 mapped = textureColor(1, textureUV).xyz * 2 - 1;
+        mapped.xy *= mat.factors.z;
         p.normal = normalize(t * mapped.x + bit * mapped.y + p.normal * mapped.z);
     }
-    p.base         = pow(max(textureColor(0, uv).rgb, 0), 2.2) * parameters[5].rgb;
-    p.emission     = pow(max(textureColor(4, uv).rgb, 0), 2.2) * parameters[7].rgb;
-    float4 mr      = textureColor(2, uv);
-    p.metal        = saturate(mr.b * parameters[6].x);
-    p.roughness    = clamp(mr.g * parameters[6].y, .06, 1);
+    p.base         = pow(max(textureColor(0, textureUV).rgb, 0), 2.2) * mat.base.rgb;
+    p.emission     = pow(max(textureColor(4, textureUV).rgb, 0), 2.2) * mat.emission.rgb;
+    float4 mr      = textureColor(2, textureUV);
+    p.metal        = saturate(mr.b * mat.factors.x);
+    p.roughness    = clamp(mr.g * mat.factors.y, .06, 1);
     p.transmission = a.normal.w;
     p.ior          = max(a.uv.w, 1.01);
     p.beta         = 1;

@@ -1,6 +1,7 @@
 #pragma once
 #include "Animation.hpp"
 #include "Image.hpp"
+#include "Material.hpp"
 #include "PostProcessing.hpp"
 #include "RenderMode.hpp"
 #include "Renderer.hpp"
@@ -47,6 +48,8 @@ namespace render
         std::optional<Bounds>      GetSceneAssetBounds(const std::string& assetId) const;
         // Synchronous CPU query of the last committed SetScene state; nullopt on miss.
         std::optional<SceneHit>    PickScene(const Ray& ray) const;
+        std::vector<Material>      GetMaterials(const std::string& assetId = {}) const;
+        void SetMaterial(uint32_t slot, const Material& material, const std::string& assetId = {});
         void                       LoadModel(const std::filesystem::path& glbPath);
         RendererCapabilities       GetCapabilities() const;
         void                       SetRenderMode(RenderMode mode);

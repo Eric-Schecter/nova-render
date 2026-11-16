@@ -99,7 +99,10 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       params = buffer(new Uint8Array(512))
     const metadata = [],
       images = []
-    let total = 0
+    const materialHeader = new Float32Array((data.materialRecords?.length || 0) / 3)
+    for (let i = 0; i < materialHeader.length / 16; i++)
+      materialHeader.set(data.materialRecords.subarray(i * 48 + 32, i * 48 + 48), i * 16)
+    let total = materialHeader.byteLength
     for (const image of data.images) {
       let pixels = image.pixels
       if (!pixels) {
@@ -117,7 +120,8 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     // Distribution offsets are absolute words in the existing material buffer.
     for (const i of [1, 2, 3]) lights.words[i] += total / 4
     const texels = new Uint8Array(total + lights.words.byteLength)
-    let offset = 0
+    texels.set(new Uint8Array(materialHeader.buffer))
+    let offset = materialHeader.byteLength
     for (const bytes of images) {
       texels.set(bytes, offset)
       offset += bytes.byteLength

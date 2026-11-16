@@ -172,15 +172,15 @@ namespace render::detail
                       model->jointMatrices.size() * sizeof(JointMatrix));
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
-                size_t instanceBytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+                size_t instanceBytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
                 if (!sceneInstanceBuffer || sceneInstanceBuffer.length < instanceBytes)
                     sceneInstanceBuffer = [device newBufferWithLength:instanceBytes
                                                               options:MTLResourceStorageModeShared];
-                if (scene.active && !scene.instances.empty())
+                if (!RasterInstances().empty())
                     std::memcpy(
                       sceneInstanceBuffer.contents,
-                      scene.instances.data(),
-                      scene.instances.size() * sizeof(InstanceData));
+                      RasterInstances().data(),
+                      RasterInstances().size() * sizeof(InstanceData));
                 const auto rectangle  = SceneViewport(width, height);
                 const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
                 if (!sceneWidth || !sceneHeight)
@@ -212,7 +212,7 @@ namespace render::detail
                       environment.get(),
                       environmentSettings);
                     uniforms.skyParams[2] = path ? 1.0f : 0.0f;
-                    uniforms.lightDirection[3] = scene.active ? 1.f : 0.f;
+                    uniforms.lightDirection[3] = MaterialMode();
                     [encoder setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setFragmentBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];

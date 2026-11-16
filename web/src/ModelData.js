@@ -1,3 +1,4 @@
+import { packMaterials, validateMaterial } from './MaterialData.js'
 import { cameraFromOrbit, cameraBasis } from './Camera.js'
 import { readAnimation } from './AnimationData.js'
 import { defaultEnvironment } from './EnvironmentData.js'
@@ -110,7 +111,6 @@ export async function loadGLB(url) {
     min = [Infinity, Infinity, Infinity],
     max = [-Infinity, -Infinity, -Infinity],
     active = new Set()
-  let materialIndex = -1
   function visit(index, parent) {
     if (!json.nodes[index] || active.has(index)) throw Error('Invalid scene graph')
     active.add(index)
@@ -127,18 +127,7 @@ export async function loadGLB(url) {
       for (const p of json.meshes[node.mesh].primitives) {
         if ((p.mode ?? 4) !== 4 || p.targets)
           throw Error('Only triangle primitives without morph targets are supported')
-        if (materialIndex < 0) materialIndex = p.material
         if (p.material === undefined) throw Error('Missing material')
-        const core = (m) =>
-          JSON.stringify(
-            Object.fromEntries(
-              Object.entries(m)
-                .filter(([k]) => !['extensions', 'name'].includes(k))
-                .sort(([a], [b]) => a.localeCompare(b)),
-            ),
-          )
-        if (core(json.materials[p.material]) !== core(json.materials[materialIndex]))
-          throw Error('Materials must share core PBR factors and texture atlas')
         const mat = json.materials[p.material],
           pbr = mat.pbrMetallicRoughness || {}
         if (
@@ -215,7 +204,7 @@ export async function loadGLB(url) {
           }
           vertices.push(
             ...world,
-            1,
+            p.material + 1,
             ...n,
             transmission,
             ...uv,
@@ -238,67 +227,88 @@ export async function loadGLB(url) {
     animation.center = min.map((v, k) => (v + max[k]) * 0.5)
     animation.scale = 2 / size
   }
-  const material = json.materials[materialIndex],
-    pbr = material.pbrMetallicRoughness || {}
-  if ((material.alphaMode || 'OPAQUE') !== 'OPAQUE')
-    throw Error('Only opaque materials are supported')
-  const textures = [
-    pbr.baseColorTexture,
-    material.normalTexture,
-    pbr.metallicRoughnessTexture,
-    material.occlusionTexture,
-    material.emissiveTexture,
-  ]
-  const fallback = [
-    [255, 255, 255, 255],
-    [128, 128, 255, 255],
-    [255, 255, 255, 255],
-    [255, 255, 255, 255],
-    [0, 0, 0, 255],
-  ]
-  const images = []
-  try {
-    for (let i = 0; i < 5; i++) {
-      if (!textures[i]) {
-        images.push({ width: 1, height: 1, pixels: new Uint8Array(fallback[i]) })
-        continue
+  if (json.materials.length > 128) throw Error('At most 128 material slots are supported')
+  const materials = []
+  for (const material of json.materials) {
+    const pbr = material.pbrMetallicRoughness || {}
+    if ((material.alphaMode || 'OPAQUE') !== 'OPAQUE')
+      throw Error('Only opaque materials are supported')
+    const textures = [
+      pbr.baseColorTexture,
+      material.normalTexture,
+      pbr.metallicRoughnessTexture,
+      material.occlusionTexture,
+      material.emissiveTexture,
+    ]
+    const fallback = [
+      [255, 255, 255, 255],
+      [128, 128, 255, 255],
+      [255, 255, 255, 255],
+      [255, 255, 255, 255],
+      [0, 0, 0, 255],
+    ]
+    const images = []
+    try {
+      for (let i = 0; i < 5; i++) {
+        if (!textures[i]) {
+          images.push({ width: 1, height: 1, pixels: new Uint8Array(fallback[i]) })
+          continue
+        }
+        if ((textures[i].texCoord || 0) !== 0) throw Error('Only TEXCOORD_0 is supported')
+        const image = json.images[json.textures[textures[i].index].source]
+        if (image.bufferView === undefined) throw Error('GLB images must be embedded')
+        const view = json.bufferViews[image.bufferView],
+          offset = view.byteOffset || 0
+        if (offset + view.byteLength > bin.byteLength) throw Error('Image out of bounds')
+        const bitmap = await createImageBitmap(
+          new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
+          { colorSpaceConversion: 'none', premultiplyAlpha: 'none' },
+        )
+        if (bitmap.width > 8192 || bitmap.height > 8192) {
+          bitmap.close()
+          throw Error('Image exceeds 8192 pixels')
+        }
+        images.push({ width: bitmap.width, height: bitmap.height, bitmap })
       }
-      if ((textures[i].texCoord || 0) !== 0) throw Error('Only TEXCOORD_0 is supported')
-      const image = json.images[json.textures[textures[i].index].source]
-      if (image.bufferView === undefined) throw Error('GLB images must be embedded')
-      const view = json.bufferViews[image.bufferView],
-        offset = view.byteOffset || 0
-      if (offset + view.byteLength > bin.byteLength) throw Error('Image out of bounds')
-      const bitmap = await createImageBitmap(
-        new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
-        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' },
+      for (const im of images)
+        if (im.bitmap) {
+          const canvas = new OffscreenCanvas(im.width, im.height),
+            ctx = canvas.getContext('2d')
+          ctx.drawImage(im.bitmap, 0, 0)
+          im.pixels = new Uint8Array(ctx.getImageData(0, 0, im.width, im.height).data)
+          im.bitmap.close()
+          delete im.bitmap
+        }
+      materials.push(
+        validateMaterial({
+          name: material.name || '',
+          baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
+          metallic: pbr.metallicFactor ?? 1,
+          roughness: pbr.roughnessFactor ?? 1,
+          normalScale: material.normalTexture?.scale ?? 1,
+          occlusionStrength: material.occlusionTexture?.strength ?? 1,
+          emissive: material.emissiveFactor || [0, 0, 0],
+          baseColorTexture: textures[0] ? images[0] : null,
+          normalTexture: textures[1] ? images[1] : null,
+          metallicRoughnessTexture: textures[2] ? images[2] : null,
+          occlusionTexture: textures[3] ? images[3] : null,
+          emissiveTexture: textures[4] ? images[4] : null,
+        }),
       )
-      if (bitmap.width > 8192 || bitmap.height > 8192) {
-        bitmap.close()
-        throw Error('Image exceeds 8192 pixels')
-      }
-      images.push({ width: bitmap.width, height: bitmap.height, bitmap })
+    } catch (e) {
+      for (const im of images) im.bitmap?.close()
+      throw e
     }
-    return {
-      animation,
-      vertices: new Float32Array(vertices),
-      images,
-      sourceMinimum: min,
-      sourceMaximum: max,
-      baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
-      material: [
-        pbr.metallicFactor ?? 1,
-        pbr.roughnessFactor ?? 1,
-        material.normalTexture?.scale ?? 1,
-        material.occlusionTexture?.strength ?? 1,
-      ],
-      emissive: [...(material.emissiveFactor || [0, 0, 0]), 0],
-    }
-  } catch (e) {
-    for (const image of images) image.bitmap?.close()
-    throw e
   }
+  return packMaterials({
+    animation,
+    vertices: new Float32Array(vertices),
+    sourceMinimum: min,
+    sourceMaximum: max,
+    materials,
+  })
 }
+
 export function validateCamera(c) {
   if (
     c.target !== undefined &&

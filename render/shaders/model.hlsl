@@ -57,7 +57,7 @@ Vertex skinVertex(uint id)
         SkinInput input = skinInputs[id];
         float4x4  m     = jointMatrix(input.joints.x) * input.weights.x + jointMatrix(input.joints.y) * input.weights.y
                      + jointMatrix(input.joints.z) * input.weights.z + jointMatrix(input.joints.w) * input.weights.w;
-        v.position = float4(mul(m, input.position).xyz, 1);
+        v.position = float4(mul(m, input.position).xyz, v.position.w);
         float3 a   = float3(m[0][0], m[1][0], m[2][0]);
         float3 b   = float3(m[0][1], m[1][1], m[2][1]);
         float3 c   = float3(m[0][2], m[1][2], m[2][2]);
@@ -99,14 +99,17 @@ struct VertexOut
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     Vertex    v = skinVertex(id);
-    if (lightDirection.w > .5)
+    uint      materialIndex = uint(max(1, v.position.w)) - 1;
+    v.position.w            = 1;
+    if (lightDirection.w > .5 && lightDirection.w < 1.5)
     {
         InstanceData instance = instances[instanceId];
+        materialIndex += uint(instance.uv.x);
         v.position            = mul(instance.world, v.position);
         v.normal.xyz          = mul((float3x3)instance.normalMatrix, v.normal.xyz);
     }
     VertexOut o;
-    o.instanceIndex   = instanceId;
+    o.instanceIndex   = materialIndex;
     o.position        = mul(viewProjection, v.position);
     o.worldPosition   = v.position.xyz;
     o.normal          = v.normal.xyz;
@@ -312,7 +315,8 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         }
         old.position = float4(position.xyz, 1);
     }
-    if (lightDirection.w > .5)
+    current.position.w = old.position.w = 1;
+    if (lightDirection.w > .5 && lightDirection.w < 1.5)
     {
         current.position = mul(instances[instanceId].world, current.position);
         old.position     = mul(instances[instanceId].world, old.position);

@@ -3,7 +3,7 @@
 #include <vector>
 namespace render
 {
-    // Display-ready sRGB RGBA8 pixels. Independent of windowing and graphics API.
+    // RGBA8 pixels. Color space is defined by the receiving API; presented images use sRGB.
     struct Image
     {
         uint32_t                   width = 1, height = 1;

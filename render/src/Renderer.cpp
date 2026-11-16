@@ -197,6 +197,14 @@ namespace render
     {
         impl_->backend->SetScene(assets, instances);
     }
+    std::vector<Material> Renderer::GetMaterials(const std::string& id) const
+    {
+        return impl_->backend->GetMaterials(id);
+    }
+    void Renderer::SetMaterial(uint32_t slot, const Material& value, const std::string& id)
+    {
+        impl_->backend->SetMaterial(slot, value, id);
+    }
     void Renderer::LoadModel(const std::filesystem::path& path)
     {
         auto data = detail::LoadGLB(path);

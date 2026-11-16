@@ -1,6 +1,7 @@
 #pragma once
 #include "EnvironmentData.hpp"
 #include "render/Image.hpp"
+#include "render/Material.hpp"
 #include "render/Model.hpp"
 #include <array>
 #include <cstdint>
@@ -11,7 +12,7 @@ namespace render::detail
 {
     struct ModelVertex
     {
-        float position[4];
+        float position[4]; // xyz: position; w: one-based material slot (shader restores homogeneous w).
         float normal[4]; // xyz: normal; w: dielectric transmission fraction.
         float uv[4];     // xy: UV; z: generated flat-normal flag; w: dielectric IOR.
     };
@@ -31,6 +32,9 @@ namespace render::detail
         uint64_t                             revision = 0;
         std::array<float, 3>                 sourceMinimum{}, sourceMaximum{};
         std::vector<ModelVertex>             vertices;
+        std::vector<Material>                materials;
+        // GPU material records use the existing 192-byte instance layout.
+        std::vector<std::array<float, 48>>   materialRecords;
         std::vector<SkinInput>               skinInputs;
         std::vector<JointMatrix>             jointMatrices;
         // Base color, normal, metallic/roughness, occlusion, emissive.
@@ -57,6 +61,8 @@ namespace render::detail
     };
     static_assert(sizeof(ModelVertex) == 48, "HLSL vertex storage layout must match");
     static_assert(sizeof(SceneUniforms) == 384, "HLSL scene uniform layout must match");
+    void                             PackMaterials(ModelData& data);
+    void                             ValidateMaterial(const Material& material);
     std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path);
     std::shared_ptr<const ModelData> EmptyModelData();
     void                             ValidateDirectionalLight(const DirectionalLight& light);
