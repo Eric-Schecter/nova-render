@@ -47,3 +47,5 @@ Published Pages examples load precompiled WGSL. HLSL editing is enabled only in 
 See [Camera and viewport](/api/camera) for `setViewCamera`, `getViewCamera`, `setViewport` and `getViewport`.
 
 See [scene picking](./picking) for synchronous instance ray queries and hit data.
+
+`getCapabilities().metropolis` reports MLT availability in current source builds. WebGPU compute BVH supports MLT; native DX12 WARP is excluded. See [device limits](./render-mode#windows-device-limits).

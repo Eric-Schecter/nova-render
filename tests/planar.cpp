@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -8,11 +9,11 @@ int main(int argc, char** argv)
     try
     {
         render::RendererConfig config;
-        const std::string      api      = argc > 1 ? argv[1] : "metal";
+        const std::string      api      = argc > 1 ? TestAPI(argv[1]) : "metal";
         config.api                      = api == "metal"    ? render::GraphicsAPI::Metal
                                           : api == "vulkan" ? render::GraphicsAPI::Vulkan
                                                             : render::GraphicsAPI::D3D12;
-        config.useWarp                  = api == "dx12";
+        config.useWarp                  = TestUseWarp(argv[1]);
         const std::filesystem::path dir = argc > 2 ? argv[2] : "build/validation";
         std::filesystem::create_directories(dir);
         render::PlanarReflectionView view(config);

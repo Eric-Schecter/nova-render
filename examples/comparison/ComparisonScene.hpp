@@ -37,7 +37,11 @@ namespace example
             }
             Reset();
         }
-        bool Supported() const { return views[0]->GetCapabilities().rayTracing; }
+        bool Supported() const
+        {
+            const auto caps = views[0]->GetCapabilities();
+            return caps.rayTracing && caps.metropolis;
+        }
         void LoadModel(const std::filesystem::path& path)
         {
             for (auto& v : views)

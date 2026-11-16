@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -16,7 +17,7 @@ int main(int argc, char** argv)
         render::WindowConfig config;
         config.width          = 640;
         config.height         = 480;
-        const std::string api = argv[1];
+        const std::string api = TestAPI(argv[1]);
         if (api == "metal")
             config.renderer.api = render::GraphicsAPI::Metal;
         else if (api == "vulkan")
@@ -24,7 +25,7 @@ int main(int argc, char** argv)
         else if (api == "dx12")
         {
             config.renderer.api     = render::GraphicsAPI::D3D12;
-            config.renderer.useWarp = true;
+            config.renderer.useWarp = TestUseWarp(argv[1]);
         }
         else
             throw std::runtime_error("Unknown API");

@@ -1,4 +1,5 @@
 #include "Backend.hpp"
+#include "TestDevice.hpp"
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <iostream>
@@ -12,11 +13,12 @@ void Require(bool ok, const char* message)
 }
 int main(int argc, char** argv)
 {
+    std::cout.setf(std::ios::unitbuf);
     GLFWwindow* window = nullptr;
     try
     {
         Require(argc == 3, "Expected API and asset directory");
-        std::string           api    = argv[1];
+        std::string           api    = TestAPI(argv[1]);
         std::filesystem::path path   = std::filesystem::path(argv[2]) / "MaterialSample/Dual.glb";
         auto                  source = detail::LoadGLB(path);
         Require(source->materials.size() == 2, "Missing slots");
@@ -28,7 +30,7 @@ int main(int argc, char** argv)
         Require(window, "Window failed");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
-        config.useWarp = api == "dx12";
+        config.useWarp = TestUseWarp(argv[1]);
         std::unique_ptr<detail::Backend> backend;
 #ifdef __APPLE__
         if (api == "metal")

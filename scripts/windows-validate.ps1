@@ -6,6 +6,8 @@ param(
     [string]$Ninja = 'ninja',
     [string]$VsDevCmd,
     [switch]$Vulkan,
+    [switch]$Hardware,
+    [ValidateSet('Debug','Release')][string]$Configuration = 'Debug',
     [string]$VulkanICD,
     [string]$VulkanLoaderDirectory,
     [ValidateSet('arm64','x64')][string]$Architecture = 'arm64'
@@ -36,8 +38,10 @@ $CMake = (Get-Command $CMake).Source
 $env:PATH = (Split-Path $Ninja) + ';' + $env:PATH
 $root = Split-Path $PSScriptRoot -Parent
 $build = Join-Path $root $(if ($Vulkan) { 'build-windows-vulkan' } else { 'build-windows' })
+$enableHardware = if ($Hardware) { 'ON' } else { 'OFF' }
 $enableVulkan = if ($Vulkan) { 'ON' } else { 'OFF' }
-& $CMake -S $root -B $build -G Ninja "-DCMAKE_BUILD_TYPE=Debug" "-DNOVA_ENABLE_VULKAN=$enableVulkan" `
+& $CMake -S $root -B $build -G Ninja "-DCMAKE_BUILD_TYPE=$Configuration" "-DNOVA_ENABLE_VULKAN=$enableVulkan" `
+    "-DNOVA_TEST_DX12_HARDWARE=$enableHardware" "-DNOVA_BUILD_RAY_PROBES=$enableHardware" `
     "-DCMAKE_MAKE_PROGRAM=$Ninja" "-DVCPKG_TARGET_TRIPLET=$Architecture-windows" `
     "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot/scripts/buildsystems/vcpkg.cmake"
 if ($LASTEXITCODE) { throw 'Configure failed' }

@@ -1,4 +1,5 @@
 #include "Backend.hpp"
+#include "TestDevice.hpp"
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <stdexcept>
@@ -8,11 +9,11 @@ int main(int argc, char** argv)
     try
     {
         render::RendererConfig config;
-        std::string            api = argc > 1 ? argv[1] : "metal";
+        std::string            api = argc > 1 ? TestAPI(argv[1]) : "metal";
         config.api                 = api == "metal"    ? render::GraphicsAPI::Metal
                                      : api == "vulkan" ? render::GraphicsAPI::Vulkan
                                                        : render::GraphicsAPI::D3D12;
-        config.useWarp             = api == "dx12";
+        config.useWarp             = TestUseWarp(argv[1]);
         if (!glfwInit())
             throw std::runtime_error("GLFW init");
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);

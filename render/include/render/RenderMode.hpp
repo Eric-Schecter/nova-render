@@ -40,5 +40,6 @@ namespace render
         std::string rayTracingDevice;
         std::string reason;
         bool        rayTracing = false;
+        bool        metropolis = false; // MLT support; DX12 WARP is excluded.
     };
 } // namespace render

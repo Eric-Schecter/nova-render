@@ -1,4 +1,5 @@
 #include "../examples/common/ProbeVolumes.hpp"
+#include "TestDevice.hpp"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -8,12 +9,12 @@ int main(int argc, char** argv)
 {
     try
     {
-        const std::string      api = argc > 1 ? argv[1] : "metal";
+        const std::string      api = argc > 1 ? TestAPI(argv[1]) : "metal";
         render::RendererConfig config;
         config.api     = api == "metal"    ? render::GraphicsAPI::Metal
                          : api == "vulkan" ? render::GraphicsAPI::Vulkan
                                            : render::GraphicsAPI::D3D12;
-        config.useWarp = api == "dx12";
+        config.useWarp = TestUseWarp(argv[1]);
         render::ReflectionProbeView  view(config);
         render::AntiAliasingSettings aa;
         view.SetAntiAliasing(aa);

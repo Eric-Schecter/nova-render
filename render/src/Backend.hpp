@@ -222,6 +222,8 @@ namespace render::detail
         void SetPathTracing(const PathTracingSettings& value)
         {
             ValidatePathTracing(value);
+            if (value.integrator == PathIntegrator::Metropolis && !GetCapabilities().metropolis)
+                throw std::runtime_error("MLT requires a supported GPU; DX12 WARP is not supported");
             pathSettings = value;
             pathSession.Reset();
         }

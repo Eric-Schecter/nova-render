@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include "path/PathTracing.hpp"
 #include <filesystem>
 #include <iostream>
@@ -10,7 +11,7 @@ int main(int argc, char** argv)
     {
         if (argc != 4)
             throw std::runtime_error("Expected API, assets directory and screenshot directory");
-        const std::string      api = argv[1];
+        const std::string      api = TestAPI(argv[1]);
         render::RendererConfig config;
         if (api == "metal")
             config.api = render::GraphicsAPI::Metal;
@@ -19,13 +20,15 @@ int main(int argc, char** argv)
         else if (api == "dx12")
         {
             config.api     = render::GraphicsAPI::D3D12;
-            config.useWarp = true;
+            config.useWarp = TestUseWarp(argv[1]);
         }
         else
             throw std::runtime_error("Unknown API");
         render::detail::PathSession session;
         const auto                  caps = session.Capabilities(config.api, config);
         std::cout << "Path device: " << caps.rayTracingDevice << "; software=" << caps.softwareRayTracing << std::endl;
+        if (std::string(argv[1]) == "dx12-hardware" && (!caps.pathTracing || caps.softwareRayTracing))
+            throw std::runtime_error("Explicit hardware test requires hardware ray tracing");
         if (!caps.pathTracing)
         {
             std::cout << "SKIP: " << caps.reason << '\n';

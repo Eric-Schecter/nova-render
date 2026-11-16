@@ -415,6 +415,7 @@ class Renderer {
         rayTracing: false,
         pathTracing: false,
         softwareRayTracing: false,
+        metropolis: false,
         rayTracingDevice: '',
         reason: 'Scene instances currently use raster rendering',
       }
@@ -423,6 +424,7 @@ class Renderer {
         rayTracing: false,
         pathTracing: false,
         softwareRayTracing: false,
+        metropolis: false,
         rayTracingDevice: '',
         reason: 'Animated models currently use raster rendering',
       }
@@ -430,6 +432,7 @@ class Renderer {
       rayTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       softwareRayTracing: true,
+      metropolis: true,
       rayTracingDevice: 'WebGPU compute BVH',
       reason:
         this.#device.limits.maxStorageBuffersPerShaderStage >= 8

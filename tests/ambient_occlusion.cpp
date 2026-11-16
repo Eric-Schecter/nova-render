@@ -1,4 +1,5 @@
 #include "ModelData.hpp"
+#include "TestDevice.hpp"
 #include "path/PathTracing.hpp"
 #include <cmath>
 #include <fstream>
@@ -33,9 +34,9 @@ int main(int argc, char** argv)
         if (argc < 3)
             return 1;
         RendererConfig    config;
-        const std::string api = argv[1];
+        const std::string api = TestAPI(argv[1]);
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
-        config.useWarp = api == "dx12";
+        config.useWarp        = TestUseWarp(argv[1]);
         detail::PathSession session(true);
         if (!session.Capabilities(config.api, config).pathTracing)
             return 77;

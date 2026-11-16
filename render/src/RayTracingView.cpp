@@ -74,6 +74,8 @@ namespace render
     void RayTracingView::SetRayTracing(const RayTracingSettings& settings)
     {
         detail::ValidatePathTracing(settings);
+        if (settings.integrator == RayIntegrator::Metropolis && !impl_->caps.metropolis)
+            throw std::runtime_error("MLT requires a supported GPU; DX12 WARP is not supported");
         impl_->settings = settings;
         impl_->session.Reset();
     }

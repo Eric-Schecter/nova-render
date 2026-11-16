@@ -1,4 +1,5 @@
 #include "../examples/comparison/ComparisonScene.hpp"
+#include "TestDevice.hpp"
 #include <iostream>
 #include <render/Window.hpp>
 int main(int argc, char** argv)
@@ -10,14 +11,17 @@ int main(int argc, char** argv)
         render::WindowConfig config;
         config.width            = 96;
         config.height           = 96;
-        const std::string api   = argv[1];
+        const std::string api   = TestAPI(argv[1]);
         config.renderer.api     = api == "metal"    ? render::GraphicsAPI::Metal
                                   : api == "vulkan" ? render::GraphicsAPI::Vulkan
                                                     : render::GraphicsAPI::D3D12;
-        config.renderer.useWarp = api == "dx12";
+        config.renderer.useWarp = TestUseWarp(argv[1]);
         example::ComparisonScene scene(config.renderer);
         if (!scene.Supported())
+        {
+            std::cout << "SKIP: four-integrator comparison requires MLT support (DX12 WARP excluded)" << std::endl;
             return 77;
+        }
         const auto path = std::filesystem::path(argv[2]) / "CornellCaustics/CornellCaustics.glb";
         scene.LoadModel(path);
         render::RayTracingSettings settings;

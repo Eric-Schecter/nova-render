@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include "path/PathTracing.hpp"
 #include <chrono>
 #include <cmath>
@@ -15,9 +16,9 @@ int main(int argc, char** argv)
         if (argc != 4)
             throw std::runtime_error("Expected API, assets and output directory");
         RendererConfig    config;
-        const std::string api = argv[1];
+        const std::string api = TestAPI(argv[1]);
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
-        config.useWarp = api == "dx12";
+        config.useWarp        = TestUseWarp(argv[1]);
         if (const char* directory = std::getenv("NOVA_PATH_SHADER_OVERRIDE"))
             config.shaderDirectory = directory;
         PathSession session(true);

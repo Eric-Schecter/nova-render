@@ -26,7 +26,7 @@ window.WaitIdle();
 
 ## Controls
 
-- `GetCapabilities()`: `rayTracing`, `softwareRayTracing`, `rayTracingDevice` and unavailable `reason`.
+- `GetCapabilities()`: `rayTracing`, `softwareRayTracing`, `metropolis`, `rayTracingDevice` and unavailable `reason`.
 - `SetRenderMode(Raster / RayTracing)` / `GetRenderMode()`: unavailable or model-less ray tracing throws without changing the mode.
 - `SetRayTracing` / `GetRayTracing`: `samplesPerFrame` 1–4, `maxBounces` 1–8, `resolutionScale` 0.25–1; invalid values throw.
 - `GetAccumulatedSamples()` and `ResetAccumulation()`: progress and restart.
@@ -183,3 +183,9 @@ renderer.setRenderMode('ray-tracing')
 This is PSSMLT over BDPT primary sample space, not MMLT or specialized path-space mutations. Direct light is separate; chains estimate paths with at least two scattering events. Bootstrap estimates indirect mean luminance and brightness-resamples up to 1024 chains; each warms up 16 mutations. Accepted/rejected proposals both contribute weighted splats, while rejection preserves the complete old sample vector. See [PBRT MLT](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Metropolis_Light_Transport).
 
 Accumulation reports average mutations/pixel (mpp), not independent camera spp. Bootstrap/warmup are excluded from mpp but included in first-iteration time. Correlated noise and fixed-bootstrap normalization error remain; more mpp alone does not remove bootstrap error. Recheck brightness with larger bootstrap counts or different seeds. Shared HLSL uses paired uint32 fixed-point accumulation/carry rather than float atomics, within eight storage bindings. Parameter/camera/scene changes restart; display denoising is optional but comparison disables it.
+
+## Windows device limits
+
+Current source builds expose `metropolis` in C++ and Web capabilities. Check it before selecting MLT. DX12 WARP supports the other validated ray integrators, but MLT is disabled: initialization can remove the software device. The API rejects it before GPU submission and the native panel omits it. The four-integrator comparison requires MLT support. WebGPU compute traversal still supports MLT; its `softwareRayTracing` flag describes GPU traversal, not WARP.
+
+The published v0.2.0 archives predate this capability flag; it is included in the Windows validation SDK built from current `main`.

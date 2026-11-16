@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include "path/PathTracing.hpp"
 #include <cmath>
 #include <cstring>
@@ -13,13 +14,31 @@ int main(int argc, char** argv)
         if (argc != 4)
             throw std::runtime_error("Expected API, assets and output directory");
         RendererConfig    config;
-        const std::string api = argv[1];
+        const std::string api = TestAPI(argv[1]);
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
-        config.useWarp = api == "dx12";
+        config.useWarp        = TestUseWarp(argv[1]);
         PathSession session(true);
         const auto  caps = session.Capabilities(config.api, config);
         if (!caps.pathTracing)
             return 77;
+        if (!caps.metropolis)
+        {
+            RayTracingSettings settings;
+            settings.integrator = RayIntegrator::Metropolis;
+            bool rejected       = false;
+            try
+            {
+                session.Render(nullptr, nullptr, {}, settings, {0, 0, 0, 1}, 16, 16);
+            }
+            catch (const std::runtime_error& error)
+            {
+                rejected = std::string(error.what()).find("MLT requires") != std::string::npos;
+            }
+            if (!rejected || std::string(argv[1]) == "dx12-hardware")
+                throw std::runtime_error("MLT capability/rejection mismatch");
+            std::cout << "SKIP MLT on DX12 WARP: unsupported dispatch is rejected before GPU submission" << std::endl;
+            return 77;
+        }
         const auto       model = LoadGLB(std::filesystem::path(argv[2]) / "CornellCaustics/CornellCaustics.glb");
         const uint32_t   size  = caps.softwareRayTracing ? 16 : 32;
         OrbitCamera      camera;

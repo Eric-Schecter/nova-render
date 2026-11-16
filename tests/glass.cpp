@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include "path/PathTracing.hpp"
 #include <cmath>
 #include <cstring>
@@ -13,9 +14,9 @@ int main(int argc, char** argv)
         if (argc != 4)
             throw std::runtime_error("Expected API, assets and output");
         RendererConfig config;
-        std::string    api = argv[1];
+        std::string    api = TestAPI(argv[1]);
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
-        config.useWarp = api == "dx12";
+        config.useWarp     = TestUseWarp(argv[1]);
         PathSession session(true);
         const auto  capabilities = session.Capabilities(config.api, config);
         if (!capabilities.pathTracing)

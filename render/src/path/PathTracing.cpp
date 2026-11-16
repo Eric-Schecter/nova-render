@@ -66,6 +66,8 @@ namespace render::detail
                 capabilities.reason = error.what();
             }
         }
+        capabilities.rayTracing = capabilities.pathTracing;
+        capabilities.metropolis = capabilities.pathTracing && !capabilities.softwareRayTracing;
         return capabilities;
     }
     const ModelImage& PathSession::Render(
@@ -83,6 +85,8 @@ namespace render::detail
             ValidateAmbientOcclusion(*ao);
         if (!device || !capabilities.pathTracing)
             throw std::runtime_error("Path tracing device unavailable");
+        if (settings.integrator == PathIntegrator::Metropolis && !capabilities.metropolis)
+            throw std::runtime_error("MLT requires a supported GPU; DX12 WARP is not supported");
         if (!model || model->vertices.empty())
             throw std::runtime_error("Load a model before path tracing");
         if (model != currentModel || environment != currentEnvironment)

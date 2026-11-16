@@ -203,7 +203,10 @@ namespace render::detail
                     ImGui::SetNextItemWidth(-1);
                     int integrator = static_cast<int>(path.integrator);
                     if (ImGui::Combo(
-                          "##PathIntegrator", &integrator, "Path tracing\0Bidirectional\0Photon mapping\0MLT\0"))
+                          "##PathIntegrator",
+                          &integrator,
+                          capabilities.metropolis ? "Path tracing\0Bidirectional\0Photon mapping\0MLT\0"
+                                                  : "Path tracing\0Bidirectional\0Photon mapping\0"))
                         path.integrator = static_cast<PathIntegrator>(integrator);
                     int spp = int(path.samplesPerFrame), bounces = int(path.maxBounces);
                     ImGui::TextUnformatted("Samples per frame");

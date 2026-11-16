@@ -1,4 +1,5 @@
 #include "Backend.hpp"
+#include "TestDevice.hpp"
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <stb_image_write.h>
@@ -15,7 +16,7 @@ int main(int argc, char** argv)
     try
     {
         Require(argc == 3, "Expected API and assets");
-        std::string api  = argv[1];
+        std::string api  = TestAPI(argv[1]);
         auto        path = std::filesystem::path(argv[2]) / "SceneSample/Red.glb";
         Require(glfwInit(), "GLFW init");
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -23,7 +24,7 @@ int main(int argc, char** argv)
         Require(window, "Window init");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
-        config.useWarp = api == "dx12";
+        config.useWarp = TestUseWarp(argv[1]);
         std::unique_ptr<detail::Backend> backend;
 #ifdef __APPLE__
         if (api == "metal")

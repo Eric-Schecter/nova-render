@@ -1,23 +1,26 @@
 #include "Backend.hpp"
+#include "TestDevice.hpp"
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <iostream>
+#include <stb_image_write.h>
 #include <stdexcept>
 
 int main(int argc, char** argv)
 {
+    std::cout.setf(std::ios::unitbuf);
     GLFWwindow* window = nullptr;
     try
     {
         if (argc < 3)
             throw std::invalid_argument("Expected API and assets directory");
-        const std::string           api    = argv[1];
+        const std::string           api    = TestAPI(argv[1]);
         const std::filesystem::path assets = argv[2];
         render::RendererConfig      config;
         config.api     = api == "metal"    ? render::GraphicsAPI::Metal
                          : api == "vulkan" ? render::GraphicsAPI::Vulkan
                                            : render::GraphicsAPI::D3D12;
-        config.useWarp = api == "dx12";
+        config.useWarp = TestUseWarp(argv[1]);
         if (!glfwInit())
             throw std::runtime_error("GLFW initialization failed");
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -80,18 +83,34 @@ int main(int argc, char** argv)
                         blue++;
                 }
             if (expectEmpty ? redUpper + redLower + blue != 0 : redUpper < 50 || redLower < 50 || blue < 50)
-                throw std::runtime_error("Readback missed independent colored instances");
+            {
+                std::filesystem::create_directories("validation/scene");
+                stbi_write_png(
+                  "validation/scene/failed.png", image.width, image.height, 4, image.pixels.data(), image.width * 4);
+                throw std::runtime_error(
+                  "Readback missed independent colored instances: upper=" + std::to_string(redUpper)
+                  + "; lower=" + std::to_string(redLower) + "; blue=" + std::to_string(blue));
+            }
             return image;
         };
         for (unsigned method = 1; method <= 5; ++method)
         {
             render::AntiAliasingSettings aa;
             aa.method = render::AAMethod(method);
+            std::cout << "Scene AA method: " << method << std::endl;
             backend->SetAntiAliasing(aa);
             draw();
             inspect();
         }
         const auto normalized = inspect();
+        std::filesystem::create_directories("validation/scene");
+        stbi_write_png(
+          ("validation/scene/" + api + "-instances.png").c_str(),
+          normalized.width,
+          normalized.height,
+          4,
+          normalized.pixels.data(),
+          normalized.width * 4);
         for (auto& model : models)
             model.sourceSpace = true;
         for (auto& i : instances)

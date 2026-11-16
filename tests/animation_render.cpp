@@ -1,3 +1,4 @@
+#include "TestDevice.hpp"
 #include <iostream>
 #include <render/Window.hpp>
 #include <stdexcept>
@@ -8,7 +9,7 @@ int main(int argc, char** argv)
         if (argc != 3)
             return 1;
         render::WindowConfig config;
-        const std::string    api = argv[1];
+        const std::string    api = TestAPI(argv[1]);
         if (api == "metal")
             config.renderer.api = render::GraphicsAPI::Metal;
         else if (api == "vulkan")
@@ -16,7 +17,7 @@ int main(int argc, char** argv)
         else
         {
             config.renderer.api     = render::GraphicsAPI::D3D12;
-            config.renderer.useWarp = true;
+            config.renderer.useWarp = TestUseWarp(argv[1]);
         }
         render::Window              window(config);
         const std::filesystem::path root = argv[2];
