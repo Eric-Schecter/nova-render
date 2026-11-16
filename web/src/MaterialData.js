@@ -108,10 +108,20 @@ export function packMaterials(data) {
     }
   tile = Math.min(tile, 2048)
   const cols = Math.ceil(Math.sqrt(materials.length)),
-    rows = Math.ceil(materials.length / cols),
-    stride = tile + 4,
+    rows = Math.ceil(materials.length / cols)
+  let stride = tile + 4,
     width = cols * stride,
     height = rows * stride
+  while (
+    atlas &&
+    tile > 1 &&
+    (width > 8192 || height > 8192 || width * height * 20 > 512 * 1024 * 1024)
+  ) {
+    tile = Math.max(1, Math.floor(tile / 2))
+    stride = tile + 4
+    width = cols * stride
+    height = rows * stride
+  }
   if (atlas && (width > 8192 || height > 8192 || width * height * 20 > 512 * 1024 * 1024))
     throw Error('Material atlas exceeds 512 MiB / 8192px limit')
   data.images = atlas

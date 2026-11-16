@@ -96,6 +96,14 @@ namespace render::detail
                  h = rows * stride;
         if (atlas)
         {
+            // Large models plus small helper materials must fit the same bounded atlas.
+            while (tile > 1 && (w > 8192 || h > 8192 || uint64_t(w) * h * 20 > 512ull * 1024 * 1024))
+            {
+                tile   = std::max(1u, tile / 2);
+                stride = tile + 4;
+                w      = cols * stride;
+                h      = rows * stride;
+            }
             if (w > 8192 || h > 8192 || uint64_t(w) * h * 20 > 512ull * 1024 * 1024)
                 throw std::runtime_error("Material atlas exceeds 512 MiB / 8192px limit");
             for (auto& image : data.images)

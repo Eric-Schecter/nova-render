@@ -55,7 +55,7 @@ await renderer.setMaterial(0, sceneMaterial, 'helmet')
 - `emissive`: linear RGB, 0–65504, default black.
 - `baseColorTexture`, `normalTexture`, `metallicRoughnessTexture`, `occlusionTexture`, `emissiveTexture`: optional RGBA8 images with `width`, `height`, `pixels`. Each dimension is 1–8192. Base color and emissive maps are sRGB; other maps are linear. Metallic/roughness uses B/G channels, occlusion uses R. Missing maps use white, or a neutral tangent-space normal.
 
-Only `TEXCOORD_0` and repeat sampling are supported. Multiple slots share an atlas: tiles are capped at 2048 pixels, atlas dimensions at 8192 and five-map storage at 512 MiB; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression, alpha blending and transmission texture editing are not included.
+Only `TEXCOORD_0` and repeat sampling are supported. Multiple slots share an atlas: tiles are capped at 2048 pixels and automatically reduced to fit the 8192-pixel / 512 MiB five-map atlas budget; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression, alpha blending and transmission texture editing are not included.
 
 ## Update behavior
 
