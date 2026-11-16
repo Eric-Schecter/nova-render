@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.2.1** includes C++ SDKs for macOS ARM64 (Metal / Vulkan via MoltenVK) and Windows x64 (DX12 / Vulkan), plus a WebGPU npm package. Windows ARM64 remains available in 0.1.0; a Linux SDK is not included. Web packages have been verified with Chrome WebGPU.
+Release **0.3.0** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. New scene light collections support Metal and WebGPU raster. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
 
 ## Features
 
@@ -49,7 +49,7 @@ Some effects currently use dedicated example scenes rather than arbitrary models
 
 ## Native: use and build
 
-Download the [0.2.1 SDK](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.2.1), verify it against the release `SHA256SUMS`, extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
+Download the [0.3.0 SDK](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.3.0), verify it against the release `SHA256SUMS`, extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
 
 ```cmake
 find_package(Nova CONFIG REQUIRED)
@@ -81,7 +81,7 @@ See [build requirements](docs/guide/quick-start.md) and [SDK integration](docs/g
 Install the precompiled package and copy its runtime assets into your application's public directory:
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.2.1/nova-render-web-0.2.1.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.3.0/nova-render-web-0.3.0.tgz
 npx nova-web-assets --out public/nova
 ```
 

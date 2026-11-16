@@ -61,6 +61,25 @@ int main(int argc, char** argv)
             if (!window.GetShadows().enabled || window.GetFog().mode != render::FogMode::Off)
                 throw std::runtime_error("Installed atmosphere API failed");
             window.SetScene(assets, instances);
+            if (renderer.api == render::GraphicsAPI::Metal)
+            {
+                const auto caps = window.GetLightingCapabilities();
+                if (!caps.point || !caps.spot || caps.maxLights != 16 || caps.pointShadows || caps.spotShadows)
+                    throw std::runtime_error("Installed light capabilities mismatch");
+                render::SceneLight point;
+                point.id        = "installed-point";
+                point.type      = render::LightType::Point;
+                point.position  = {1, 2, 3};
+                point.intensity = 8;
+                point.range     = 10;
+                auto spot       = point;
+                spot.id         = "installed-spot";
+                spot.type       = render::LightType::Spot;
+                spot.direction  = {0, -1, -1};
+                window.SetLights({point, spot});
+                if (window.GetLights().size() != 2)
+                    throw std::runtime_error("Installed scene lights missing");
+            }
             render::Ray ray;
             ray.origin        = {2, 1, 5};
             ray.direction     = {0, 0, -2};
