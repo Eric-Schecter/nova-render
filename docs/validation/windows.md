@@ -52,3 +52,5 @@ node scripts/packaging/check-sdk.mjs path\to\sdk.zip vulkan Release
 ```
 
 A matching web archive and paired SHA-256 manifest are generated from the same clean commit. The Windows SDK is a local validation artifact, not a new GitHub Release asset. Logs, result JSON, captures and package files remain under the isolated workspace; Mac copies are under `build/validation/windows/` and `build/packages/0.2.0-windows-x64-0ae95af/`.
+
+The fixes and device limits described here are included in release 0.2.1, with new same-source macOS, Windows and web packages. The earlier 0.2.0 validation artifact above remains a separate historical build.

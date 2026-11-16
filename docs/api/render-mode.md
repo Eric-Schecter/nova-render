@@ -188,4 +188,4 @@ Accumulation reports average mutations/pixel (mpp), not independent camera spp. 
 
 Current source builds expose `metropolis` in C++ and Web capabilities. Check it before selecting MLT. DX12 WARP supports the other validated ray integrators, but MLT is disabled: initialization can remove the software device. The API rejects it before GPU submission and the native panel omits it. The four-integrator comparison requires MLT support. WebGPU compute traversal still supports MLT; its `softwareRayTracing` flag describes GPU traversal, not WARP.
 
-The published v0.2.0 archives predate this capability flag; it is included in the Windows validation SDK built from current `main`.
+The `metropolis` capability flag is included in 0.2.1 and later; the original v0.2.0 archives predate it.

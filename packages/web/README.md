@@ -1,9 +1,9 @@
 # Nova Render Web — @nova/render-web
 
-Local development package. Install the generated `.tgz`, then copy its runtime assets:
+Install the precompiled release archive, then copy its runtime assets:
 
 ```sh
-npm install /path/to/nova-render-web-0.2.0.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.2.1/nova-render-web-0.2.1.tgz
 npx nova-web-assets --out public/nova
 ```
 
