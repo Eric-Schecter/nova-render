@@ -10,20 +10,20 @@ cmake --preset debug
 cmake --build --preset debug
 ```
 
-On Windows use `windows-msvc` in an MSVC developer shell. It defaults to ARM64; x64 requires an x64 compiler environment and `VCPKG_TARGET_TRIPLET=x64-windows`. macOS/Windows may set `NOVA_ENABLE_VULKAN=OFF`; Linux requires Vulkan.
+On Windows x64 use `windows-x64` in an x64 MSVC developer shell. Windows ARM64 uses `windows-msvc` in an ARM64 developer shell. macOS/Windows may set `NOVA_ENABLE_VULKAN=OFF`; Linux requires Vulkan.
 
 ## Run the triangle
 
 ```sh
 # macOS
 ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api metal
-# Linux（debug preset）
+# Linux (debug preset)
 ./build/nova_triangle --api vulkan
 ```
 
 ```powershell
-# Windows（windows-msvc preset）
-.\build-windows-vulkan\nova_triangle.exe --api dx12
+# Windows x64 (windows-x64 preset)
+.\build-windows-x64\nova_triangle.exe --api dx12
 ```
 
 Flags: `--api auto|metal|dx12|vulkan`, `--frames 120`, `--resize-test`, `--shader-dir PATH`. Windows `--warp` tests CPU D3D12; devices require Shader Model 6.0/DXIL.

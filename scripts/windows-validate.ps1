@@ -10,13 +10,14 @@ param(
     [ValidateSet('Debug','Release')][string]$Configuration = 'Debug',
     [string]$VulkanICD,
     [string]$VulkanLoaderDirectory,
-    [ValidateSet('arm64','x64')][string]$Architecture = 'arm64'
+    [ValidateSet('arm64','x64')][string]$Architecture = $(if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') { 'arm64' } else { 'x64' })
 )
 $ErrorActionPreference = 'Stop'
 if ($VsDevCmd) {
     $vsRoot = Split-Path (Split-Path (Split-Path $VsDevCmd -Parent) -Parent) -Parent
     $hostArch = 'x64'
-    if (Test-Path "$vsRoot/VC/Tools/MSVC/*/bin/Hostarm64/arm64/cl.exe") { $hostArch = 'arm64' }
+    if (($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') -and
+        (Test-Path "$vsRoot/VC/Tools/MSVC/*/bin/Hostarm64/arm64/cl.exe")) { $hostArch = 'arm64' }
     # A batch file avoids PowerShell 5.1 / cmd nested-quote differences for Program Files.
     $environmentScript = Join-Path ([IO.Path]::GetTempPath()) ('nova-msvc-' + [guid]::NewGuid().ToString('N') + '.cmd')
     try {

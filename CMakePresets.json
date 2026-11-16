@@ -55,6 +55,19 @@
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "NOVA_ENABLE_VULKAN": "ON"
       }
+    },
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64 MSVC (CLion / Ninja)",
+      "inherits": "windows-msvc",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "binaryDir": "${sourceDir}/build-windows-x64",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
     }
   ],
   "buildPresets": [
@@ -73,6 +86,10 @@
     {
       "name": "linux-vulkan",
       "configurePreset": "linux-vulkan"
+    },
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64"
     }
   ]
 }

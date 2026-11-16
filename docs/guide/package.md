@@ -112,3 +112,5 @@ Scripts copy consumers outside the repository. Native validation relocates the S
 Projects: `examples/sdk-consumer` and `examples/npm-consumer`. Version 0.2.0 validation: macOS ARM64 Metal/Vulkan and Chrome WebGPU; older 0.1.0 also validated Windows ARM64 DX12 WARP. No Linux SDK has been generated/validated. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.
 
 The 0.2 SDK includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. For your own builds, use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. Local packaging does not publish a release.
+
+Current `main` also passed [Windows x64 / RTX validation](../validation/windows), including DX12, Vulkan, hardware ray queries and an independently installed Windows SDK. That SDK contains post-v0.2.0 fixes and remains a local validation artifact; the published v0.2.0 assets are unchanged.

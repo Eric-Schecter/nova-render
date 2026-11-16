@@ -65,11 +65,13 @@ cmake --build --preset debug
 ```
 
 ```powershell
-# Windows: run from an MSVC developer shell (ARM64 preset)
+# Windows x64: run from an x64 MSVC developer shell
 $env:VCPKG_ROOT = 'C:\path\to\vcpkg'
-cmake --preset windows-msvc
-cmake --build --preset windows-msvc
+cmake --preset windows-x64
+cmake --build --preset windows-x64
 ```
+
+Windows ARM64 uses the `windows-msvc` preset. See [Windows GPU validation](docs/validation/windows.md) for the RTX hardware matrix and SDK checks.
 
 See [build requirements](docs/guide/quick-start.md) and [SDK integration](docs/guide/package.md). SDK users do not need vcpkg or shader compilers; system graphics drivers and services are still required.
 
