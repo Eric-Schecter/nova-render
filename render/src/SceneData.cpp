@@ -58,7 +58,7 @@ namespace render::detail
                     throw std::invalid_argument("Scene instances currently require static GLB models");
                 auto picking = old != meshes.end() && old->second.data == data ? old->second.picking
                                                                                : std::make_shared<PickMesh>(data);
-                next[id]     = {data, 0, 0, {}, std::move(picking)};
+                next[id]     = {data, 0, 0, 0, 0, {}, std::move(picking)};
             }
             auto packed = std::make_shared<ModelData>(*EmptyModelData());
             for (auto& [id, m] : next)
@@ -72,6 +72,21 @@ namespace render::detail
                 packed->materials.insert(packed->materials.end(), m.data->materials.begin(), m.data->materials.end());
             }
             PackMaterials(*packed);
+            std::vector<InstanceData> shadow;
+            for (auto& [id, m] : next)
+            {
+                m.shadowFirst = uint32_t(shadow.size());
+                m.shadowNodes = m.picking->ShadowNodeCount();
+                for (const auto& row : m.picking->ShadowRecords())
+                {
+                    InstanceData record;
+                    std::memcpy(&record, row.data(), 192);
+                    shadow.push_back(record);
+                }
+            }
+            if (shadow.size() * 192ull > 64ull * 1024 * 1024)
+                throw std::runtime_error("Scene shadow BVHs exceed 64 MiB");
+            shadowRecords = std::move(shadow);
             model  = std::move(packed);
             meshes = std::move(next);
             key    = std::move(nextKey);
@@ -117,7 +132,9 @@ namespace render::detail
                     std::copy(m.data->material.begin(), m.data->material.end(), v.material);
                     std::copy(m.data->emissive.begin(), m.data->emissive.end(), v.emissive);
                     v.uv[0] = float(input.size());
-                    v.uv[3] = -1;
+                    v.uv[1] = float(m.shadowFirst);
+                    v.uv[2] = i.castShadow && std::abs(determinant) > 1e-12f ? 1.f : 0.f;
+                    v.uv[3] = float(m.shadowNodes);
                     for (float value : v.world)
                         if (!std::isfinite(value))
                             throw std::invalid_argument("Instance transform overflows float32");

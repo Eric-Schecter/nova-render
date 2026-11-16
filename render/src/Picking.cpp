@@ -1,6 +1,7 @@
 #include "Picking.hpp"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
@@ -104,6 +105,39 @@ namespace render::detail
             nodes_[index].count = 0;
         }
         return index;
+    }
+    std::vector<std::array<float, 48>> PickMesh::ShadowRecords() const
+    {
+        std::vector<std::array<float, 48>> records(nodes_.size() + triangles_.size());
+        if (records.size() * 192ull > 64ull * 1024 * 1024)
+            throw std::runtime_error("Scene shadow BVH exceeds 64 MiB");
+        std::function<void(uint32_t, uint32_t)> escape = [&](uint32_t index, uint32_t next) {
+            const auto& node   = nodes_[index];
+            auto&       record = records[index];
+            for (int k = 0; k < 3; k++)
+            {
+                record[32 + k] = float(node.minimum[k]);
+                record[36 + k] = float(node.maximum[k]);
+            }
+            record[35] = float(next);
+            record[44] = float(node.left);
+            record[45] = float(node.right);
+            record[46] = float(nodes_.size() + node.first);
+            record[47] = float(node.count);
+            if (!node.count)
+            {
+                escape(node.left, node.right);
+                escape(node.right, next);
+            }
+        };
+        if (!nodes_.empty())
+            escape(0, uint32_t(nodes_.size()));
+        for (size_t t = 0; t < triangles_.size(); t++)
+            for (int j = 0; j < 3; j++)
+                for (int k = 0; k < 3; k++)
+                    records[nodes_.size() + t][32 + j * 4 + k] =
+                      data_->vertices[size_t(triangles_[t]) * 3 + j].position[k];
+        return records;
     }
     std::optional<MeshHit> PickMesh::Pick(const PickVector& o, const PickVector& d, double limit) const
     {

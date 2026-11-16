@@ -7,6 +7,7 @@
 #include "RenderMode.hpp"
 #include "Renderer.hpp"
 #include "Scene.hpp"
+#include "SceneShadows.hpp"
 #include <string>
 
 namespace render
@@ -64,6 +65,8 @@ namespace render
         uint32_t                   GetAccumulatedSamples() const;
         void                       PresentImage(const Image& image);
         void                       ClearImage();
+        void                       SetShadows(const SceneShadowSettings& settings);
+        SceneShadowSettings        GetShadows() const;
         void                       SetFog(const FogSettings& settings);
         FogSettings                GetFog() const;
         void                       LoadEnvironment(const std::filesystem::path& path);

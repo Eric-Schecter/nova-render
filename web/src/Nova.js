@@ -1,4 +1,4 @@
-import { copyFog } from './Atmosphere.js'
+import { copyFog, copyShadows } from './Atmosphere.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 export { loadMaterialImage } from './MaterialData.js'
 import { copyViewCamera, cameraFromOrbit, copyViewport, resolveViewport } from './Camera.js'
@@ -194,6 +194,7 @@ class Renderer {
   #environmentURL
   #environmentSettings = defaultEnvironment()
   #fogSettings = copyFog()
+  #shadowSettings = copyShadows()
   #model
   #shaderDirectory
   #camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 }
@@ -269,7 +270,7 @@ class Renderer {
         this.#model = next
         this.#sceneModel = data.model
       }
-      this.#model.setInstances(data.instances, data.draws)
+      this.#model.setInstances(data.instances, data.draws, data.shadowRecords)
       this.#sceneData = nextScene
       this.#modelURL = undefined
       this.#animationLastTime = undefined
@@ -288,11 +289,11 @@ class Renderer {
     material = validateMaterial(material)
     return this.#enqueue(async () => {
       this.#check()
-      let sceneData, draws, instances, data
+      let sceneData, draws, instances, data, shadowRecords
       if (this.#sceneModel) {
         sceneData = this.#sceneData.fork()
         const packed = await sceneData.setMaterial(assetId, slot, material)
-        ;({ draws, instances } = packed)
+        ;({ draws, instances, shadowRecords } = packed)
         data = packed.model
       } else {
         if (
@@ -321,7 +322,7 @@ class Renderer {
             this.#environment,
             this.#shaderDirectory.replace(/\/?$/, '/') + 'skybox.json',
           )
-        if (sceneData) next.setInstances(instances, draws)
+        if (sceneData) next.setInstances(instances, draws, shadowRecords)
         if (next.skinned) next.setAnimationState(animationState)
         this.#check()
       } catch (e) {
@@ -599,6 +600,16 @@ class Renderer {
       })
     })
   }
+  setShadows(settings) {
+    this.#check()
+    const next = copyShadows({ ...this.#shadowSettings, ...settings })
+    this.#shadowSettings = next
+    this.#resetAA()
+  }
+  getShadows() {
+    this.#check()
+    return copyShadows(this.#shadowSettings)
+  }
   setFog(settings) {
     this.#check()
     const next = copyFog({ ...this.#fogSettings, ...settings })
@@ -844,7 +855,7 @@ class Renderer {
   }
   async #drawFrame() {
     this.#check()
-    this.#model?.setRasterSettings(this.#fogSettings)
+    this.#model?.setRasterSettings(this.#fogSettings, this.#shadowSettings)
     if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'

@@ -29,6 +29,7 @@ export function instanceNormal(m) {
   ]
 }
 export class SceneData {
+  shadowRecords = new Float32Array(0)
   pickInstances = []
   pick(ray, active = true) {
     return pickScene(this.meshes, this.pickInstances, ray, active)
@@ -89,6 +90,7 @@ export class SceneData {
         !i.id ||
         ids.has(i.id) ||
         !paths.has(i.assetId) ||
+        (i.castShadow !== undefined && typeof i.castShadow !== 'boolean') ||
         !(Array.isArray(i.world) || i.world instanceof Float32Array) ||
         i.world.length !== 16 ||
         !Array.from(i.world).every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))) ||
@@ -145,6 +147,16 @@ export class SceneData {
           offset += m.data.vertices.length
         }
         packMaterials(packed)
+        let shadowCount = 0
+        for (const m of next.values()) {
+          m.shadowFirst = shadowCount / 48
+          m.shadowData = m.picking.shadowRecords()
+          m.shadowNodes = m.picking.nodes.length
+          shadowCount += m.shadowData.length
+        }
+        if (shadowCount * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
+        this.shadowRecords = new Float32Array(shadowCount)
+        for (const m of next.values()) this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
         this.model = packed
         this.meshes = next
         this.key = key
@@ -182,9 +194,9 @@ export class SceneData {
             ...m.data.material,
             ...m.data.emissive,
             input.length,
-            0,
-            0,
-            -1,
+            m.shadowFirst,
+            i.castShadow === false || instanceNormal(i.world).every((v) => v === 0) ? 0 : 1,
+            m.shadowNodes,
           ]
           if (!values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
             throw Error('Instance transform overflows float32')
@@ -203,7 +215,7 @@ export class SceneData {
     this.inputSnapshot = structuredClone(input)
     this.pickInstances = effective.map((i) => ({ ...i, world: Array.from(i.world, Math.fround) }))
     this.sourceSpaces = spaces
-    return { model: this.model, instances, draws }
+    return { model: this.model, instances, draws, shadowRecords: this.shadowRecords }
   }
   getMaterials(id) {
     const m = this.meshes.get(id)
@@ -226,6 +238,7 @@ export class SceneData {
     return Object.assign(new SceneData(), this)
   }
   dispose() {
+    this.shadowRecords = new Float32Array(0)
     this.pickInstances = []
     for (const m of this.meshes.values()) m.data.images.forEach((i) => i.bitmap?.close())
     this.meshes = new Map()

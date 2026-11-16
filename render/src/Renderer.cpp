@@ -267,6 +267,14 @@ namespace render
             throw std::invalid_argument("Invalid lighting mode");
         impl_->backend->SetLighting(mode);
     }
+    void Renderer::SetShadows(const SceneShadowSettings& settings)
+    {
+        impl_->backend->SetShadows(settings);
+    }
+    SceneShadowSettings Renderer::GetShadows() const
+    {
+        return impl_->backend->GetShadows();
+    }
     void Renderer::SetFog(const FogSettings& settings)
     {
         impl_->backend->SetFog(settings);

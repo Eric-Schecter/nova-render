@@ -22,6 +22,7 @@ namespace render::detail
         bool                             active = false;
         std::shared_ptr<const ModelData> model;
         std::vector<InstanceData>        instances;
+        std::vector<InstanceData>        shadowRecords;
         std::vector<SceneDraw>           draws;
         // Asset topology changes rebuild packed resources; transform updates only replace instance data.
         std::optional<SceneHit> Pick(const Ray& ray) const;
@@ -38,6 +39,7 @@ namespace render::detail
         {
             std::shared_ptr<const ModelData> data;
             uint32_t                         first, count;
+            uint32_t                         shadowFirst = 0, shadowNodes = 0;
             std::array<float, 4>             uv;
             std::shared_ptr<const PickMesh>  picking;
         };

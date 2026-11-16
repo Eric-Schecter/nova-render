@@ -155,6 +155,19 @@ try {
       throw Error('Transform update lost material edit')
     await renderer.drawFrame()
   })
+  await page.evaluate(async () => {
+    const before = renderer.pickScene({ origin: [-0.6, 0, 4], direction: [0, 0, -1] })
+    await renderer.loadEnvironment('/generated/studio_small_09.bin')
+    await renderer.drawFrame()
+    await renderer.loadEnvironment(null)
+    await renderer.drawFrame()
+    if (
+      renderer.pickScene({ origin: [-0.6, 0, 4], direction: [0, 0, -1] }).distance !==
+        before.distance ||
+      renderer.getMaterials('dual').length !== 2
+    )
+      throw Error('Environment clearing changed scene state')
+  })
   counts = await inspect('scene')
   if (counts[0] < 500 || counts[4] < 500) throw Error('Scene asset edit failed ' + counts)
   await page.evaluate(async () => {

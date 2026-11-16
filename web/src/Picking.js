@@ -70,6 +70,31 @@ export class PickMesh {
     }
     return index
   }
+  shadowRecords() {
+    const records = new Float32Array((this.nodes.length + this.triangles.length) * 48)
+    if (records.byteLength > 64 * 1024 * 1024) throw Error('Scene shadow BVH exceeds 64 MiB')
+    const escape = (index, next) => {
+      const node = this.nodes[index],
+        at = index * 48
+      records.set(node.minimum, at + 32)
+      records[at + 35] = next
+      records.set(node.maximum, at + 36)
+      records.set(
+        [node.left || 0, node.right || 0, this.nodes.length + node.first, node.count],
+        at + 44,
+      )
+      if (!node.count) {
+        escape(node.left, node.right)
+        escape(node.right, next)
+      }
+    }
+    if (this.nodes.length) escape(0, this.nodes.length)
+    this.triangles.forEach((t, i) => {
+      for (let j = 0; j < 3; j++)
+        records.set(this.point(t, j), (this.nodes.length + i) * 48 + 32 + j * 4)
+    })
+    return records
+  }
   pick(o, d, limit = Infinity) {
     if (!this.nodes.length) return null
     let best = null

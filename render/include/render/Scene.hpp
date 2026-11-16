@@ -43,5 +43,6 @@ namespace render
         std::string id, assetId;
         // Maps the selected asset space into world space. Identity by default.
         Matrix4 world{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        bool    castShadow = true;
     };
 } // namespace render

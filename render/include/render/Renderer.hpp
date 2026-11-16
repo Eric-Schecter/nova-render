@@ -9,6 +9,7 @@
 #include "PostProcessing.hpp"
 #include "RenderMode.hpp"
 #include "Scene.hpp"
+#include "SceneShadows.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -92,6 +93,8 @@ namespace render
         uint32_t                   GetAccumulatedSamples() const;
         void                       PresentImage(const Image& image);
         void                       ClearImage();
+        void                       SetShadows(const SceneShadowSettings& settings);
+        SceneShadowSettings        GetShadows() const;
         void                       SetFog(const FogSettings& settings);
         FogSettings                GetFog() const;
         void                       LoadEnvironment(const std::filesystem::path& path);

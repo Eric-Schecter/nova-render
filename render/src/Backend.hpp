@@ -86,8 +86,27 @@ namespace render::detail
             globals.material[0]  = fogSettings.nearDistance;
             globals.material[1]  = fogSettings.farDistance;
             globals.material[2]  = fogSettings.density;
+            globals.emissive[0]  = scene.active ? float(scene.instances.size()) : 0;
+            globals.emissive[1]  = shadowSettings.enabled ? 1.f : 0.f;
+            globals.emissive[2]  = shadowSettings.softness;
+            globals.emissive[3]  = float(shadowSettings.samples);
+            globals.uv[0]        = shadowSettings.bias;
             rasterInstances.push_back(globals);
+            if (scene.active)
+                rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
         }
+        SceneShadowSettings shadowSettings;
+        void                SetShadows(const SceneShadowSettings& value)
+        {
+            if (
+              !std::isfinite(value.softness) || value.softness < 0 || value.softness > 4 || value.samples < 1
+              || value.samples > 16 || !std::isfinite(value.bias) || value.bias < .00001f || value.bias > .1f)
+                throw std::invalid_argument("Invalid scene shadow settings");
+            shadowSettings = value;
+            RebuildRasterInstances();
+            rasterAA.Reset();
+        }
+        SceneShadowSettings GetShadows() const { return shadowSettings; }
         FogSettings fogSettings;
         uint32_t    rasterGlobals = 0;
         void        SetFog(const FogSettings& value)

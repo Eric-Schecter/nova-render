@@ -1,4 +1,4 @@
-import { copyFog } from './Atmosphere.js'
+import { copyFog, copyShadows } from './Atmosphere.js'
 import { materialMipmaps } from './TextureFiltering.js'
 import { createAnimationPlayer } from './AnimationData.js'
 import { createPathView } from './PathView.js'
@@ -34,7 +34,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
   let instanceBuffer,
     sceneDraws = null,
     rasterGlobals = 0,
-    rasterFog = copyFog()
+    rasterFog = copyFog(),
+    rasterShadows = copyShadows(),
+    shadowInstanceCount = 0
   let depth,
     cube,
     backgroundCube,
@@ -211,11 +213,24 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       const record = new Float32Array(48)
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
+      record.set(
+        [
+          shadowInstanceCount,
+          rasterShadows.enabled ? 1 : 0,
+          rasterShadows.softness,
+          rasterShadows.samples,
+        ],
+        40,
+      )
+      record[44] = rasterShadows.bias
       device.queue.writeBuffer(instanceBuffer, rasterGlobals * 192, record)
     }
-    function uploadInstances(bytes, draws) {
+    function uploadInstances(bytes, draws, shadowRecords = new Float32Array(0)) {
+      shadowInstanceCount = draws ? draws.reduce((n, d) => n + d.instanceCount, 0) : 0
       rasterGlobals = bytes.byteLength / 192
-      const size = Math.max(192, bytes.byteLength + 192)
+      const size = Math.max(192, bytes.byteLength + 192 + shadowRecords.byteLength)
+      if (size > device.limits.maxStorageBufferBindingSize)
+        throw Error('Scene shadow resources exceed device storage buffer limit')
       if (instanceBuffer.size < size) {
         instanceBuffer.destroy()
         instanceBuffer = makeBuffer(
@@ -226,6 +241,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         bindGroup = group(cube, backgroundCube)
       }
       if (bytes.byteLength) device.queue.writeBuffer(instanceBuffer, 0, bytes)
+      if (shadowRecords.byteLength)
+        device.queue.writeBuffer(instanceBuffer, bytes.byteLength + 192, shadowRecords)
       sceneDraws = draws
       writeGlobals()
     }
@@ -357,9 +374,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             if (!response.ok) throw Error('Missing skybox shader package: ' + skyURL)
             nextPipeline = await pipelineFor(await response.json(), true)
           }
-          nextCube = cubeTexture(device, next || fallbackEnvironment())
+          nextCube = cubeTexture(device, next || fallbackEnvironment)
           nextBackgroundCube = cubeTexture(device, {
-            mips: next ? next.backgroundMips || next.mips : fallbackEnvironment().mips,
+            mips: next ? next.backgroundMips || next.mips : fallbackEnvironment.mips,
           })
           nextGroup = group(nextCube, nextBackgroundCube)
           await device.queue.onSubmittedWorkDone()
@@ -380,13 +397,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         skyPipeline = nextPipeline
         environment = next
       },
-      setRasterSettings(fog) {
+      setRasterSettings(fog, shadows) {
         rasterFog = copyFog(fog)
+        rasterShadows = copyShadows(shadows)
         writeGlobals()
       },
-      setInstances(bytes, draws) {
+      setInstances(bytes, draws, shadowRecords) {
         if (disposed) throw Error('Model has been disposed')
-        uploadInstances(bytes, draws)
+        uploadInstances(bytes, draws, shadowRecords)
       },
       draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')

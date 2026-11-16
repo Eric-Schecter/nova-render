@@ -253,6 +253,14 @@ namespace render
     {
         return impl_->renderer->GetAccumulatedSamples();
     }
+    void Window::SetShadows(const SceneShadowSettings& settings)
+    {
+        impl_->renderer->SetShadows(settings);
+    }
+    SceneShadowSettings Window::GetShadows() const
+    {
+        return impl_->renderer->GetShadows();
+    }
     void Window::SetFog(const FogSettings& settings)
     {
         impl_->renderer->SetFog(settings);

@@ -16,6 +16,8 @@ namespace render::detail
     class PickMesh
     {
       public:
+        std::vector<std::array<float, 48>> ShadowRecords() const;
+        uint32_t                           ShadowNodeCount() const { return uint32_t(nodes_.size()); }
         explicit PickMesh(std::shared_ptr<const ModelData> data);
         std::optional<MeshHit> Pick(const PickVector& origin, const PickVector& direction, double limit) const;
 

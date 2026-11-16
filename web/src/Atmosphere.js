@@ -22,3 +22,21 @@ export function copyFog(value = {}) {
   fog.color = [...fog.color]
   return fog
 }
+
+export function copyShadows(value = {}) {
+  const settings = { enabled: false, softness: 1, samples: 8, bias: 0.002, ...value }
+  if (
+    typeof settings.enabled !== 'boolean' ||
+    !Number.isFinite(settings.softness) ||
+    settings.softness < 0 ||
+    settings.softness > 4 ||
+    !Number.isInteger(settings.samples) ||
+    settings.samples < 1 ||
+    settings.samples > 16 ||
+    !Number.isFinite(settings.bias) ||
+    settings.bias < 0.00001 ||
+    settings.bias > 0.1
+  )
+    throw Error('Invalid scene shadow settings')
+  return settings
+}

@@ -109,6 +109,99 @@ float3 applyFog(float3 color, float3 position)
 #endif
     return lerp(color, fog, saturate(amount));
 }
+bool shadowBox(float3 low, float3 high, float3 origin, float3 direction)
+{
+    float nearT = 0, farT = 1e30;
+    [unroll] for (uint k = 0; k < 3; k++)
+    {
+        float pad = 1e-5 * max(1, max(abs(low[k]), abs(high[k])));
+        if (abs(direction[k]) < 1e-15)
+        {
+            if (origin[k] < low[k] - pad || origin[k] > high[k] + pad)
+                return false;
+        }
+        else
+        {
+            float a = (low[k] - pad - origin[k]) / direction[k], b = (high[k] + pad - origin[k]) / direction[k];
+            nearT = max(nearT, min(a, b));
+            farT  = min(farT, max(a, b));
+            if (farT < nearT)
+                return false;
+        }
+    }
+    return true;
+}
+bool shadowTriangle(InstanceData tri, float3 origin, float3 direction)
+{
+    float3 a = tri.baseColor.xyz, e = tri.material.xyz - a, f = tri.emissive.xyz - a, p = cross(direction, f);
+    float  determinant = dot(e, p);
+    if (abs(determinant) < 1e-12)
+        return false;
+    float  inverse = 1 / determinant;
+    float3 delta   = origin - a;
+    float  u       = dot(delta, p) * inverse;
+    if (u < 0 || u > 1)
+        return false;
+    float3 q = cross(delta, e);
+    float  v = dot(direction, q) * inverse;
+    return v >= 0 && u + v <= 1 && dot(f, q) * inverse > 1e-5;
+}
+bool sceneOccluded(uint header, float3 origin, float3 direction)
+{
+    InstanceData settings = instances[header];
+    [loop] for (uint i = 0; i < uint(settings.emissive.x); i++)
+    {
+        InstanceData instance = instances[i];
+        if (instance.uv.z < .5)
+            continue;
+        float3x3 inverse        = transpose((float3x3)instance.normalMatrix);
+        float3   localOrigin    = mul(inverse, origin - mul(instance.world, float4(0, 0, 0, 1)).xyz);
+        float3   localDirection = mul(inverse, direction);
+        uint     root = header + 1 + uint(instance.uv.y), node = 0, count = uint(instance.uv.w);
+        [loop] while (node < count)
+        {
+            InstanceData box = instances[root + node];
+            if (!shadowBox(box.baseColor.xyz, box.material.xyz, localOrigin, localDirection))
+            {
+                node = uint(box.baseColor.w);
+                continue;
+            }
+            uint triangles = uint(box.uv.w);
+            if (triangles == 0)
+            {
+                node = uint(box.uv.x);
+                continue;
+            }
+            [loop] for (uint t = 0; t < triangles; t++) if (shadowTriangle(
+                                                              instances[root + uint(box.uv.z) + t],
+                                                              localOrigin,
+                                                              localDirection)) return true;
+            node = uint(box.baseColor.w);
+        }
+    }
+    return false;
+}
+float sceneVisibility(float3 position, float3 normal)
+{
+    if (irradiance[3].w < .5)
+        return 1;
+    uint         header   = uint(irradiance[3].w) - 1;
+    InstanceData settings = instances[header];
+    if (settings.emissive.y < .5 || settings.emissive.x < .5)
+        return 1;
+    float3 light = normalize(lightDirection.xyz), axis = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
+    uint   count   = settings.emissive.z < .0001 ? 1 : uint(settings.emissive.w);
+    float  visible = 0;
+    [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
+    {
+        float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * settings.emissive.z * .006;
+        float  angle  = float(sampleIndex) * 2.39996323;
+        float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
+        visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray) ? 0 : 1;
+    }
+    return visible / count;
+}
 struct VertexOut
 {
     float4                position : SV_Position;
@@ -287,8 +380,14 @@ float4 PSMain(VertexOut input)
     float4 mr       = materialTexture.Sample(textureSampler, uv);
     float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
-    float3 color =
-      directLight(n, v, lightDirection.xyz, base, metallic, roughness, lightColorIntensity.rgb * lightColorIntensity.w);
+    float3 color = directLight(
+      n,
+      v,
+      lightDirection.xyz,
+      base,
+      metallic,
+      roughness,
+      lightColorIntensity.rgb * lightColorIntensity.w * sceneVisibility(input.worldPosition, input.normal));
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
     float3 f  = fresnel(saturate(dot(n, v)), f0);
     if (cameraForward.w > 0.5)
