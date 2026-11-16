@@ -49,7 +49,8 @@ try {
     await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
     await page.getByRole('button', { name: 'Show preview', exact: true }).click()
     if (name === 'triangle') {
-      await page.getByRole('button', { name: 'Show parameters', exact: true }).click()
+      const toggle = page.getByRole('button', { name: 'Show parameters', exact: true })
+      if (await toggle.count()) await toggle.click()
       await page.getByLabel('Anti-aliasing method', { exact: true }).selectOption('fxaa')
       await page.waitForTimeout(1000)
     }
