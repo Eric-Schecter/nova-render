@@ -43,3 +43,5 @@ Await asynchronous operations. Loading and drawing are serialized per instance; 
 Ordinary raster examples expose `setAntiAliasing({method:'taa'})`, `getAntiAliasing()` and `getAntiAliasingHistoryFrames()`. Default AA is off; see [anti-aliasing](./antialiasing). [Post-processing](./postprocessing) uses the same shared HLSL chain.
 
 Published Pages examples load precompiled WGSL. HLSL editing is enabled only in the local development server; JavaScript/C++ source tabs are read-only examples.
+
+See [Camera and viewport](/api/camera) for `setViewCamera`, `getViewCamera`, `setViewport` and `getViewport`.

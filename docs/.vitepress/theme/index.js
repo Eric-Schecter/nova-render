@@ -1,3 +1,4 @@
+import CameraPlayground from './CameraPlayground.vue'
 import ScenePlayground from './ScenePlayground.vue'
 import './custom.css'
 import DefaultTheme from 'vitepress/theme'
@@ -12,6 +13,7 @@ import AntiAliasingPlayground from './AntiAliasingPlayground.vue'
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
+    app.component('CameraPlayground', CameraPlayground)
     app.component('ScenePlayground', ScenePlayground)
     app.component('ShaderPlayground', ShaderPlayground)
     app.component('AntiAliasingPlayground', AntiAliasingPlayground)

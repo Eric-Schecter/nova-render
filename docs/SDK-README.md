@@ -34,3 +34,9 @@ window.DrawFrame();
 ```
 
 Instances share resources by asset ID. `sourceSpace=true` preserves authored glTF units and origin; the default normalizes the model. Matrices are column-major and default to identity. `SetScene({}, {})` clears geometry. This API supports static opaque raster scenes; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.
+
+## Camera and viewport
+
+Use `SetViewCamera(Camera)` for complete pose/lens settings and `SetViewport(Viewport{...})` for a framebuffer-pixel rectangle. `SetViewport(std::nullopt)` restores the automatic viewport. Existing `SetCamera(OrbitCamera)` remains available.
+
+See [camera and viewport](https://eric-schecter.github.io/nova-render/api/camera.html) for defaults, validation and examples.

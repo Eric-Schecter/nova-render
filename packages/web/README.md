@@ -46,3 +46,9 @@ await renderer.drawFrame()
 ```
 
 Instances share resources by asset ID. `sourceSpace: true` retains authored glTF units and origin; the default normalizes the model. Matrices are column-major; omitted matrices use identity. `setScene([], [])` clears geometry. This API supports static opaque raster scenes; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.
+
+## Camera and viewport
+
+Use `setViewCamera({ position, orientation, projection, verticalFov, orthographicHeight, nearPlane, farPlane })` for complete pose/lens settings. `setViewport({x,y,width,height})` uses framebuffer pixels; `setViewport(null)` restores the automatic viewport. Existing `setCamera(orbit)` remains available.
+
+See [camera and viewport](https://eric-schecter.github.io/nova-render/api/camera.html) for defaults, validation and examples.

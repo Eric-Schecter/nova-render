@@ -35,6 +35,23 @@ window.validation = (async () => {
   if (renderer.getSceneAssetBounds('box') !== null) throw Error('Installed scene clear failed')
   await renderer.setScene(assets, instances)
   await renderer.drawFrame()
+  renderer.setViewCamera({
+    projection: 'orthographic',
+    orthographicHeight: 5,
+    verticalFov: 60,
+    nearPlane: 0.1,
+    farPlane: 100,
+    orientation: [0, 0, 0.38268343, 0.9238795],
+  })
+  renderer.setViewport({ x: 20, y: 15, width: 160, height: 120 })
+  await renderer.drawFrame()
+  if (
+    renderer.getViewport().width !== 160 ||
+    renderer.getViewCamera().projection !== 'orthographic'
+  )
+    throw Error('Installed camera/viewport API failed')
+  renderer.setViewport(null)
+  await renderer.drawFrame()
   document.querySelector('#status').textContent =
     'PASS installed npm package: triangle, two probes, scene instances, original model space'
   window.disposeNova = () => {

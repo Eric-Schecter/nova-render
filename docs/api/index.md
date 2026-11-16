@@ -15,3 +15,5 @@ Native headers live in `render/include/render`; the browser module exports corre
 See [writing an example](../guide/integration) and [installing packages](../guide/package). Dedicated laboratory views document their own fixed-scene limitations; not every effect is integrated into arbitrary-model Renderer paths.
 
 - [Scene instances](/api/scene): shared static GLBs, world transforms and original model space.
+
+- [Camera and viewport](/api/camera): complete camera pose, projection, lens and framebuffer rectangles.

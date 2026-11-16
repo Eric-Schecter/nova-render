@@ -22,6 +22,7 @@ Prebuilt SDKs currently cover macOS ARM64 and Windows ARM64. SDK installation ha
 - [x] Rasterization and ray-tracing modes
 - [x] Shared HLSL → DXIL / SPIR-V / Metal / WGSL
 - [x] glTF / GLB model loading and metallic-roughness PBR
+- [x] Perspective/orthographic cameras, full orientation and viewport rectangles
 - [x] Static scene instances with shared assets and original model space
 - [x] GPU skeletal animation
 - [x] Directional lighting, skyboxes and HDR image-based lighting

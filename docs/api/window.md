@@ -50,3 +50,5 @@ Use only on the main thread. Copying and moving are disabled. Do not mix Window'
 `GetFramebufferSize()` returns pixel width and height, possibly zero when minimized. `PresentImage(image)` copies sRGB RGBA8 pixels for the next frame; `ClearImage()` restores Window's own rendering. The application manages layout, budgets and UI, as in [integrator comparison](../examples/integrators).
 
 See [writing an example](../guide/integration) for a complete program. Use the lower-level Renderer when your application manages its own window.
+
+`SetViewCamera` / `GetViewCamera` and `SetViewport` / `GetViewport` forward to the renderer. `GetFramebufferSize()` returns the pixel dimensions used by viewport rectangles. See [camera and viewport](./camera).

@@ -60,6 +60,22 @@ int main(int argc, char** argv)
             if (window.GetSceneAssetBounds("box"))
                 throw std::runtime_error("Installed scene clear failed");
         }
+        render::Camera camera;
+        camera.projection         = render::Projection::Orthographic;
+        camera.orthographicHeight = 5;
+        camera.verticalFov        = 60;
+        camera.nearPlane          = .1f;
+        camera.farPlane           = 100;
+        camera.orientation        = {0, 0, .38268343f, .9238795f};
+        window.SetViewCamera(camera);
+        window.SetViewport(render::Viewport{20, 15, 160, 120});
+        window.DrawFrame();
+        window.WaitIdle();
+        if (!window.GetViewport() || window.GetViewCamera().projection != render::Projection::Orthographic)
+            throw std::runtime_error("Installed camera/viewport API failed");
+        window.SetViewport(std::nullopt);
+        window.DrawFrame();
+        window.WaitIdle();
         if (frames != 10 || window.ValidationErrorCount())
             throw std::runtime_error("Installed window API failed");
         std::cout << "PASS installed SDK: two reflection probes, scene instances and original model space, window\n";

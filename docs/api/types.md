@@ -41,3 +41,7 @@ enum class FrameResult { Rendered, Skipped };
 ## EnvironmentSettings
 
 Rotation, lighting intensity, background brightness and visibility use matching native/web concepts. See [environment settings](./environment#settings).
+
+## Camera and Viewport
+
+`render/Camera.hpp` owns `Camera`, `Projection`, `Viewport` and the compatible `OrbitCamera`. See [camera and viewport](./camera) for fields, units and complete pose/lens usage.

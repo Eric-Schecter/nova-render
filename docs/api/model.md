@@ -2,6 +2,8 @@
 
 C++ and web follow the same flow: load a model, set a camera, draw. By default the result is base-color texture × base-color factor, without lighting, occlusion, emission or exposure. Parsing, uploads, depth and platform graphics calls are encapsulated.
 
+For complete position/quaternion orientation, projection, lens and viewport control, use the [camera and viewport API](./camera). The examples below retain the compatible orbit controller.
+
 ## C++
 
 ```cpp

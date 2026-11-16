@@ -44,3 +44,5 @@ uint32_t ValidationErrorCount() const;
 `SetLighting(Unlit / PBR)` defaults to Unlit. `SetDirectionalLight` / `GetDirectionalLight` control the main light. See [models and cameras](./model), [environment lighting](./environment), [render modes](./render-mode), [AA](./antialiasing), and [parameter panels](./ui).
 
 `EnableParameterPanel(bool)` toggles the optional panel; its configuration overload supplies [model and environment choices](./ui#model-and-environment-choices). For a complete application, see [writing examples](../guide/integration).
+
+See [Camera and viewport](/api/camera) for full pose/lens and viewport APIs; legacy `SetCamera` remains the orbit interface.
