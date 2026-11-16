@@ -39,7 +39,7 @@ try {
     throw Error('Invalid initial performance snapshot ' + JSON.stringify(initial))
   const bounds = await page.evaluate(() => {
     const c = document.querySelector('canvas').getBoundingClientRect(),
-      h = document.querySelector('[aria-label="渲染性能"]').getBoundingClientRect()
+      h = document.querySelector('[aria-label="Rendering performance"]').getBoundingClientRect()
     return h.bottom <= c.top + 0.5
   })
   if (!bounds) throw Error('Performance bar overlaps canvas')
@@ -71,7 +71,7 @@ try {
     settled.frameCount
   )
     throw Error('Idle renderer keeps working')
-  await page.getByRole('checkbox', { name: '交互自适应画质', exact: true }).uncheck()
+  await page.getByRole('checkbox', { name: 'Adaptive interaction quality', exact: true }).uncheck()
   await page.evaluate(() => window.scene.setCamera({ yaw: 96 }))
   await page.waitForTimeout(400)
   if ((await page.evaluate(() => window.scene.getPerformanceStats())).scale !== 0.5)
@@ -96,7 +96,9 @@ try {
   await page
     .locator('.ao-viewport')
     .screenshot({ path: 'build/validation/ao-performance-desktop.png' })
-  const metrics = await page.getByRole('status', { name: '渲染性能', exact: true }).textContent()
+  const metrics = await page
+    .getByRole('status', { name: 'Rendering performance', exact: true })
+    .textContent()
   if (!metrics.includes('FPS') || !metrics.includes('P95')) throw Error('Missing HUD metrics')
   await page.evaluate(() => window.scene.dispose())
   if (await page.locator('.ao-viewport').count()) throw Error('HUD did not dispose')

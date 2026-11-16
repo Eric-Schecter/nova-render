@@ -14,7 +14,7 @@ try {
   await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
   const target = page.locator('canvas')
   const before = await target.screenshot()
-  await page.getByRole('slider', { name: '水平角', exact: true }).fill('65')
+  await page.getByRole('slider', { name: 'Yaw', exact: true }).fill('65')
   // Wait for the actual rendered image, not just the input label to update.
   let changed = false
   for (let i = 0; i < 8; i++) {
@@ -24,11 +24,11 @@ try {
     }
   }
   if (!changed) throw Error('Camera did not change GPU output')
-  await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
   if (await target.isVisible()) throw Error('Preview did not hide')
-  await page.getByRole('button', { name: '显示预览', exact: true }).click()
+  await page.getByRole('button', { name: 'Show preview', exact: true }).click()
   await target.waitFor({ state: 'visible' })
-  await page.getByRole('tab', { name: 'C++ 示例', exact: true }).click()
+  await page.getByRole('tab', { name: 'C++ example', exact: true }).click()
   if (
     (await page.getByRole('textbox').inputValue()) !==
     (await readFile('examples/helmet/main.cpp', 'utf8'))
@@ -40,8 +40,8 @@ try {
     (await readFile('render/shaders/model.hlsl', 'utf8'))
   )
     throw Error('HLSL source mismatch')
-  await page.getByRole('tab', { name: 'JavaScript 示例', exact: true }).click()
-  await page.getByRole('button', { name: '重置相机', exact: true }).click()
+  await page.getByRole('tab', { name: 'JavaScript example', exact: true }).click()
+  await page.getByRole('button', { name: 'Reset camera', exact: true }).click()
   await page.screenshot({ path: 'build/webgpu/damaged-helmet-page.png', fullPage: true })
   await page.goto('http://127.0.0.1:5173/examples/triangle')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })

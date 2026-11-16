@@ -76,22 +76,26 @@ try {
   for (const slug of ['damaged-helmet', 'lighting', 'environment']) {
     await page.goto(base + '/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
-    const models = page.getByRole('combobox', { name: '模型选择', exact: true })
+    const models = page.getByRole('combobox', { name: 'Model', exact: true })
     await models.scrollIntoViewIfNeeded()
     await models.selectOption('/generated/CornellBox.glb')
-    await page.waitForFunction(() => !document.querySelector('[aria-label="模型选择"]').disabled)
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Model"]').disabled)
     if ((await models.inputValue()) !== '/generated/CornellBox.glb')
       throw Error('Cornell scene selection failed')
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
-    await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
-    await page.getByRole('checkbox', { name: '降噪', exact: true }).check()
+    await page
+      .getByRole('combobox', { name: 'Render mode', exact: true })
+      .selectOption('ray-tracing')
+    await page.getByRole('slider', { name: 'Render scale', exact: true }).fill('.25')
+    await page.getByRole('checkbox', { name: 'Denoise', exact: true }).check()
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 4,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 4,
       null,
       { timeout: 60000 },
     )
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('raster')
+    await page.getByRole('combobox', { name: 'Render mode', exact: true }).selectOption('raster')
   }
   if (errors.length) throw Error(errors.join('\n'))
   console.log(

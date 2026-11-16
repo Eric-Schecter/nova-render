@@ -16,8 +16,8 @@ export async function compile(
   } = {},
 ) {
   if (typeof source !== 'string' || Buffer.byteLength(source) > 65536)
-    throw Error('HLSL 限制为 64 KiB')
-  if (/^\s*#\s*include/m.test(source)) throw Error('在线示例不支持 #include')
+    throw Error('HLSL source is limited to 64 KiB')
+  if (/^\s*#\s*include/m.test(source)) throw Error('Online examples do not support #include')
   let dxc = process.env.NOVA_DXC_EXECUTABLE || 'dxc'
   if (!process.env.NOVA_DXC_EXECUTABLE && process.platform === 'darwin') {
     const base = join(homedir(), 'VulkanSDK')

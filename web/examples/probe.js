@@ -25,7 +25,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
     initialScale: 0.75,
     showChecker: false,
     showSplit: false,
-    panelLabel: '反射探针参数',
+    panelLabel: 'Reflection probe parameters',
     describe: (view) =>
       `Probe · ${view.getReflectionProbe().boxProjection ? 'Box projection' : 'Uncorrected'} · ${view.getProbeCaptureCount()} captures · `,
     extraControls: (api) => {
@@ -43,21 +43,21 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
       const set = (key, value) => controller.setReflectionProbe({ [key]: value })
       control(
         'Local cubemap',
-        '局部 Cubemap',
+        'Local cubemap',
         'checkbox',
         () => view.getReflectionProbe().enabled,
         (v) => set('enabled', v),
       )
       control(
         'Box projection',
-        '盒体投影修正',
+        'Box projection',
         'checkbox',
         () => view.getReflectionProbe().boxProjection,
         (v) => set('boxProjection', v),
       )
       for (const [key, label, aria, max, step] of [
-        ['roughness', 'Roughness', '反射粗糙度', 1, 0.01],
-        ['intensity', 'Reflection intensity', '反射强度', 2, 0.05],
+        ['roughness', 'Roughness', 'Reflection roughness', 1, 0.01],
+        ['intensity', 'Reflection intensity', 'Reflection intensity', 2, 0.05],
       ])
         control(
           label,
@@ -76,7 +76,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
       }
       control(
         'Active probe',
-        '活动探针',
+        'Active probe',
         'select',
         () => String(selected),
         (v) => {
@@ -91,21 +91,21 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
       )
       control(
         'Smooth blending',
-        '平滑混合',
+        'Smooth blending',
         'checkbox',
         () => view.getReflectionProbe().smoothBlending,
         (v) => set('smoothBlending', v),
       )
       control(
         'Probe enabled',
-        '活动探针开关',
+        'Active probe enabled',
         'checkbox',
         () => volume().enabled,
         (v) => setVolume({ enabled: v }),
       )
       for (const [key, label, aria] of [
-        ['blendDistance', 'Boundary blend', '边界混合距离'],
-        ['intensity', 'Probe intensity', '活动探针强度'],
+        ['blendDistance', 'Boundary blend', 'Boundary blend distance'],
+        ['intensity', 'Probe intensity', 'Active probe intensity'],
       ])
         control(
           label,
@@ -117,7 +117,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
         )
       control(
         'Travel phase',
-        '移动相位',
+        'Travel phase',
         'range',
         () => controller.getTime(),
         (v) => {
@@ -133,7 +133,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
       ])
         control(
           'Probe ' + axis,
-          '探针位置 ' + axis,
+          'Probe position ' + axis,
           'range',
           () => volume().position[index],
           (v) => {
@@ -145,7 +145,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
         )
       control(
         'Output',
-        '探针调试视图',
+        'Probe output',
         'select',
         () => view.getReflectionProbe().debug,
         (v) => set('debug', v),
@@ -158,7 +158,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
       )
       control(
         'Refresh probe',
-        '刷新反射探针',
+        'Refresh probe',
         'button',
         () => 'Refresh probe',
         () => controller.updateProbe(),
@@ -167,7 +167,7 @@ export async function showReflectionProbe(canvas, shaderDirectory = '/generated/
         loading = false
       control(
         'Environment',
-        '反射环境',
+        'Reflection environment',
         'select',
         () => environment,
         async (value) => {

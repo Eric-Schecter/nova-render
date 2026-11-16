@@ -14,8 +14,8 @@ try {
   await page.goto('http://127.0.0.1:5173/examples/damaged-helmet')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
   const canvas = page.locator('canvas'),
-    yaw = page.getByRole('slider', { name: '水平角', exact: true }),
-    distance = page.getByRole('slider', { name: '距离', exact: true })
+    yaw = page.getByRole('slider', { name: 'Yaw', exact: true }),
+    distance = page.getByRole('slider', { name: 'Distance', exact: true })
   await canvas.scrollIntoViewIfNeeded()
   const before = await canvas.screenshot(),
     box = await canvas.boundingBox()
@@ -26,7 +26,7 @@ try {
   await page.mouse.move(x + 120, y + 45, { steps: 8 })
   await page.mouse.up()
   await page.waitForFunction(
-    () => Number(document.querySelector('[aria-label="水平角"]').value) !== 20,
+    () => Number(document.querySelector('[aria-label="Yaw"]').value) !== 20,
   )
   if (before.equals(await canvas.screenshot())) throw Error('Drag did not change model pixels')
   const afterDrag = await yaw.inputValue()
@@ -37,7 +37,7 @@ try {
     scroll = await page.evaluate(() => scrollY)
   await page.mouse.wheel(0, -200)
   await page.waitForFunction(
-    (old) => Number(document.querySelector('[aria-label="距离"]').value) < old,
+    (old) => Number(document.querySelector('[aria-label="Distance"]').value) < old,
     oldDistance,
   )
   if ((await page.evaluate(() => scrollY)) !== scroll)
@@ -52,7 +52,7 @@ try {
       c.dispatchEvent(new WheelEvent('wheel', { deltaY: 10000, cancelable: true }))
   })
   if (Number(await distance.inputValue()) !== 100) throw Error('Zoom maximum failed')
-  await page.getByRole('button', { name: '重置相机', exact: true }).click()
+  await page.getByRole('button', { name: 'Reset camera', exact: true }).click()
   if (Number(await distance.inputValue()) !== 3.6 || Number(await yaw.inputValue()) !== 20)
     throw Error('Reset did not sync controls')
   await canvas.scrollIntoViewIfNeeded()
@@ -62,10 +62,10 @@ try {
   await page.mouse.move(resetBox.x + 125, resetBox.y + 100)
   await page.mouse.up()
   await page.waitForFunction(
-    () => Number(document.querySelector('[aria-label="水平角"]').value) !== 20,
+    () => Number(document.querySelector('[aria-label="Yaw"]').value) !== 20,
   )
-  await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
-  await page.getByRole('button', { name: '显示预览', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
+  await page.getByRole('button', { name: 'Show preview', exact: true }).click()
   await canvas.waitFor({ state: 'visible' })
   await page.screenshot({ path: 'build/webgpu/helmet-orbit.png', fullPage: true })
   // Unmount while events are pending; controller must stop rendering after disposal.

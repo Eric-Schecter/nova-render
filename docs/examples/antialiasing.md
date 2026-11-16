@@ -1,11 +1,7 @@
-# 抗锯齿
+# Anti-aliasing
 
-程序化测试台包含细栏杆、斜边、透视棋盘和运动轮辐，无需模型资源。用几何边缘观察 MSAA，用棋盘细节观察 SSAA，用慢速运动观察 TAA 的闪烁与历史处理。
+Compare Off, FXAA, SMAA 1x, MSAA 4x, SSAA 2×2 and TAA on thin rails, diagonal edges and a checker. Left is Off in split mode. Pause motion, zoom, and toggle checker filtering to inspect aliasing.
 
-可选 **Off、FXAA、SMAA 1x、MSAA 4x、SSAA 2×2、TAA**。分割线左侧为 Off，右侧为所选算法；暂停运动并开启 4× / 8× 放大，便于查看像素差异。性能条独立位于画面上方，参数位于预览右上角，可展开／收起，不自动降低画质。
-
-棋盘过滤默认开启；关闭可单独观察纹理混叠。常规模型也默认启用 mipmap、三线性和各向异性过滤，其他光栅例子的面板提供相同的六档 AA。
-
-具体实现与范围见 [抗锯齿接口](../api/antialiasing)。
+The performance bar is separate; parameters float at the top right. Quality is not automatically reduced.
 
 <ClientOnly><AntiAliasingPlayground /></ClientOnly>

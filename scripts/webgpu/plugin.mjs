@@ -14,13 +14,13 @@ export default function shaderCompiler() {
         const origin = req.headers.origin
         if (!origin || !['http://127.0.0.1:5173', 'http://localhost:5173'].includes(origin))
           return send(403, { error: 'Only local preview origin is allowed' })
-        if (busy) return send(429, { error: '编译中，请稍后再试' })
+        if (busy) return send(429, { error: 'Compilation in progress; please retry' })
         busy = true
         try {
           let body = ''
           for await (const chunk of req) {
             body += chunk
-            if (Buffer.byteLength(body) > 70000) throw Error('请求过大')
+            if (Buffer.byteLength(body) > 70000) throw Error('Request too large')
           }
           send(200, await compile(JSON.parse(body).source))
         } catch (e) {

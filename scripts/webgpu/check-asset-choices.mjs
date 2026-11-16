@@ -28,20 +28,20 @@ try {
   for (const slug of ['damaged-helmet', 'lighting', 'environment']) {
     await page.goto('http://127.0.0.1:5173/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
-    const models = page.getByRole('combobox', { name: '模型选择', exact: true }),
+    const models = page.getByRole('combobox', { name: 'Model', exact: true }),
       initial = await hash(),
       hashes = new Set()
     if ((await models.locator('option').count()) !== 4) throw Error('Missing model choices')
     for (const name of ['Avocado', 'BoomBox', 'CornellBox', 'DamagedHelmet']) {
       await choose(models, '/generated/' + name + '.glb')
       hashes.add(await hash())
-      if ((await page.getByRole('slider', { name: '水平角', exact: true }).inputValue()) !== '20')
+      if ((await page.getByRole('slider', { name: 'Yaw', exact: true }).inputValue()) !== '20')
         throw Error('Camera reset on model switch')
     }
     if (hashes.size !== 4 || (await hash()) !== initial)
       throw Error('Model choices did not change/restore GPU pixels')
     if (slug === 'environment') {
-      const maps = page.getByRole('combobox', { name: '环境贴图', exact: true })
+      const maps = page.getByRole('combobox', { name: 'Environment map', exact: true })
       if ((await maps.locator('option').count()) !== 3) throw Error('Missing environment choices')
       for (const model of ['Avocado', 'BoomBox', 'CornellBox', 'DamagedHelmet']) {
         await choose(models, '/generated/' + model + '.glb')
@@ -91,7 +91,7 @@ try {
     '/@fs' + resolve('web/src/Nova.js'),
   )
   const extra = page.locator('.nova-viewport').last(),
-    select = extra.getByRole('combobox', { name: '模型选择', exact: true })
+    select = extra.getByRole('combobox', { name: 'Model', exact: true })
   await choose(select, '/generated/missing.glb')
   if ((await select.inputValue()) !== '/generated/Avocado.glb')
     throw Error('Failed choice did not roll back')

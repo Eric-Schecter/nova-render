@@ -13,11 +13,11 @@ try {
   await page.goto(base + '/examples/weekend-spheres')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 90000 })
   if (
-    (await page.getByRole('combobox', { name: '渲染模式', exact: true }).inputValue()) !==
+    (await page.getByRole('combobox', { name: 'Render mode', exact: true }).inputValue()) !==
     'ray-tracing'
   )
     throw Error('Wrong default mode')
-  await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
+  await page.getByRole('button', { name: 'Collapse parameters', exact: true }).click()
   await page.locator('canvas').screenshot({ path: 'build/validation/weekend-spheres.png' })
   await page.setViewportSize({ width: 390, height: 844 })
   if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)

@@ -15,16 +15,17 @@ try {
     await page.goto('http://127.0.0.1:5173/examples/' + (lighting ? 'lighting' : 'damaged-helmet'))
     await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
     if (
-      (await page.getByRole('slider', { name: '曝光', exact: true }).count()) !== Number(lighting)
+      (await page.getByRole('slider', { name: 'Exposure', exact: true }).count()) !==
+      Number(lighting)
     )
       throw Error('Exposure control must only appear in lighting example')
-    await page.getByRole('tab', { name: 'C++ 示例', exact: true }).click()
+    await page.getByRole('tab', { name: 'C++ example', exact: true }).click()
     if (
       (await page.getByRole('textbox').inputValue()) !==
       (await readFile(`examples/${lighting ? 'lighting' : 'helmet'}/main.cpp`, 'utf8'))
     )
       throw Error('Wrong native example source')
-    await page.getByRole('tab', { name: 'JavaScript 示例', exact: true }).click()
+    await page.getByRole('tab', { name: 'JavaScript example', exact: true }).click()
     if (
       (await page.getByRole('textbox').inputValue()) !==
       (await readFile(`web/examples/${lighting ? 'lighting' : 'helmet'}.js`, 'utf8'))
@@ -34,12 +35,12 @@ try {
     if (lighting) {
       let pixels = await page.locator('canvas').screenshot()
       for (const [name, value] of [
-        ['光源方位', '100'],
-        ['光源仰角', '-30'],
-        ['光源红', '0.1'],
-        ['光源绿', '0.1'],
-        ['光源蓝', '0.1'],
-        ['光源强度', '0'],
+        ['Light azimuth', '100'],
+        ['Light elevation', '-30'],
+        ['Light Red', '0.1'],
+        ['Light Green', '0.1'],
+        ['Light Blue', '0.1'],
+        ['Light intensity', '0'],
       ]) {
         await page.getByRole('slider', { name, exact: true }).fill(value)
         let changed = false
@@ -53,16 +54,16 @@ try {
         }
         if (!changed) throw Error('Light control did not affect pixels: ' + name)
       }
-      await page.getByRole('button', { name: '重置光源', exact: true }).click()
+      await page.getByRole('button', { name: 'Reset light', exact: true }).click()
       await page.waitForFunction(
-        () => Number(document.querySelector('[aria-label="光源强度"]').value) === 3.5,
+        () => Number(document.querySelector('[aria-label="Light intensity"]').value) === 3.5,
       )
-      await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
-      if (await page.getByRole('region', { name: '参数面板', exact: true }).isVisible())
+      await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
+      if (await page.getByRole('region', { name: 'Parameters', exact: true }).isVisible())
         throw Error('Panel should hide with preview')
-      await page.getByRole('button', { name: '显示预览', exact: true }).click()
-      await page.getByRole('slider', { name: '光源强度', exact: true }).fill('10')
-      await page.getByRole('button', { name: '重置光源', exact: true }).click()
+      await page.getByRole('button', { name: 'Show preview', exact: true }).click()
+      await page.getByRole('slider', { name: 'Light intensity', exact: true }).fill('10')
+      await page.getByRole('button', { name: 'Reset light', exact: true }).click()
       await page.setViewportSize({ width: 390, height: 844 })
       if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)
         throw Error('Lighting controls overflow on mobile')

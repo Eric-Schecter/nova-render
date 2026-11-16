@@ -8,7 +8,7 @@ try {
   const page = await browser.newPage()
   await page.goto('http://127.0.0.1:5173/examples/triangle')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
-  const code = page.getByRole('textbox', { name: 'JavaScript 示例源码' })
+  const code = page.getByRole('textbox', { name: 'JavaScript example source' })
   const source = await code.inputValue()
   if (!source.includes('Nova.createRenderer') || source.includes('navigator.gpu'))
     throw Error('Missing public API example')
@@ -16,7 +16,7 @@ try {
   const before = await page.locator('canvas').screenshot()
   await page.getByRole('combobox').selectOption('light')
   await page.waitForFunction(
-    () => document.querySelector('[aria-label="背景色"]').value === 'light',
+    () => document.querySelector('[aria-label="Clear color"]').value === 'light',
   )
   let after
   for (let i = 0; i < 10; i++) {
@@ -25,7 +25,7 @@ try {
   }
   if (before.equals(after)) throw Error('Background did not change')
   await page.setViewportSize({ width: 1450, height: 950 })
-  await page.getByRole('button', { name: '运行', exact: true }).click()
+  await page.getByRole('button', { name: 'Run', exact: true }).click()
   await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
   await page.screenshot({ path: 'build/webgpu/api-example.png', fullPage: true })
   console.log('PASS public API source, real background change, rerun and resize')

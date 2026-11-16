@@ -5,11 +5,11 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   canvas.before(host)
   const metrics = document.createElement('div')
   metrics.className = 'ao-performance'
-  metrics.setAttribute('aria-label', '渲染性能')
+  metrics.setAttribute('aria-label', 'Rendering performance')
   metrics.setAttribute('role', 'status')
   metrics.setAttribute('aria-live', 'off')
   metrics.title =
-    'FPS 是最近一秒实际 AO 图像更新频率；Draw/P95 包含 CPU 提交与 GPU 等待，不是纯 GPU 时间。静止按需绘制，FPS 显示 —。'
+    'FPS measures completed AO updates. Draw/P95 include CPU submission and GPU waits, not pure GPU time. Static views render on demand; idle FPS is —.'
   const viewport = document.createElement('div')
   viewport.className = 'ao-stage'
   viewport.append(canvas)
@@ -20,7 +20,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   host.append(style)
   const panel = document.createElement('section')
   panel.className = 'ao-controls'
-  panel.setAttribute('aria-label', 'AO 参数')
+  panel.setAttribute('aria-label', 'AO parameters')
   const toggle = document.createElement('button'),
     body = document.createElement('div')
   toggle.className = 'ao-toggle'
@@ -28,7 +28,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   body.className = 'ao-controls-body'
   body.hidden = true
   toggle.textContent = 'Parameters ▸'
-  toggle.setAttribute('aria-label', '显示参数面板')
+  toggle.setAttribute('aria-label', 'Show parameters')
   toggle.setAttribute('aria-expanded', 'false')
   panel.append(toggle, body)
   viewport.append(panel)
@@ -47,7 +47,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
     () => {
       body.hidden = !body.hidden
       toggle.textContent = body.hidden ? 'Parameters ▸' : 'Parameters ▾'
-      toggle.setAttribute('aria-label', body.hidden ? '显示参数面板' : '收起参数面板')
+      toggle.setAttribute('aria-label', body.hidden ? 'Show parameters' : 'Collapse parameters')
       toggle.setAttribute('aria-expanded', String(!body.hidden))
     },
     { signal: events.signal },
@@ -83,7 +83,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   select(
     ao,
     'Method',
-    'AO 算法',
+    'AO method',
     [
       ['disabled', 'Off'],
       ['ssao', 'SSAO'],
@@ -97,7 +97,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   select(
     ao,
     'Display',
-    'AO 显示',
+    'AO output',
     [
       ['composite', 'Composite'],
       ['occlusion', 'AO only'],
@@ -109,11 +109,11 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   )
   const sampling = group('Sampling')
   for (const [key, title, aria, min, max, step] of [
-    ['radius', 'Radius', 'AO 半径', 0.001, 1, 0.001],
-    ['bias', 'Bias', 'AO 偏移', 0, 0.05, 0.0005],
-    ['strength', 'Strength', 'AO 强度', 0, 4, 0.05],
-    ['samples', 'Samples', 'AO 采样数', 4, 64, 4],
-    ['resolutionScale', 'Render scale', '渲染比例', 0.25, 1, 0.05],
+    ['radius', 'Radius', 'AO radius', 0.001, 1, 0.001],
+    ['bias', 'Bias', 'AO bias', 0, 0.05, 0.0005],
+    ['strength', 'Strength', 'AO strength', 0, 4, 0.05],
+    ['samples', 'Samples', 'AO samples', 4, 64, 4],
+    ['resolutionScale', 'Render scale', 'Render scale', 0.25, 1, 0.05],
   ]) {
     const l = document.createElement('label'),
       caption = document.createElement('span'),
@@ -140,7 +140,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   const denoiseLabel = document.createElement('label'),
     denoise = document.createElement('input')
   denoise.type = 'checkbox'
-  denoise.setAttribute('aria-label', 'AO 滤波')
+  denoise.setAttribute('aria-label', 'AO filtering')
   denoiseLabel.textContent = 'Edge-aware filter'
   denoiseLabel.append(denoise)
   sampling.append(denoiseLabel)
@@ -158,7 +158,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   const adaptiveLabel = document.createElement('label'),
     adaptive = document.createElement('input')
   adaptive.type = 'checkbox'
-  adaptive.setAttribute('aria-label', '交互自适应画质')
+  adaptive.setAttribute('aria-label', 'Adaptive interaction quality')
   adaptiveLabel.textContent = 'Adaptive interaction quality'
   adaptiveLabel.append(adaptive)
   sampling.append(adaptiveLabel)
@@ -175,7 +175,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
   select(
     camera,
     'View',
-    'AO 视角',
+    'AO camera',
     [
       ['courtyard', 'Column arcade'],
       ['arcade', 'Doorway'],
@@ -188,7 +188,7 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
     },
   )
   const status = document.createElement('div')
-  status.setAttribute('aria-label', 'AO 累积')
+  status.setAttribute('aria-label', 'AO accumulation')
   camera.append(status)
   fields.push(() => {
     status.textContent = `Frames: ${scene.getAccumulatedSamples()}${scene.getAmbientOcclusion().method === 'rtao' ? ' / 32' : ''}`
@@ -200,14 +200,14 @@ export function attachAOPanel(canvas, scene, cameras, onError) {
       right = document.createElement('span')
     left.textContent = `AO ${fps} FPS · Draw ${p.frameCount ? p.lastRenderMs.toFixed(1) : '—'} ms · P95 ${p.frameCount > 1 ? p.p95Ms.toFixed(1) : '—'} ms`
     const state = {
-      idle: '待命 · 按需绘制',
-      paused: '不可见 · 已暂停',
-      interactive: p.interactive ? '交互预览' : '交互绘制',
-      accumulating: '累计中',
-      rendering: '绘制中',
+      idle: 'Idle · on demand',
+      paused: 'Hidden · paused',
+      interactive: p.interactive ? 'Interaction preview' : 'Interactive rendering',
+      accumulating: 'Accumulating',
+      rendering: 'Rendering',
     }[p.state]
     right.textContent = `${state} · ${p.width}×${p.height} · ${(p.scale * 100).toFixed(1)}% · ${p.method.toUpperCase()} · ${p.samples} samples`
-    metrics.title = `FPS 为实际 AO 图像更新频率；Draw 包含 CPU 提交与 GPU 等待；P95 为最近 60 次非首帧绘制的 95 分位。首帧 ${p.firstRenderMs.toFixed(1)} ms（含资源准备）。静止按需绘制，FPS 显示 —。交互预览会暂时降低像素与采样，停止后恢复面板设定。`
+    metrics.title = `FPS measures completed AO updates; Draw includes CPU submission and GPU waits. P95 covers the last 60 non-initial draws. First frame: ${p.firstRenderMs.toFixed(1)} ms (including resource preparation). Idle views render on demand. Interaction previews temporarily reduce resolution and samples, then restore the chosen settings.`
     metrics.replaceChildren(left, right)
   }
   const metricTimer = setInterval(performanceInfo, 250)

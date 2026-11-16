@@ -1,55 +1,50 @@
-# 资源声明
+# Third-party credits
 
 ## Damaged Helmet
 
-用于“模型加载”“光照”和“天空盒与环境光”示例，来自 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DamagedHelmet)。
+Used by the model, lighting and environment examples. Source: [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DamagedHelmet).
 
-- © 2018 ctxwing：重建与 glTF 转换，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legalcode)。
-- © 2016 theblueturtle_：早期模型，采用 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/legalcode)。
+- © 2018 ctxwing: reconstruction and glTF conversion, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legalcode).
+- © 2016 theblueturtle\_: original model, [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/legalcode).
 
-上游版本从早期 glTF 2.0 草案导入 Blender 后重新导出，以兼容正式规范。Nova 使用的 GLB 文件未作修改；展示时在渲染器内部居中并归一化模型尺寸。
-
-模型许可与 Nova 代码许可独立。仓库中的 `assets/DamagedHelmet/UPSTREAM.md` 保留上游原始署名与许可信息，`assets/DamagedHelmet/README.md` 记录来源和文件校验值。分发模型时请一并保留这些声明。
+Upstream re-exported the early glTF 2.0 draft through Blender for the final specification. Nova keeps the GLB unchanged; the renderer centers and normalizes it for display. Model licensing is separate from Nova code. Original attribution/licenses remain in `assets/DamagedHelmet/UPSTREAM.md`; its README records source and checksums. Preserve those notices when redistributing the model.
 
 ## Dear ImGui
 
-原生可选参数 UI 使用 [Dear ImGui](https://github.com/ocornut/imgui)，© Omar Cornut and Dear ImGui contributors，采用 [MIT License](https://github.com/ocornut/imgui/blob/master/LICENSE.txt)。完整许可随安装包保存在 `share/imgui/copyright`。网页 UI 使用 Nova 的 HTML/CSS 实现。
+Optional native UI uses [Dear ImGui](https://github.com/ocornut/imgui), © Omar Cornut and Dear ImGui contributors, under the [MIT License](https://github.com/ocornut/imgui/blob/master/LICENSE.txt). SDKs retain the full license in `share/imgui/copyright`. Web UI is Nova HTML/CSS.
 
-## Venice Sunset
+## HDR environments
 
-第四个例子的 HDR 环境来自 [Poly Haven · Venice Sunset](https://polyhaven.com/a/venice_sunset)，作者 Greg Zaal，采用 [CC0](https://polyhaven.com/license)。原始 HDR 未修改；Nova 离线生成用于背景与照明的预过滤立方体和漫反射系数。来源、校验值及重建命令保存在 `assets/Environment/README.md`。
+[Venice Sunset](https://polyhaven.com/a/venice_sunset) and [Kloppenheim 06](https://polyhaven.com/a/kloppenheim_06), by Greg Zaal, and [Studio Small 09](https://polyhaven.com/a/studio_small_09), by Sergej Majboroda, come from Poly Haven under [CC0](https://polyhaven.com/license). Original HDR files are unchanged; Nova generates prefiltered cubes and diffuse coefficients. Sources, checksums and rebuild commands are in `assets/Environment/README.md`.
 
-## Avocado 与 BoomBox
+## Avocado and BoomBox
 
-来自 Khronos glTF Sample Assets 的 [Avocado](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Avocado) 与 [BoomBox](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoomBox)，© 2017 Microsoft，采用 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode)。原始 GLB 未修改；上游署名与校验值保存在 `assets/Avocado/` 和 `assets/BoomBox/`。
+[Khronos Avocado](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Avocado) and [BoomBox](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoomBox), © 2017 Microsoft, use [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/legalcode). GLBs are unchanged; upstream notices/checksums are in their asset folders.
 
-## 其他 HDR 环境
+## Cornell scenes
 
-[Studio Small 09](https://polyhaven.com/a/studio_small_09)（Sergej Majboroda）与 [Kloppenheim 06](https://polyhaven.com/a/kloppenheim_06)（Greg Zaal）来自 Poly Haven，采用 [CC0](https://polyhaven.com/license)。原始 HDR 未修改；Nova 生成预过滤资源，记录见 `assets/Environment/README.md`。
-
-## Cornell 场景
-
-康奈尔盒子风格示意场景由 Nova 的 `scripts/generate-cornell-box.mjs` 生成，基础、间接照明、金属反射和玻璃焦散四个场景的几何与纹理图集均在项目内构建，未使用外部模型素材。它不是 Cornell 实验室测量场景的复刻。资源说明见仓库 `assets/CornellBox/README.md`、`assets/CornellIndirect/README.md` 、`assets/CornellGlossy/README.md` 和 `assets/CornellCaustics/README.md`。
+`scripts/generate-cornell-box.mjs` generates the base, indirect, glossy and glass-caustic variants, including geometry/texture atlases, without external model assets. These are illustrative Cornell-style scenes, not calibrated Cornell laboratory replicas. See the READMEs in `assets/CornellBox`, `CornellIndirect`, `CornellGlossy` and `CornellCaustics`.
 
 ## Skinning Robot
 
-GPU 蒙皮回归测试用的小机器人、关节、权重、两个动画片段及 PNG 图集均由 Nova 的 `scripts/generate-skinning-demo.mjs` 生成，未使用外部模型或动画素材。说明保存在 `assets/SkinningRobot/README.md`。
-
+`scripts/generate-skinning-demo.mjs` generates the regression robot, joints, weights, two animation clips and PNG atlas without external assets. See `assets/SkinningRobot/README.md`.
 
 ## Fox
 
-第五个骨骼动画例子的默认模型来自 [Khronos glTF Sample Models · Fox](https://github.com/KhronosGroupArchives/glTF-Sample-Models/tree/main/2.0/Fox)。原始低多边形模型由 PixelMannen 提供，采用 [CC0](https://creativecommons.org/publicdomain/zero/1.0/)；绑定与动画由 tomkranis 提供，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，glTF 转换由 AsoboStudio 与 scurest 完成。Nova 未修改 GLB 文件，来源、校验值和上游原文保存在 `assets/Fox/`。
+The animation example uses [Khronos glTF Sample Models: Fox](https://github.com/KhronosGroupArchives/glTF-Sample-Models/tree/main/2.0/Fox). Original low-poly model by PixelMannen: [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Rig/animation by tomkranis: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). glTF conversion by AsoboStudio and scurest. Nova leaves the GLB unchanged; provenance, checksums and upstream text are in `assets/Fox`.
 
 ## Weekend Spheres
 
-多球场景的几何与纹理由 Nova 在项目内生成，构图参考 [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) 的随机球最终场景，未复制书籍代码或外部模型。生成命令和差异说明见 `assets/WeekendSpheres/README.md`。
+Nova generates geometry and textures, with composition inspired by the final random-sphere scene in [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html). No book code or external model was copied. See `assets/WeekendSpheres/README.md` for generation and differences.
 
 ## Intel Sponza White
 
-第八例来自 [Intel Sponza Base Scene](https://www.intel.com/content/www/us/en/developer/topic-technology/graphics-research/samples.html)，由 Frank Meinl 委托制作、Anton Kaplanyan 赞助（2022）。Nova 烘焙几何变换、简化网格并移除纹理，形成约 4.76 MB 的白模。原包完整署名、用途说明与 CC BY 4.0 正文保存在 `assets/SponzaWhite/credits_license.txt`，来源、修改过程及校验值见同目录 README 和 manifest；未使用 Crytek 版本的 Sponza。
+Based on the [Intel Sponza Base Scene](https://www.intel.com/content/www/us/en/developer/topic-technology/graphics-research/samples.html), commissioned by Frank Meinl and sponsored by Anton Kaplanyan (2022). Nova bakes transforms, simplifies geometry and removes textures, producing an approximately 4.76 MB white model. Full credits, usage notes and CC BY 4.0 text remain in `assets/SponzaWhite/credits_license.txt`; its README/manifest record provenance, processing and hashes. This is not the Crytek Sponza version.
 
-## 抗锯齿参考代码
+## Anti-aliasing reference implementations
 
-SMAA 1x 与查找表来自 [SMAA 作者仓库](https://github.com/iryoku/smaa)，保留原始许可；整合只替换 sampler 绑定及文本编码。FXAA 3.11 复用原 Nova 内的 NVIDIA / Timothy Lottes 参考实现，保留版权与免责声明。副本与集成说明位于 `render/shaders/third_party` 和 `assets/AntiAliasing/README.md`。测试台几何由 Nova 生成，无第三方模型资源。
+SMAA 1x/tables come from the [authors' repository](https://github.com/iryoku/smaa), retaining the original license; integration changes sampler bindings and text encoding. FXAA 3.11 reuses the NVIDIA / Timothy Lottes reference from the original Nova project, preserving copyright/disclaimer. Copies and notes are under `render/shaders/third_party` and `assets/AntiAliasing/README.md`. Test geometry is generated by Nova.
 
-第十一例的 ACES 拟合曲线参考 Krzysztof Narkowicz 的 [ACES Filmic Tone Mapping Curve](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/)。该拟合曲线上游允许 CC0 或 MIT，此处按 CC0 使用。暗室、灯带、材质物体与后处理管线为项目内程序化实现。
+## ACES fit
+
+Example 11 uses Krzysztof Narkowicz's [ACES Filmic Tone Mapping Curve](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/), offered upstream under CC0 or MIT; this integration uses CC0. Room, light strips, objects and the post-processing pipeline are procedural project code.

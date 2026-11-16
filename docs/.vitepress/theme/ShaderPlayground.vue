@@ -6,7 +6,7 @@ import { showTriangle } from '../../../web/examples/triangle.js'
 import exampleCode from '../../../web/examples/triangle.js?raw'
 import cppCode from '../../../examples/consumer/main.cpp?raw'
 const source = ref(''),
-  message = ref('初始化 Nova Web…'),
+  message = ref('Initializing Nova Render Web…'),
   busy = ref(false),
   ready = ref(false),
   canvas = ref(null)
@@ -21,7 +21,7 @@ async function run(reset = false) {
   if (busy.value || switchingPreview || !initial) return
   busy.value = true
   ready.value = false
-  message.value = '执行 Nova 示例…'
+  message.value = 'Running Nova example…'
   try {
     if (reset) {
       source.value = initial.source
@@ -30,7 +30,7 @@ async function run(reset = false) {
     renderer?.dispose()
     renderer = undefined
     const shader = source.value === initial.source ? initial : { source: source.value }
-    const next = await showTriangle(canvas.value, shader, color)
+    const next = await showTriangle(canvas.value, shader, color, withBase('/generated/'))
     if (disposed) {
       next.dispose()
       return
@@ -65,7 +65,7 @@ async function togglePreview() {
 onMounted(async () => {
   try {
     const response = await fetch(withBase('/generated/triangle.json'))
-    if (!response.ok) throw Error('缺少 shader，请先运行 npm run shaders:webgpu')
+    if (!response.ok) throw Error('Missing shader. Run npm run shaders:webgpu first.')
     initial = await response.json()
     source.value = initial.source
     if (!disposed) await run()
@@ -82,28 +82,28 @@ onBeforeUnmount(() => {
 <template>
   <div class="playground" :data-ready="ready && !busy">
     <div class="toolbar">
-      <strong>Nova 三角形示例</strong>
+      <strong>Nova triangle</strong>
       <div class="actions">
         <button :disabled="busy || !initial" @click="run(false)">
-          {{ busy ? '执行中…' : '运行' }}</button
-        ><button :disabled="busy || !initial" @click="run(true)">重置</button
+          {{ busy ? 'Running…' : 'Run' }}</button
+        ><button :disabled="busy || !initial" @click="run(true)">Reset</button
         ><button
           :disabled="busy"
           :aria-expanded="previewVisible"
           aria-controls="nova-triangle-preview"
           @click="togglePreview"
         >
-          {{ previewVisible ? '隐藏预览' : '显示预览' }}
+          {{ previewVisible ? 'Hide preview' : 'Show preview' }}
         </button>
       </div>
     </div>
     <pre v-if="message" role="status" aria-live="polite">{{ message }}</pre>
     <div class="panes">
       <div class="source-pane">
-        <div role="tablist" aria-label="示例代码">
-          <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
+        <div role="tablist" aria-label="Example source">
+          <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ example</button
           ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
-            JavaScript 示例</button
+            JavaScript example</button
           ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
             HLSL shader
           </button>
@@ -126,8 +126,8 @@ onBeforeUnmount(() => {
         :inert="!previewVisible"
       >
         <div class="output">
-          <span>运行结果</span
-          ><canvas ref="canvas" width="640" height="480" aria-label="WebGPU 三角形预览" />
+          <span>Output</span
+          ><canvas ref="canvas" width="640" height="480" aria-label="WebGPU triangle preview" />
         </div>
       </div>
     </div>

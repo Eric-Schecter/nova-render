@@ -25,9 +25,11 @@ try {
     if (response.headers()['content-encoding'])
       throw Error('Local preview is dynamically compressing HDR binary data')
     const started = Date.now()
-    await page.getByRole('combobox', { name: '环境贴图', exact: true }).selectOption(url)
+    await page.getByRole('combobox', { name: 'Environment map', exact: true }).selectOption(url)
     await page.waitForFunction(
-      () => document.querySelector('[aria-label="环境贴图"]').getAttribute('aria-busy') === 'false',
+      () =>
+        document.querySelector('[aria-label="Environment map"]').getAttribute('aria-busy') ===
+        'false',
     )
     console.log(name, Date.now() - started, 'ms')
   }

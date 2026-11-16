@@ -1,9 +1,7 @@
-# 屏幕空间反射 SSR
+# Screen-space reflections
 
-彩色球体、立柱与细杆放置在粗糙度逐渐变化的反射地面上。切换 SSR 与环境反射，观察屏幕内物体的倒影；转动相机，观察命中消失时的环境回退与屏幕边缘淡出。
+Colored spheres, pillars and thin rods sit above a roughness-varying reflective floor. Compare SSR and environment fallback, then orbit to observe screen-edge fading and missing offscreen information.
 
-参数面板提供 Hi-Z／线性追踪、步数、距离、厚度、粗糙度、环境选择及调试图，保留六档 AA、HDR 后处理与独立性能条。默认以 75% 分辨率绘制，可手动调整。
-
-接口和范围见[屏幕空间反射](../api/ssr)。
+The panel includes Hi-Z/linear tracing, budget, thickness, environments and data diagnostics, plus AA/post and performance metrics. Default render scale is 75%. See the [SSR API](../api/ssr).
 
 <ClientOnly><ScreenSpaceReflectionPlayground /></ClientOnly>

@@ -20,13 +20,13 @@ try {
     ]) {
       await page.goto((process.env.NOVA_TEST_URL || 'http://127.0.0.1:5173') + '/examples/' + slug)
       await page.locator('[data-ready="true"]').waitFor({ timeout: 45000 })
-      const panel = page.getByRole('region', { name: '参数面板', exact: true }),
+      const panel = page.getByRole('region', { name: 'Parameters', exact: true }),
         canvas = page.locator('canvas')
       await panel.scrollIntoViewIfNeeded()
-      const open = page.getByRole('button', { name: '显示参数面板', exact: true })
+      const open = page.getByRole('button', { name: 'Show parameters', exact: true })
       if (await open.count()) await open.click()
       if (slug !== 'triangle') {
-        const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
+        const mode = panel.getByRole('combobox', { name: 'Render mode', exact: true })
         if ((await mode.inputValue()) !== 'raster') throw Error('Web default mode changed')
         if (
           slug !== 'skeletal-animation' &&
@@ -46,7 +46,7 @@ try {
       if (
         slug !== 'triangle' &&
         (await panel
-          .getByRole('combobox', { name: '渲染模式', exact: true })
+          .getByRole('combobox', { name: 'Render mode', exact: true })
           .locator('option')
           .count()) !== 2
       )
@@ -55,19 +55,19 @@ try {
         .locator('input[type=range],select')
         .evaluateAll((elements) => elements.every((e) => e.closest('.nova-panel')))
       if (!controls) throw Error('Parameter controls remain outside preview')
-      await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
-      if (await panel.getByRole('combobox', { name: '背景色', exact: true }).isVisible())
+      await page.getByRole('button', { name: 'Collapse parameters', exact: true }).click()
+      if (await panel.getByRole('combobox', { name: 'Clear color', exact: true }).isVisible())
         throw Error('Panel did not collapse')
-      await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
+      await page.getByRole('button', { name: 'Show parameters', exact: true }).click()
       await panel
-        .getByRole('combobox', { name: '背景色', exact: true })
+        .getByRole('combobox', { name: 'Clear color', exact: true })
         .waitFor({ state: 'visible' })
       if (width === 1400 && slug === 'lighting') {
-        const yaw = page.getByRole('slider', { name: '水平角', exact: true }),
-          distance = page.getByRole('slider', { name: '距离', exact: true })
+        const yaw = page.getByRole('slider', { name: 'Yaw', exact: true }),
+          distance = page.getByRole('slider', { name: 'Distance', exact: true })
         const oldYaw = await yaw.inputValue(),
           oldDistance = await distance.inputValue()
-        const red = page.getByRole('slider', { name: '光源红', exact: true })
+        const red = page.getByRole('slider', { name: 'Light Red', exact: true })
         await red.scrollIntoViewIfNeeded()
         const r = await red.boundingBox()
         await page.mouse.move(r.x + r.width * 0.7, r.y + r.height / 2)
@@ -78,10 +78,10 @@ try {
         if ((await yaw.inputValue()) !== oldYaw || (await distance.inputValue()) !== oldDistance)
           throw Error('UI input moved the orbit camera')
         if (Number(await red.inputValue()) >= 0.9) throw Error('Real UI drag did not adjust light')
-        await page.getByRole('button', { name: '重置光源', exact: true }).click()
+        await page.getByRole('button', { name: 'Reset light', exact: true }).click()
         if (Number(await red.inputValue()) !== 1) throw Error('Reset light failed')
         await yaw.fill('60')
-        await page.getByRole('button', { name: '重置相机', exact: true }).click()
+        await page.getByRole('button', { name: 'Reset camera', exact: true }).click()
         if (Number(await yaw.inputValue()) !== 20) throw Error('Reset camera failed')
         await canvas.scrollIntoViewIfNeeded()
         const c = await canvas.boundingBox()
@@ -90,12 +90,12 @@ try {
         await page.mouse.move(c.x + 70, c.y + c.height * 0.5, { steps: 5 })
         await page.mouse.up()
         await page.waitForFunction(
-          () => Number(document.querySelector('[aria-label="水平角"]').value) !== 20,
+          () => Number(document.querySelector('[aria-label="Yaw"]').value) !== 20,
         )
       }
-      await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
+      await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
       if (await panel.isVisible()) throw Error('Panel did not hide with preview')
-      await page.getByRole('button', { name: '显示预览', exact: true }).click()
+      await page.getByRole('button', { name: 'Show preview', exact: true }).click()
       await panel.waitFor({ state: 'visible' })
       if ((await page.evaluate(() => document.documentElement.scrollWidth)) > width)
         throw Error('Page overflow')

@@ -13,7 +13,7 @@ export async function showRasterLaboratory(
     showSplit = true,
     showChecker = true,
     extraControls,
-    panelLabel = '抗锯齿参数',
+    panelLabel = 'Anti-aliasing parameters',
     describe = () => '',
   } = {},
 ) {
@@ -52,7 +52,7 @@ export async function showRasterLaboratory(
     summary = document.createElement('summary')
   drawer.className = 'aa-drawer'
   summary.textContent = 'Parameters'
-  summary.setAttribute('aria-label', '参数面板')
+  summary.setAttribute('aria-label', 'Parameters')
   drawer.append(summary, panel)
   viewport.append(drawer)
   const fields = []
@@ -136,7 +136,7 @@ export async function showRasterLaboratory(
       input.step = choices[2]
     }
     fields.push(() => {
-      if (aria === '历史权重') input.disabled = view.getAntiAliasing().method !== 'taa'
+      if (aria === 'History weight') input.disabled = view.getAntiAliasing().method !== 'taa'
       if (kind === 'checkbox') input.checked = get()
       else input.value = String(get())
       input.disabled = !enabled()
@@ -267,7 +267,7 @@ export async function showRasterLaboratory(
   extraControls?.({ view, control, controller, changed })
   control(
     'Method',
-    '抗锯齿算法',
+    'Anti-aliasing method',
     'select',
     () => view.getAntiAliasing().method,
     (v) => controller.setAntiAliasing({ method: v }),
@@ -276,21 +276,21 @@ export async function showRasterLaboratory(
   if (showChecker)
     control(
       'Texture filtering',
-      '棋盘过滤',
+      'Checker filtering',
       'checkbox',
       () => view.getAntiAliasing().textureFiltering,
       (v) => controller.setAntiAliasing({ textureFiltering: v }),
     )
   control(
     'Animate',
-    '播放运动',
+    'Animate',
     'checkbox',
     () => playing,
     (v) => controller.setPlaying(v),
   )
   control(
     'Speed',
-    '运动速度',
+    'Motion speed',
     'range',
     () => speed,
     (v) => {
@@ -301,7 +301,7 @@ export async function showRasterLaboratory(
   if (showSplit)
     control(
       'Split: Off | selected AA',
-      '分割对比',
+      'Split comparison',
       'checkbox',
       () => view.getAntiAliasing().split,
       (v) => controller.setAntiAliasing({ split: v }),
@@ -309,7 +309,7 @@ export async function showRasterLaboratory(
   if (showSplit)
     control(
       'Zoom',
-      '局部放大',
+      'Zoom',
       'select',
       () => view.getAntiAliasing().zoom,
       (v) => controller.setAntiAliasing({ zoom: Number(v) }),
@@ -322,7 +322,7 @@ export async function showRasterLaboratory(
     )
   control(
     'Render scale',
-    '渲染比例',
+    'Render scale',
     'range',
     () => scale,
     (v) => {
@@ -333,7 +333,7 @@ export async function showRasterLaboratory(
   )
   control(
     'TAA history weight',
-    '历史权重',
+    'History weight',
     'range',
     () => view.getAntiAliasing().historyWeight,
     (v) => controller.setAntiAliasing({ historyWeight: v }),
@@ -341,14 +341,14 @@ export async function showRasterLaboratory(
   )
   const reset = document.createElement('button')
   reset.textContent = 'Reset history'
-  reset.setAttribute('aria-label', '重置历史帧')
+  reset.setAttribute('aria-label', 'Reset history')
   reset.addEventListener('click', () => controller.resetHistory(), { signal: events.signal })
   panel.append(reset)
   const note = document.createElement('div')
   note.className = 'aa-note'
   note.textContent = showSplit
-    ? 'Split：左侧 Off，右侧所选 AA。拖动旋转，滚轮缩放。'
-    : '拖动旋转，滚轮缩放。'
+    ? 'Split: Off on the left, selected AA on the right. Drag to orbit; scroll to zoom.'
+    : 'Drag to orbit; scroll to zoom.'
   panel.append(note)
   const orbit = Nova.attachOrbitControls(canvas, {
     getCamera: () => controller.getCamera(),

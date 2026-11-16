@@ -182,27 +182,31 @@ try {
     await page.goto('http://127.0.0.1:5173/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
     await page
-      .getByRole('combobox', { name: '模型选择', exact: true })
+      .getByRole('combobox', { name: 'Model', exact: true })
       .selectOption('/generated/CornellBox.glb')
-    await page.waitForFunction(() => !document.querySelector('[aria-label="模型选择"]').disabled)
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
-    const selector = page.getByRole('combobox', { name: '路径积分器', exact: true })
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Model"]').disabled)
+    await page
+      .getByRole('combobox', { name: 'Render mode', exact: true })
+      .selectOption('ray-tracing')
+    const selector = page.getByRole('combobox', { name: 'Path integrator', exact: true })
     if ((await selector.inputValue()) !== 'path') throw Error('Default integrator changed')
     await selector.selectOption('bidirectional')
-    await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
+    await page.getByRole('slider', { name: 'Render scale', exact: true }).fill('.25')
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 4,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 4,
     )
-    const mis = page.getByRole('checkbox', { name: '光源采样与 MIS', exact: true })
+    const mis = page.getByRole('checkbox', { name: 'Light sampling and MIS', exact: true })
     if (!(await mis.isChecked()) || !(await mis.isDisabled()))
       throw Error('BDPT must always use MIS')
-    await page.getByRole('checkbox', { name: '降噪', exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Denoise', exact: true }).check()
     await selector.selectOption('path')
     await page.waitForFunction(
-      () => !document.querySelector('[aria-label="光源采样与 MIS"]').disabled,
+      () => !document.querySelector('[aria-label="Light sampling and MIS"]').disabled,
     )
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('raster')
+    await page.getByRole('combobox', { name: 'Render mode', exact: true }).selectOption('raster')
   }
   if (errors.length) throw Error(errors.join('\n'))
   console.log(

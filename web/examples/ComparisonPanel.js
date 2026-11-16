@@ -2,12 +2,12 @@
 export function attachComparisonPanel(host, scene, models, onError) {
   const panel = document.createElement('section')
   panel.className = 'comparison-controls'
-  panel.setAttribute('aria-label', '对比场景参数')
+  panel.setAttribute('aria-label', 'Comparison parameters')
   const toggle = document.createElement('button')
   toggle.type = 'button'
   toggle.className = 'comparison-controls-toggle'
   toggle.textContent = 'Parameters ▾'
-  toggle.setAttribute('aria-label', '收起参数面板')
+  toggle.setAttribute('aria-label', 'Collapse parameters')
   toggle.setAttribute('aria-expanded', 'true')
   const body = document.createElement('div')
   body.className = 'comparison-controls-body'
@@ -28,7 +28,7 @@ export function attachComparisonPanel(host, scene, models, onError) {
     () => {
       body.hidden = !body.hidden
       toggle.textContent = body.hidden ? 'Parameters ▸' : 'Parameters ▾'
-      toggle.setAttribute('aria-label', body.hidden ? '显示参数面板' : '收起参数面板')
+      toggle.setAttribute('aria-label', body.hidden ? 'Show parameters' : 'Collapse parameters')
       toggle.setAttribute('aria-expanded', String(!body.hidden))
     },
     { signal: events.signal },
@@ -64,7 +64,7 @@ export function attachComparisonPanel(host, scene, models, onError) {
     label = document.createElement('label'),
     model = document.createElement('select')
   label.textContent = 'Model'
-  model.setAttribute('aria-label', '模型选择')
+  model.setAttribute('aria-label', 'Model')
   models.forEach((choice) => {
     const o = document.createElement('option')
     o.value = choice.url
@@ -87,7 +87,7 @@ export function attachComparisonPanel(host, scene, models, onError) {
   input(
     common,
     'Samples / method',
-    '对比采样预算',
+    'Comparison sample budget',
     'number',
     () => scene.getBudget().samples,
     (v) => scene.setBudget({ ...scene.getBudget(), samples: v }),
@@ -98,7 +98,7 @@ export function attachComparisonPanel(host, scene, models, onError) {
   input(
     common,
     'Time / method (ms, 0 = samples)',
-    '对比时间预算',
+    'Comparison time budget',
     'number',
     () => scene.getBudget().milliseconds,
     (v) => scene.setBudget({ ...scene.getBudget(), milliseconds: v }),
@@ -108,13 +108,13 @@ export function attachComparisonPanel(host, scene, models, onError) {
   )
   const ray = group('Integrators')
   for (const [key, title, aria, min, max, step] of [
-    ['maxBounces', 'Max bounces', '反弹次数', 1, 8, 1],
-    ['resolutionScale', 'Render scale', '渲染比例', 0.25, 1, 0.05],
-    ['photonsPerIteration', 'Photons / iteration', '每轮光子数', 256, 65536, 256],
-    ['photonRadius', 'Photon radius', '光子收集半径', 0.03, 0.5, 0.01],
-    ['mltBootstrapSamples', 'MLT bootstrap', 'MLT 预采样数', 256, 1048576, 256],
-    ['mltLargeStepProbability', 'MLT large step', 'MLT 大步概率', 0.05, 1, 0.01],
-    ['mltMutationScale', 'MLT mutation scale', 'MLT 小步幅度', 0.0001, 0.25, 0.0001],
+    ['maxBounces', 'Max bounces', 'Maximum bounces', 1, 8, 1],
+    ['resolutionScale', 'Render scale', 'Render scale', 0.25, 1, 0.05],
+    ['photonsPerIteration', 'Photons / iteration', 'Photons per iteration', 256, 65536, 256],
+    ['photonRadius', 'Photon radius', 'Photon radius', 0.03, 0.5, 0.01],
+    ['mltBootstrapSamples', 'MLT bootstrap', 'MLT bootstrap samples', 256, 1048576, 256],
+    ['mltLargeStepProbability', 'MLT large step', 'MLT large-step probability', 0.05, 1, 0.01],
+    ['mltMutationScale', 'MLT mutation scale', 'MLT mutation scale', 0.0001, 0.25, 0.0001],
   ])
     input(
       ray,
@@ -129,10 +129,10 @@ export function attachComparisonPanel(host, scene, models, onError) {
     )
   const camera = group('Camera')
   for (const [key, title, aria, min, max, step] of [
-    ['yaw', 'Yaw', '水平角', -180, 180, 1],
-    ['pitch', 'Pitch', '俯仰角', -85, 85, 1],
-    ['distance', 'Distance', '距离', 1.5, 100, 0.1],
-    ['exposure', 'Exposure', '曝光', 0.1, 3, 0.1],
+    ['yaw', 'Yaw', 'Yaw', -180, 180, 1],
+    ['pitch', 'Pitch', 'Pitch', -85, 85, 1],
+    ['distance', 'Distance', 'Distance', 1.5, 100, 0.1],
+    ['exposure', 'Exposure', 'Exposure', 0.1, 3, 0.1],
   ])
     input(
       camera,
@@ -148,7 +148,7 @@ export function attachComparisonPanel(host, scene, models, onError) {
   const reset = document.createElement('button')
   reset.type = 'button'
   reset.textContent = 'Reset accumulation'
-  reset.setAttribute('aria-label', '重置累计')
+  reset.setAttribute('aria-label', 'Reset accumulation')
   common.append(reset)
   reset.addEventListener('click', () => action(() => scene.resetAccumulation()), {
     signal: events.signal,

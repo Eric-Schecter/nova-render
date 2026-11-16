@@ -9,7 +9,7 @@ export async function showPostProcessing(canvas, shaderDirectory = '/generated/'
     initialScale: 1,
     showChecker: false,
     showSplit: false,
-    panelLabel: '后处理参数',
+    panelLabel: 'Post-processing parameters',
     describe: (view) => {
       const p = view.getPostProcessing()
       return `${p.enabled ? { linear: 'Linear', reinhard: 'Reinhard', aces: 'ACES fit' }[p.toneMapping] : 'Bypass'} · ${p.autoExposure ? 'Auto exposure' : 'Manual exposure'} · `
@@ -24,7 +24,7 @@ export async function showPostProcessing(canvas, shaderDirectory = '/generated/'
       }
       control(
         'Scene intensity',
-        '场景亮度',
+        'Scene intensity',
         'range',
         () => view.getSceneIntensity(),
         (v) => controller.setSceneIntensity(v),

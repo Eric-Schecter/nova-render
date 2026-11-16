@@ -1,9 +1,7 @@
-# 平面反射
+# Planar reflections
 
-镜面地板与竖直镜子分别绘制镜像视图。拖动相机，观察屏幕外物体仍然出现在镜中；初始相机背后的品红色方块是对照物。
+A floor and vertical mirror render separate mirrored views. The magenta box behind the initial camera remains visible in the mirror. Adjust each surface roughness/intensity independently; disabled planar views use environment reflections.
 
-两面镜子可独立调节粗糙度和反射强度，关闭平面反射后使用环境反射。保留六档 AA、HDR 后处理和独立性能条，控制面板位于预览右上角，可展开／收起。
-
-接口与限制见[平面反射](../api/planar)。
+The floating panel retains AA/post and a separate performance bar. See [planar reflection limits](../api/planar).
 
 <ClientOnly><PlanarReflectionPlayground /></ClientOnly>

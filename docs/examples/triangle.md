@@ -1,5 +1,5 @@
-# 三角形
+# Triangle
 
-通过 Nova API 绘制三角形。
+Draw the built-in triangle with the encapsulated Nova API. Change clear color in the viewport panel; source tabs show the C++ and actual JavaScript example. Published shaders are precompiled; edit HLSL in the local dev server.
 
 <ClientOnly><ShaderPlayground /></ClientOnly>

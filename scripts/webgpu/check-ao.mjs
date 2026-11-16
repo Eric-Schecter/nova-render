@@ -94,7 +94,7 @@ try {
   await page.goto(base + '/examples/ambient-occlusion')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
   const canvas = page.locator('canvas'),
-    panel = page.getByRole('region', { name: 'AO 参数', exact: true })
+    panel = page.getByRole('region', { name: 'AO parameters', exact: true })
   await canvas.scrollIntoViewIfNeeded()
   const a = await canvas.boundingBox(),
     b = await panel.boundingBox()
@@ -123,11 +123,13 @@ try {
   if (deviation < 5) throw Error('Default Sponza view is blocked or blank: ' + deviation)
   const hashes = []
   for (const method of ['disabled', 'ssao', 'hbao', 'msao', 'rtao']) {
-    await page.getByRole('combobox', { name: 'AO 算法', exact: true }).selectOption(method)
+    await page.getByRole('combobox', { name: 'AO method', exact: true }).selectOption(method)
     if (method === 'rtao') {
-      await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
+      await page.getByRole('slider', { name: 'Render scale', exact: true }).fill('.25')
       await page.waitForFunction(
-        () => document.querySelector('[aria-label="AO 累积"]').textContent === 'Frames: 32 / 32',
+        () =>
+          document.querySelector('[aria-label="AO accumulation"]').textContent ===
+          'Frames: 32 / 32',
         null,
         { timeout: 120000 },
       )
@@ -137,24 +139,24 @@ try {
   }
   if (new Set(hashes).size < 4) throw Error('AO variants look identical')
   for (const output of ['occlusion', 'depth', 'normals', 'composite']) {
-    await page.getByRole('combobox', { name: 'AO 显示', exact: true }).selectOption(output)
+    await page.getByRole('combobox', { name: 'AO output', exact: true }).selectOption(output)
     await page.waitForTimeout(100)
   }
-  await page.getByRole('combobox', { name: 'AO 视角', exact: true }).selectOption('arcade')
-  await page.getByRole('combobox', { name: 'AO 算法', exact: true }).selectOption('hbao')
+  await page.getByRole('combobox', { name: 'AO camera', exact: true }).selectOption('arcade')
+  await page.getByRole('combobox', { name: 'AO method', exact: true }).selectOption('hbao')
   await canvas.screenshot({ path: 'build/validation/ao-doorway.png' })
-  await page.getByRole('checkbox', { name: 'AO 滤波', exact: true }).uncheck()
-  await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
-  if (await page.getByRole('combobox', { name: 'AO 算法', exact: true }).isVisible())
+  await page.getByRole('checkbox', { name: 'AO filtering', exact: true }).uncheck()
+  await page.getByRole('button', { name: 'Collapse parameters', exact: true }).click()
+  if (await page.getByRole('combobox', { name: 'AO method', exact: true }).isVisible())
     throw Error('Panel did not collapse')
-  await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
-  await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
+  await page.getByRole('button', { name: 'Show parameters', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
   if (await panel.isVisible()) throw Error('Panel did not hide')
-  await page.getByRole('button', { name: '显示预览', exact: true }).click()
+  await page.getByRole('button', { name: 'Show preview', exact: true }).click()
   await page.setViewportSize({ width: 390, height: 844 })
   if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)
     throw Error('Mobile overflow')
-  await page.getByRole('tab', { name: 'C++ 示例', exact: true }).click()
+  await page.getByRole('tab', { name: 'C++ example', exact: true }).click()
   if (!(await page.locator('.source').textContent()).includes('SetAmbientOcclusion'))
     throw Error('Missing native API example')
   if (errors.length) throw Error(errors.join('\n'))

@@ -1,12 +1,8 @@
 # Nova Render Web
 
-浏览器适配层位于 `web/src/Nova.js`，当前为项目内模块，尚未发布 npm 包。与桌面接口共享生命周期概念，调用方式遵循 JavaScript 异步习惯。
+The browser adapter lives in `web/src/Nova.js` and is also available as the [npm archive](../guide/package). Its lifecycle corresponds to the native API, with asynchronous JavaScript loading and drawing.
 
-`setLighting('unlit' / 'pbr')` 选择模型渲染模式，默认 `unlit`；调用后使用 `drawFrame()` 重绘。详见[模型与相机](./model)。
-
-`setDirectionalLight(light)` / `getDirectionalLight()` 设置和读取主方向光，字段为 `direction`、`color`、`intensity`。
-
-## 使用
+## Usage
 
 ```js
 import * as Nova from '../src/Nova.js'
@@ -16,7 +12,6 @@ try {
   await renderer.setShader(shader)
   renderer.setClearColor([0.025, 0.035, 0.055, 1])
   await renderer.drawFrame()
-  // 保留 renderer 可继续绘制；页面退出时再释放。
 } catch (error) {
   console.error(error)
 } finally {
@@ -24,31 +19,27 @@ try {
 }
 ```
 
-完整可运行示例位于 `web/examples/triangle.js`，文档页面直接调用这个文件，并展示其原始源码。
+The runnable source is `web/examples/triangle.js`; the documentation executes and displays that same file. Package consumers import `@nova/render-web` and set their deployed asset directory.
 
-## 方法
+## Methods
 
-模型模式新增 `loadModel(url)` 和 `setCamera(camera)`，见[模型与相机](./model)。
+- `createRenderer({canvas, shaderDirectory})`: creates an adapter, device and canvas context; failures reject the Promise.
+- `setShader(shader)`: accepts a precompiled `{source, vert, frag}` package. Passing only `{source}` requires the local HLSL compilation service. Entry points are `VSMain` and `PSMain`.
+- `setClearColor([r,g,b,a])`: sets four finite values in [0,1].
+- `drawFrame()`: synchronizes canvas pixel dimensions and submits work; returns `rendered` or `skipped` for zero dimensions.
+- `waitIdle()`: waits for submitted GPU work.
+- `dispose()`: releases the context and resources. Repeated disposal is safe; drawing afterwards is invalid.
 
-相机交互用 `enableOrbitControls()` 启用拖动旋转和滚轮缩放，`disableOrbitControls()` 关闭；`getCamera()` 读取当前相机副本。控件自动重绘，事件随 `dispose()` 清理。
+Await asynchronous operations. Loading and drawing are serialized per instance; wait for loading before editing dependent settings. Compilation, pipeline and device-loss errors reach the caller. This supports triangles and embedded, opaque single-material GLB models, including skeletal animation; it is not a general scene API.
 
-- `createRenderer({canvas})`：创建 WebGPU 适配器、设备和画布上下文，失败时 Promise 拒绝。
-- `setShader(shader)`：加载 `{source, vert, frag}` 预编译包；仅传 `{source}` 时请求本地 HLSL 编译服务。入口固定为 `VSMain` / `PSMain`。
-- `setClearColor([r,g,b,a])`：设置背景，分量在 0～1 之间。
-- `drawFrame()`：同步 canvas 像素尺寸并提交三角形；返回 `rendered` 或零尺寸时的 `skipped`。
-- `waitIdle()`：等待提交的 GPU 工作。
-- `dispose()`：释放设备和画布，允许重复调用；释放后不能继续绘制。
+`loadModel`, `setCamera`, `getCamera` and `enableOrbitControls` provide [model and camera interaction](./model). `setLighting('unlit' / 'pbr')` defaults to unlit; `setDirectionalLight` / `getDirectionalLight` use `direction`, `color`, and `intensity`.
 
-异步方法需要 `await`，资源加载和绘制在实例内部串行执行；调用方仍应等待加载完成后再修改相关配置。支持三角形和单材质 GLB（含骨骼动画），不是通用场景 API。编译、管线和设备丢失错误会向调用方报告。
+`enableParameterPanel` / `disableParameterPanel` manage the optional [panel](./ui). `loadEnvironment` / `setEnvironment` / `getEnvironment` manage [HDR lighting](./environment). Controls redraw automatically and are disposed with the renderer.
 
-`enableParameterPanel()` / `disableParameterPanel()` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。
+## Rendering
 
-`loadEnvironment(url)` / `setEnvironment(settings)` / `getEnvironment()` 用于天空盒与 HDR 环境光，见[天空盒与环境光](./environment)。
+[Raster and ray tracing](./render-mode#web-usage) share parameter ranges with C++. The browser uses GPU compute BVH traversal, without WASM or dedicated hardware ray-query APIs. [Animation](./animation) currently supports raster rendering only.
 
-## 渲染模式
+Ordinary raster examples expose `setAntiAliasing({method:'taa'})`, `getAntiAliasing()` and `getAntiAliasingHistoryFrames()`. Default AA is off; see [anti-aliasing](./antialiasing). [Post-processing](./postprocessing) uses the same shared HLSL chain.
 
-模型例子支持光栅与光追，接口与参数范围对应原生 C++。用法见[渲染模式](./render-mode#网页用法)。
-
-动画片段、播放状态与时间推进接口见[骨骼动画](./animation)。
-
-常规光栅例子通过 `setAntiAliasing({ method: 'taa' })` 选择算法，`getAntiAliasing()` 读取设置，`getAntiAliasingHistoryFrames()` 读取历史帧数；默认 Off。详见[抗锯齿](./antialiasing)。
+Published Pages examples load precompiled WGSL. HLSL editing is enabled only in the local development server; JavaScript/C++ source tabs are read-only examples.

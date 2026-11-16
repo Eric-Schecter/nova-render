@@ -1,12 +1,12 @@
-# 作为依赖使用
+# Package integration
 
-项目名称为 **Nova Render**，仓库与工程标识为 `nova-render`（CMake 工程名 `NovaRender`）。`find_package(Nova)`、`Nova::Render` 和 `@nova/render-web` 保持兼容。
+Project/repository: **Nova Render** / `nova-render`; CMake project: `NovaRender`. Compatible consumer names remain `find_package(Nova)`, `Nova::Render` and `@nova/render-web`.
 
-桌面端使用 C++17 SDK，网页端使用独立 npm 压缩包。版本统一为 CMake 中的 Nova Render 版本。打包命令只生成本地文件，不自动创建 GitHub Release 或执行 npm publish。发布版本见 [GitHub Releases](https://github.com/Eric-Schecter/nova-render/releases)。
+Native uses a C++17 SDK and web uses an npm archive. Both use the CMake project version. Packaging commands generate local files without publishing. Downloads are in [GitHub Releases](https://github.com/Eric-Schecter/nova-render/releases).
 
 ## C++ SDK
 
-先配置 Release 构建（在已有 vcpkg 环境中）：
+Configure a Release build in your vcpkg environment:
 
 ```sh
 cmake -S . -B build/sdk -DCMAKE_BUILD_TYPE=Release \
@@ -15,11 +15,11 @@ cmake -S . -B build/sdk -DCMAKE_BUILD_TYPE=Release \
 npm run pack:sdk -- --build-dir build/sdk --config Release
 ```
 
-也可直接使用 `cmake --build build/sdk --target nova_render` 和 `cpack --config build/sdk/CPackConfig.cmake -C Release`，无需 Node.js。产物在 `build/packages/`（直接调用 CPack 时为 `build/sdk/packages/`）：`.tar.gz`、`.zip` 和脚本生成的 SHA-256 文件。包名包含版本、系统、架构、编译器和配置；`share/Nova/sdk.json` 记录构建信息。
+Without Node.js, run `cmake --build build/sdk --target nova_render` and `cpack --config build/sdk/CPackConfig.cmake -C Release`. The npm wrapper writes `.tar.gz`, `.zip` and SHA-256 files into `build/packages/`; direct CPack uses `build/sdk/packages/`.
 
-SDK 包名为 `nova-render-sdk-版本-系统-架构-编译器-配置`，包含头文件、静态库、内置 shader、依赖库与声明。默认捆绑 GLFW／volk／可选 ImGui，使用方无需 Nova 源码、vcpkg、DXC、SPIRV-Cross 或 Node.js。包必须匹配目标系统、架构、编译器 ABI 和 Windows Runtime；Release SDK 不包含 Debug 版 Nova。
+Names follow `nova-render-sdk-version-system-architecture-compiler-configuration`. `share/Nova/sdk.json` records compiler/runtime/build settings. Bundled headers, static libraries, shaders and notices include GLFW/volk/optional ImGui. SDK consumers need no Nova checkout, vcpkg, DXC, SPIRV-Cross or Node.js. Match OS, architecture, ABI and Windows runtime; Release SDKs do not contain Debug Nova binaries.
 
-解压后，在另一个项目中：
+In another project:
 
 ```cmake
 cmake_minimum_required(VERSION 3.24)
@@ -35,21 +35,21 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 cmake --build build --config Release
 ```
 
-更换 SDK 目录时使用 `cmake --fresh` 清除旧的 `Nova_DIR` 缓存。使用方不要传入 Nova 的 vcpkg 工具链。推荐 `render::Window` 管理窗口，无需直接包含 GLFW；外部窗口集成仍可使用底层接口。动态 triplet 的 DLL／动态库必须随应用分发；Windows 独立验证例子会复制 SDK 自带的相应 DLL。
+When switching SDK directories, use `cmake --fresh` to clear cached `Nova_DIR`. Do not use Nova's vcpkg toolchain for SDK consumption. `render::Window` encapsulates GLFW; lower-level external-window integration remains available. Dynamic-triplet DLLs/libraries must ship with the app; the Windows consumer copies SDK DLLs.
 
-原有 `cmake --install build/sdk --prefix /path/to/sdk` 安装方式也保留。若自行管理第三方依赖，可关闭 `NOVA_BUNDLE_DEPENDENCIES`。
+`cmake --install build/sdk --prefix /path/to/sdk` remains supported. Disable `NOVA_BUNDLE_DEPENDENCIES` only if consumers manage dependencies themselves.
 
-## 网页 npm 包
+## Web npm package
 
-在 Nova 工程中生成：
+Generate from the Nova repository:
 
 ```sh
 npm run pack:web
 ```
 
-得到 `build/packages/nova-render-web-0.1.0.tgz` 及 SHA-256 文件。包内只有渲染模块、预生成 WGSL、SMAA 表和依赖声明，不含文档站、示例模型、HDR 环境资源或 shader 编译工具。
+This produces `build/packages/nova-render-web-0.1.0.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
 
-在另一个项目中：
+In another project:
 
 ```sh
 npm install /path/to/nova-render-web-0.1.0.tgz
@@ -59,17 +59,16 @@ npx nova-web-assets --out public/nova
 ```js
 import { createRenderer } from '@nova/render-web'
 const renderer = await createRenderer({ canvas, shaderDirectory: '/nova/' })
-const shader = await fetch('/nova/triangle.json').then(r => r.json())
+const shader = await fetch('/nova/triangle.json').then((r) => r.json())
 await renderer.setShader(shader)
 await renderer.drawFrame()
-// 页面退出：renderer.dispose()
 ```
 
-应用需正常部署 `public/nova/`；子路径部署时传入对应资源 URL，以 `/` 结尾。包没有运行时 npm 依赖，无 WASM；使用者不需要 DXC、SPIRV-Cross 或 Nova 开发服务器。仅传 HLSL 源码给 `setShader()` 仍需要额外编译服务，使用包内的预编译 shader 则不需要。
+Deploy `public/nova/` with your app; pass the correct asset URL, ending in `/`, for subpath hosting. There are no runtime npm dependencies or WASM. Users need no DXC/SPIRV-Cross/Nova dev server. HLSL-only `setShader()` still needs a compilation service; packaged `vert`/`frag` shaders do not.
 
-当前安装对象是生成的 `.tgz`，不是仓库根目录的文档工程。包标记为 `private`／`UNLICENSED`，避免意外公开发布；没有更改项目授权。
+Install the generated `.tgz`, not the documentation package at the repository root. The package is marked private/UNLICENSED to prevent accidental registry publishing; this does not prevent installing its release archive or grant an open-source license.
 
-## 独立验证
+## Independent validation
 
 ```sh
 node scripts/packaging/check-sdk.mjs /path/to/sdk.tar.gz metal Release
@@ -77,8 +76,6 @@ node scripts/packaging/check-sdk.mjs /path/to/sdk.zip vulkan Release
 node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.1.0.tgz
 ```
 
-验证脚本将消费项目复制到仓库外临时目录。C++ 检查依赖全部来自迁移后的 SDK，再调用双探针与窗口 API；网页离线安装包、复制资源，并在真实 WebGPU 浏览器中调用三角形与双探针 API。
+Scripts copy consumers outside the repository. Native validation relocates the SDK, checks all imported library locations, then exercises two probes and a window. Web validation installs offline, copies assets and runs triangle/probe APIs in a real WebGPU browser.
 
-独立项目分别见 `examples/sdk-consumer` 与 `examples/npm-consumer`。已验证 macOS ARM64 的 Metal／Vulkan SDK、Windows ARM64 的 DX12 WARP SDK，以及 Chrome WebGPU npm 包；尚未生成和验证 Linux SDK。
-
-GPU 驱动、操作系统图形／窗口服务、浏览器 WebGPU 支持仍由运行机器提供。示例模型和环境贴图由应用自行提供。
+Projects: `examples/sdk-consumer` and `examples/npm-consumer`. Validated SDKs: macOS ARM64 Metal/Vulkan, Windows ARM64 DX12 WARP; npm: Chrome WebGPU. No Linux SDK has been generated/validated. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.

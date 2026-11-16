@@ -88,8 +88,8 @@ export async function showComparison(host, modelURL, shaderDirectory, camera, { 
           canvas = document.createElement('canvas')
         tile.className = 'comparison-tile'
         label.className = 'comparison-label'
-        label.setAttribute('aria-label', names[i] + ' 统计')
-        canvas.setAttribute('aria-label', names[i] + ' 渲染结果')
+        label.setAttribute('aria-label', names[i] + ' statistics')
+        canvas.setAttribute('aria-label', names[i] + ' output')
         tile.append(label, canvas)
         tiles.push(tile)
         nextLabels.push(label)

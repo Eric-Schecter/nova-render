@@ -1,5 +1,5 @@
-# 天空盒与环境光
+# Skybox and environment lighting
 
-以 HDR 天空盒照亮模型，展示环境漫反射和随粗糙度变化的反射。通过预览内面板调整环境旋转、强度、背景显隐和曝光。
+Switch HDR environments and models; independently adjust environment lighting and sky brightness. Hiding the sky keeps environment lighting active.
 
-<ClientOnly><ModelPlayground lighting environment /></ClientOnly>
+<ClientOnly><ModelPlayground environment /></ClientOnly>

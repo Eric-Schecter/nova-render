@@ -1,5 +1,5 @@
-# 骨骼动画
+# Skeletal animation
 
-Fox 提供 Survey（观察）、Walk（行走）和 Run（奔跑）三个动画片段。可在面板中控制播放、速度和时间，并切换环境贴图、环境光与天空盒。
+Fox uses shared HLSL GPU skinning. Select Survey, Walk or Run, pause/scrub playback, and change HDR environment settings. Animation currently uses raster rendering.
 
-<ClientOnly><ModelPlayground lighting animation /></ClientOnly>
+<ClientOnly><ModelPlayground animation /></ClientOnly>

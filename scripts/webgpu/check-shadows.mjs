@@ -84,30 +84,33 @@ try {
   )
   await p.goto(base + '/examples/shadows')
   await p.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
-  const panel = p.getByRole('region', { name: '阴影参数', exact: true }),
+  const panel = p.getByRole('region', { name: 'Shadow parameters', exact: true }),
     canvas = p.locator('canvas'),
-    bar = p.getByLabel('渲染性能')
+    bar = p.getByLabel('Rendering performance')
   await canvas.scrollIntoViewIfNeeded()
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
   if (a.y + a.height > c.y + 1 || u.y < c.y + c.height - 1) throw Error('UI overlaps image')
-  await p.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption('off')
+  await p.getByRole('combobox', { name: 'Anti-aliasing method', exact: true }).selectOption('off')
   for (const method of ['off', 'hard', 'pcf', 'pcss']) {
-    await p.getByRole('combobox', { name: '阴影算法', exact: true }).selectOption(method)
+    await p.getByRole('combobox', { name: 'Shadow method', exact: true }).selectOption(method)
     await p.waitForTimeout(250)
     await canvas.screenshot({ path: `build/validation/shadows/web-${method}.png` })
   }
-  await p.getByLabel('光源尺寸', { exact: true }).fill('1')
-  await p.getByLabel('光源尺寸', { exact: true }).dispatchEvent('input')
-  await p.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption('taa')
+  await p.getByLabel('Light size', { exact: true }).fill('1')
+  await p.getByLabel('Light size', { exact: true }).dispatchEvent('input')
+  await p.getByRole('combobox', { name: 'Anti-aliasing method', exact: true }).selectOption('taa')
   await p.waitForFunction(
-    () => document.querySelector('[aria-label="渲染性能"]').textContent.includes('32 accumulated'),
+    () =>
+      document
+        .querySelector('[aria-label="Rendering performance"]')
+        .textContent.includes('32 accumulated'),
     null,
     { timeout: 30000 },
   )
-  await p.getByRole('button', { name: '隐藏预览', exact: true }).click()
-  await p.getByRole('button', { name: '显示预览', exact: true }).click()
+  await p.getByRole('button', { name: 'Hide preview', exact: true }).click()
+  await p.getByRole('button', { name: 'Show preview', exact: true }).click()
   await p.setViewportSize({ width: 390, height: 900 })
   await canvas.scrollIntoViewIfNeeded()
   await p.waitForTimeout(500)

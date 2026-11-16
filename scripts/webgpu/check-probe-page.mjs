@@ -16,70 +16,79 @@ try {
   await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
   await openExampleParameters(page)
   const canvas = page.locator('canvas'),
-    panel = page.getByRole('region', { name: '反射探针参数', exact: true }),
-    bar = page.getByLabel('渲染性能')
+    panel = page.getByRole('region', { name: 'Reflection probe parameters', exact: true }),
+    bar = page.getByLabel('Rendering performance')
   await canvas.scrollIntoViewIfNeeded()
   await assertFloatingParameters(page, canvas, bar)
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
   if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('Probe UI overlaps rendering')
-  await page.getByRole('checkbox', { name: '播放运动', exact: true }).uncheck()
+  await page.getByRole('checkbox', { name: 'Animate', exact: true }).uncheck()
   await page.waitForFunction(
-    () => document.querySelector('[aria-label="渲染性能"]').textContent.includes('32 accumulated'),
+    () =>
+      document
+        .querySelector('[aria-label="Rendering performance"]')
+        .textContent.includes('32 accumulated'),
     null,
     { timeout: 60000 },
   )
   await canvas.screenshot({ path: 'build/validation/probe/default.png' })
   await page.screenshot({ path: 'build/validation/probe/desktop.png' })
-  await page.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption('off')
-  await page.getByRole('checkbox', { name: '平滑混合', exact: true }).uncheck()
-  await page.getByRole('checkbox', { name: '平滑混合', exact: true }).check()
-  await page.getByRole('combobox', { name: '活动探针', exact: true }).selectOption('1')
-  await page.getByRole('checkbox', { name: '盒体投影修正', exact: true }).uncheck()
+  await page
+    .getByRole('combobox', { name: 'Anti-aliasing method', exact: true })
+    .selectOption('off')
+  await page.getByRole('checkbox', { name: 'Smooth blending', exact: true }).uncheck()
+  await page.getByRole('checkbox', { name: 'Smooth blending', exact: true }).check()
+  await page.getByRole('combobox', { name: 'Active probe', exact: true }).selectOption('1')
+  await page.getByRole('checkbox', { name: 'Box projection', exact: true }).uncheck()
   await page.waitForTimeout(250)
   await canvas.screenshot({ path: 'build/validation/probe/uncorrected.png' })
-  await page.getByRole('checkbox', { name: '盒体投影修正', exact: true }).check()
+  await page.getByRole('checkbox', { name: 'Box projection', exact: true }).check()
   for (const debug of ['reflections', 'influence', 'cubemap', 'composite']) {
-    await page.getByRole('combobox', { name: '探针调试视图', exact: true }).selectOption(debug)
+    await page.getByRole('combobox', { name: 'Probe output', exact: true }).selectOption(debug)
     await page.waitForTimeout(250)
     await canvas.screenshot({ path: `build/validation/probe/${debug}.png` })
   }
   for (const [label, value] of [
-    ['反射粗糙度', '.7'],
-    ['反射强度', '.6'],
-    ['边界混合距离', '.3'],
-    ['探针位置 X', '1.3'],
-    ['探针位置 Y', '1.2'],
-    ['探针位置 Z', '1.5'],
+    ['Reflection roughness', '.7'],
+    ['Reflection intensity', '.6'],
+    ['Boundary blend distance', '.3'],
+    ['Probe position X', '1.3'],
+    ['Probe position Y', '1.2'],
+    ['Probe position Z', '1.5'],
   ]) {
     await page.getByRole('slider', { name: label, exact: true }).fill(value)
     await page.getByRole('slider', { name: label, exact: true }).dispatchEvent('input')
     await page.waitForTimeout(250)
   }
-  await page.getByRole('button', { name: '刷新反射探针', exact: true }).click()
+  await page.getByRole('button', { name: 'Refresh probe', exact: true }).click()
   await page.waitForTimeout(250)
-  await page.getByRole('checkbox', { name: '局部 Cubemap', exact: true }).uncheck()
+  await page.getByRole('checkbox', { name: 'Local cubemap', exact: true }).uncheck()
   await page.waitForTimeout(150)
-  await page.getByRole('checkbox', { name: '局部 Cubemap', exact: true }).check()
+  await page.getByRole('checkbox', { name: 'Local cubemap', exact: true }).check()
   await page
-    .getByRole('combobox', { name: '反射环境', exact: true })
+    .getByRole('combobox', { name: 'Reflection environment', exact: true })
     .selectOption('studio_small_09')
   await page.waitForFunction(
-    () => !document.querySelector('[aria-label="反射环境"]').disabled,
+    () => !document.querySelector('[aria-label="Reflection environment"]').disabled,
     null,
     { timeout: 30000 },
   )
-  await page.getByRole('combobox', { name: '反射环境', exact: true }).selectOption('builtin')
-  await page.getByRole('checkbox', { name: '后处理开关', exact: true }).uncheck()
+  await page
+    .getByRole('combobox', { name: 'Reflection environment', exact: true })
+    .selectOption('builtin')
+  await page.getByRole('checkbox', { name: 'Post-processing enabled', exact: true }).uncheck()
   await page.waitForTimeout(100)
-  await page.getByRole('checkbox', { name: '后处理开关', exact: true }).check()
+  await page.getByRole('checkbox', { name: 'Post-processing enabled', exact: true }).check()
   for (const method of ['fxaa', 'smaa', 'msaa', 'ssaa', 'taa']) {
-    await page.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption(method)
+    await page
+      .getByRole('combobox', { name: 'Anti-aliasing method', exact: true })
+      .selectOption(method)
     await page.waitForTimeout(200)
   }
-  await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
-  await page.getByRole('button', { name: '显示预览', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
+  await page.getByRole('button', { name: 'Show preview', exact: true }).click()
   await page.setViewportSize({ width: 390, height: 900 })
   await canvas.scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
@@ -88,7 +97,7 @@ try {
   await page.screenshot({ path: 'build/validation/probe/mobile.png' })
   await page.goto(base + '/api/probe')
   await page.locator('h1').waitFor()
-  if (!(await page.locator('h1').textContent()).includes('反射探针'))
+  if (!(await page.locator('h1').textContent()).includes('Reflection probes'))
     throw Error('Missing API docs')
   if (errors.length) throw Error(errors.join('\n'))
   console.log(

@@ -26,5 +26,5 @@ export async function showHelmet(
   }
 }
 
-// 相机交互：renderer.setCamera({ yaw, pitch, distance, exposure })
-// 然后 await renderer.drawFrame()；页面退出时 renderer.dispose()。
+// Camera interaction: renderer.setCamera({ yaw, pitch, distance, exposure })
+// Then await renderer.drawFrame(); call renderer.dispose() on teardown.

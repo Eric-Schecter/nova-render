@@ -75,10 +75,10 @@ function tab(event) {
         :readonly="readonly"
         :aria-label="
           language === 'hlsl'
-            ? 'HLSL shader 编辑器'
+            ? 'HLSL shader editor'
             : language === 'cpp'
-              ? 'C++ 示例源码'
-              : 'JavaScript 示例源码'
+              ? 'C++ example source'
+              : 'JavaScript example source'
         "
         wrap="off"
         spellcheck="false"

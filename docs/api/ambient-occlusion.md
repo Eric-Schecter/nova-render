@@ -1,6 +1,6 @@
-# 环境遮蔽 AO
+# Ambient occlusion
 
-AO 是独立效果设置，不新增 Mode。第八例使用白模诊断视图，材质纹理与烘焙 AO 不参与，方便观察四种算法的差异。
+AO is an independent effect, not a new render mode. Example 8 uses an untextured white-model diagnostic to compare SSAO, HBAO, MSAO and RTAO without material textures or baked AO.
 
 ```cpp
 #include <render/RayTracingView.hpp>
@@ -19,20 +19,20 @@ renderer.setAmbientOcclusion({ enabled: true, method: 'hbao' })
 await renderer.drawFrame()
 ```
 
-两端提供 `SetAmbientOcclusion` / `GetAmbientOcclusion`（网页使用小写首字母）。参数如下：
+`SetAmbientOcclusion` / `GetAmbientOcclusion` correspond to lower-camel-case web methods.
 
-- `enabled`：默认 false；开启后输出白模 AO 诊断图。`method` 为 Disabled / SSAO / HBAO / MSAO / RTAO，网页为 `'disabled'` / `'ssao'` / `'hbao'` / `'msao'` / `'rtao'`。Disabled 显示不加 AO 的白模，不切换渲染 Mode。
-- `output`：Composite / Occlusion / Depth / Normals，网页为对应小写。默认合成，只调制环境项，保留固定方向的白模明暗；这不是给现有 PBR 材质追加完整后处理链。
-- `radius`：0.001–1，默认 0.08，使用归一化模型坐标；`bias`：0–0.05，默认 0.001；`strength`：0–4，默认 1。
-- `samples`：4–64，默认 16。HBAO 按方向与步数分组，MSAO 在四层深度上分别采样，不应将相同设置视为相同计算成本。
-- `denoise`：默认 true，深度与法线引导的显示滤波；`resolutionScale`：0.125–1，默认 0.5；`seed`：32 位无符号整数，默认 1。
+- `enabled`: default false; enabled output is the diagnostic white model. `method`: Disabled / SSAO / HBAO / MSAO / RTAO, lowercase strings on web. Disabled displays the white model without AO, not a different Mode.
+- `output`: Composite / Occlusion / Depth / Normals, lowercase on web. Composite modulates ambient light while preserving fixed directional shading; it is not a complete AO post-process added to ordinary PBR materials.
+- `radius`: 0.001–1, default 0.08 in normalized model coordinates; `bias`: 0–0.05, default 0.001; `strength`: 0–4, default 1.
+- `samples`: 4–64, default 16. Direction/step grouping and multiscale sampling mean equal counts do not imply equal costs.
+- `denoise`: default true, depth/normal-guided display filtering. `resolutionScale`: 0.125–1, default 0.5. `seed`: uint32, default 1.
 
-SSAO 将半球采样点投影到深度图；HBAO 搜索多个屏幕方向的遮蔽地平线；MSAO 合并原始深度与 2× / 4× / 8× 最小深度层；RTAO 使用有限半径的余弦半球可见性射线。均为 Nova 的实现，沿用旧项目的分类，并非移植完整的厂商 AO SDK。
+SSAO projects hemisphere samples into depth; HBAO searches screen-space horizons; MSAO combines original and 2×/4×/8× minimum-depth levels; RTAO casts finite-radius cosine-hemisphere visibility rays. These are Nova implementations, not complete vendor SDK ports.
 
-所有平台使用共享 HLSL。当前深度/法线前置由主射线生成，为原生与网页提供一致输入；前三种算法仍只从屏幕深度估计遮蔽，无法利用被遮挡或屏幕外的表面。RTAO 原生使用现有 RayQuery 后端，网页使用 compute BVH。当前原生 AO 依赖所选后端的光追能力；这条验证路径不是已优化的光栅 G-buffer AO 实现。
+Shared HLSL generates primary-ray depth and normals for consistent native/web inputs. The first three algorithms still estimate occlusion only from screen depth; hidden/offscreen surfaces are unavailable. Native RTAO uses ray queries, web uses compute BVH. The current native diagnostic depends on backend ray-tracing support and is not an optimized raster G-buffer AO path.
 
-`GetAccumulatedSamples()` / `getAccumulatedSamples()` 在 AO 视图中返回累计帧数，RTAO 每帧每像素发出 `samples` 条遮蔽射线。例子在 32 帧后停止；SSAO/HBAO/MSAO 按需绘制一帧。相机、尺寸和 AO 参数变化会重置。滤波只作用于显示，不反馈原始累计。
+`GetAccumulatedSamples()` / `getAccumulatedSamples()` reports frames in this view. Each RTAO frame casts `samples` rays per pixel; the example stops at 32 frames, while screen-space methods draw on demand. Camera, size and AO changes reset accumulation. Display filtering never feeds back into raw accumulation.
 
-室内相机可设置 `OrbitCamera.target` / `camera.target` 为三个有限数，默认 `[0,0,0]`；距离限制仍为 1.5–100，旧例子不变。第八例的预设、面板布局和停止策略都由例子层管理。
+Indoor cameras accept a finite three-component `OrbitCamera.target` / `camera.target`, default [0,0,0], with distance 1.5–100. Example presets and stopping policy belong to the application.
 
-第八例在例子层提供性能统计与交互自适应。网页控制器的 `getPerformanceStats()` 返回最近绘制耗时、P95、实际更新 FPS、内部尺寸和状态；`setAdaptiveQuality(false)` 关闭交互降质。原生提供同名含义的面板开关。FPS 按完成的图像更新间隔计算，待命时不显示数值；绘制耗时包含 CPU 准备和 GPU 完成等待，并非纯 GPU 时间。P95 取最近 60 次绘制，排除首次资源准备。交互降质不修改用户设置，停止后恢复原分辨率与采样数。
+Example-level `getPerformanceStats()` includes completed-update FPS, Draw/P95 time, internal dimensions and state. `setAdaptiveQuality(false)` disables temporary interaction quality reduction. P95 excludes the first resource-preparation draw and uses the last 60 draws. Draw includes CPU preparation/GPU waits, not pure GPU time. Interaction preview restores user resolution and samples once movement stops.

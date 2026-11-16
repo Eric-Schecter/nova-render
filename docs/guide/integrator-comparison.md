@@ -1,52 +1,43 @@
-# 积分器对比
+# Integrator comparison
 
-普通漫反射 Cornell 适合检查颜色串扰、阴影和能量一致性。为了观察不同积分器的差异，例子另外提供两种原创变体：
+Diffuse Cornell scenes help inspect color bleeding, shadows and energy. Nova adds **Cornell Indirect**, with a baffle under the top light, **Cornell Glossy**, with a small light and rough metal sphere, and **Cornell Caustics**, with a closed floating glass sphere and a floor receiver. These are procedural test scenes, not measured Cornell replicas. See [Jensen's glass-caustic examples](https://www-graphics.stanford.edu/~henrik/images/cbox.html).
 
-- **Cornell Indirect**：顶灯下增加挡板，房间下部主要依靠多次反弹照明。
-- **Cornell Glossy**：小面积顶灯与粗糙金属球，观察反射焦散及其地面接收区域。
+## Try it
 
-经典光子映射演示也常用玻璃球产生折射焦散，见 [Jensen 的 Cornell 示例](https://www-graphics.stanford.edu/~henrik/images/cbox.html)。Nova 另外提供 **Cornell Caustics**：悬空闭合玻璃球、小顶灯和中央地面接收区，支持粗糙介质折射。
+Open the [comparison example](/examples/integrators) for equal camera/lighting and fixed-time/sample stopping. It defaults to glass caustics. Alternatively select a Cornell model in the [environment example](/examples/environment), then Ray tracing → Integrator. Use yaw 0, pitch 0, distance 3.6, disabling directional/environment/sky lighting and denoising. Recorded base/indirect/glossy screenshots used exposure 3/12/16, held constant per comparison row.
 
-## 在线试验
+Photon mapping defaults to 8192 photon paths/iteration and radius 0.16. Camera spp share a map per iteration, so equal spp is not equal work. Finite radii bias/smooth illumination and shrink progressively.
 
-优先打开[专用积分器对比例子](/examples/integrators)，可按固定时间或采样预算自动暂停。它默认使用玻璃焦散场景，四栏相机和照明条件一致。
+![Rendered Cornell variants](/benchmarks/cornell-integrators.png)
 
-也可打开[天空盒与环境光例子](/examples/environment)，选择模型和 **Ray tracing → Integrator**。相机设置为 yaw=0、pitch=0、distance=3.6；关闭方向光、环境照明、天空背景与降噪。基础、间接光、金属球场景的截图曝光分别为 3、12、16，同一行的各积分器曝光一致。
+## Convergence measurements
 
-光子映射默认每轮 8192 条光子路径，初始半径 0.16。本轮相机样本共用光子图；同相机 spp 并不代表相同工作量。有限半径会平滑照明并产生偏差，逐轮缩小半径后继续累计。
+Recorded Chrome WebGPU run: 48×48, five bounces, four camera samples/iteration, no display denoising. A 32768 spp BDPT reference uses two nonoverlapping sample blocks to estimate reference noise; 16384 spp PT cross-checks it. The reference still has finite-sample error.
 
-![三个 Cornell 场景的实际渲染结果](/benchmarks/cornell-integrators.png)
+Top plots show indoor linear-luminance error normalized by squared reference mean. Bottom plots compare the visible floor under equal time; primary rays classify the region before measurement and exclude silhouettes. Warmed timings include submission, completion and readback; repeat on target hardware.
 
-## 收敛测量
+![Equal-spp and equal-time convergence](/benchmarks/integrator-convergence.png)
 
-下面记录本机 Chrome WebGPU 的结果：48×48、最大 5 次反弹，每轮 4 个相机样本，无显示降噪。使用 32768 spp BDPT 参考，两个不重叠的采样块估计参考噪声，另以 16384 spp PT 交叉核对。参考图仍包含有限采样误差。
+Photon maps may look smoother at low samples without winning per second. Occluded lights increase indirect PT noise; glossy caustic receivers better expose photon reuse, while metal reflection noise may favor BDPT. In this roughly one-second glossy test, normalized floor MSE was PT `0.0258`, BDPT `0.00716`, photon mapping `0.000849`; base scenes favored BDPT. These values apply only to this machine/settings.
 
-上排比较室内区域的线性亮度误差，除以参考区域平均亮度的平方。下排比较相同时间预算下的可见地面区域；区域在测量前由主射线分类，排除物体轮廓。耗时包含提交、GPU 完成和读回，已预热；需在目标硬件复测。
+Reproduce locally with `node scripts/webgpu/benchmark-integrators.mjs` after starting the dev server. [Raw data](/benchmarks/integrator-benchmark.json) includes actual spp, photons, time and error. See [integrator APIs](/api/render-mode).
 
-![同相机采样数与等耗时收敛曲线](/benchmarks/integrator-convergence.png)
+## Glass caustics
 
-基础场景中，光子映射的低采样图更平滑，等耗时未必更好。遮挡光源后，PT 的间接照明噪声更加明显。金属球场景的地面接收区域更能体现光子复用的优势；金属反射本身的噪声仍需相机采样，整体误差可能由 BDPT 更低。
+This snapshot uses 64 spp for PT/BDPT/photons and 64 mutations/pixel for MLT, eight bounces, exposure 3, 8192 photons/iteration and radius 0.1. MLT uses 262144 bootstrap samples, large-step probability 0.3, mutation scale 0.01. Timing includes first-iteration MLT initialization; equal sample counts have different costs.
 
-本次约 1 秒预算下，金属球场景的地面归一化 MSE 为 PT `0.0258`、BDPT `0.00716`、光子映射 `0.000849`；基础场景则由 BDPT 更低。数据仅代表本机与当前参数。
+![Four integrators rendering glass caustics](/benchmarks/glass-comparison.png)
 
-复现：启动 `npm run docs:dev` 后运行 `node scripts/webgpu/benchmark-integrators.mjs`。[完整测量数据](/benchmarks/integrator-benchmark.json)包含实际相机 spp、光子发射预算、时间和误差；算法接口见[渲染模式](/api/render-mode)。
+Glass is a rough dielectric without absorption, dispersion or nested media. Photon mapping has finite-radius bias. Stronger claims require higher-sample references, region errors and measured time.
 
-## 玻璃焦散
+## MLT validation
 
-下图来自专用对比模式，前三栏为 64 spp，MLT 为 64 mutations/pixel；均为 8 次反弹、曝光 3，光子映射每轮 8192 条光子路径、初始半径 0.1。中央地面的聚光区域可观察到亮点噪声、连接采样与密度估计的区别；相同 spp 的成本不同，MLT 使用 262144 次 bootstrap、0.3 大步概率与 0.01 小步幅度。图中耗时只是这次截图的记录，包含 MLT 首轮初始化。
+PSSMLT uses BDPT as its indirect estimator, with direct light separate. Analytic tests cover acceptance/rejection, brightness conservation, batch invariance and convergence; three independent glass seeds check normalization and native/web energy.
 
-![玻璃焦散四栏实际渲染](/benchmarks/glass-comparison.png)
+Recorded Chrome WebGPU: 32×32, eight bounces, 8192 spp BDPT reference. Region MSE fell from `1.23e-5` at 32 mpp to `9.51e-7` at 2048 mpp (about 92%); mean luminance differed by about 0.18%. Default bootstrap normalization was `0.004118 ± 0.000183` standard error, about 4.4%, so seeds and bootstrap size matter.
 
-玻璃采用粗糙介质表面模型，不包含吸收、色散和嵌套介质。光子映射更平滑也有有限半径偏差；需要更严格测量时，应使用更高采样参考图，并报告接收区域误差与实际时间。
+![MLT convergence and independent bootstrap seeds](/benchmarks/mlt-validation.png)
 
-## MLT 验证
+Convergence with more mutations does not prove MLT is faster. Full BDPT evaluation, sample-vector state and global splats add overhead and correlated noise. More mpp reduces chain noise but not fixed bootstrap normalization error; report initialization, time and error together.
 
-当前 PSSMLT 使用 BDPT 作为间接路径估计器，先单独估计直接照明。解析目标测试检查接受／拒绝、亮度守恒、分批一致性与收敛；玻璃测试用三个独立种子核对归一化，并检查原生与网页能量一致性。
-
-Chrome WebGPU：32×32、8 次反弹，以 8192 spp BDPT 为参考，区域线性亮度 MSE 从 MLT 32 mpp 的 `1.23e-5` 降到 2048 mpp 的 `9.51e-7`，约降低 92%；区域平均亮度差约 0.18%。默认种子的 bootstrap 归一化估计为 `0.004118 ± 0.000183`（标准误差）。bootstrap 有独立的采样误差；本次标准误差约为估计值的 4.4%，应结合多种子检查亮度。
-
-![MLT 收敛与三个独立 bootstrap 种子的误差检查](/benchmarks/mlt-validation.png)
-
-这证明本场景中随预算增加可以收敛，不证明 MLT 更快。当前实现需要完整 BDPT 求值、主采样向量维护和全局累加，在这组低预算对比中比 BDPT、光子映射更慢，也可能出现相关噪声。bootstrap 数量影响最终亮度稳定性，mpp 增长主要降低链采样噪声；比较时应同时报告初始化成本、时间和误差。
-
-复现：`ctest --test-dir build -R mlt -V`、`node scripts/webgpu/check-mlt.mjs`。[测量数据](/benchmarks/mlt-validation.json)包含归一化、接受率与误差，完整日志位于 `build/validation/mlt-*`。
+Reproduce: `ctest --test-dir build -R mlt -V` and `node scripts/webgpu/check-mlt.mjs`. [MLT data](/benchmarks/mlt-validation.json) includes normalization, acceptance and errors; local logs are under `build/validation/mlt-*`.

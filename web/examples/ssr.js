@@ -13,7 +13,7 @@ export async function showScreenSpaceReflections(
     initialScale: 0.75,
     showChecker: false,
     showSplit: false,
-    panelLabel: 'SSR 参数',
+    panelLabel: 'SSR parameters',
     describe: (view) => {
       const s = view.getScreenSpaceReflections()
       return `${s.enabled ? 'SSR' : 'Environment only'} · ${s.hierarchical ? 'Hi-Z' : 'Linear'} · ${s.debug} · `
@@ -28,21 +28,21 @@ export async function showScreenSpaceReflections(
       const set = (key, v) => controller.setScreenSpaceReflections({ [key]: v })
       control(
         'SSR',
-        'SSR 开关',
+        'SSR enabled',
         'checkbox',
         () => view.getScreenSpaceReflections().enabled,
         (v) => set('enabled', v),
       )
       control(
         'Depth hierarchy',
-        '深度金字塔',
+        'Depth hierarchy',
         'checkbox',
         () => view.getScreenSpaceReflections().hierarchical,
         (v) => set('hierarchical', v),
       )
       control(
         'Output',
-        '反射调试视图',
+        'Reflection output',
         'select',
         () => view.getScreenSpaceReflections().debug,
         (v) => set('debug', v),
@@ -57,15 +57,15 @@ export async function showScreenSpaceReflections(
         ],
       )
       for (const [key, label, aria, min, max, step] of [
-        ['maxSteps', 'Max steps', '最大追踪步数', 16, 256, 16],
-        ['maxDistance', 'Max distance', '最大追踪距离', 1, 60, 1],
-        ['thickness', 'Thickness', '厚度阈值', 0.01, 1, 0.01],
-        ['stride', 'Linear stride', '线性步长', 0.5, 4, 0.5],
-        ['roughnessCutoff', 'Roughness cutoff', '粗糙度上限', 0.05, 1, 0.05],
-        ['edgeFade', 'Edge fade', '屏幕边缘淡出', 0.005, 0.3, 0.005],
-        ['intensity', 'Reflection intensity', '反射强度', 0, 2, 0.05],
-        ['environmentIntensity', 'Environment intensity', '环境反射强度', 0, 4, 0.05],
-        ['debugMip', 'Depth mip', '深度层级', 0, 12, 1],
+        ['maxSteps', 'Max steps', 'Maximum trace steps', 16, 256, 16],
+        ['maxDistance', 'Max distance', 'Maximum trace distance', 1, 60, 1],
+        ['thickness', 'Thickness', 'Thickness', 0.01, 1, 0.01],
+        ['stride', 'Linear stride', 'Linear stride', 0.5, 4, 0.5],
+        ['roughnessCutoff', 'Roughness cutoff', 'Roughness cutoff', 0.05, 1, 0.05],
+        ['edgeFade', 'Edge fade', 'Screen edge fade', 0.005, 0.3, 0.005],
+        ['intensity', 'Reflection intensity', 'Reflection intensity', 0, 2, 0.05],
+        ['environmentIntensity', 'Environment intensity', 'Environment intensity', 0, 4, 0.05],
+        ['debugMip', 'Depth mip', 'Depth mip', 0, 12, 1],
       ])
         control(
           label,
@@ -97,7 +97,7 @@ export async function showScreenSpaceReflections(
       }
       control(
         'Environment',
-        '反射环境',
+        'Reflection environment',
         'select',
         () => environment,
         (v) => controller.loadEnvironment(v),

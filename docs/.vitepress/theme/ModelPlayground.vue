@@ -74,7 +74,7 @@ const showExample = props.ao
             : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
-  message = ref('加载模型…'),
+  message = ref('Loading model…'),
   ready = ref(false),
   visible = ref(true)
 let renderer,
@@ -163,16 +163,16 @@ onBeforeUnmount(() => {
     <div class="toolbar">
       <strong>{{
         ao
-          ? '环境遮蔽 AO'
+          ? 'Ambient occlusion'
           : comparison
-            ? '积分器对比'
+            ? 'Integrator comparison'
             : animation
-              ? '骨骼动画'
+              ? 'Skeletal animation'
               : environment
-                ? '天空盒与环境光'
+                ? 'Skybox and environment lighting'
                 : lighting
-                  ? 'PBR 光照'
-                  : '模型加载'
+                  ? 'PBR lighting'
+                  : 'Model loading'
       }}</strong>
       <div>
         <button
@@ -181,16 +181,16 @@ onBeforeUnmount(() => {
           aria-controls="helmet-preview"
           @click="toggle"
         >
-          {{ visible ? '隐藏预览' : '显示预览' }}
+          {{ visible ? 'Hide preview' : 'Show preview' }}
         </button>
       </div>
     </div>
     <pre v-if="message" role="status" aria-live="polite">{{ message }}</pre>
     <div class="source">
-      <div role="tablist" aria-label="模型示例代码">
-        <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
+      <div role="tablist" aria-label="Model example source">
+        <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ example</button
         ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
-          JavaScript 示例</button
+          JavaScript example</button
         ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
           HLSL shader
         </button>
@@ -216,14 +216,14 @@ onBeforeUnmount(() => {
       :aria-hidden="!visible"
       :inert="!visible"
     >
-      <span class="hint">拖动旋转 · 滚轮缩放</span>
+      <span class="hint">Drag to orbit · Scroll to zoom</span>
       <div v-if="comparison" ref="canvas" class="comparison-host" />
       <canvas
         v-else
         ref="canvas"
         width="800"
         height="650"
-        :aria-label="animation ? '骨骼动画预览' : 'Damaged Helmet 模型预览'"
+        :aria-label="animation ? 'Skeletal animation preview' : 'Damaged Helmet preview'"
       />
     </div>
   </div>

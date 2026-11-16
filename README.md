@@ -2,6 +2,8 @@
 
 A cross-platform C++17 and WebGPU rendering library with shared HLSL shaders.
 
+[Documentation & live examples](https://eric-schecter.github.io/nova-render/)
+
 ## Platforms and APIs
 
 Checked items are implemented; unchecked items are not yet supported.
@@ -79,7 +81,7 @@ npx nova-web-assets --out public/nova
 ```js
 import { createRenderer } from '@nova/render-web'
 const renderer = await createRenderer({ canvas, shaderDirectory: '/nova/' })
-const shader = await fetch('/nova/triangle.json').then(r => r.json())
+const shader = await fetch('/nova/triangle.json').then((r) => r.json())
 await renderer.setShader(shader)
 await renderer.drawFrame()
 ```

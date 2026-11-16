@@ -7,7 +7,7 @@ export async function showShadows(canvas, shaderDirectory = '/generated/', optio
     createView: Nova.createShadowView,
     initialPlaying: false,
     showChecker: false,
-    panelLabel: '阴影参数',
+    panelLabel: 'Shadow parameters',
     describe: (view) => {
       const sh = view.getShadowSettings()
       return `${{ off: 'Off', hard: 'Hard Shadow', pcf: 'PCF', pcss: 'PCSS' }[sh.method]} · ${sh.resolution}² map · `
@@ -21,7 +21,7 @@ export async function showShadows(canvas, shaderDirectory = '/generated/', optio
       const set = (key, value) => controller.setShadowSettings({ [key]: value })
       control(
         'Shadow',
-        '阴影算法',
+        'Shadow method',
         'select',
         () => view.getShadowSettings().method,
         (v) => set('method', v),
@@ -34,7 +34,7 @@ export async function showShadows(canvas, shaderDirectory = '/generated/', optio
       )
       control(
         'Shadow map',
-        '阴影分辨率',
+        'Shadow resolution',
         'select',
         () => view.getShadowSettings().resolution,
         (v) => set('resolution', Number(v)),
@@ -45,10 +45,10 @@ export async function showShadows(canvas, shaderDirectory = '/generated/', optio
         ],
       )
       for (const [key, label, aria, min, max, step] of [
-        ['depthBias', 'Depth bias', '深度偏移', 0, 0.01, 0.0001],
-        ['normalBias', 'Normal bias', '法线偏移', 0, 0.1, 0.001],
-        ['filterRadius', 'PCF radius', 'PCF半径', 1, 6, 0.1],
-        ['lightSize', 'PCSS light size', '光源尺寸', 0.01, 1.5, 0.01],
+        ['depthBias', 'Depth bias', 'Depth bias', 0, 0.01, 0.0001],
+        ['normalBias', 'Normal bias', 'Normal bias', 0, 0.1, 0.001],
+        ['filterRadius', 'PCF radius', 'PCF radius', 1, 6, 0.1],
+        ['lightSize', 'PCSS light size', 'Light size', 0.01, 1.5, 0.01],
       ])
         control(
           label,
@@ -72,8 +72,8 @@ export async function showShadows(canvas, shaderDirectory = '/generated/', optio
         }
       }
       for (const [key, label, aria, min, max] of [
-        ['azimuth', 'Light azimuth', '光源方位', -180, 180],
-        ['elevation', 'Light elevation', '光源仰角', 10, 80],
+        ['azimuth', 'Light azimuth', 'Light azimuth', -180, 180],
+        ['elevation', 'Light elevation', 'Light elevation', 10, 80],
       ]) {
         control(
           label,

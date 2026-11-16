@@ -105,24 +105,28 @@ try {
     await page.goto('http://127.0.0.1:5173/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
     await page
-      .getByRole('combobox', { name: '模型选择', exact: true })
+      .getByRole('combobox', { name: 'Model', exact: true })
       .selectOption('/generated/CornellGlossy.glb')
-    await page.waitForFunction(() => !document.querySelector('[aria-label="模型选择"]').disabled)
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
-    const integrator = page.getByRole('combobox', { name: '路径积分器', exact: true })
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Model"]').disabled)
+    await page
+      .getByRole('combobox', { name: 'Render mode', exact: true })
+      .selectOption('ray-tracing')
+    const integrator = page.getByRole('combobox', { name: 'Path integrator', exact: true })
     await integrator.selectOption('photon-mapping')
-    await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
-    await page.getByRole('slider', { name: '每轮光子数', exact: true }).fill('1024')
-    await page.getByRole('slider', { name: '光子聚集半径', exact: true }).fill('.12')
-    await page.getByRole('checkbox', { name: '降噪', exact: true }).check()
+    await page.getByRole('slider', { name: 'Render scale', exact: true }).fill('.25')
+    await page.getByRole('slider', { name: 'Photons per iteration', exact: true }).fill('1024')
+    await page.getByRole('slider', { name: 'Photon gather radius', exact: true }).fill('.12')
+    await page.getByRole('checkbox', { name: 'Denoise', exact: true }).check()
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 4,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 4,
     )
     await integrator.selectOption('path')
-    if (await page.getByRole('slider', { name: '每轮光子数', exact: true }).isVisible())
+    if (await page.getByRole('slider', { name: 'Photons per iteration', exact: true }).isVisible())
       throw Error('Photon controls visible in PT')
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('raster')
+    await page.getByRole('combobox', { name: 'Render mode', exact: true }).selectOption('raster')
   }
   console.log('PASS ray mode, photon controls, scratch resize and denoise in all examples')
 } finally {

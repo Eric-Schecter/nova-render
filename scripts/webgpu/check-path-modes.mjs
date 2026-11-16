@@ -127,51 +127,57 @@ try {
   for (const slug of ['damaged-helmet', 'lighting', 'environment']) {
     await page.goto(base + '/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
-    const panel = page.getByRole('region', { name: '参数面板', exact: true })
+    const panel = page.getByRole('region', { name: 'Parameters', exact: true })
     await panel.scrollIntoViewIfNeeded()
-    const mode = panel.getByRole('combobox', { name: '渲染模式', exact: true })
+    const mode = panel.getByRole('combobox', { name: 'Render mode', exact: true })
     await mode.selectOption('ray-tracing')
-    await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
-    await page.getByRole('slider', { name: '反弹次数', exact: true }).fill('2')
-    const samples = page.locator('[aria-label="累计采样"]')
+    await page.getByRole('slider', { name: 'Render scale', exact: true }).fill('.25')
+    await page.getByRole('slider', { name: 'Maximum bounces', exact: true }).fill('2')
+    const samples = page.locator('[aria-label="Accumulated samples"]')
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 4,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 4,
       null,
       { timeout: 60000 },
     )
-    const denoise = page.getByRole('checkbox', { name: '降噪', exact: true })
+    const denoise = page.getByRole('checkbox', { name: 'Denoise', exact: true })
     if (await denoise.isChecked()) throw Error('Denoise should default off')
     await denoise.check()
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 2,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 2,
       null,
       { timeout: 60000 },
     )
     if (!(await denoise.isChecked())) throw Error('Denoise toggle did not persist')
     await denoise.uncheck()
-    await page.getByRole('button', { name: '重置累计', exact: true }).click()
+    await page.getByRole('button', { name: 'Reset accumulation', exact: true }).click()
     await mode.selectOption('raster')
     if (await samples.count()) throw Error('Path controls remain in raster mode')
     await mode.selectOption('ray-tracing')
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 8,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 8,
       null,
       { timeout: 60000 },
     )
     if (slug === 'environment') {
       await mkdir('build/validation', { recursive: true })
       await page.locator('.preview').screenshot({ path: 'build/validation/web-path-panel.png' })
-      await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
+      await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
       await page.waitForTimeout(200)
       const before = await samples.textContent()
       await page.waitForTimeout(500)
       if ((await samples.textContent()) !== before) throw Error('Collapsed preview kept sampling')
-      await page.getByRole('button', { name: '显示预览', exact: true }).click()
+      await page.getByRole('button', { name: 'Show preview', exact: true }).click()
       await page.waitForFunction(
-        (old) => document.querySelector('[aria-label="累计采样"]').textContent !== old,
+        (old) => document.querySelector('[aria-label="Accumulated samples"]').textContent !== old,
         before,
         { timeout: 60000 },
       )
@@ -182,11 +188,14 @@ try {
   await page.setViewportSize({ width: 390, height: 900 })
   await page.goto(base + '/examples/environment')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
-  await page.getByRole('button', { name: '显示参数面板', exact: true }).click()
-  await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
-  await page.getByRole('slider', { name: '渲染比例', exact: true }).fill('.25')
+  await page.getByRole('button', { name: 'Show parameters', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Render mode', exact: true }).selectOption('ray-tracing')
+  await page.getByRole('slider', { name: 'Render scale', exact: true }).fill('.25')
   await page.waitForFunction(
-    () => Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 2,
+    () =>
+      Number(
+        document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+      ) >= 2,
     null,
     { timeout: 60000 },
   )
@@ -197,12 +206,12 @@ try {
     panelBounds.x + panelBounds.width > canvasBounds.x + canvasBounds.width + 1
   )
     throw Error('Mobile path panel outside canvas')
-  await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('raster')
+  await page.getByRole('combobox', { name: 'Render mode', exact: true }).selectOption('raster')
   console.log('PASS mobile path mode and panel bounds')
   if (errors.length) throw Error(errors.join('\n'))
   // Moving away disposes the renderer and cancels refinement.
   await page.goto(base + '/api/render-mode')
-  await page.locator('h2#网页用法').waitFor()
+  await page.locator('h2#web-usage').waitFor()
   if (await page.locator('.VPNavBarMenu a').count()) throw Error('Top navigation links remain')
   await page.waitForTimeout(150)
   console.log(

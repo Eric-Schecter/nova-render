@@ -12,14 +12,15 @@ import { validateCamera, emptyModelData } from './ModelData.js'
 export { attachOrbitControls }
 // Browser adapter. Native C++ backends and the web adapter share concepts, not binaries.
 export async function createRenderer({ canvas, shaderDirectory = '/generated/' }) {
-  if (!navigator.gpu) throw Error('此浏览器未启用 WebGPU，请使用支持的浏览器及 HTTPS / localhost。')
+  if (!navigator.gpu)
+    throw Error('WebGPU is unavailable. Use a supported browser over HTTPS or localhost.')
   const adapter = await navigator.gpu.requestAdapter()
-  if (!adapter) throw Error('没有可用的 WebGPU 适配器')
+  if (!adapter) throw Error('No WebGPU adapter available')
   const device = await adapter.requestDevice()
   const context = canvas.getContext('webgpu')
   if (!context) {
     device.destroy()
-    throw Error('无法创建 WebGPU canvas')
+    throw Error('Cannot create a WebGPU canvas context')
   }
   return new Renderer(canvas, device, context, shaderDirectory)
 }
@@ -190,7 +191,7 @@ class Renderer {
     })
   }
   #check() {
-    if (this.#disposed) throw Error('Renderer 已释放')
+    if (this.#disposed) throw Error('Renderer has been disposed')
     if (this.#lost) throw Error(this.#lost)
   }
   #enqueue(action) {
@@ -223,7 +224,7 @@ class Renderer {
       const error = await this.#device.popErrorScope()
       if (failure || error || this.#disposed) {
         next?.dispose()
-        throw failure || Error(error?.message || 'Renderer 已释放')
+        throw failure || Error(error?.message || 'Renderer has been disposed')
       }
       this.#model?.dispose()
       this.#resetAA()
@@ -586,7 +587,7 @@ class Renderer {
         body: JSON.stringify({ source }),
       })
       const data = await response.json()
-      if (!response.ok) throw Error(data.error || 'HLSL 编译失败')
+      if (!response.ok) throw Error(data.error || 'HLSL compilation failed')
       vert = data.vert
       frag = data.frag
     }
@@ -641,7 +642,7 @@ class Renderer {
       color.length !== 4 ||
       !color.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)
     )
-      throw Error('背景色需要 4 个 0～1 的数值')
+      throw Error('Clear color requires four numbers in [0,1]')
     this.#resetAA()
     this.#clear = [...color]
     this.#parameterPanel?.refresh()
@@ -654,7 +655,7 @@ class Renderer {
   }
   async #drawFrame() {
     this.#check()
-    if (!this.#pipeline && !this.#model) throw Error('请先调用 setShader 或 loadModel')
+    if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'
     const ratio = window.devicePixelRatio || 1

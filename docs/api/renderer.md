@@ -4,13 +4,9 @@
 #include "render/Renderer.hpp"
 ```
 
-`Renderer` 管理 GPU 资源，应用管理 GLFW 窗口和事件。所有调用在窗口主线程执行；当前只支持同时存在一个 Renderer，不支持复制或移动。
+`Renderer` owns GPU resources; the application owns the GLFW window and event loop. Use it on the window's main thread. Only one live renderer is currently supported; copying and moving are disabled.
 
-`SetLighting(LightingMode::Unlit / PBR)` 选择模型渲染模式，默认 Unlit。详见[模型与相机](./model)。
-
-`SetDirectionalLight(light)` / `GetDirectionalLight()` 设置和读取主方向光（方向、线性 RGB、强度）。
-
-## 创建与销毁
+## Lifetime
 
 ```cpp
 render::RendererConfig config;
@@ -18,9 +14,9 @@ config.shaderDirectory = APP_SHADER_DIR;
 render::Renderer renderer(window, config);
 ```
 
-GLFW 须先初始化，窗口用 `GLFW_NO_API` 创建。销毁顺序是 Renderer → 窗口 → GLFW。配置或设备不可用、资源加载失败时会抛异常；部分资源在首次绘制时才创建。
+Initialize GLFW and create a `GLFW_NO_API` window first. Destroy Renderer before the window, then terminate GLFW. Invalid configuration, unavailable devices and loading failures throw exceptions. Some resources are created on the first draw.
 
-## 常用方法
+## Methods
 
 ```cpp
 void Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
@@ -39,22 +35,12 @@ GraphicsAPI GetAPI() const;
 uint32_t ValidationErrorCount() const;
 ```
 
-- `Resize`：首次绘制前和尺寸变化后传入 framebuffer 像素尺寸。任一维为零时暂停，资源重建在绘制时执行。
-- `DrawFrame`：绘制内置三角形或已加载模型；返回 `Rendered` 或 `Skipped`。不处理窗口事件，失败可抛异常。
-- `WaitIdle`：等待已提交工作完成，退出前调用；执行错误可能在此报告。
-- `GetAPI`：返回实际选择的具体后端。
-- `ValidationErrorCount`：读取后端累计错误数。建议等待 GPU 后读取；零计数不代表画面一定正确或校验层已开启。
+- `Resize`: pass framebuffer pixel dimensions before the first draw and after resizing. Zero dimensions pause rendering; reconstruction happens during a draw.
+- `DrawFrame`: renders the built-in triangle or loaded model, returning `Rendered` or `Skipped`. It does not process window events and may throw.
+- `WaitIdle`: waits for submitted work. Call before exit to catch deferred GPU errors.
+- `GetAPI`: returns the selected concrete backend.
+- `ValidationErrorCount`: reads accumulated backend errors. Wait for the GPU first; zero errors do not prove visual correctness or that validation was enabled.
 
-完整用法见[编写示例](../guide/integration)。
+`SetLighting(Unlit / PBR)` defaults to Unlit. `SetDirectionalLight` / `GetDirectionalLight` control the main light. See [models and cameras](./model), [environment lighting](./environment), [render modes](./render-mode), [AA](./antialiasing), and [parameter panels](./ui).
 
-模型模式通过 `LoadModel(path)` 和 `SetCamera(camera)` 设置，详见[模型与相机](./model)。
-
-`EnableParameterPanel(bool enabled = true)` 控制渲染区域内的可选参数面板，见[参数面板](./ui)。
-
-天空盒和 HDR 环境光见[天空盒与环境光](./environment)。
-
-`EnableParameterPanel(const ParameterPanelConfig&)` 可配置模型与环境选择列表，见[参数面板](./ui#模型与环境选择)。
-
-光栅与光追的模式、采样和能力查询接口见[渲染模式](./render-mode)。
-
-光栅 AA 默认 Off，六档算法与历史管理见[抗锯齿](./antialiasing)。
+`EnableParameterPanel(bool)` toggles the optional panel; its configuration overload supplies [model and environment choices](./ui#model-and-environment-choices). For a complete application, see [writing examples](../guide/integration).

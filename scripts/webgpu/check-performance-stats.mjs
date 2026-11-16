@@ -44,7 +44,7 @@ try {
       await delay(300)
       check(scene.getPerformanceStats().fps === null, 'Static cadence did not settle')
       scene.dispose()
-      check(!document.querySelector('[aria-label="渲染性能"]'), 'Triangle metric leak')
+      check(!document.querySelector('[aria-label="Rendering performance"]'), 'Triangle metric leak')
       c.remove()
       c = canvas()
       scene = await showHelmet(c, '/generated/DamagedHelmet.glb', '/generated/', {
@@ -140,7 +140,10 @@ try {
         'Budget-completed comparison keeps recording',
       )
       scene.dispose()
-      check(!document.querySelector('[aria-label="渲染性能"]'), 'Comparison metric leak')
+      check(
+        !document.querySelector('[aria-label="Rendering performance"]'),
+        'Comparison metric leak',
+      )
       return 'raster/ray dimensions and scale, samples, actual animation cadence, on-demand idle, comparison budget freeze and disposal'
     },
     '/@fs' + realpathSync('.'),

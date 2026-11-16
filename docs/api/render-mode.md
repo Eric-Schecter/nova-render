@@ -1,6 +1,6 @@
-# 渲染模式
+# Render modes
 
-原生 `Window`、`Renderer` 和网页 Renderer 提供对应接口。默认使用光栅；加载模型后，在 **Renderer → Mode** 选择 Raster（光栅）、Ray tracing（光追）；光追模式内再通过 **Integrator** 选择 PT、BDPT、光子映射或 MLT。
+Window, Renderer and web expose corresponding APIs. Default Mode is Raster; loaded static models can switch to Ray tracing, then choose PT / BDPT / Photon mapping / MLT inside the Integrator setting. Comparison is an example, not a Mode.
 
 ```cpp
 render::Window window;
@@ -14,7 +14,7 @@ if (capabilities.rayTracing)
     settings.samplesPerFrame = 1;
     settings.maxBounces = 3;
     settings.resolutionScale = 0.5f;
-    settings.lightSampling = true; // 默认开启光源重要性采样与 MIS
+    settings.lightSampling = true;
     window.SetRayTracing(settings);
     window.SetRenderMode(render::RenderMode::RayTracing);
 }
@@ -24,19 +24,14 @@ while (window.PollEvents())
 window.WaitIdle();
 ```
 
-请将上述设置放入现有窗口示例的初始化部分；窗口构造和运行方式见 [Window](./window)。
+## Controls
 
-## 接口
+- `GetCapabilities()`: `rayTracing`, `softwareRayTracing`, `rayTracingDevice` and unavailable `reason`.
+- `SetRenderMode(Raster / RayTracing)` / `GetRenderMode()`: unavailable or model-less ray tracing throws without changing the mode.
+- `SetRayTracing` / `GetRayTracing`: `samplesPerFrame` 1–4, `maxBounces` 1–8, `resolutionScale` 0.25–1; invalid values throw.
+- `GetAccumulatedSamples()` and `ResetAccumulation()`: progress and restart.
 
-- `GetCapabilities()`：返回 `rayTracing`、`softwareRayTracing`、设备名称 `rayTracingDevice` 和不可用原因 `reason`。
-- `SetRenderMode(RenderMode::Raster / RayTracing)` / `GetRenderMode()`：切换或读取模式。不支持光追或未加载模型时，切换抛异常并保留原模式。
-- `SetRayTracing(settings)` / `GetRayTracing()`：每帧采样数 `1–4`、最大反弹次数 `1–8`、内部渲染比例 `0.25–1`。非法参数抛异常。
-- `GetAccumulatedSamples()`：读取当前累计采样数。
-- `ResetAccumulation()`：清空累计采样；下一帧重新开始。
-
-相机、模型、光照、环境、背景色或渲染尺寸变化会重新累计。面板内可以调整参数、查看采样数和手动重置。切回光栅后恢复原有光栅材质与设置。
-
-## 运行例子
+Camera, model, light, environment, clear color and size changes restart accumulation. Switching to raster restores raster material/settings.
 
 ```sh
 ./build/nova_environment assets/DamagedHelmet/DamagedHelmet.glb \
@@ -44,17 +39,17 @@ window.WaitIdle();
   --mode ray --spp 1 --bounces 3 --scale 0.5 --integrator path
 ```
 
-模型加载、光照、天空盒三个原生例子均支持这些选项。Windows 使用 `--api dx12`，Linux 使用 `--api vulkan`；Windows 可追加 `--warp` 验证软件光追。
+Model, lighting and environment examples support these flags. Use `--api dx12` on Windows, `--api vulkan` on Linux; Windows `--warp` requests software validation.
 
-## 后端与当前范围
+## Backends and scope
 
-DX12 使用 DXR 1.1 inline ray query；Vulkan 使用 acceleration structure 与 ray query 扩展；Metal 使用原生加速结构与 ray query。内核只维护 HLSL，由 DXC 生成 DXIL / SPIR-V，再由 SPIRV-Cross 生成 Metal shader。没有新增第三方依赖。
+DX12 uses DXR 1.1 inline queries; Vulkan uses acceleration structures/ray-query extensions; Metal uses native acceleration structures/ray queries. DXC compiles HLSL to DXIL/SPIR-V, SPIRV-Cross produces Metal. Disable native tracing with `NOVA_ENABLE_PATH_TRACING=OFF`.
 
-当前实现支持静态模型与有限的粗糙玻璃材质、基础色/法线/金属度粗糙度/自发光贴图、方向光阴影和 HDR 环境、多次反弹与渐进累计。支持可选空间降噪与光源重要性采样 / MIS；尚无吸收、色散、嵌套介质与光追蒙皮；不同材质需共用核心 PBR 因子和纹理图集；为减少亮点，单条路径辐射值上限为 64。
+Supports static models, limited rough glass, base-color/normal/metallic-roughness/emission maps, directional shadows, HDR environments, bounces and progressive accumulation. Core factors/atlases must be shared between supported material variants. Path radiance is clamped to 64 to limit fireflies. No absorption, dispersion, nested media or ray-traced skinning.
 
-原生当前为功能验证版本：计算结果每帧回读 CPU，再上传到显示后端，存在传输与同步开销。网页的计算与显示直接留在 GPU，不需要逐帧回读。
+Native tracing currently reads results back to CPU and uploads for display, adding transfer/synchronization overhead. Browser compute/display stays on GPU.
 
-## 网页用法
+## Web usage
 
 ```js
 await renderer.loadModel('/generated/DamagedHelmet.glb')
@@ -62,36 +57,22 @@ renderer.setRayTracing({
   samplesPerFrame: 1,
   maxBounces: 3,
   resolutionScale: 0.5,
-  lightSampling: true, // 默认值
+  lightSampling: true,
 })
-renderer.setRenderMode('ray-tracing') // 'raster' 切回光栅
+renderer.setRenderMode('ray-tracing')
 await renderer.drawFrame()
 renderer.enableParameterPanel()
 ```
 
-对应方法为 `getCapabilities()`、`setRenderMode()` / `getRenderMode()`、`setRayTracing()` / `getRayTracing()`、`resetAccumulation()` 和 `getAccumulatedSamples()`，参数范围与原生一致。设置无效参数或未加载模型就切换光追会抛异常。
+Use lowercase counterparts for capability/mode/ray settings, reset and accumulation. WebGPU builds a JavaScript BVH and traverses it in a compute shader, not a dedicated hardware ray API. `softwareRayTracing: true` here means GPU compute intersection, not CPU rendering; device label is `WebGPU compute BVH`. Materials/sampling share HLSL with native.
 
-网页在 JavaScript 中构建 BVH，使用 WebGPU compute shader 遍历与求交，不调用专用硬件光追接口。`softwareRayTracing: true` 在网页表示通用 GPU 上的 BVH 求交，并不表示 CPU 渲染；`rayTracingDevice` 为 `WebGPU compute BVH`。材质、光照和采样与原生共享 HLSL，仅求交实现不同。没有新增第三方依赖或 WASM。
+The first draw starts continuous accumulation. Hiding the preview, leaving the viewport or backgrounding the tab pauses it; raster/disposal stops it. Storage buffers must fit browser limits. Legacy PathTracing-named settings/methods and `'path-tracing'` input remain aliases; the canonical getter returns `'ray-tracing'`.
 
-首次 `drawFrame()` 后自动逐帧累计；隐藏预览、移出屏幕或切到后台时暂停，恢复可见后继续。切回光栅或 `dispose()` 会停止累计。普通 `drawFrame()` 仍可手动调用。面板提供模式、采样、反弹次数、渲染比例和重置按钮；低分辨率通过 GPU 双线性放大显示，效果仍需逐步收敛。
+## Light sampling and MIS
 
-资源与渲染缓冲区须符合浏览器设备的 storage buffer 限制；超限会报告错误。性能取决于模型、分辨率和 GPU。
+`lightSampling`, default true, controls PT next-event estimation. Emissive triangles are chosen by area × luminance; HDR sampling accounts for luminance and solid angle. Shadow rays test visibility; a power heuristic combines light and diffuse/GGX BSDF sampling. Visible lights/skies keep their brightness; directional lights are sampled separately. Disabling it gives a BSDF-only comparison. Extra samples/rays do not guarantee faster frames.
 
-构建时可用 `-DNOVA_ENABLE_PATH_TRACING=OFF` 关闭原生光追。
-
-旧的 `PathTracingSettings`、`SetPathTracing` / `GetPathTracing`、`RenderMode::PathTracing` 和网页 `setPathTracing` / `getPathTracing` 保留为兼容入口；`pathTracing` 能力字段对应 `rayTracing`。网页仍接受 `'path-tracing'` 输入，`getRenderMode()` 统一返回 `'ray-tracing'`。
-
-## 光源采样与 MIS
-
-`RayTracingSettings::lightSampling` 与网页 `lightSampling` 对应，默认 `true`。面板的 **Light sampling / MIS** 可切换；修改会重新累计。
-
-发光三角形按面积与发光亮度选择，HDR 环境按亮度与立体角采样，并发射阴影射线检查遮挡。光源采样与原有 diffuse/GGX BSDF 采样通过 power heuristic 合并；直接看见灯或天空的亮度不变。关闭后使用 BSDF 采样，可用于同采样数对比。方向光仍单独采样。
-
-康奈尔盒子建议正面相机、关闭方向光和环境照明，仅靠顶灯观察间接光与阴影；比较时关闭降噪。MIS 减少低采样噪声，但每次反弹增加一次光源采样及可能的阴影射线，不保证每帧更快。
-
-## 双向路径追踪
-
-面板 **Integrator** 可选择 Path tracing / Bidirectional，默认 Path tracing。两端通过 `integrator` 指定，切换会重新累计；降噪和反弹次数仍适用。
+## Bidirectional path tracing
 
 ```cpp
 auto settings = window.GetRayTracing();
@@ -101,20 +82,13 @@ window.SetRayTracing(settings);
 
 ```js
 renderer.setRayTracing({ ...renderer.getRayTracing(), integrator: 'bidirectional' })
-// integrator: 'path' 切回单向路径追踪
 ```
 
-原生例子也可使用 `--mode ray --integrator bidirectional`。BDPT 从发光面生成光路，与相机子路径连接，以面积度量的路径概率和 power heuristic 合并各连接策略。两端共用 HLSL，材质与法线求值一致；BDPT 始终启用 MIS，`lightSampling` 开关仅用于单向 PT。
+Finite emissive surfaces start light subpaths, connected to camera paths using area-measure probabilities and MIS. BDPT always uses MIS; the PT toggle does not disable it. HDR/directional lighting keep unidirectional NEE/MIS, and scenes without finite area emitters use that estimator. No camera splats to other pixels. See [PBRT BDPT](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Bidirectional_Path_Tracing).
 
-当前光路起点限于有限面光源；HDR 与方向光保留单向 NEE/MIS，没有面光源时回退到此估计器。不做光路直接投向其他像素的相机 splat；仍只支持静态不透明材质。算法背景可参阅 [PBRT 双向路径追踪](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Bidirectional_Path_Tracing)。
+A recorded Cornell test (48×48, five bounces, no environment/directional light/denoising) reduced equal-spp error roughly 76% at 8 spp and 67% at 32 spp versus a 2048 spp PT reference, with high-sample mean brightness difference about 0.19%. This does not prove faster convergence per second. Windows software tests use WARP 1.0.22 beside test executables; older system WARP crashed in this kernel. No system DLL is replaced.
 
-Cornell 测试关闭方向光、环境照明与降噪，48×48、5 次反弹，以 2048 spp PT 为参考：8 spp 线性亮度误差约降低 76%，32 spp 约降低 67%，高采样平均亮度差约 0.19%。BDPT 的光路和连接增加计算量；本场景里 PT 128 spp 的误差低于 BDPT 32 spp，不能仅凭同采样数更干净判断速度更快。
-
-Windows WARP 软件验证使用微软 WARP 1.0.22；测试机器自带的旧 WARP 会在此复杂内核中崩溃。新版驱动仅放在测试程序旁，不修改系统 DLL，不增加项目依赖；实体 GPU 使用其 DX12 驱动。
-
-## 光子映射
-
-在 **Integrator → Photon mapping** 中启用，也可通过 API 设置：
+## Photon mapping
 
 ```cpp
 auto settings = window.GetRayTracing();
@@ -133,15 +107,11 @@ renderer.setRayTracing({
 })
 ```
 
-每轮发射 `256–65536` 条光子路径，同轮的相机样本复用光子图；初始聚集半径为 `0.03–0.5`，使用模型归一化后的世界单位。默认每轮 8192 条、半径 0.16。参数变化重新累计。
+`photonsPerIteration`: 256–65536, default 8192. `photonRadius`: 0.03–0.5 normalized world units, default 0.16. Camera samples in one iteration share the photon map. A bounded linked grid gathers density on diffuse visible points; metallic/glossy surfaces continue camera paths. Direct lighting is estimated separately to avoid double counting. Photon emission restarts each iteration; radius shrinks with iteration to the power −1/6 before averaging pixel estimates.
 
-共享 HLSL 生成光子、构建有界内存的链表网格，并在漫反射可见点做密度估计；金属/光滑表面继续追踪相机路径。直接照明独立采样，避免与间接光子重复计光。每轮重发射光子，半径按轮数的负六分之一次方缩小，再累计像素估计。有限半径会平滑照明、引入偏差；它与可选显示降噪是两项功能。
+Finite radius smooths illumination with bias, independently of display denoising. Photon emission starts at area lights; HDR/directional/no-area-light cases retain the other estimator. See [integrator comparison](../guide/integrator-comparison).
 
-光子起点限于面光源，HDR 与方向光保留原有估计器。没有面光源时回到原有采样。模型加载、光照、环境三个例子均可切换 `Cornell Box`、`Cornell Indirect` 和 `Cornell Glossy`；具体设置和测量见[积分器对比](../guide/integrator-comparison)。
-
-## 降噪
-
-光追参数 `denoise`，默认 `false`。原生与网页面板的 **Denoise** 复选框控制同一功能，仅在光追模式显示。
+## Denoising
 
 ```cpp
 auto settings = window.GetRayTracing();
@@ -154,17 +124,9 @@ renderer.setRayTracing({ ...renderer.getRayTracing(), denoise: true })
 await renderer.drawFrame()
 ```
 
-两端共用 HLSL 的 5×5 深度、法线与亮度引导双边滤波，保护轮廓和表面边缘，天空背景不参与过滤。降噪在 GPU 的独立计算 pass 执行，只生成显示图，不回写原始辐射累计。修改开关与其他路径追踪参数一样会重新累计；关闭后恢复未过滤的采样结果。
+`denoise` defaults false. Shared HLSL performs a 5×5 depth/normal/luminance-guided bilateral display filter, excluding sky. It never modifies raw radiance history. Toggling restarts accumulation. This is spatial filtering, without AI or temporal history; fireflies may remain, textures may soften, and missing low-resolution detail cannot be recovered. Animated models currently use raster only.
 
-这是轻量空间降噪，不使用 AI 或时域历史，没有新增依赖。极低采样下仍可能有亮点，细小纹理也可能变软；仍建议保持渐进累计。它不会补足较低内部渲染比例丢失的细节。
-
-骨骼动画模型目前仅用光栅渲染，能力查询和面板会明确报告；动画接口见[骨骼动画](./animation)。
-
-## 离屏视图与例子层对比
-
-Mode 只有 `Raster` 与 `RayTracing`（网页 `'raster'` / `'ray-tracing'`）。积分器对比是例子，不是 Mode；核心设置不再包含对比预算，Window / Renderer 不再提供对比进度查询。
-
-原生 `RayTracingView` 独立维护一个离屏光追视图的累计，使用共享 HLSL 和所选后端，不持有窗口或 UI。支持相机、方向光和环境设置，静态模型必须先加载；对比示例自行关闭方向光并省略环境，使四种方法只使用同一场景的面光源。
+## Offscreen views and comparison
 
 ```cpp
 #include <render/RayTracingView.hpp>
@@ -175,18 +137,18 @@ settings.integrator = render::RayIntegrator::Metropolis;
 view.SetRayTracing(settings);
 const render::Image& frame = view.DrawFrame(256, 256);
 window.PresentImage(frame);
-// window.ClearImage(); // 恢复由 Window 自身渲染
+
 ```
 
-`Image` 为 sRGB RGBA8，包含 `width`、`height` 和 `pixels`。`PresentImage` 复制像素；`ClearImage` 恢复窗口自身的 Mode。尺寸范围为 1–8192，像素数必须等于 width × height × 4。`GetFramebufferSize()` 返回 Window 当前帧缓冲尺寸；缩小到零时例子暂停。
+`RayTracingView` owns one offscreen accumulator without a window/UI. Image is sRGB RGBA8 with width/height/pixels. `PresentImage` copies it; `ClearImage` restores Window output. Images accept dimensions 1–8192 and exactly width×height×4 bytes. Minimized windows report zero framebuffer size.
 
-网页可用 `renderer.setContinuousRendering(false)` 关闭自动续帧，再由例子显式 `await renderer.drawFrame()`。`Nova.attachOrbitControls(element, { getCamera, setCamera, drawFrame })` 可将同一套交互绑定到应用组织的多视图容器，返回对象的 `dispose()` 解除绑定。
+Web `setContinuousRendering(false)` allows application-managed draws. `Nova.attachOrbitControls(element,{getCamera,setCamera,drawFrame})` supports shared multi-view interaction and returns disposable controls.
 
-第六例子创建四个独立视图，顺序 PT、BDPT、光子映射、MLT，以两行两列展示。共享相机和场景、固定使用面光源、关闭降噪。预算、统计与下方控制面板都在例子层：C++ 为 `example::ComparisonScene`，网页为 `web/examples/comparison.js` 返回的控制器。
+Example 6 owns four independent views in a 2×2 grid: PT, BDPT, Photon mapping, MLT; identical camera/scene, area lighting only, denoising disabled. Budgets/stats/below-image UI belong to C++ `example::ComparisonScene` and `web/examples/comparison.js`, not core Mode settings.
 
-C++ 例子用 `SetBudget({64, 0})` / `Progress()`，网页例子用 `setBudget({samples:64, milliseconds:0})` / `getProgress()`。固定采样预算 1–65536；时间预算 0–60000 毫秒，非零时优先使用时间预算。每个视图每轮 1 spp（MLT 为 1 mutation/pixel），达到预算后冻结。计时包括首次绘制时的资源准备、CPU 提交与 GPU 完成（不含此前的设备创建和模型加载），原生还包含回读；不含其他视图的等待，最后一轮可能超过时间预算。相机、场景、预算、有效采样参数或尺寸变化会重跑。
+`SetBudget({64,0})` / `Progress()` correspond to `setBudget({samples:64,milliseconds:0})` / `getProgress()`. Samples: 1–65536; time: 0–60000 ms, with nonzero time taking priority. Each iteration is 1 spp per view (1 mutation/pixel for MLT). Timing includes first-draw setup, submission and GPU completion/readback, but excludes earlier device/model loading and waiting for other views. Final iterations may exceed the time budget. Relevant state changes restart the comparison.
 
-## 梅特波利斯光传输（MLT）
+## Metropolis light transport
 
 ```cpp
 auto settings = window.GetRayTracing();
@@ -201,19 +163,23 @@ window.SetRenderMode(render::RenderMode::RayTracing);
 ```
 
 ```js
-renderer.setRayTracing({ ...renderer.getRayTracing(), integrator: 'mlt',
-  maxBounces: 8, mltBootstrapSamples: 262144,
-  mltLargeStepProbability: 0.3, mltMutationScale: 0.01, mltSeed: 1 })
+renderer.setRayTracing({
+  ...renderer.getRayTracing(),
+  integrator: 'mlt',
+  maxBounces: 8,
+  mltBootstrapSamples: 262144,
+  mltLargeStepProbability: 0.3,
+  mltMutationScale: 0.01,
+  mltSeed: 1,
+})
 renderer.setRenderMode('ray-tracing')
 ```
 
-- `mltBootstrapSamples`：归一化预采样数，默认 `262144`，范围 `256–1048576`。
-- `mltLargeStepProbability`：全维均匀大步概率，默认 `0.3`，范围 `0.05–1`。
-- `mltMutationScale`：对称环绕均匀小步的最大幅度，默认 `0.01`，范围 `0.0001–0.25`。
-- `mltSeed`：随机种子，默认 `1`，范围为无符号 32 位整数；更换后重新初始化。
+- `mltBootstrapSamples`: 256–1048576, default 262144.
+- `mltLargeStepProbability`: 0.05–1, default 0.3.
+- `mltMutationScale`: 0.0001–0.25, default 0.01.
+- `mltSeed`: uint32, default 1; changing it reinitializes chains.
 
-当前实现是 **PSSMLT**：在 BDPT 的主采样空间中做 Metropolis–Hastings 变异；直接照明单独估计，链追踪两次及以上散射。bootstrap 估计间接贡献的平均亮度，再按亮度重采样初始化最多 1024 条链，每链预热 16 次。接受／拒绝均做加权 splat，拒绝时保留完整主采样向量。不是 MMLT，也没有原始路径空间的专门变异策略，背景见 [PBRT MLT](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Metropolis_Light_Transport)。
+This is PSSMLT over BDPT primary sample space, not MMLT or specialized path-space mutations. Direct light is separate; chains estimate paths with at least two scattering events. Bootstrap estimates indirect mean luminance and brightness-resamples up to 1024 chains; each warms up 16 mutations. Accepted/rejected proposals both contribute weighted splats, while rejection preserves the complete old sample vector. See [PBRT MLT](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Metropolis_Light_Transport).
 
-`GetAccumulatedSamples()` / `getAccumulatedSamples()` 在 MLT 下返回平均 mutations/pixel；`samplesPerFrame` 控制每帧的这一预算。它不是独立相机 spp。四栏的 `samples` 字段采用各自单位；MLT 的预采样与预热不计入 mpp，但包含在首轮计时内。首轮可能超过时间预算。
-
-MLT 有相关噪声和初始化开销；固定 bootstrap 的归一化误差不会随 mpp 增长自动消失，应提高预采样数或更换种子复核亮度。面板可调前三项，种子通过 API 设置。所有参数、相机与场景变化会重新初始化；原有显示降噪仍可使用，对比模式固定关闭。共享 HLSL 使用双 32 位整数实现固定点累加与进位，不依赖浏览器浮点原子操作；仍为 8 个存储绑定，无新增依赖。
+Accumulation reports average mutations/pixel (mpp), not independent camera spp. Bootstrap/warmup are excluded from mpp but included in first-iteration time. Correlated noise and fixed-bootstrap normalization error remain; more mpp alone does not remove bootstrap error. Recheck brightness with larger bootstrap counts or different seeds. Shared HLSL uses paired uint32 fixed-point accumulation/carry rather than float atomics, within eight storage bindings. Parameter/camera/scene changes restart; display denoising is optional but comparison disables it.

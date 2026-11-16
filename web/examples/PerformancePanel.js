@@ -13,9 +13,9 @@ export function attachPerformanceBar(host, getStats) {
     left = document.createElement('span'),
     right = document.createElement('span')
   bar.className = 'nova-performance'
-  bar.setAttribute('aria-label', '渲染性能')
+  bar.setAttribute('aria-label', 'Rendering performance')
   bar.title =
-    'FPS 为完成的图像更新频率；Draw 包含 CPU 准备、排队和 GPU 完成等待，并非纯 GPU 时间；P95 为最近 60 次非首帧绘制的 95 分位。待命和不可见时 FPS 显示 —。'
+    'FPS measures completed image updates. Draw includes CPU preparation, queuing and GPU waits. P95 covers the last 60 non-initial draws. Idle and hidden views show — FPS.'
   bar.append(left, right)
   host.prepend(bar)
   function refresh() {
@@ -23,10 +23,10 @@ export function attachPerformanceBar(host, getStats) {
     left.textContent = `${p.method || 'Render'} ${p.fps == null ? '—' : p.fps.toFixed(1)} FPS · Draw ${p.frameCount ? p.lastRenderMs.toFixed(1) : '—'} ms · P95 ${p.frameCount > 1 ? p.p95Ms.toFixed(1) : '—'} ms`
     const state =
       {
-        idle: '待命 · 按需绘制',
-        paused: '不可见 · 已暂停',
-        rendering: '绘制中',
-        accumulating: '累计中',
+        idle: 'Idle · on demand',
+        paused: 'Hidden · paused',
+        rendering: 'Rendering',
+        accumulating: 'Accumulating',
       }[p.state] || p.state
     right.textContent = `${state} · ${p.width}×${p.height} · ${(p.scale * 100).toFixed(1)}% · ${p.samples} samples${p.accumulatedFrames ? ` · ${p.accumulatedFrames} accumulated` : ''}`
   }

@@ -12,14 +12,14 @@ export function addPostProcessingControls({ view, control, controller, changed }
   }
   control(
     'Post-processing',
-    '后处理开关',
+    'Post-processing enabled',
     'checkbox',
     () => view.getPostProcessing().enabled,
     (v) => set('enabled', v),
   )
   control(
     'Tone mapping',
-    '色调映射',
+    'Tone mapping',
     'select',
     () => view.getPostProcessing().toneMapping,
     (v) => set('toneMapping', v),
@@ -31,28 +31,28 @@ export function addPostProcessingControls({ view, control, controller, changed }
   )
   control(
     'Auto exposure',
-    '自动曝光',
+    'Auto exposure',
     'checkbox',
     () => view.getPostProcessing().autoExposure,
     (v) => set('autoExposure', v),
   )
   control(
     'Bloom',
-    '泛光开关',
+    'Bloom enabled',
     'checkbox',
     () => view.getPostProcessing().bloom,
     (v) => set('bloom', v),
   )
   for (const [key, label, aria, min, max, step] of [
-    ['exposureEV', 'Exposure / compensation EV', '曝光补偿', -8, 8, 0.1],
-    ['minEV', 'Min auto EV', '最低自动曝光', -10, 10, 0.1],
-    ['maxEV', 'Max auto EV', '最高自动曝光', -10, 10, 0.1],
-    ['adaptationRate', 'Adaptation rate', '适应速度', 0.1, 10, 0.1],
-    ['bloomIntensity', 'Bloom intensity', '泛光强度', 0, 2, 0.01],
-    ['bloomThreshold', 'Bloom threshold', '泛光阈值', 0, 20, 0.1],
-    ['bloomKnee', 'Bloom soft knee', '泛光过渡', 0, 1, 0.05],
-    ['saturation', 'Saturation', '饱和度', 0, 2, 0.05],
-    ['contrast', 'Contrast', '对比度', 0.1, 2, 0.05],
+    ['exposureEV', 'Exposure / compensation EV', 'Exposure compensation', -8, 8, 0.1],
+    ['minEV', 'Min auto EV', 'Minimum auto EV', -10, 10, 0.1],
+    ['maxEV', 'Max auto EV', 'Maximum auto EV', -10, 10, 0.1],
+    ['adaptationRate', 'Adaptation rate', 'Adaptation rate', 0.1, 10, 0.1],
+    ['bloomIntensity', 'Bloom intensity', 'Bloom intensity', 0, 2, 0.01],
+    ['bloomThreshold', 'Bloom threshold', 'Bloom threshold', 0, 20, 0.1],
+    ['bloomKnee', 'Bloom soft knee', 'Bloom soft knee', 0, 1, 0.05],
+    ['saturation', 'Saturation', 'Saturation', 0, 2, 0.05],
+    ['contrast', 'Contrast', 'Contrast', 0.1, 2, 0.05],
   ])
     control(
       label,

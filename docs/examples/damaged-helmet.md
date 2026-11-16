@@ -1,5 +1,5 @@
-# 模型加载
+# Model loading
 
-通过 Nova API 加载 GLB、设置环绕相机并显示基础颜色贴图（无光照）。拖动旋转，滚轮缩放。C++ 与网页共享 HLSL，示例不直接调用图形 API。
+Load Damaged Helmet, Avocado, BoomBox or a generated Cornell scene through the same model API. This example shows base color without lighting. Drag to orbit and scroll to zoom.
 
 <ClientOnly><ModelPlayground /></ClientOnly>

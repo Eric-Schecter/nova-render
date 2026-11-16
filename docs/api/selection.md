@@ -1,4 +1,4 @@
-# 后端查询与选择
+# Backend selection
 
 ```cpp
 const char* GraphicsAPIName(GraphicsAPI api);
@@ -6,11 +6,11 @@ bool IsGraphicsAPIAvailable(GraphicsAPI api);
 GraphicsAPI ResolveGraphicsAPI(const RendererConfig& config);
 ```
 
-- `GraphicsAPIName`：返回静态名称字符串，无需释放；未知值返回 `Unknown`。
-- `IsGraphicsAPIAvailable`：检查当前构建是否包含后端，不检测 GPU 或驱动；`Auto` 返回 `true`。
-- `ResolveGraphicsAPI`：解析 Auto 并检查配置，不创建窗口或设备。不合法的 WARP 组合抛出 `std::invalid_argument`，不可用后端抛出 `std::runtime_error`。
+- `GraphicsAPIName`: returns a static string; do not free it. Unknown values return `Unknown`.
+- `IsGraphicsAPIAvailable`: checks whether the backend was compiled in, not the GPU or driver. `Auto` returns true.
+- `ResolveGraphicsAPI`: resolves Auto and validates configuration without creating a window/device. Invalid WARP combinations throw `std::invalid_argument`; unavailable backends throw `std::runtime_error`.
 
-可在创建窗口前检查配置：
+Check the configuration before creating a window:
 
 ```cpp
 render::RendererConfig config;

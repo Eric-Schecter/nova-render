@@ -10,7 +10,7 @@ import probeShader from '../../../render/shaders/probe-scene.hlsli?raw'
 const shaderCode = mainShader.replace('#include \"probe-scene.hlsli\"', probeShader)
 const canvas = ref(null),
   ready = ref(false),
-  message = ref('初始化…'),
+  message = ref('Initializing…'),
   tab = ref('example'),
   preview = ref(true),
   busy = ref(false)
@@ -54,25 +54,25 @@ onBeforeUnmount(() => {
 <template>
   <div class="aa-playground" :data-ready="ready && !busy">
     <div class="aa-toolbar">
-      <strong>Nova 反射探针示例</strong>
+      <strong>Nova reflection probes</strong>
       <div class="aa-actions">
-        <button :disabled="busy" @click="run">重置</button
+        <button :disabled="busy" @click="run">Reset</button
         ><button
           :disabled="busy"
           :aria-expanded="preview"
           aria-controls="nova-probe-preview"
           @click="toggle"
         >
-          {{ preview ? '隐藏预览' : '显示预览' }}
+          {{ preview ? 'Hide preview' : 'Show preview' }}
         </button>
       </div>
     </div>
     <pre v-if="message" role="status">{{ message }}</pre>
     <div class="aa-source">
-      <div role="tablist" aria-label="示例代码">
-        <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ 示例</button
+      <div role="tablist" aria-label="Example source">
+        <button role="tab" :aria-selected="tab === 'cpp'" @click="tab = 'cpp'">C++ example</button
         ><button role="tab" :aria-selected="tab === 'example'" @click="tab = 'example'">
-          JavaScript 示例</button
+          JavaScript example</button
         ><button role="tab" :aria-selected="tab === 'shader'" @click="tab = 'shader'">
           HLSL shader
         </button>
@@ -91,7 +91,7 @@ onBeforeUnmount(() => {
       :aria-hidden="!preview"
       :inert="!preview"
     >
-      <canvas ref="canvas" width="800" height="485" aria-label="反射探针渲染结果" />
+      <canvas ref="canvas" width="800" height="485" aria-label="Reflection probe output" />
     </div>
   </div>
 </template>

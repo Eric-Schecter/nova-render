@@ -1,9 +1,7 @@
-# 反射探针
+# Reflection probes
 
-彩色房间中有红、绿、蓝三个局部反射探针。中央金属球自动穿过各个区域；暂停运动或拖动“移动相位”，观察反射的连续过渡。切换“平滑混合”与影响范围视图，对比重叠区域的权重变化。
+Red, green and blue local probes cover the room while the center sphere moves through them. Pause or scrub Travel phase; compare smooth/hard blending and the Influence diagnostic.
 
-右上角面板可展开／收起，支持选择探针、独立启用、位置、强度、边界混合及盒体投影修正；保留 AA、HDR 后处理和独立性能条。离开所有探针区域时使用环境反射。
-
-接口与限制见[反射探针](../api/probe)。
+The floating panel selects individual probes, enable/position/intensity/fade and box projection, while retaining AA/post and performance metrics. Uncovered regions use the environment. See [probe APIs and limits](../api/probe).
 
 <ClientOnly><ReflectionProbePlayground /></ClientOnly>

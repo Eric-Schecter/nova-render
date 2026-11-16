@@ -24,10 +24,10 @@ try {
     await page.goto(base + '/examples/' + path)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
     const canvas = page.locator('canvas'),
-      bar = page.getByLabel('渲染性能')
+      bar = page.getByLabel('Rendering performance')
     await canvas.scrollIntoViewIfNeeded()
     if (path === 'ambient-occlusion') {
-      if ((await page.getByRole('button', { name: '显示参数面板', exact: true }).count()) !== 1)
+      if ((await page.getByRole('button', { name: 'Show parameters', exact: true }).count()) !== 1)
         throw Error('AO should start collapsed')
     } else if (await page.locator('.aa-drawer').evaluate((el) => el.open))
       throw Error('Debugger should start collapsed')

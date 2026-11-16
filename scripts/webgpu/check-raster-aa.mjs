@@ -44,7 +44,8 @@ try {
         if (r.getAntiAliasingHistoryFrames() !== 1) throw Error('camera cut missing')
       }
       r.enableParameterPanel()
-      if (!document.querySelector('[aria-label="抗锯齿算法"]')) throw Error('Missing AA UI')
+      if (!document.querySelector('[aria-label="Anti-aliasing method"]'))
+        throw Error('Missing AA UI')
       r.dispose()
       return log
     },
@@ -53,7 +54,7 @@ try {
   assert.equal(errors.length, 0, errors.join('\n'))
   await page.goto((process.env.NOVA_TEST_URL || 'http://127.0.0.1:5200') + '/examples/lighting')
   await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
-  const select = page.getByRole('combobox', { name: '抗锯齿算法', exact: true })
+  const select = page.getByRole('combobox', { name: 'Anti-aliasing method', exact: true })
   await select.scrollIntoViewIfNeeded()
   for (const method of ['fxaa', 'smaa', 'msaa', 'ssaa', 'taa', 'off']) {
     await select.selectOption(method)

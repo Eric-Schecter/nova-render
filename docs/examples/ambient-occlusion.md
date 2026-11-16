@@ -1,11 +1,7 @@
-# 环境遮蔽 AO
+# Ambient occlusion
 
-Intel Sponza 轻量白模，约 **4.76 MB**、25 万三角形。移除了纹理与材质差异，保留柱脚、拱廊和墙角以观察遮蔽。
+Compare SSAO, HBAO, MSAO, RTAO and Off on a lightweight Intel Sponza white model. Inspect AO, depth or normals and switch indoor cameras. RTAO settles at 32 frames; screen-space methods render on demand.
 
-切换 **SSAO、HBAO、MSAO、RTAO** 或 Off，可查看合成、仅 AO、深度与法线；参数面板位于预览右上角，可展开／收起。RTAO 累积到 32 帧后暂停，其他算法按需更新。拖动旋转、滚轮缩放，也可切换柱廊、门廊和总览视角。
-
-画面顶部显示实际更新 FPS、绘制耗时、P95、内部尺寸与采样数。默认开启交互自适应：拖动时临时降低质量，停止后恢复；可在面板关闭。静止待命时 FPS 显示「—」，网页预览隐藏或移出视口时暂停计算。
-
-算法与参数见 [AO 接口](../api/ambient-occlusion)。
+Expand the top-right panel. AO alone may temporarily reduce quality during interaction; disable adaptive quality to keep full settings while moving.
 
 <ClientOnly><ModelPlayground ao /></ClientOnly>

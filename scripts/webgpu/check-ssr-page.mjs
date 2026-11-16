@@ -16,15 +16,15 @@ try {
   await p.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
   await openExampleParameters(p)
   const canvas = p.locator('canvas'),
-    panel = p.getByRole('region', { name: 'SSR 参数', exact: true }),
-    bar = p.getByLabel('渲染性能')
+    panel = p.getByRole('region', { name: 'SSR parameters', exact: true }),
+    bar = p.getByLabel('Rendering performance')
   await canvas.scrollIntoViewIfNeeded()
   await assertFloatingParameters(p, canvas, bar)
   const a = await bar.boundingBox(),
     c = await canvas.boundingBox(),
     u = await panel.boundingBox()
   if (a.y + a.height > c.y + 1 || u.y < c.y) throw Error('SSR controls overlap render')
-  await p.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption('off')
+  await p.getByRole('combobox', { name: 'Anti-aliasing method', exact: true }).selectOption('off')
   for (const debug of [
     'normals',
     'roughness',
@@ -34,38 +34,51 @@ try {
     'reflections',
     'composite',
   ]) {
-    await p.getByRole('combobox', { name: '反射调试视图', exact: true }).selectOption(debug)
+    await p.getByRole('combobox', { name: 'Reflection output', exact: true }).selectOption(debug)
     await p.waitForTimeout(150)
     await canvas.screenshot({ path: `build/validation/ssr/page-${debug}.png` })
   }
-  await p.getByRole('checkbox', { name: '深度金字塔', exact: true }).uncheck()
+  await p.getByRole('checkbox', { name: 'Depth hierarchy', exact: true }).uncheck()
   await p.waitForTimeout(200)
-  await p.getByRole('checkbox', { name: '深度金字塔', exact: true }).check()
-  await p.getByRole('checkbox', { name: 'SSR 开关', exact: true }).uncheck()
+  await p.getByRole('checkbox', { name: 'Depth hierarchy', exact: true }).check()
+  await p.getByRole('checkbox', { name: 'SSR enabled', exact: true }).uncheck()
   await p.waitForTimeout(200)
   await canvas.screenshot({ path: 'build/validation/ssr/page-env-only.png' })
-  await p.getByRole('checkbox', { name: 'SSR 开关', exact: true }).check()
-  await p.getByRole('combobox', { name: '反射环境', exact: true }).selectOption('studio_small_09')
-  await p.waitForFunction(() => !document.querySelector('[aria-label="反射环境"]').disabled, null, {
-    timeout: 30000,
-  })
-  await p.getByRole('combobox', { name: '反射环境', exact: true }).selectOption('builtin')
+  await p.getByRole('checkbox', { name: 'SSR enabled', exact: true }).check()
+  await p
+    .getByRole('combobox', { name: 'Reflection environment', exact: true })
+    .selectOption('studio_small_09')
+  await p.waitForFunction(
+    () => !document.querySelector('[aria-label="Reflection environment"]').disabled,
+    null,
+    {
+      timeout: 30000,
+    },
+  )
+  await p
+    .getByRole('combobox', { name: 'Reflection environment', exact: true })
+    .selectOption('builtin')
   await p.waitForTimeout(250)
-  await p.getByRole('checkbox', { name: '后处理开关', exact: true }).uncheck()
+  await p.getByRole('checkbox', { name: 'Post-processing enabled', exact: true }).uncheck()
   await p.waitForTimeout(100)
-  await p.getByRole('checkbox', { name: '后处理开关', exact: true }).check()
+  await p.getByRole('checkbox', { name: 'Post-processing enabled', exact: true }).check()
   for (const method of ['fxaa', 'smaa', 'msaa', 'ssaa', 'taa']) {
-    await p.getByRole('combobox', { name: '抗锯齿算法', exact: true }).selectOption(method)
+    await p
+      .getByRole('combobox', { name: 'Anti-aliasing method', exact: true })
+      .selectOption(method)
     await p.waitForTimeout(250)
   }
   await p.waitForFunction(
-    () => document.querySelector('[aria-label="渲染性能"]').textContent.includes('32 accumulated'),
+    () =>
+      document
+        .querySelector('[aria-label="Rendering performance"]')
+        .textContent.includes('32 accumulated'),
     null,
     { timeout: 60000 },
   )
   await p.screenshot({ path: 'build/validation/ssr/desktop.png' })
-  await p.getByRole('button', { name: '隐藏预览', exact: true }).click()
-  await p.getByRole('button', { name: '显示预览', exact: true }).click()
+  await p.getByRole('button', { name: 'Hide preview', exact: true }).click()
+  await p.getByRole('button', { name: 'Show preview', exact: true }).click()
   await p.setViewportSize({ width: 390, height: 900 })
   await canvas.scrollIntoViewIfNeeded()
   await p.waitForTimeout(350)
@@ -74,7 +87,7 @@ try {
   await p.screenshot({ path: 'build/validation/ssr/mobile.png' })
   await p.goto(base + '/api/ssr')
   await p.locator('h1').waitFor()
-  if (!(await p.locator('h1').textContent()).includes('屏幕空间反射'))
+  if (!(await p.locator('h1').textContent()).includes('Screen-space reflections'))
     throw Error('SSR docs missing')
   if (errors.length) throw Error(errors.join('\n'))
   console.log(

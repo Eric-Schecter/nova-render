@@ -9,7 +9,7 @@ export async function showPlanarReflections(canvas, shaderDirectory = '/generate
     initialScale: 0.75,
     showChecker: false,
     showSplit: false,
-    panelLabel: '平面反射参数',
+    panelLabel: 'Planar reflection parameters',
     describe: () => 'Planar · single bounce · ',
     extraControls: (api) => {
       const { view, control, controller, changed } = api
@@ -20,19 +20,19 @@ export async function showPlanarReflections(canvas, shaderDirectory = '/generate
       }
       const set = (key, value) => controller.setPlanarReflections({ [key]: value })
       for (const [prefix, label, aria] of [
-        ['floor', 'Floor', '地板'],
-        ['mirror', 'Mirror', '竖直镜子'],
+        ['floor', 'Floor', 'Floor'],
+        ['mirror', 'Mirror', 'Mirror'],
       ]) {
         control(
           label + ' planar reflection',
-          aria + '平面反射',
+          aria + ' planar reflection',
           'checkbox',
           () => view.getPlanarReflections()[prefix + 'Enabled'],
           (v) => set(prefix + 'Enabled', v),
         )
         control(
           label + ' roughness',
-          aria + '粗糙度',
+          aria + ' roughness',
           'range',
           () => view.getPlanarReflections()[prefix + 'Roughness'],
           (v) => set(prefix + 'Roughness', v),
@@ -40,7 +40,7 @@ export async function showPlanarReflections(canvas, shaderDirectory = '/generate
         )
         control(
           label + ' intensity',
-          aria + '反射强度',
+          aria + ' reflection intensity',
           'range',
           () => view.getPlanarReflections()[prefix + 'Intensity'],
           (v) => set(prefix + 'Intensity', v),
@@ -51,7 +51,7 @@ export async function showPlanarReflections(canvas, shaderDirectory = '/generate
         loading = false
       control(
         'Environment',
-        '反射环境',
+        'Reflection environment',
         'select',
         () => environment,
         async (v) => {

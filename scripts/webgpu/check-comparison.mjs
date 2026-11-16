@@ -55,7 +55,7 @@ try {
     throw Error('Not 2x2')
   const panel = await page.locator('.comparison-controls').boundingBox()
   if (panel.y < boxes[3].y + boxes[3].h) throw Error('Panel covers results')
-  if (await page.getByRole('combobox', { name: '渲染模式', exact: true }).count())
+  if (await page.getByRole('combobox', { name: 'Render mode', exact: true }).count())
     throw Error('Comparison is still a mode')
   const sums = []
   for (let i = 0; i < 4; i++) {

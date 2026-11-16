@@ -70,7 +70,7 @@ export function attachParameterPanel(
   surface.append(canvas)
   const panel = document.createElement('section')
   panel.className = 'nova-panel'
-  panel.setAttribute('aria-label', '参数面板')
+  panel.setAttribute('aria-label', 'Parameters')
   const toggle = document.createElement('button')
   toggle.type = 'button'
   toggle.className = 'nova-panel-toggle'
@@ -116,7 +116,7 @@ export function attachParameterPanel(
     body.hidden = value
     toggle.textContent = value ? 'Parameters ▸' : 'Parameters ▾'
     toggle.setAttribute('aria-expanded', String(!value))
-    toggle.setAttribute('aria-label', value ? '显示参数面板' : '收起参数面板')
+    toggle.setAttribute('aria-label', value ? 'Show parameters' : 'Collapse parameters')
   }
   toggle.addEventListener('click', () => setCollapsed(!collapsed), { signal: events.signal })
   for (const event of ['pointerdown', 'wheel', 'keydown'])
@@ -150,11 +150,11 @@ export function attachParameterPanel(
     const button = document.createElement('button')
     button.type = 'button'
     button.textContent =
-      label === '重置累计'
+      label === 'Reset accumulation'
         ? 'Reset accumulation'
-        : label === '重置相机'
+        : label === 'Reset camera'
           ? 'Reset camera'
-          : label === '重置环境'
+          : label === 'Reset environment'
             ? 'Reset environment'
             : 'Reset light'
     button.setAttribute('aria-label', label)
@@ -216,7 +216,7 @@ export function attachParameterPanel(
         label = document.createElement('label'),
         select = document.createElement('select')
       label.textContent = 'Algorithm'
-      select.setAttribute('aria-label', '抗锯齿算法')
+      select.setAttribute('aria-label', 'Anti-aliasing method')
       for (const [value, text] of [
         ['off', 'Off'],
         ['fxaa', 'FXAA'],
@@ -244,7 +244,7 @@ export function attachParameterPanel(
         label = document.createElement('label'),
         select = document.createElement('select')
       label.textContent = 'Mode'
-      select.setAttribute('aria-label', '渲染模式')
+      select.setAttribute('aria-label', 'Render mode')
       const capabilities = adapter.getCapabilities()
       for (const [value, text] of [
         ['raster', 'Raster'],
@@ -271,7 +271,7 @@ export function attachParameterPanel(
         const integratorRow = document.createElement('label'),
           integrator = document.createElement('select')
         integratorRow.textContent = 'Integrator'
-        integrator.setAttribute('aria-label', '路径积分器')
+        integrator.setAttribute('aria-label', 'Path integrator')
         for (const [value, title] of [
           ['path', 'Path tracing'],
           ['bidirectional', 'Bidirectional'],
@@ -296,14 +296,35 @@ export function attachParameterPanel(
         fields.set('integrator', { input: integrator })
 
         for (const [key, caption, aria, min, max, step] of [
-          ['samplesPerFrame', 'Samples per frame', '每帧采样', 1, 4, 1],
-          ['maxBounces', 'Max bounces', '反弹次数', 1, 8, 1],
-          ['resolutionScale', 'Render scale', '渲染比例', 0.25, 1, 0.05],
-          ['mltBootstrapSamples', 'MLT bootstrap samples', 'MLT 预采样数', 256, 1048576, 256],
-          ['mltLargeStepProbability', 'MLT large-step probability', 'MLT 大步概率', 0.05, 1, 0.01],
-          ['mltMutationScale', 'MLT mutation scale', 'MLT 小步幅度', 0.0001, 0.25, 0.0001],
-          ['photonsPerIteration', 'Photons per iteration', '每轮光子数', 256, 65536, 256],
-          ['photonRadius', 'Initial gather radius', '光子聚集半径', 0.03, 0.5, 0.005],
+          ['samplesPerFrame', 'Samples per frame', 'Samples per frame', 1, 4, 1],
+          ['maxBounces', 'Max bounces', 'Maximum bounces', 1, 8, 1],
+          ['resolutionScale', 'Render scale', 'Render scale', 0.25, 1, 0.05],
+          [
+            'mltBootstrapSamples',
+            'MLT bootstrap samples',
+            'MLT bootstrap samples',
+            256,
+            1048576,
+            256,
+          ],
+          [
+            'mltLargeStepProbability',
+            'MLT large-step probability',
+            'MLT large-step probability',
+            0.05,
+            1,
+            0.01,
+          ],
+          ['mltMutationScale', 'MLT mutation scale', 'MLT mutation scale', 0.0001, 0.25, 0.0001],
+          [
+            'photonsPerIteration',
+            'Photons per iteration',
+            'Photons per iteration',
+            256,
+            65536,
+            256,
+          ],
+          ['photonRadius', 'Initial gather radius', 'Photon gather radius', 0.03, 0.5, 0.005],
         ])
           slider(renderer, key, caption, aria, min, max, step, (value) =>
             adapter.setPathTracing({ ...adapter.getPathTracing(), [key]: value }),
@@ -312,7 +333,7 @@ export function attachParameterPanel(
           denoise = document.createElement('input')
         denoiseRow.className = 'nova-panel-check'
         denoise.type = 'checkbox'
-        denoise.setAttribute('aria-label', '降噪')
+        denoise.setAttribute('aria-label', 'Denoise')
         denoiseRow.append(denoise, 'Denoise')
         renderer.append(denoiseRow)
         denoise.addEventListener(
@@ -328,7 +349,7 @@ export function attachParameterPanel(
           sampling = document.createElement('input')
         samplingRow.className = 'nova-panel-check'
         sampling.type = 'checkbox'
-        sampling.setAttribute('aria-label', '光源采样与 MIS')
+        sampling.setAttribute('aria-label', 'Light sampling and MIS')
         samplingRow.append(sampling, 'Light sampling / MIS')
         renderer.append(samplingRow)
         sampling.addEventListener(
@@ -345,13 +366,13 @@ export function attachParameterPanel(
         fields.set('lightSampling', { input: sampling })
 
         const samples = document.createElement('div')
-        samples.setAttribute('aria-label', '累计采样')
+        samples.setAttribute('aria-label', 'Accumulated samples')
         renderer.append(samples)
         fields.set('samples', { output: samples })
         const method = document.createElement('div')
         method.textContent = 'WebGPU compute BVH'
         renderer.append(method)
-        reset(renderer, '重置累计', () => adapter.resetAccumulation())
+        reset(renderer, 'Reset accumulation', () => adapter.resetAccumulation())
       }
     }
     const clips = adapter.getAnimations()
@@ -360,7 +381,7 @@ export function attachParameterPanel(
         label = document.createElement('label'),
         select = document.createElement('select')
       label.textContent = 'Clip'
-      select.setAttribute('aria-label', '动画片段')
+      select.setAttribute('aria-label', 'Animation clip')
       clips.forEach((clip, i) => {
         const option = document.createElement('option')
         option.value = i
@@ -383,8 +404,8 @@ export function attachParameterPanel(
       animation.append(label)
       fields.set('animationClip', { input: select })
       for (const [key, text, aria] of [
-        ['playing', 'Playing', '播放动画'],
-        ['loop', 'Loop', '循环动画'],
+        ['playing', 'Playing', 'Play animation'],
+        ['loop', 'Loop', 'Loop animation'],
       ]) {
         const row = document.createElement('label'),
           input = document.createElement('input')
@@ -403,14 +424,14 @@ export function attachParameterPanel(
         animation.append(row)
         fields.set('animation_' + key, { input })
       }
-      slider(animation, 'animationSpeed', 'Speed', '动画速度', 0.1, 4, 0.1, (value) =>
+      slider(animation, 'animationSpeed', 'Speed', 'Animation speed', 0.1, 4, 0.1, (value) =>
         adapter.setAnimationState({ ...adapter.getAnimationState(), speed: value }),
       )
       slider(
         animation,
         'animationTime',
         'Time',
-        '动画时间',
+        'Animation time',
         0,
         clips[adapter.getAnimationState().clip].duration,
         0.01,
@@ -419,13 +440,13 @@ export function attachParameterPanel(
     }
     if (models.length) {
       const assets = group('Model')
-      assetSelect(assets, 'model', 'Model', '模型选择', models, adapter.loadModel)
+      assetSelect(assets, 'model', 'Model', 'Model', models, adapter.loadModel)
     }
     const scene = group('Scene'),
       label = document.createElement('label'),
       select = document.createElement('select')
     label.textContent = 'Background'
-    select.setAttribute('aria-label', '背景色')
+    select.setAttribute('aria-label', 'Clear color')
     for (const [value, text] of [
       ['dark', 'Dark'],
       ['light', 'Light'],
@@ -446,18 +467,18 @@ export function attachParameterPanel(
     if (current.camera) {
       const camera = group('Camera')
       for (const [key, caption, aria, min, max, step] of [
-        ['yaw', 'Yaw', '水平角', -180, 180, 0.1],
-        ['pitch', 'Pitch', '俯仰角', -85, 85, 0.1],
-        ['distance', 'Distance', '距离', 1.5, 100, 0.01],
+        ['yaw', 'Yaw', 'Yaw', -180, 180, 0.1],
+        ['pitch', 'Pitch', 'Pitch', -85, 85, 0.1],
+        ['distance', 'Distance', 'Distance', 1.5, 100, 0.01],
       ])
         slider(camera, key, caption, aria, min, max, step, (value) =>
           adapter.setCamera({ ...adapter.getCamera(), [key]: value }),
         )
       if (current.lighting || current.environment)
-        slider(camera, 'exposure', 'Exposure', '曝光', 0.1, 16, 0.1, (value) =>
+        slider(camera, 'exposure', 'Exposure', 'Exposure', 0.1, 16, 0.1, (value) =>
           adapter.setCamera({ ...adapter.getCamera(), exposure: value }),
         )
-      reset(camera, '重置相机', () => adapter.setCamera(initialCamera))
+      reset(camera, 'Reset camera', () => adapter.setCamera(initialCamera))
     }
     if (current.environment) {
       const environment = group('Environment'),
@@ -467,13 +488,13 @@ export function attachParameterPanel(
         environment,
         'environment',
         'Map',
-        '环境贴图',
+        'Environment map',
         environments,
         adapter.loadEnvironment,
       )
       checkboxRow.className = 'nova-panel-check'
       checkbox.type = 'checkbox'
-      checkbox.setAttribute('aria-label', '显示天空盒')
+      checkbox.setAttribute('aria-label', 'Show skybox')
       checkboxRow.append(checkbox, 'Skybox')
       environment.append(checkboxRow)
       checkbox.addEventListener(
@@ -489,9 +510,9 @@ export function attachParameterPanel(
       )
       fields.set('showBackground', { input: checkbox })
       for (const [key, caption, aria, min, max, step] of [
-        ['rotation', 'Rotation', '环境旋转', -180, 180, 0.1],
-        ['environmentIntensity', 'Intensity', '环境强度', 0, 16, 0.01],
-        ['backgroundIntensity', 'Sky brightness', '天空盒强度', 0, 16, 0.01],
+        ['rotation', 'Rotation', 'Environment rotation', -180, 180, 0.1],
+        ['environmentIntensity', 'Intensity', 'Environment intensity', 0, 16, 0.01],
+        ['backgroundIntensity', 'Sky brightness', 'Skybox intensity', 0, 16, 0.01],
       ])
         slider(environment, key, caption, aria, min, max, step, (value) =>
           adapter.setEnvironment({
@@ -499,33 +520,33 @@ export function attachParameterPanel(
             [key === 'environmentIntensity' ? 'intensity' : key]: value,
           }),
         )
-      reset(environment, '重置环境', () => adapter.setEnvironment(initialEnvironment))
+      reset(environment, 'Reset environment', () => adapter.setEnvironment(initialEnvironment))
     }
     if (current.lighting) {
       const lamp = group('Main light')
-      slider(lamp, 'azimuth', 'Azimuth', '光源方位', -180, 180, 0.1, (value) =>
+      slider(lamp, 'azimuth', 'Azimuth', 'Light azimuth', -180, 180, 0.1, (value) =>
         direction('azimuth', value),
       )
-      slider(lamp, 'elevation', 'Elevation', '光源仰角', -90, 90, 0.1, (value) =>
+      slider(lamp, 'elevation', 'Elevation', 'Light elevation', -90, 90, 0.1, (value) =>
         direction('elevation', value),
       )
       const rgb = document.createElement('div')
       rgb.className = 'nova-panel-rgb'
       lamp.append(rgb)
       for (const [index, name, aria] of [
-        [0, 'R', '红'],
-        [1, 'G', '绿'],
-        [2, 'B', '蓝'],
+        [0, 'R', 'Red'],
+        [1, 'G', 'Green'],
+        [2, 'B', 'Blue'],
       ])
-        slider(rgb, name, name, '光源' + aria, 0, 1, 0.01, (value) => {
+        slider(rgb, name, name, 'Light ' + aria, 0, 1, 0.01, (value) => {
           const light = adapter.getLight()
           light.color[index] = value
           adapter.setLight(light)
         })
-      slider(lamp, 'intensity', 'Intensity', '光源强度', 0, 100, 0.1, (value) =>
+      slider(lamp, 'intensity', 'Intensity', 'Light intensity', 0, 100, 0.1, (value) =>
         adapter.setLight({ ...adapter.getLight(), intensity: value }),
       )
-      reset(lamp, '重置光源', () => adapter.setLight(initialLight))
+      reset(lamp, 'Reset light', () => adapter.setLight(initialLight))
     }
   }
   function refresh() {

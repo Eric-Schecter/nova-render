@@ -46,37 +46,37 @@ try {
     throw Error('No GPU change in ' + field)
   }
   const initial = await frame()
-  await page.getByRole('slider', { name: '环境强度', exact: true }).fill('0')
+  await page.getByRole('slider', { name: 'Environment intensity', exact: true }).fill('0')
   const dark = await changed(initial, 'model')
   if (dark.sky !== initial.sky) throw Error('IBL strength changed sky brightness')
-  await page.getByRole('slider', { name: '天空盒强度', exact: true }).fill('0.2')
+  await page.getByRole('slider', { name: 'Skybox intensity', exact: true }).fill('0.2')
   const dim = await changed(dark, 'sky')
   if (dim.model !== dark.model) throw Error('Sky brightness changed IBL lighting')
-  await page.getByRole('slider', { name: '环境旋转', exact: true }).fill('90')
+  await page.getByRole('slider', { name: 'Environment rotation', exact: true }).fill('90')
   const rotated = await changed(dim, 'sky')
-  await page.getByRole('slider', { name: '环境强度', exact: true }).fill('1')
+  await page.getByRole('slider', { name: 'Environment intensity', exact: true }).fill('1')
   const lit = await changed(rotated, 'model')
   if (lit.sky !== rotated.sky) throw Error('Lighting leaked into sky')
-  await page.getByRole('checkbox', { name: '显示天空盒', exact: true }).uncheck()
+  await page.getByRole('checkbox', { name: 'Show skybox', exact: true }).uncheck()
   const hidden = await changed(lit, 'sky')
   if (hidden.model !== lit.model) throw Error('Hiding sky disabled model IBL')
-  const background = page.getByRole('combobox', { name: '背景色', exact: true })
+  const background = page.getByRole('combobox', { name: 'Clear color', exact: true })
   if (!(await background.isEnabled())) throw Error('Clear color remains disabled without sky')
-  await page.getByRole('button', { name: '重置环境', exact: true }).click()
+  await page.getByRole('button', { name: 'Reset environment', exact: true }).click()
   const reset = await changed(hidden, 'sky')
   if (reset.sky !== initial.sky || reset.model !== initial.model)
     throw Error('Environment reset did not restore GPU output')
   if (!(await background.isDisabled())) throw Error('Clear color should be disabled behind sky')
   for (const [tab, file] of [
-    ['C++ 示例', 'examples/environment/main.cpp'],
-    ['JavaScript 示例', 'web/examples/environment.js'],
+    ['C++ example', 'examples/environment/main.cpp'],
+    ['JavaScript example', 'web/examples/environment.js'],
     ['HLSL shader', 'render/shaders/model.hlsl'],
   ]) {
     await page.getByRole('tab', { name: tab, exact: true }).click()
     if ((await page.getByRole('textbox').inputValue()) !== (await readFile(file, 'utf8')))
       throw Error('Wrong environment example source')
   }
-  await page.getByRole('button', { name: '收起参数面板', exact: true }).click()
+  await page.getByRole('button', { name: 'Collapse parameters', exact: true }).click()
   await page.locator('.nova-viewport').screenshot({ path: 'build/webgpu/environment-final.png' })
   await page.evaluate(
     async (moduleURL) => {

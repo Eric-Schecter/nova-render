@@ -1,6 +1,6 @@
-# 参数面板
+# Parameter panels
 
-可选的渲染区域内 UI：C++ 使用 Dear ImGui，网页使用独立 HTML/CSS 控制区，无 WASM、无额外前端框架。两端提供相同的分组与参数范围，面板可收起。网页的积分器对比例子采用上方渲染、下方参数的布局，控制区独立占位，不遮挡四栏画面；参数分组随宽度自动换列，内容较多时在控制区内滚动。其余网页例子保持右上角悬浮面板，窄屏首次显示时默认收起。AO 及后续原生例子也采用右上角可收起面板，默认不占用画面下方空间。
+Optional viewport UI uses Dear ImGui on C++ and plain HTML/CSS on web, without WASM or an extra frontend framework. Groups and ranges correspond across platforms. Integrator comparison alone places controls below its four images; other examples use collapsible top-right overlays. AO and subsequent native demos also use floating panels.
 
 ## C++
 
@@ -14,36 +14,32 @@ while (window.PollEvents()) window.DrawFrame();
 window.WaitIdle();
 ```
 
-`Renderer` 同样提供 `EnableParameterPanel(bool enabled = true)`；传 `false` 隐藏面板。默认关闭，示例显式启用。返回 `false` 表示构建时未包含 UI；关闭时不会拦截模型输入。原生由主循环持续绘制，无后台线程或独立原生窗口。
+`Renderer::EnableParameterPanel(bool enabled=true)` also works; false hides it. The panel is off by default and examples opt in. A false return means UI was excluded from the build. The main application loop draws it; no background thread or extra native window is created.
 
-通过 `-DNOVA_ENABLE_UI=OFF` 可构建不依赖 ImGui 的渲染库。启用时由 vcpkg 安装 ImGui 与所选后端绑定；安装包包含对应库和许可文件。
+Use `-DNOVA_ENABLE_UI=OFF` to omit ImGui. Enabled builds obtain ImGui and backend bindings through vcpkg; SDKs include libraries and notices.
 
-## 网页
+## Web
 
 ```js
 renderer.enableOrbitControls()
-renderer.enableParameterPanel({ onError: error => console.error(error) })
+renderer.enableParameterPanel({ onError: (error) => console.error(error) })
 // renderer.disableParameterPanel()
-// 页面结束时 renderer.dispose()
 ```
 
-`enableParameterPanel()` 返回清理函数，重复启用不会叠加面板；`dispose()` 自动移除面板、事件和待执行的 UI 绘制。控件自动安排重绘。面板直接使用现有模型、相机和光照 API，程序设置参数后也会同步显示；独立使用网页模块不需要 Vue。
+`enableParameterPanel()` returns cleanup and does not duplicate panels. `dispose()` removes DOM, listeners and pending UI frames. Controls call the existing model/camera/light APIs and schedule redraws. Using the standalone module does not require Vue.
 
-## 控件
+## Controls
 
-- Scene：深色 / 浅色背景，所有例子都有。
-- Camera：水平角 ±180°、俯仰角 ±85°、距离 1.5～100、重置到启用时的相机。
-- PBR 或已加载环境时提供曝光 0.1～3；PBR 提供主光方位 ±180°、仰角 ±90°、线性 RGB 0～1、强度 0～100、重置到启用时的光源。
+- Scene: dark/light clear color.
+- Camera: yaw ±180°, pitch ±85°, distance 1.5–100 and reset.
+- PBR/environment: exposure 0.1–3. Main light: azimuth ±180°, elevation ±90°, linear RGB [0,1], intensity [0,100], reset.
+- Environment: sky visibility, rotation ±180°, lighting/sky intensity [0,16], reset. Clear-color presets are disabled while the sky is shown.
 
-内置 Window / 环绕控件会隔离 UI 输入，操作面板不会触发模型旋转或缩放；面板外仍可拖动与滚轮缩放。网页面板随预览一起隐藏。无光照模型保留基础颜色显示；加载环境后，Environment 分组提供天空盒显隐、旋转 ±180°、环境强度与天空亮度 0～16、重置。天空盒显示时，背景预设暂时禁用。
+UI input is isolated from orbit interaction. Hide-preview also hides its panel. `SetClearColor({r,g,b,a})` / `setClearColor([r,g,b,a])` use finite [0,1] display sRGB values; light colors remain linear. Getters return copies.
 
-背景可通过 `SetClearColor({r,g,b,a})` / `setClearColor([r,g,b,a])` 设置，`GetClearColor()` / `getClearColor()` 返回副本。RGBA 为 0～1 的有限数，RGB 使用显示用 sRGB 值；光源颜色仍为线性 RGB。
+## Model and environment choices
 
-当前已验证 macOS Metal / Vulkan、Ubuntu Lavapipe 和 Chrome WebGPU，包含输入隔离、显隐与生命周期。本轮也通过 Windows 虚拟机 DX12 WARP 的桌面会话检查；本轮未验证 Windows 真机 GPU。
-
-## 模型与环境选择
-
-三个模型例子均可选择 Damaged Helmet、Avocado、BoomBox、Cornell Box；天空盒例子还提供三套 HDR 环境。切换保留相机、曝光、灯光和环境参数。
+Application-owned lists supply display names and resource paths/URLs. Enabling a panel does not load the first entry; set the initial asset with the load methods. Omitted lists hide selectors. Switching keeps camera and lighting settings; load failure preserves the old resource.
 
 ```cpp
 render::ParameterPanelConfig panel;
@@ -56,10 +52,10 @@ panel.environments = {
     {"Venice Sunset", "assets/Environment/venice_sunset.nenv"},
     {"Studio Small 09", "assets/Environment/studio_small_09.nenv"}
 };
-window.EnableParameterPanel(panel); // Renderer 同样支持
+window.EnableParameterPanel(panel);
 ```
 
-`AssetChoice` 包含显示名 `name` 和资源路径 `path`，由应用提供。启用面板不会加载列表第一项，初始资源仍用 `LoadModel` / `LoadEnvironment` 设置。UI 请求在下一帧开始前执行；加载失败保留原资源并在面板显示错误。省略列表时隐藏对应选择器。
+Native `AssetChoice` has `name` and `path`. Requests are applied before the next frame. The browser loads asynchronously, disables selectors while loading, restores failed selections and reports through `onError`.
 
 ```js
 renderer.enableParameterPanel({
@@ -72,14 +68,10 @@ renderer.enableParameterPanel({
     { name: 'Venice Sunset', url: '/generated/venice_sunset.bin' },
     { name: 'Studio Small 09', url: '/generated/studio_small_09.bin' },
   ],
-  onError: error => console.error(error),
+  onError: (error) => console.error(error),
 })
 ```
 
-网页按需异步加载，期间禁用选择器并保留原画面；失败时恢复原选择，通过 `onError` 报告。`dispose()` 清理资源与事件。
+[Animation](./animation) adds clip, playing, loop, speed and time controls. [Render modes](./render-mode) provide Raster / Ray tracing and integrator settings. [Integrator comparison](../examples/integrators) owns separate fixed-sample/active-time budgets, freezes on completion, and deliberately disables external lighting and denoising.
 
-光栅与光追的模式、采样和能力查询接口见[渲染模式](./render-mode)。
-
-第五个例子的 Animation 分组提供片段选择、Playing、Loop、Speed 和 Time，接口见[骨骼动画](./animation)。
-
-积分器对比由例子层独立提供固定采样数／每种方法活跃时间预算，到达预算自动暂停；顶部显示 PT、BDPT、光子映射、MLT 各自的 spp 与耗时。其控制面板属于例子，普通 Mode 菜单只有 Raster 和 Ray tracing。它固定关闭外部光照和降噪，面板仅保留有效参数，见[第六例子](../examples/integrators)。
+Panel lifecycle and input isolation have been exercised on Metal, Vulkan, Ubuntu Lavapipe, Chrome WebGPU and a desktop-session Windows DX12 WARP VM; this is not a claim of Windows hardware-GPU validation.

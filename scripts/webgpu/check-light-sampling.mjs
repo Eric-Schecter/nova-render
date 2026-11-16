@@ -184,19 +184,23 @@ try {
     await page.goto('http://127.0.0.1:5173/examples/' + slug)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 60000 })
     await page
-      .getByRole('combobox', { name: '模型选择', exact: true })
+      .getByRole('combobox', { name: 'Model', exact: true })
       .selectOption('/generated/CornellBox.glb')
-    await page.waitForFunction(() => !document.querySelector('[aria-label="模型选择"]').disabled)
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('ray-tracing')
-    const toggle = page.getByRole('checkbox', { name: '光源采样与 MIS', exact: true })
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Model"]').disabled)
+    await page
+      .getByRole('combobox', { name: 'Render mode', exact: true })
+      .selectOption('ray-tracing')
+    const toggle = page.getByRole('checkbox', { name: 'Light sampling and MIS', exact: true })
     if (!(await toggle.isChecked())) throw Error('MIS must default on')
     await toggle.uncheck()
     await toggle.check()
     await page.waitForFunction(
       () =>
-        Number(document.querySelector('[aria-label="累计采样"]')?.textContent.split(':')[1]) >= 4,
+        Number(
+          document.querySelector('[aria-label="Accumulated samples"]')?.textContent.split(':')[1],
+        ) >= 4,
     )
-    await page.getByRole('combobox', { name: '渲染模式', exact: true }).selectOption('raster')
+    await page.getByRole('combobox', { name: 'Render mode', exact: true }).selectOption('raster')
   }
   if (errors.length) throw Error(errors.join('\n'))
   console.log('PASS public MIS panel in all three model examples')

@@ -3,7 +3,7 @@ export async function openExampleParameters(page) {
   if (await drawer.count()) {
     if (!(await drawer.evaluate((el) => el.open))) await drawer.locator('summary').click()
   } else {
-    const button = page.getByRole('button', { name: '显示参数面板', exact: true })
+    const button = page.getByRole('button', { name: 'Show parameters', exact: true })
     if (await button.count()) await button.click()
   }
 }

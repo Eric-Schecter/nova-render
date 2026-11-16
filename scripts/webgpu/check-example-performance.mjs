@@ -24,11 +24,11 @@ try {
   for (const name of pages) {
     await page.goto(base + '/examples/' + name)
     await page.locator('[data-ready="true"]').waitFor({ timeout: 120000 })
-    const bar = page.locator('[aria-label="渲染性能"]')
+    const bar = page.locator('[aria-label="Rendering performance"]')
     if ((await bar.count()) !== 1) throw Error(name + ': missing/duplicate metrics')
     await bar.scrollIntoViewIfNeeded()
     await page.waitForFunction(() =>
-      document.querySelector('[aria-label="渲染性能"]').textContent.includes('ms'),
+      document.querySelector('[aria-label="Rendering performance"]').textContent.includes('ms'),
     )
     for (const canvas of await page.locator('canvas').all()) {
       const a = await bar.boundingBox(),
@@ -43,7 +43,10 @@ try {
     }
     if (name === 'skeletal-animation') {
       await page.waitForFunction(
-        () => /\d+\.\d FPS/.test(document.querySelector('[aria-label="渲染性能"]').textContent),
+        () =>
+          /\d+\.\d FPS/.test(
+            document.querySelector('[aria-label="Rendering performance"]').textContent,
+          ),
         null,
         { timeout: 30000 },
       )
@@ -52,16 +55,18 @@ try {
       await page.waitForTimeout(450)
       if (!(await bar.textContent()).includes('— FPS')) throw Error(name + ': idle reports FPS')
     }
-    await page.getByRole('button', { name: '隐藏预览', exact: true }).click()
+    await page.getByRole('button', { name: 'Hide preview', exact: true }).click()
     if (await bar.isVisible()) throw Error(name + ': metrics remain visible when preview hidden')
-    await page.getByRole('button', { name: '显示预览', exact: true }).click()
+    await page.getByRole('button', { name: 'Show preview', exact: true }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     await bar.scrollIntoViewIfNeeded()
     if ((await page.evaluate(() => document.documentElement.scrollWidth)) > 390)
       throw Error(name + ': mobile overflow')
     // Read both rectangles in one frame: scroll anchoring and the live metrics can move the page.
     const { a, b } = await page.evaluate(() => {
-      const a = document.querySelector('[aria-label="渲染性能"]').getBoundingClientRect(),
+      const a = document
+          .querySelector('[aria-label="Rendering performance"]')
+          .getBoundingClientRect(),
         b = document.querySelector('canvas').getBoundingClientRect()
       return { a: { y: a.y, height: a.height }, b: { y: b.y, height: b.height } }
     })
