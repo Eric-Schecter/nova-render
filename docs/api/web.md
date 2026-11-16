@@ -49,3 +49,5 @@ See [Camera and viewport](/api/camera) for `setViewCamera`, `getViewCamera`, `se
 See [scene picking](./picking) for synchronous instance ray queries and hit data.
 
 `getCapabilities().metropolis` reports MLT availability in 0.2.1 and later. WebGPU compute BVH supports MLT; native DX12 WARP is excluded. See [device limits](./render-mode#windows-device-limits).
+
+See [scene lights](./lights) for point lights, spot lights, simultaneous lighting and shadow capabilities.

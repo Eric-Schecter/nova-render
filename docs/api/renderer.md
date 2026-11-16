@@ -50,3 +50,5 @@ See [Camera and viewport](/api/camera) for full pose/lens and viewport APIs; leg
 See [scene picking](./picking) for synchronous instance ray queries and hit data.
 
 See [Materials](./materials) for multi-slot materials and runtime factor/texture editing.
+
+See [scene lights](./lights) for point lights, spot lights, simultaneous lighting and shadow capabilities.

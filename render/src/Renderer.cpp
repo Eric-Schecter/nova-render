@@ -215,6 +215,18 @@ namespace render
     {
         return impl_->backend->GetCamera();
     }
+    void Renderer::SetLights(const std::vector<SceneLight>& lights)
+    {
+        impl_->backend->SetLights(lights);
+    }
+    std::vector<SceneLight> Renderer::GetLights() const
+    {
+        return impl_->backend->GetLights();
+    }
+    LightingCapabilities Renderer::GetLightingCapabilities() const
+    {
+        return impl_->backend->GetLightingCapabilities();
+    }
     void Renderer::SetDirectionalLight(const DirectionalLight& light)
     {
         detail::ValidateDirectionalLight(light);

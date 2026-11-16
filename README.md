@@ -28,6 +28,7 @@ Release **0.2.1** includes C++ SDKs for macOS ARM64 (Metal / Vulkan via MoltenVK
 - [x] Static scene instances with shared assets and original model space
 - [x] GPU skeletal animation
 - [x] Directional lighting, skyboxes and HDR image-based lighting
+- [x] Point lights, spot lights and up to 16 simultaneous lights (Metal / WebGPU raster)
 - [x] Shadow maps — hard shadows, PCF, PCSS
 - [x] Ambient occlusion — SSAO, HBAO, MSAO, RTAO
 - [x] Anti-aliasing — FXAA, SMAA 1x, MSAA 4x, SSAA 2×2, TAA

@@ -67,6 +67,44 @@ namespace render::detail
             pathSession.Reset();
             rasterAA.Reset();
         }
+        bool                    lightCollectionActive = false;
+        std::vector<SceneLight> lights;
+        LightingCapabilities    GetLightingCapabilities() const
+        {
+            LightingCapabilities c;
+            if (pathAPI == GraphicsAPI::Metal && mode == RenderMode::Raster)
+            {
+                c.directional = c.point = c.spot = c.directionalShadows = true;
+                c.maxLights                                             = 16;
+            }
+            else
+                c.reason = "Light collections currently require Metal raster rendering";
+            return c;
+        }
+        void SetLights(const std::vector<SceneLight>& values)
+        {
+            if (!GetLightingCapabilities().maxLights)
+                throw std::runtime_error(GetLightingCapabilities().reason);
+            auto next             = ValidateSceneLights(values);
+            lights                = std::move(next);
+            lightCollectionActive = true;
+            RebuildRasterInstances();
+            rasterAA.Reset();
+            pathSession.Reset();
+        }
+        std::vector<SceneLight> GetLights() const
+        {
+            if (lightCollectionActive)
+                return lights;
+            SceneLight v;
+            v.id             = "__directional";
+            v.direction      = directionalLight.direction;
+            v.color          = directionalLight.color;
+            v.intensity      = directionalLight.intensity;
+            v.castShadow     = true;
+            v.shadowSoftness = shadowSettings.softness;
+            return ValidateSceneLights({v});
+        }
         std::vector<InstanceData>        rasterInstances;
         const std::vector<InstanceData>& RasterInstances() const { return rasterInstances; }
         void                             RebuildRasterInstances()
@@ -94,6 +132,30 @@ namespace render::detail
             rasterInstances.push_back(globals);
             if (scene.active)
                 rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
+            rasterInstances[rasterGlobals].uv[2] = float(rasterInstances.size());
+            rasterInstances[rasterGlobals].uv[3] = lightCollectionActive ? 1.f : 0.f;
+            unsigned count                       = 0;
+            for (const auto& light : lights)
+                if (light.enabled)
+                {
+                    InstanceData record{};
+                    for (unsigned k = 0; k < 3; ++k)
+                    {
+                        record.baseColor[k] = light.color[k];
+                        record.material[k]  = light.position[k];
+                        record.emissive[k]  = light.direction[k];
+                    }
+                    record.baseColor[3] = light.intensity;
+                    record.material[3]  = light.range;
+                    record.emissive[3]  = float(light.type);
+                    record.uv[0]        = std::cos(light.innerConeAngle);
+                    record.uv[1]        = std::cos(light.outerConeAngle);
+                    record.uv[2]        = light.castShadow ? 1.f : 0.f;
+                    record.uv[3]        = light.shadowSoftness;
+                    rasterInstances.push_back(record);
+                    ++count;
+                }
+            rasterInstances[rasterGlobals].uv[1] = float(count);
         }
         SceneShadowSettings shadowSettings;
         void                SetShadows(const SceneShadowSettings& value)
@@ -164,6 +226,9 @@ namespace render::detail
         {
             if (value != RenderMode::Raster && value != RenderMode::PathTracing)
                 throw std::invalid_argument("Invalid render mode");
+            if (value != RenderMode::Raster && lightCollectionActive)
+                throw std::runtime_error(
+                  "Light collections currently support raster mode only; restore the legacy directional light first");
             if (value != RenderMode::Raster)
             {
                 if (!model || model->vertices.empty())
@@ -370,9 +435,13 @@ namespace render::detail
 
         void        SetDirectionalLight(const DirectionalLight& value)
         {
-            if (std::memcmp(&directionalLight, &value, sizeof(value)) != 0)
+            if (lightCollectionActive || std::memcmp(&directionalLight, &value, sizeof(value)) != 0)
                 rasterAA.Reset();
             directionalLight = value;
+            lightCollectionActive = false;
+            lights.clear();
+            RebuildRasterInstances();
+            pathSession.Reset();
         }
         DirectionalLight GetDirectionalLight() const { return directionalLight; }
         void             SetLighting(LightingMode value)
@@ -502,6 +571,8 @@ namespace render::detail
                 rasterAA.Reset();
                 pathSession.Reset();
             }
+            if (lightCollectionActive)
+                directionalLight = oldLight;
             const auto nextAA = rasterSettings;
             rasterSettings    = previousAA;
             if (nextAA.method != previousAA.method)

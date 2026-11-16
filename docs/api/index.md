@@ -23,3 +23,5 @@ See [writing an example](../guide/integration) and [installing packages](../guid
 - [Materials](/api/materials): multiple slots and runtime colors, PBR factors and textures.
 
 - [Atmosphere and integration](./atmosphere): scene fog, environment clearing and optional application UI.
+
+See [scene lights](./lights) for point lights, spot lights, simultaneous lighting and shadow capabilities.

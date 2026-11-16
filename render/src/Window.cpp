@@ -193,6 +193,18 @@ namespace render
         impl_->orbitEnabled = enabled;
         impl_->dragging     = false;
     }
+    void Window::SetLights(const std::vector<SceneLight>& lights)
+    {
+        impl_->renderer->SetLights(lights);
+    }
+    std::vector<SceneLight> Window::GetLights() const
+    {
+        return impl_->renderer->GetLights();
+    }
+    LightingCapabilities Window::GetLightingCapabilities() const
+    {
+        return impl_->renderer->GetLightingCapabilities();
+    }
     void Window::SetDirectionalLight(const DirectionalLight& light)
     {
         impl_->renderer->SetDirectionalLight(light);

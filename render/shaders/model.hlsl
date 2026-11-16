@@ -192,7 +192,7 @@ bool sceneOccluded(uint header, float3 origin, float3 direction)
     }
     return false;
 }
-float sceneVisibility(float3 position, float3 normal)
+float sceneVisibility(float3 position, float3 normal, float3 light, float softness)
 {
     if (irradiance[3].w < .5)
         return 1;
@@ -200,13 +200,14 @@ float sceneVisibility(float3 position, float3 normal)
     InstanceData settings = instances[header];
     if (settings.emissive.y < .5 || settings.emissive.x < .5)
         return 1;
-    float3 light = normalize(lightDirection.xyz), axis = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    light          = normalize(light);
+    float3 axis    = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
-    uint   count   = settings.emissive.z < .0001 ? 1 : uint(settings.emissive.w);
+    uint   count   = softness < .0001 ? 1 : uint(settings.emissive.w);
     float  visible = 0;
     [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
     {
-        float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * settings.emissive.z * .006;
+        float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * softness * .006;
         float  angle  = float(sampleIndex) * 2.39996323;
         float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
         visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray) ? 0 : 1;
@@ -395,14 +396,59 @@ float4 PSMain(VertexOut input)
     float4 mr       = materialTexture.Sample(textureSampler, uv);
     float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
-    float3 color = directLight(
-      n,
-      v,
-      lightDirection.xyz,
-      base,
-      metallic,
-      roughness,
-      lightColorIntensity.rgb * lightColorIntensity.w * sceneVisibility(input.worldPosition, input.normal));
+    bool   collection = false;
+    uint   header     = 0;
+    if (irradiance[3].w > .5)
+    {
+        header     = uint(irradiance[3].w) - 1;
+        collection = instances[header].uv.w > .5;
+    }
+    float3 color = 0;
+    if (collection)
+    {
+        uint count = uint(instances[header].uv.y), offset = uint(instances[header].uv.z);
+        [loop] for (uint i = 0; i < count; ++i)
+        {
+            InstanceData source      = instances[offset + i];
+            uint         type        = uint(source.emissive.w);
+            float3       l           = source.emissive.xyz;
+            float        attenuation = 1;
+            if (type != 0)
+            {
+                float3 delta           = source.material.xyz - input.worldPosition;
+                float  distanceSquared = dot(delta, delta);
+                float  distance        = sqrt(distanceSquared);
+                l                      = distance > .000001 ? delta / distance : float3(0, 1, 0);
+                attenuation            = 1 / max(distanceSquared, .01);
+                if (source.material.w > 0)
+                    attenuation *= pow(saturate(1 - pow(distance / source.material.w, 4)), 2);
+                if (type == 2)
+                {
+                    float cone = dot(-l, source.emissive.xyz);
+                    attenuation *= source.uv.x > source.uv.y + .000001 ? smoothstep(source.uv.y, source.uv.x, cone)
+                                                                       : step(source.uv.y, cone);
+                }
+            }
+            float visibility =
+              type == 0 && source.uv.z > .5 ? sceneVisibility(input.worldPosition, input.normal, l, source.uv.w) : 1;
+            color += directLight(
+              n, v, l, base, metallic, roughness, source.baseColor.rgb * source.baseColor.w * attenuation * visibility);
+        }
+    }
+    else
+        color = directLight(
+          n,
+          v,
+          lightDirection.xyz,
+          base,
+          metallic,
+          roughness,
+          lightColorIntensity.rgb * lightColorIntensity.w
+            * sceneVisibility(
+              input.worldPosition,
+              input.normal,
+              lightDirection.xyz,
+              irradiance[3].w > .5 ? instances[uint(irradiance[3].w) - 1].emissive.z : 0));
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
     float3 f  = fresnel(saturate(dot(n, v)), f0);
     if (cameraForward.w > 0.5)
@@ -416,7 +462,8 @@ float4 PSMain(VertexOut input)
     }
     else
     {
-        color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
+        if (!collection)
+            color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
         color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
     }
     color += emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;

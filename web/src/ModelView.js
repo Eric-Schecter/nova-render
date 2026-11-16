@@ -1,3 +1,4 @@
+import { lightRecords } from './Lighting.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
 import { materialMipmaps } from './TextureFiltering.js'
 import { createAnimationPlayer } from './AnimationData.js'
@@ -209,6 +210,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       })
     }
     const pipeline = await pipelineFor(shader)
+    let rasterLights = null,
+      cachedBytes = new Float32Array(0),
+      cachedShadows = new Float32Array(0)
+    let encodedLights = new Float32Array(0)
     function writeGlobals() {
       const record = new Float32Array(48)
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
@@ -223,12 +228,20 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         40,
       )
       record[44] = rasterShadows.bias
+      record[45] = encodedLights.length / 48
+      record[46] = rasterGlobals + 1 + cachedShadows.byteLength / 192
+      record[47] = rasterLights === null ? 0 : 1
       device.queue.writeBuffer(instanceBuffer, rasterGlobals * 192, record)
     }
     function uploadInstances(bytes, draws, shadowRecords = new Float32Array(0)) {
+      cachedBytes = bytes
+      cachedShadows = shadowRecords
       shadowInstanceCount = draws ? draws.reduce((n, d) => n + d.instanceCount, 0) : 0
       rasterGlobals = bytes.byteLength / 192
-      const size = Math.max(192, bytes.byteLength + 192 + shadowRecords.byteLength)
+      const size = Math.max(
+        192,
+        bytes.byteLength + 192 + shadowRecords.byteLength + encodedLights.byteLength,
+      )
       if (size > device.limits.maxStorageBufferBindingSize)
         throw Error('Scene shadow resources exceed device storage buffer limit')
       if (instanceBuffer.size < size) {
@@ -243,6 +256,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       if (bytes.byteLength) device.queue.writeBuffer(instanceBuffer, 0, bytes)
       if (shadowRecords.byteLength)
         device.queue.writeBuffer(instanceBuffer, bytes.byteLength + 192, shadowRecords)
+      if (encodedLights.byteLength)
+        device.queue.writeBuffer(
+          instanceBuffer,
+          bytes.byteLength + 192 + shadowRecords.byteLength,
+          encodedLights,
+        )
       sceneDraws = draws
       writeGlobals()
     }
@@ -397,7 +416,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         skyPipeline = nextPipeline
         environment = next
       },
-      setRasterSettings(fog, shadows) {
+      setRasterSettings(fog, shadows, lights = null) {
+        if (rasterLights !== lights) {
+          rasterLights = lights
+          encodedLights = lightRecords(lights)
+          uploadInstances(cachedBytes, sceneDraws, cachedShadows)
+        }
         rasterFog = copyFog(fog)
         rasterShadows = copyShadows(shadows)
         writeGlobals()

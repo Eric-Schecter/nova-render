@@ -10,7 +10,7 @@ import { defaultAmbientOcclusion, copyAmbientOcclusion } from './AmbientOcclusio
 import { defaultPathTracing, validatePathTracing } from './PathView.js'
 import { defaultEnvironment, copyEnvironment, loadEnvironmentFile } from './EnvironmentData.js'
 import { attachParameterPanel } from './ParameterPanel.js'
-import { defaultDirectionalLight, copyDirectionalLight } from './Lighting.js'
+import { defaultDirectionalLight, copyDirectionalLight, copySceneLights } from './Lighting.js'
 import { attachOrbitControls } from './OrbitControls.js'
 import { createModelView } from './ModelView.js'
 import { SceneData } from './SceneData.js'
@@ -186,6 +186,7 @@ class Renderer {
   #orbitControls
   #renderTail = Promise.resolve()
   #lighting = 'unlit'
+  #lights = null
   #directionalLight = defaultDirectionalLight()
   #environment
   #sceneData = new SceneData()
@@ -449,6 +450,10 @@ class Renderer {
     if (mode === 'path-tracing') mode = 'ray-tracing'
     if (!['raster', 'ray-tracing'].includes(mode)) throw Error('Invalid render mode')
     if (mode !== 'raster') {
+      if (this.#lights !== null)
+        throw Error(
+          'Light collections currently support raster mode only; restore the legacy directional light first',
+        )
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
       if (!this.#model?.triangles) throw Error('Path tracing requires a loaded model')
     }
@@ -633,10 +638,51 @@ class Renderer {
     this.#check()
     return { ...this.#environmentSettings }
   }
+  setLights(lights) {
+    this.#check()
+    const capabilities = this.getLightingCapabilities()
+    if (!capabilities.maxLights) throw Error(capabilities.reason)
+    const next = copySceneLights(lights)
+    this.#lights = next
+    this.#resetAA()
+    this.resetAccumulation()
+    this.#parameterPanel?.refresh()
+  }
+  getLights() {
+    this.#check()
+    return copySceneLights(
+      this.#lights ?? [
+        {
+          id: '__directional',
+          ...this.#directionalLight,
+          castShadow: true,
+          shadowSoftness: this.#shadowSettings.softness,
+        },
+      ],
+    )
+  }
+  getLightingCapabilities() {
+    this.#check()
+    const supported = this.#renderMode === 'raster'
+    return {
+      directional: supported,
+      point: supported,
+      spot: supported,
+      maxLights: supported ? 16 : 0,
+      directionalShadows: supported,
+      pointShadows: false,
+      spotShadows: false,
+      shadowRequiresScene: true,
+      reason: supported ? '' : 'Light collections currently require WebGPU raster rendering',
+    }
+  }
   setDirectionalLight(light) {
     this.#check()
     this.#resetAA()
-    this.#directionalLight = copyDirectionalLight(light)
+    const next = copyDirectionalLight(light)
+    this.#lights = null
+    this.#directionalLight = next
+    this.resetAccumulation()
     this.#parameterPanel?.refresh()
   }
   getDirectionalLight() {
@@ -726,7 +772,9 @@ class Renderer {
         getCamera: () => this.getCamera(),
         setCamera: (value) => this.setCamera(value),
         getLight: () => this.getDirectionalLight(),
-        setLight: (value) => this.setDirectionalLight(value),
+        setLight: (value) => {
+          if (this.#lights === null) this.setDirectionalLight(value)
+        },
         getClear: () => this.getClearColor(),
         setClear: (value) => this.setClearColor(value),
         getEnvironment: () => this.getEnvironment(),
@@ -858,7 +906,7 @@ class Renderer {
   }
   async #drawFrame() {
     this.#check()
-    this.#model?.setRasterSettings(this.#fogSettings, this.#shadowSettings)
+    this.#model?.setRasterSettings(this.#fogSettings, this.#shadowSettings, this.#lights)
     if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'

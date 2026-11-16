@@ -83,3 +83,5 @@ The ray loader accepts `KHR_materials_transmission.transmissionFactor` in [0,1] 
 Use closed, outward-facing geometry for air/glass interfaces. Shared HLSL implements Fresnel, Snell refraction, total internal reflection and radiance/importance transport corrections. Absorption, dispersion and nested media are unsupported; rasterization uses an opaque fallback. See `assets/CornellCaustics` and [PBRT dielectric BSDFs](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF).
 
 See [Materials](./materials) for multi-slot materials and runtime factor/texture editing.
+
+See [scene lights](./lights) for point lights, spot lights, simultaneous lighting and shadow capabilities.

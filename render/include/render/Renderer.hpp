@@ -3,6 +3,7 @@
 #include "AntiAliasing.hpp"
 #include "Atmosphere.hpp"
 #include "Image.hpp"
+#include "Lights.hpp"
 #include "Material.hpp"
 #include "Model.hpp"
 #include "ParameterPanel.hpp"
@@ -102,6 +103,9 @@ namespace render
         EnvironmentSettings        GetEnvironment() const;
         void                       SetDirectionalLight(const DirectionalLight& light);
         DirectionalLight           GetDirectionalLight() const;
+        void                       SetLights(const std::vector<SceneLight>& lights);
+        std::vector<SceneLight>    GetLights() const;
+        LightingCapabilities       GetLightingCapabilities() const;
         void                       SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
         bool                 EnableParameterPanel(bool enabled = true);
