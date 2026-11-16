@@ -46,7 +46,7 @@ Follows [glTF 2.0 skins](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.ht
 
 CPU code samples keyframes and computes matrices; shared HLSL vertex code skins positions and normals on the GPU. Bind-pose vertices and weights upload once; only palettes and scene constants change per frame. Inverse-transpose normal handling supports nonuniform scaling. Native and WebGPU use the same HLSL, without new dependencies or WASM.
 
-Opaque single-material embedded GLB only: no morphs, CUBICSPLINE, animation blending or compressed extensions; transforms must be invertible. Animated models currently disable ray tracing and report the reason via capabilities. Static ray tracing and denoising remain available.
+Opaque embedded GLB with runtime-editable material slots: no morphs, CUBICSPLINE, animation blending or compressed extensions; transforms must be invertible. Animated models currently disable ray tracing and report the reason via capabilities. Static ray tracing and denoising remain available.
 
 ## Validation and example
 

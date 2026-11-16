@@ -30,7 +30,7 @@ The runnable source is `web/examples/triangle.js`; the documentation executes an
 - `waitIdle()`: waits for submitted GPU work.
 - `dispose()`: releases the context and resources. Repeated disposal is safe; drawing afterwards is invalid.
 
-Await asynchronous operations. Loading and drawing are serialized per instance; wait for loading before editing dependent settings. Compilation, pipeline and device-loss errors reach the caller. This supports triangles and embedded, opaque single-material GLB models, including skeletal animation; it is not a general scene API.
+Await asynchronous operations. Loading and drawing are serialized per instance; wait for loading before editing dependent settings. Compilation, pipeline and device-loss errors reach the caller. This supports triangles and embedded, opaque multi-material GLB models, including skeletal animation. See [Scene instances](./scene) and [Materials](./materials) for the formal model APIs.
 
 `loadModel`, `setCamera`, `getCamera` and `enableOrbitControls` provide [model and camera interaction](./model). `setLighting('unlit' / 'pbr')` defaults to unlit; `setDirectionalLight` / `getDirectionalLight` use `direction`, `color`, and `intensity`.
 

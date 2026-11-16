@@ -38,6 +38,18 @@ int main(int argc, char** argv)
             const std::vector<render::SceneAsset> assets{{"box", models / "Red.glb", true}};
             std::vector<render::SceneInstance>    instances{{"left", "box"}, {"right", "box"}};
             instances[0].world[12] = -4;
+            window.LoadModel(models / "Dual.glb");
+            auto materialSlots = window.GetMaterials();
+            if (materialSlots.size() != 2)
+                throw std::runtime_error("Installed SDK has no material slots");
+            auto material             = materialSlots.front();
+            material.baseColor        = {.2f, .8f, .3f, 1};
+            material.roughness        = .25f;
+            material.metallic         = .7f;
+            material.baseColorTexture = render::Image{1, 1, {255, 255, 255, 255}};
+            window.SetMaterial(0, material);
+            if (window.GetMaterials().front().roughness != .25f)
+                throw std::runtime_error("Installed SDK material API failed");
             window.SetScene(assets, instances);
             render::Ray ray;
             ray.origin        = {2, 1, 5};

@@ -37,6 +37,10 @@ execFileSync(
 cpSync(new URL('../../assets/SceneSample/', import.meta.url), join(work, 'models'), {
   recursive: true,
 })
+cpSync(
+  new URL('../../assets/MaterialSample/Dual.glb', import.meta.url),
+  join(work, 'models/Dual.glb'),
+)
 const server = spawn(process.execPath, ['server.mjs'], {
   cwd: work,
   stdio: ['ignore', 'pipe', 'inherit'],

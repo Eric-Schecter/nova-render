@@ -48,3 +48,5 @@ uint32_t ValidationErrorCount() const;
 See [Camera and viewport](/api/camera) for full pose/lens and viewport APIs; legacy `SetCamera` remains the orbit interface.
 
 See [scene picking](./picking) for synchronous instance ray queries and hit data.
+
+See [Materials](./materials) for multi-slot materials and runtime factor/texture editing.

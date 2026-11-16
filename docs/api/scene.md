@@ -58,3 +58,5 @@ This first scene API supports static opaque GLBs with the existing loader's mate
 Materials are packed into five shared texture atlases with 2-pixel gutters. Each asset tile is capped at 2048 pixels; atlases are capped at 8192 pixels per axis and a combined 512 MiB CPU budget. Larger source textures are resampled. Atlas packing and full-mip filtering can affect texture quality; this is not yet a general multi-material system. Device memory and binding limits may impose lower practical scene sizes.
 
 See the [scene instances example](/examples/scene).
+
+See [Materials](./materials) for multi-slot materials and runtime factor/texture editing.

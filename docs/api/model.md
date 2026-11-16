@@ -81,3 +81,5 @@ Cornell variants are generated test scenes, not calibrated replicas of Cornell's
 The ray loader accepts `KHR_materials_transmission.transmissionFactor` in [0,1] and `KHR_materials_ior.ior` in [1.01,3], default 1.5. Materials may differ in these extensions while sharing core PBR factors and texture atlases. Transmission textures are unsupported; roughness uses the metallic-roughness texture with a glass floor of 0.06.
 
 Use closed, outward-facing geometry for air/glass interfaces. Shared HLSL implements Fresnel, Snell refraction, total internal reflection and radiance/importance transport corrections. Absorption, dispersion and nested media are unsupported; rasterization uses an opaque fallback. See `assets/CornellCaustics` and [PBRT dielectric BSDFs](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF).
+
+See [Materials](./materials) for multi-slot materials and runtime factor/texture editing.

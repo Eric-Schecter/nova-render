@@ -25,6 +25,16 @@ window.validation = (async () => {
     { id: 'left', assetId: 'box' },
     { id: 'right', assetId: 'box', world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -4, 0, 0, 1] },
   ]
+  await renderer.loadModel('/models/Dual.glb')
+  if (renderer.getMaterials().length !== 2) throw Error('Installed npm multislot loading failed')
+  const material = renderer.getMaterials()[0]
+  material.baseColor = [0.2, 0.8, 0.3, 1]
+  material.roughness = 0.25
+  material.metallic = 0.7
+  material.baseColorTexture = { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) }
+  await renderer.setMaterial(0, material)
+  if (renderer.getMaterials()[0].roughness !== 0.25)
+    throw Error('Installed npm material API failed')
   await renderer.setScene(assets, instances)
   const ray = { origin: [2, 1, 5], direction: [0, 0, -2] }
   const picked = renderer.pickScene(ray)

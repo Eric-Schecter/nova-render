@@ -19,3 +19,5 @@ See [writing an example](../guide/integration) and [installing packages](../guid
 - [Camera and viewport](/api/camera): complete camera pose, projection, lens and framebuffer rectangles.
 
 - [Scene picking](/api/picking): CPU ray queries, instance filters and world-space hit data.
+
+- [Materials](/api/materials): multiple slots and runtime colors, PBR factors and textures.

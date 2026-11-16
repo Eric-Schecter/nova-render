@@ -54,3 +54,5 @@ See [writing an example](../guide/integration) for a complete program. Use the l
 `SetViewCamera` / `GetViewCamera` and `SetViewport` / `GetViewport` forward to the renderer. `GetFramebufferSize()` returns the pixel dimensions used by viewport rectangles. See [camera and viewport](./camera).
 
 See [scene picking](./picking) for synchronous instance ray queries and hit data.
+
+See [Materials](./materials) for multi-slot materials and runtime factor/texture editing.
