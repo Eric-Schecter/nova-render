@@ -14,7 +14,8 @@
     "predocs:build": "npm run shaders:webgpu",
     "check:webgpu": "node scripts/webgpu/check.mjs",
     "format:web": "prettier --write web scripts/webgpu docs/.vitepress",
-    "check:format:web": "prettier --check web scripts/webgpu docs/.vitepress"
+    "check:format:web": "prettier --check web scripts/webgpu docs/.vitepress",
+    "pack:sdk": "node scripts/packaging/sdk.mjs"
   },
   "devDependencies": {
     "naga-wasi-cli": "0.1.0",

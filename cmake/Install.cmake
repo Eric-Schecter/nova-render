@@ -45,3 +45,5 @@ install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/LICENSE.txt
     DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME SMAA-LICENSE.txt)
 install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/NOTICE.txt"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME FXAA-NOTICE.txt)
+
+include("${CMAKE_CURRENT_LIST_DIR}/SDKPackage.cmake")

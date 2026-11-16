@@ -13,3 +13,5 @@ CMakeUserPresets.json
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 /docs/public/generated/
+
+/build-sdk/
