@@ -236,7 +236,15 @@ namespace render::detail
                     if (!pipeline)
                         pipeline = AAPipeline(motion ? "model-motion" : "model", false, sample ? 4 : 1, renderPass);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                    vkCmdDraw(cmd, uint32_t(model->vertices.size()), 1, 0, 0);
+                    if (scene.active)
+                    {
+                        for (const auto& draw : scene.draws)
+                            if (draw.instanceCount)
+                                vkCmdDraw(
+                                  cmd, draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+                    }
+                    else
+                        vkCmdDraw(cmd, uint32_t(model->vertices.size()), 1, 0, 0);
                 }
             };
             rasterAA.device = CreateVulkanAA(config, external);
@@ -723,9 +731,43 @@ namespace render::detail
                 std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
                 vkUnmapMemory(device, modelJoints.memory);
             }
+            if (model)
+            {
+                size_t bytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+                if (bytes > sceneInstanceBytes)
+                {
+                    destroyModelBuffer(sceneInstanceBuffer);
+                    modelBuffer(sceneInstanceBuffer, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                    sceneInstanceBytes = bytes;
+                    VkDescriptorBufferInfo info{sceneInstanceBuffer.buffer, 0, VK_WHOLE_SIZE};
+                    VkWriteDescriptorSet   write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    write.dstSet          = modelSet;
+                    write.dstBinding      = 14;
+                    write.descriptorCount = 1;
+                    write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    write.pBufferInfo     = &info;
+                    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+                }
+                if (scene.active && !scene.instances.empty())
+                {
+                    void* mapped = nullptr;
+                    check(
+                      vkMapMemory(
+                        device,
+                        sceneInstanceBuffer.memory,
+                        0,
+                        scene.instances.size() * sizeof(InstanceData),
+                        0,
+                        &mapped),
+                      "Map instances");
+                    std::memcpy(mapped, scene.instances.data(), scene.instances.size() * sizeof(InstanceData));
+                    vkUnmapMemory(device, sceneInstanceBuffer.memory);
+                }
+            }
             const auto  topInset    = SceneTopInset(extent.height);
+            const auto  sceneWidth  = extent.width;
             const auto  sceneHeight = extent.height - topInset;
-            const auto* path        = DrawPathFrame(extent.width, sceneHeight);
+            const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
             if (path)
                 UploadPathImage(*path);
             if (model)
@@ -733,12 +775,13 @@ namespace render::detail
                 auto uniform = MakeSceneUniforms(
                   *model,
                   camera,
-                  float(extent.width) / sceneHeight,
+                  float(sceneWidth) / sceneHeight,
                   lighting,
                   directionalLight,
                   environment.get(),
                   environmentSettings);
                 uniform.skyParams[2] = path ? 1.0f : 0.0f;
+                uniform.lightDirection[3] = scene.active ? 1.f : 0.f;
                 void* mapped         = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));
@@ -771,7 +814,7 @@ namespace render::detail
             pass.pClearValues      = clearValues;
             vkCmdBeginRenderPass(cmd, &pass, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            VkViewport viewport{0, float(topInset), float(extent.width), float(sceneHeight), 0, 1};
+            VkViewport viewport{0, float(topInset), float(sceneWidth), float(sceneHeight), 0, 1};
             VkRect2D   scissor{{0, 0}, extent};
             vkCmdSetViewport(cmd, 0, 1, &viewport);
             vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -783,7 +826,13 @@ namespace render::detail
                 vkCmdDraw(cmd, 3, 1, 0, 0);
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             }
-            if (!path && (!model || !model->vertices.empty()))
+            if (!path && scene.active)
+            {
+                for (const auto& draw : scene.draws)
+                    if (draw.instanceCount)
+                        vkCmdDraw(cmd, draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+            }
+            else if (!path && (!model || !model->vertices.empty()))
                 vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)

@@ -185,6 +185,14 @@ namespace render
     {
         impl_->backend->animation.Update(delta);
     }
+    std::optional<Bounds> Renderer::GetSceneAssetBounds(const std::string& id) const
+    {
+        return impl_->backend->scene.active ? impl_->backend->scene.AssetBounds(id) : std::nullopt;
+    }
+    void Renderer::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
+    {
+        impl_->backend->SetScene(assets, instances);
+    }
     void Renderer::LoadModel(const std::filesystem::path& path)
     {
         auto data = detail::LoadGLB(path);

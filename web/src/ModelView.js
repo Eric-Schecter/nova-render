@@ -30,6 +30,8 @@ function cubeTexture(device, data) {
 export async function createModelView(device, context, url, shaderURL, suppliedData) {
   const data = suppliedData || (await loadGLB(url)),
     resources = []
+  let instanceBuffer,
+    sceneDraws = null
   let depth,
     cube,
     backgroundCube,
@@ -86,6 +88,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           [mip.width, mip.height],
         )
     }
+    instanceBuffer = makeBuffer(new Float32Array(48), GPUBufferUsage.STORAGE, 'Nova instances')
     cube = cubeTexture(device, fallbackEnvironment)
     backgroundCube = cubeTexture(device, fallbackEnvironment)
     const previousUniform = makeBuffer(
@@ -132,6 +135,11 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 11, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         { binding: 12, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+        {
+          binding: 14,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage' },
+        },
       ],
     })
     const sampler = device.createSampler({
@@ -157,6 +165,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 10, resource: textures[0].createView() },
           { binding: 11, resource: { buffer: skin } },
           { binding: 12, resource: { buffer: joints } },
+          { binding: 14, resource: { buffer: instanceBuffer } },
         ],
       })
     let bindGroup = group(cube, backgroundCube)
@@ -223,6 +232,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
         )
+        currentScene[35] = sceneDraws !== null ? 1 : 0
         currentScene[63] = postSettings?.enabled ? 1 : 0
         device.queue.writeBuffer(uniform, 0, currentScene)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
@@ -238,7 +248,16 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         }
         if (data.vertices.length) {
           pass.setPipeline(motion ? aaPipelines.motion : aaPipelines['model' + count])
-          pass.draw(data.vertices.length / 12)
+          if (sceneDraws !== null) {
+            for (const draw of sceneDraws)
+              if (draw.instanceCount)
+                pass.draw(
+                  draw.vertexCount,
+                  draw.instanceCount,
+                  draw.firstVertex,
+                  draw.firstInstance,
+                )
+          } else pass.draw(data.vertices.length / 12)
         }
       },
       finishAA() {
@@ -331,6 +350,20 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         skyPipeline = nextPipeline
         environment = next
       },
+      setInstances(bytes, draws) {
+        if (disposed) throw Error('Model has been disposed')
+        if (instanceBuffer.size < Math.max(192, bytes.byteLength)) {
+          instanceBuffer.destroy()
+          instanceBuffer = makeBuffer(
+            new Uint8Array(Math.max(192, bytes.byteLength)),
+            GPUBufferUsage.STORAGE,
+            'Nova instances',
+          )
+          bindGroup = group(cube, backgroundCube)
+        }
+        if (bytes.byteLength) device.queue.writeBuffer(instanceBuffer, 0, bytes)
+        sceneDraws = draws
+      },
       draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')
         if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)
@@ -342,11 +375,17 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             usage: GPUTextureUsage.RENDER_ATTACHMENT,
           })
         }
-        device.queue.writeBuffer(
-          uniform,
-          0,
-          sceneUniforms(data, camera, width / height, lighting, light, environment, settings),
+        const values = sceneUniforms(
+          data,
+          camera,
+          width / height,
+          lighting,
+          light,
+          environment,
+          settings,
         )
+        values[35] = sceneDraws !== null ? 1 : 0
+        device.queue.writeBuffer(uniform, 0, values)
         const encoder = device.createCommandEncoder(),
           pass = encoder.beginRenderPass({
             colorAttachments: [
@@ -371,7 +410,16 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         }
         if (data.vertices.length) {
           pass.setPipeline(pipeline)
-          pass.draw(data.vertices.length / 12)
+          if (sceneDraws !== null) {
+            for (const draw of sceneDraws)
+              if (draw.instanceCount)
+                pass.draw(
+                  draw.vertexCount,
+                  draw.instanceCount,
+                  draw.firstVertex,
+                  draw.firstInstance,
+                )
+          } else pass.draw(data.vertices.length / 12)
         }
         pass.end()
         device.queue.submit([encoder.finish()])

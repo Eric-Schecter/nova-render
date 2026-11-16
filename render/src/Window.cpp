@@ -154,6 +154,14 @@ namespace render
     {
         impl_->renderer->UpdateAnimation(delta);
     }
+    std::optional<Bounds> Window::GetSceneAssetBounds(const std::string& id) const
+    {
+        return impl_->renderer->GetSceneAssetBounds(id);
+    }
+    void Window::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
+    {
+        impl_->renderer->SetScene(assets, instances);
+    }
     void Window::LoadModel(const std::filesystem::path& path)
     {
         impl_->renderer->LoadModel(path);

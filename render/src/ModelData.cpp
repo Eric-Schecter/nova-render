@@ -205,6 +205,11 @@ namespace render::detail
             visit(root, glm::mat4(1));
         if (result->vertices.empty())
             throw std::runtime_error("GLB contains no triangles");
+        for (int k = 0; k < 3; k++)
+        {
+            result->sourceMinimum[k] = minimum[k];
+            result->sourceMaximum[k] = maximum[k];
+        }
         const auto  center = (minimum + maximum) * 0.5f;
         const auto  extent = maximum - minimum;
         const float size   = std::max({extent.x, extent.y, extent.z});

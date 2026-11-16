@@ -29,6 +29,7 @@ namespace render::detail
     {
         std::shared_ptr<const AnimationData> animation;
         uint64_t                             revision = 0;
+        std::array<float, 3>                 sourceMinimum{}, sourceMaximum{};
         std::vector<ModelVertex>             vertices;
         std::vector<SkinInput>               skinInputs;
         std::vector<JointMatrix>             jointMatrices;

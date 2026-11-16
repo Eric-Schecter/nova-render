@@ -38,7 +38,7 @@ add_custom_command(OUTPUT "${embedded_shader_cpp}"
     COMMAND ${CMAKE_COMMAND} "-DINPUTS=${SHADER_OUTPUTS}" "-DOUTPUT=${embedded_shader_cpp}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     DEPENDS ${SHADER_OUTPUTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake" VERBATIM)
-add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ModelData.cpp
+add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ModelData.cpp render/src/SceneData.cpp
     render/src/AnimationData.cpp render/src/ShaderData.cpp "${embedded_shader_cpp}")
 target_sources(nova_render PRIVATE render/src/ParameterPanel.cpp render/src/EnvironmentData.cpp render/src/RayTracingView.cpp render/src/path/PathTracing.cpp render/src/path/LightSampling.cpp render/src/aa/AntiAliasingView.cpp render/src/aa/ShadowView.cpp render/src/aa/PostProcessingView.cpp render/src/aa/ScreenSpaceReflectionView.cpp
     render/src/aa/PlanarReflectionView.cpp
@@ -639,5 +639,32 @@ if(BUILD_TESTING)
     endif()
     if(WIN32)
         add_test(NAME multi-probe-dx12-warp COMMAND nova_multi_probe_test dx12 "${CMAKE_BINARY_DIR}/validation")
+    endif()
+endif()
+
+if(NOVA_BUILD_EXAMPLES)
+    add_executable(nova_scene examples/scene/main.cpp)
+    target_link_libraries(nova_scene PRIVATE Nova::Render)
+endif()
+if(BUILD_TESTING)
+    add_executable(nova_scene_data_test tests/scene_data.cpp)
+    target_link_libraries(nova_scene_data_test PRIVATE Nova::Render)
+    target_include_directories(nova_scene_data_test PRIVATE render/src "${NOVA_GLM_INCLUDE_DIR}")
+    add_test(NAME scene-data COMMAND nova_scene_data_test "${PROJECT_SOURCE_DIR}/assets")
+    add_executable(nova_scene_render_test tests/scene_render.cpp)
+    target_link_libraries(nova_scene_render_test PRIVATE Nova::Render glfw)
+    target_compile_definitions(nova_scene_render_test PRIVATE GLFW_INCLUDE_NONE $<TARGET_PROPERTY:nova_render,COMPILE_DEFINITIONS>)
+    if(NOVA_ENABLE_UI)
+        target_link_libraries(nova_scene_render_test PRIVATE imgui::imgui)
+    endif()
+    target_include_directories(nova_scene_render_test PRIVATE render/src "${NOVA_GLM_INCLUDE_DIR}")
+    if(APPLE)
+        add_test(NAME scene-render-metal COMMAND nova_scene_render_test metal "${PROJECT_SOURCE_DIR}/assets")
+    elseif(WIN32)
+        add_test(NAME scene-render-dx12-warp COMMAND nova_scene_render_test dx12 "${PROJECT_SOURCE_DIR}/assets")
+    endif()
+    if(NOVA_ENABLE_VULKAN)
+        target_compile_definitions(nova_scene_render_test PRIVATE NOVA_TEST_VULKAN)
+        add_test(NAME scene-render-vulkan COMMAND nova_scene_render_test vulkan "${PROJECT_SOURCE_DIR}/assets")
     endif()
 endif()

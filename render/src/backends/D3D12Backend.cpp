@@ -207,9 +207,27 @@ namespace render::detail
                 std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
                 modelJoints->Unmap(0, nullptr);
             }
+            if (model)
+            {
+                size_t bytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+                if (!sceneInstanceBuffer || bytes > sceneInstanceBytes)
+                {
+                    sceneInstanceBuffer = uploadBuffer(bytes);
+                    sceneInstanceBytes  = bytes;
+                }
+                if (scene.active && !scene.instances.empty())
+                {
+                    void*       mapped = nullptr;
+                    D3D12_RANGE read{0, 0};
+                    checkHR(sceneInstanceBuffer->Map(0, &read, &mapped), "Map instances");
+                    std::memcpy(mapped, scene.instances.data(), scene.instances.size() * sizeof(InstanceData));
+                    sceneInstanceBuffer->Unmap(0, nullptr);
+                }
+            }
             const auto  topInset    = SceneTopInset(height);
+            const auto  sceneWidth  = width;
             const auto  sceneHeight = height - topInset;
-            const auto* path        = DrawPathFrame(width, sceneHeight);
+            const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
             if (path)
                 UploadPathImage(*path);
             if (model)
@@ -217,12 +235,13 @@ namespace render::detail
                 auto u = MakeSceneUniforms(
                   *model,
                   camera,
-                  float(width) / sceneHeight,
+                  float(sceneWidth) / sceneHeight,
                   lighting,
                   directionalLight,
                   environment.get(),
                   environmentSettings);
                 u.skyParams[2]     = path ? 1.0f : 0.0f;
+                u.lightDirection[3] = scene.active ? 1.f : 0.f;
                 void*       mapped = nullptr;
                 D3D12_RANGE read{0, 0};
                 checkHR(modelUniform->Map(0, &read, &mapped), "Map scene uniforms");
@@ -260,9 +279,10 @@ namespace render::detail
                 commands->SetGraphicsRootShaderResourceView(1, modelVertices->GetGPUVirtualAddress());
                 commands->SetGraphicsRootShaderResourceView(3, modelSkin->GetGPUVirtualAddress());
                 commands->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
+                commands->SetGraphicsRootShaderResourceView(5, sceneInstanceBuffer->GetGPUVirtualAddress());
                 commands->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
             }
-            D3D12_VIEWPORT viewport{0, float(topInset), float(width), float(sceneHeight), 0, 1};
+            D3D12_VIEWPORT viewport{0, float(topInset), float(sceneWidth), float(sceneHeight), 0, 1};
             D3D12_RECT     scissor{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
             commands->RSSetViewports(1, &viewport);
             commands->RSSetScissorRects(1, &scissor);
@@ -273,7 +293,14 @@ namespace render::detail
                 commands->DrawInstanced(3, 1, 0, 0);
                 commands->SetPipelineState(modelPipeline.Get());
             }
-            if (!path && (!model || !model->vertices.empty()))
+            if (!path && scene.active)
+            {
+                for (const auto& draw : scene.draws)
+                    if (draw.instanceCount)
+                        commands->DrawInstanced(
+                          draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+            }
+            else if (!path && (!model || !model->vertices.empty()))
                 commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)
@@ -421,8 +448,9 @@ namespace render::detail
                 cmd->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
                 cmd->SetGraphicsRootShaderResourceView(3, modelSkin->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
-                cmd->SetGraphicsRootConstantBufferView(5, aaPreviousUniform->GetGPUVirtualAddress());
-                cmd->SetGraphicsRootShaderResourceView(6, aaPreviousPalette->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootShaderResourceView(5, sceneInstanceBuffer->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 bool motion = pass.program == -2;
                 if (environment && environmentSettings.showBackground)
@@ -439,7 +467,15 @@ namespace render::detail
                     if (!pipeline)
                         pipeline = AAPipeline(motion ? "model-motion" : "model", false, sample ? 4 : 1);
                     cmd->SetPipelineState(pipeline.Get());
-                    cmd->DrawInstanced(UINT(model->vertices.size()), 1, 0, 0);
+                    if (scene.active)
+                    {
+                        for (const auto& draw : scene.draws)
+                            if (draw.instanceCount)
+                                cmd->DrawInstanced(
+                                  draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+                    }
+                    else
+                        cmd->DrawInstanced(UINT(model->vertices.size()), 1, 0, 0);
                 }
             };
             rasterAA.device = CreateD3D12AA(settings, external);

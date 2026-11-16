@@ -76,6 +76,17 @@ Vertex skinVertex(uint id)
         skinOutput[id.x] = skinVertex(id.x);
 }
 
+struct InstanceData
+{
+    float4x4 world;
+    float4x4 normalMatrix;
+    float4   baseColor;
+    float4   material;
+    float4   emissive;
+    float4   uv;
+};
+[[vk::binding(14, 0)]] StructuredBuffer<InstanceData> instances : register(t11);
+
 struct VertexOut
 {
     float4                position : SV_Position;
@@ -83,11 +94,19 @@ struct VertexOut
     float3                normal : TEXCOORD1;
     float2                uv : TEXCOORD2;
     nointerpolation float generatedNormal : TEXCOORD3;
+    nointerpolation uint  instanceIndex : TEXCOORD4;
 };
-VertexOut VSMain(uint id : SV_VertexID)
+VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     Vertex    v = skinVertex(id);
+    if (lightDirection.w > .5)
+    {
+        InstanceData instance = instances[instanceId];
+        v.position            = mul(instance.world, v.position);
+        v.normal.xyz          = mul((float3x3)instance.normalMatrix, v.normal.xyz);
+    }
     VertexOut o;
+    o.instanceIndex   = instanceId;
     o.position        = mul(viewProjection, v.position);
     o.worldPosition   = v.position.xyz;
     o.normal          = v.normal.xyz;
@@ -200,7 +219,17 @@ float4 SkyPSMain(SkyOut input)
 float4 PSMain(VertexOut input)
   : SV_Target
 {
-    float3 base = baseTexture.Sample(textureSampler, input.uv).rgb * baseColorFactor.rgb;
+    float2 uv         = input.uv;
+    float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
+    if (lightDirection.w > .5)
+    {
+        InstanceData instance = instances[input.instanceIndex];
+        uv                    = frac(uv) * instance.uv.xy + instance.uv.zw;
+        baseFactor            = instance.baseColor;
+        matFactor             = instance.material;
+        emissionFactor.rgb    = instance.emissive.rgb;
+    }
+    float3 base = baseTexture.Sample(textureSampler, uv).rgb * baseFactor.rgb;
     if (emissiveFactor.w < 0.5)
     {
         // Base color only: no lighting, AO, emissive, exposure or tone mapping.
@@ -224,13 +253,13 @@ float4 PSMain(VertexOut input)
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
     float3 t = p2perp * duv1.x + p1perp * duv2.x, b = p2perp * duv1.y + p1perp * duv2.y;
     float  scale   = rsqrt(max(max(dot(t, t), dot(b, b)), 0.00001));
-    float3 sampled = normalTexture.Sample(textureSampler, input.uv).xyz * 2 - 1;
-    sampled.xy *= materialFactor.z;
+    float3 sampled = normalTexture.Sample(textureSampler, uv).xyz * 2 - 1;
+    sampled.xy *= matFactor.z;
     n               = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
     float3 v        = normalize(eyeExposure.xyz - input.worldPosition);
-    float4 mr       = materialTexture.Sample(textureSampler, input.uv);
-    float  metallic = saturate(mr.b * materialFactor.x), roughness = clamp(mr.g * materialFactor.y, 0.06, 1);
-    float  ao = lerp(1, occlusionTexture.Sample(textureSampler, input.uv).r, materialFactor.w);
+    float4 mr       = materialTexture.Sample(textureSampler, uv);
+    float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
+    float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
     float3 color =
       directLight(n, v, lightDirection.xyz, base, metallic, roughness, lightColorIntensity.rgb * lightColorIntensity.w);
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
@@ -249,7 +278,7 @@ float4 PSMain(VertexOut input)
         color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
         color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
     }
-    color += emissiveTexture.Sample(textureSampler, input.uv).rgb * emissiveFactor.rgb;
+    color += emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
     return float4(displayRadiance(color), 1);
 }
 
@@ -266,7 +295,7 @@ struct MotionOut
     float4 current : TEXCOORD0;
     float4 previous : TEXCOORD1;
 };
-MotionOut MotionVSMain(uint id : SV_VertexID)
+MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     Vertex current = skinVertex(id), old = vertices[id];
     if (skyParams.w > .5)
@@ -280,6 +309,11 @@ MotionOut MotionVSMain(uint id : SV_VertexID)
             position += mul(matrix, input.position) * input.weights[j];
         }
         old.position = float4(position.xyz, 1);
+    }
+    if (lightDirection.w > .5)
+    {
+        current.position = mul(instances[instanceId].world, current.position);
+        old.position     = mul(instances[instanceId].world, old.position);
     }
     MotionOut o;
     o.current  = mul(viewProjection, current.position);

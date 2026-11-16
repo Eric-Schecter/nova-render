@@ -169,28 +169,41 @@ namespace render::detail
                       model->jointMatrices.size() * sizeof(JointMatrix));
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
-                const auto  topInset                = SceneTopInset(height);
-                const auto  sceneHeight             = height - topInset;
-                const auto* path                    = DrawPathFrame(width, sceneHeight);
+                size_t instanceBytes = std::max(size_t(192), scene.instances.size() * sizeof(InstanceData));
+                if (!sceneInstanceBuffer || sceneInstanceBuffer.length < instanceBytes)
+                    sceneInstanceBuffer = [device newBufferWithLength:instanceBytes
+                                                              options:MTLResourceStorageModeShared];
+                if (scene.active && !scene.instances.empty())
+                    std::memcpy(
+                      sceneInstanceBuffer.contents,
+                      scene.instances.data(),
+                      scene.instances.size() * sizeof(InstanceData));
+                const auto  topInset    = SceneTopInset(height);
+                const auto  sceneWidth  = width;
+                const auto  sceneHeight = height - topInset;
+                const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
                 if (path)
                     UploadPathImage(*path);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
                 [encoder setRenderPipelineState:model ? modelPipeline : pipeline];
-                [encoder setViewport:MTLViewport{0, double(topInset), double(width), double(sceneHeight), 0, 1}];
+                [encoder setViewport:MTLViewport{0, double(topInset), double(sceneWidth), double(sceneHeight), 0, 1}];
                 [encoder setCullMode:MTLCullModeNone];
                 if (model)
                 {
                     auto uniforms = MakeSceneUniforms(
                       *model,
                       camera,
-                      float(width) / sceneHeight,
+                      float(sceneWidth) / sceneHeight,
                       lighting,
                       directionalLight,
                       environment.get(),
                       environmentSettings);
                     uniforms.skyParams[2] = path ? 1.0f : 0.0f;
+                    uniforms.lightDirection[3] = scene.active ? 1.f : 0.f;
+                    [encoder setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
+                    [encoder setFragmentBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
                     [encoder setVertexBuffer:vertices offset:0 atIndex:1];
@@ -210,7 +223,17 @@ namespace render::detail
                     }
                     [encoder setRenderPipelineState:modelPipeline];
                     [encoder setDepthStencilState:depthState];
-                    if (!path && !model->vertices.empty())
+                    if (!path && scene.active)
+                    {
+                        for (const auto& draw : scene.draws)
+                            if (draw.instanceCount)
+                                [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                                            vertexStart:draw.firstVertex
+                                            vertexCount:draw.vertexCount
+                                          instanceCount:draw.instanceCount
+                                           baseInstance:draw.firstInstance];
+                    }
+                    else if (!path && !model->vertices.empty())
                         [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                                     vertexStart:0
                                     vertexCount:model->vertices.size()];
@@ -308,6 +331,8 @@ namespace render::detail
                 [e setVertexBuffer:skinInputs offset:0 atIndex:11];
                 [e setVertexBuffer:jointPalette offset:0 atIndex:12];
                 [e setVertexBuffer:aaPreviousPalette offset:0 atIndex:16];
+                [e setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
+                [e setFragmentBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                 for (NSUInteger i = 0; i < 5; i++)
                     [e setFragmentTexture:modelTextures[i] atIndex:2 + i];
                 [e setFragmentTexture:environmentTexture atIndex:8];
@@ -346,7 +371,18 @@ namespace render::detail
                         [e setRenderPipelineState:aaModel[sample]];
                     }
                     [e setDepthStencilState:depthState];
-                    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:model->vertices.size()];
+                    if (scene.active)
+                    {
+                        for (const auto& draw : scene.draws)
+                            if (draw.instanceCount)
+                                [e drawPrimitives:MTLPrimitiveTypeTriangle
+                                      vertexStart:draw.firstVertex
+                                      vertexCount:draw.vertexCount
+                                    instanceCount:draw.instanceCount
+                                     baseInstance:draw.firstInstance];
+                    }
+                    else
+                        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:model->vertices.size()];
                 }
             };
             rasterAA.device = CreateMetalAA(settings, external);
@@ -355,6 +391,7 @@ namespace render::detail
         id<MTLRenderPipelineState>    skyPipeline;
         id<MTLDepthStencilState>      skyDepthState;
         id<MTLBuffer>                 vertices;
+        id<MTLBuffer>                 sceneInstanceBuffer;
         id<MTLRenderPipelineState>    modelPipeline;
         id<MTLDepthStencilState>      depthState;
         id<MTLTexture>                depth;

@@ -282,6 +282,8 @@ export async function loadGLB(url) {
       animation,
       vertices: new Float32Array(vertices),
       images,
+      sourceMinimum: min,
+      sourceMaximum: max,
       baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
       material: [
         pbr.metallicFactor ?? 1,

@@ -3,6 +3,7 @@
 #include "Color.hpp"
 #include "ModelData.hpp"
 #include "ParameterPanel.hpp"
+#include "SceneData.hpp"
 #include "TextureFiltering.hpp"
 #include "aa/RasterAA.hpp"
 #include "path/PathTracing.hpp"
@@ -16,6 +17,20 @@ namespace render::detail
     {
       public:
         PanelAssets assets;
+        SceneData   scene;
+        void        SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
+        {
+            auto next = scene;
+            next.Update(assets, instances);
+            if (model != next.model)
+                LoadModel(next.model);
+            scene      = std::move(next);
+            aaTriangle = false;
+            presentedImage.reset();
+            pathSession.Reset();
+            rasterAA.Reset();
+            mode = RenderMode::Raster;
+        }
         void        ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
         {
             pathAPI    = api;
@@ -23,6 +38,8 @@ namespace render::detail
         }
         RendererCapabilities GetCapabilities()
         {
+            if (scene.active)
+                return {false, false, "", "Scene instances currently use raster rendering"};
             if (model && model->animation)
                 return {false, false, "", "Animated models currently use raster rendering"};
             return pathSession.Capabilities(pathAPI, pathConfig);
@@ -126,6 +143,7 @@ namespace render::detail
         virtual void        WaitIdle()                              = 0;
         virtual void        LoadModel(std::shared_ptr<const ModelData> data)
         {
+            scene.active = false;
             if (data != model)
             {
                 rasterAA.Reset();
@@ -140,7 +158,9 @@ namespace render::detail
         {
             rasterAA.Reset();
             environment = std::move(data);
+            const bool sceneWasActive = scene.active;
             LoadModel(model ? model : EmptyModelData());
+            scene.active = sceneWasActive;
         }
         void SetEnvironment(const EnvironmentSettings& value)
         {
@@ -265,6 +285,7 @@ namespace render::detail
                   directionalLight,
                   environment.get(),
                   environmentSettings);
+                rasterAA.current.lightDirection[3] = scene.active ? 1.f : 0.f;
                 rasterAA.current.irradiance[0][3] = postSettings.enabled ? 1.f : 0.f;
                 const auto& image =
                   rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings);

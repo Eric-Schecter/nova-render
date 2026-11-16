@@ -7,6 +7,7 @@ import { attachParameterPanel } from './ParameterPanel.js'
 import { defaultDirectionalLight, copyDirectionalLight } from './Lighting.js'
 import { attachOrbitControls } from './OrbitControls.js'
 import { createModelView } from './ModelView.js'
+import { SceneData } from './SceneData.js'
 import { validateCamera, emptyModelData } from './ModelData.js'
 // Bind the same orbit interaction to an application-owned viewport or view group.
 export { attachOrbitControls }
@@ -175,6 +176,8 @@ class Renderer {
   #lighting = 'unlit'
   #directionalLight = defaultDirectionalLight()
   #environment
+  #sceneData = new SceneData()
+  #sceneModel
   #modelURL
   #environmentURL
   #environmentSettings = defaultEnvironment()
@@ -199,6 +202,53 @@ class Renderer {
     const operation = this.#renderTail.then(action)
     this.#renderTail = operation.catch(() => {})
     return operation
+  }
+  getSceneAssetBounds(id) {
+    this.#check()
+    return this.#sceneModel ? this.#sceneData.assetBounds(id) : null
+  }
+  /** Replace static raster instances. Assets: {id,url,sourceSpace?}; instances: {id,assetId,world?}. */
+  setScene(assets, instances) {
+    assets = structuredClone(assets)
+    instances = structuredClone(instances)
+    return this.#enqueue(async () => {
+      this.#check()
+      if (this.#aoSettings.enabled)
+        throw Error('Disable ambient occlusion before setting scene instances')
+      const nextScene = this.#sceneData.fork()
+      const data = await nextScene.update(assets, instances)
+      this.#check()
+      if (this.#sceneModel !== data.model || !this.#model) {
+        const next = await createModelView(
+          this.#device,
+          this.#context,
+          null,
+          this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
+          data.model,
+        )
+        try {
+          if (this.#environment)
+            await next.loadEnvironment(
+              this.#environment,
+              this.#shaderDirectory.replace(/\/?$/, '/') + 'skybox.json',
+            )
+          this.#check()
+        } catch (e) {
+          next.dispose()
+          throw e
+        }
+        this.#model?.dispose()
+        this.#model = next
+        this.#sceneModel = data.model
+      }
+      this.#model.setInstances(data.instances, data.draws)
+      this.#sceneData = nextScene
+      this.#modelURL = undefined
+      this.#animationLastTime = undefined
+      this.#resetAA()
+      this.#renderMode = 'raster'
+      this.#parameterPanel?.refresh()
+    })
   }
   loadModel(url) {
     return this.#enqueue(async () => {
@@ -231,6 +281,8 @@ class Renderer {
       this.#model = next
       this.#animationLastTime = undefined
       if (next.skinned) this.#renderMode = 'raster'
+      this.#sceneModel = undefined
+      this.#sceneData.dispose()
       this.#modelURL = url
       this.#parameterPanel?.refresh()
       return { triangles: next.triangles }
@@ -269,6 +321,14 @@ class Renderer {
   }
   getCapabilities() {
     this.#check()
+    if (this.#sceneModel)
+      return {
+        rayTracing: false,
+        pathTracing: false,
+        softwareRayTracing: false,
+        rayTracingDevice: '',
+        reason: 'Scene instances currently use raster rendering',
+      }
     if (this.#model?.skinned)
       return {
         rayTracing: false,
@@ -623,6 +683,8 @@ class Renderer {
     await this.waitIdle()
     this.#model?.dispose()
     this.#model = undefined
+    this.#sceneModel = undefined
+    this.#sceneData.dispose()
     this.#environment = undefined
     this.#environmentURL = undefined
     this.#modelURL = undefined
@@ -748,6 +810,7 @@ class Renderer {
     this.disableParameterPanel()
     this.disableOrbitControls()
     this.#disposed = true
+    this.#sceneData.dispose()
     if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
     this.#pathFrame = 0
     this.#aaView?.dispose()
