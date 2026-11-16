@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, cpSync, readdirSync, renameSync } from 'node:fs'
+import { mkdtempSync, cpSync, readdirSync, renameSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 const archive = resolve(process.argv[2]),
@@ -27,9 +27,14 @@ run([
   '-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF',
 ])
 run(['--build', join(work, 'build'), '--config', config])
-const executable =
+const candidates =
   process.platform === 'win32'
-    ? join(work, 'build', config, 'nova_sdk_consumer.exe')
-    : join(work, 'build', 'nova_sdk_consumer')
+    ? [
+        join(work, 'build', config, 'nova_sdk_consumer.exe'),
+        join(work, 'build', 'nova_sdk_consumer.exe'),
+      ]
+    : [join(work, 'build', 'nova_sdk_consumer')]
+const executable = candidates.find(existsSync)
+if (!executable) throw Error('Consumer executable missing')
 execFileSync(executable, [api], { stdio: 'inherit', cwd: work })
 console.log('PASS relocated SDK consumed outside repository:', work)
