@@ -33,7 +33,7 @@ pnpm sdk:install https://github.com/Eric-Schecter/nova-render/releases/download/
 pnpm sdk:verify
 ```
 
-On Windows x64, use `https://github.com/Eric-Schecter/nova-render/releases/download/v0.2.1/manifest.windows-x64.json` instead. The editor validates platform, architecture, features, hashes and embedded source revisions before replacing its SDK. A local path to the downloaded `manifest.json` also works. The release includes matching native builds for macOS ARM64 and Windows x64.
+Windows x64 uses `manifest.windows-x64.json`. If your editor installer does not yet select platform-specific Release manifests, download that manifest and its two archives into one directory and pass its local path to `sdk:install`. Existing projects keep their locked version until explicitly updated. The editor validates platform, architecture, features, hashes and embedded source revisions before replacing its SDK. A local path to the downloaded `manifest.json` also works. The release includes matching native builds for macOS ARM64 and Windows x64.
 
 ## Build a C++ SDK
 
