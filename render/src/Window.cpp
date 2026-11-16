@@ -158,6 +158,10 @@ namespace render
     {
         return impl_->renderer->GetSceneAssetBounds(id);
     }
+    std::optional<SceneHit> Window::PickScene(const Ray& ray) const
+    {
+        return impl_->renderer->PickScene(ray);
+    }
     void Window::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
     {
         impl_->renderer->SetScene(assets, instances);

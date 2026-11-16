@@ -1,5 +1,6 @@
 #pragma once
 #include "ModelData.hpp"
+#include "Picking.hpp"
 #include "render/Scene.hpp"
 #include <map>
 namespace render::detail
@@ -21,17 +22,20 @@ namespace render::detail
         std::vector<InstanceData>        instances;
         std::vector<SceneDraw>           draws;
         // Asset topology changes rebuild packed resources; transform updates only replace instance data.
+        std::optional<SceneHit> Pick(const Ray& ray) const;
         std::optional<Bounds> AssetBounds(const std::string& id) const;
         void                  Update(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
 
       private:
         void Build(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
         std::map<std::string, bool> sourceSpaces;
+        std::vector<SceneInstance>  pickInstances;
         struct Mesh
         {
             std::shared_ptr<const ModelData> data;
             uint32_t                         first, count;
             std::array<float, 4>             uv;
+            std::shared_ptr<const PickMesh>  picking;
         };
         std::vector<std::pair<std::string, std::filesystem::path>> key;
         std::map<std::string, Mesh>                                meshes;

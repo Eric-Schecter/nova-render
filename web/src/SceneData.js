@@ -1,3 +1,4 @@
+import { PickMesh, pickScene } from './Picking.js'
 import { loadGLB, emptyModelData, multiply } from './ModelData.js'
 const cross = (a, b) => [
   a[1] * b[2] - a[2] * b[1],
@@ -27,6 +28,10 @@ export function instanceNormal(m) {
   ]
 }
 export class SceneData {
+  pickInstances = []
+  pick(ray, active = true) {
+    return pickScene(this.meshes, this.pickInstances, ray, active)
+  }
   sourceSpaces = new Map()
   assetBounds(id) {
     const m = this.meshes.get(id)
@@ -119,7 +124,11 @@ export class SceneData {
           }
           if (data.animation) throw Error('Scene instances currently require static GLB models')
           for (const image of data.images) tile = Math.max(tile, image.width, image.height)
-          next.set(id, { data, url: paths.get(id) })
+          next.set(id, {
+            data,
+            url: paths.get(id),
+            picking: previous?.data === data ? previous.picking : new PickMesh(data),
+          })
         }
         tile = Math.min(tile, 2048)
         const cols = Math.max(1, Math.ceil(Math.sqrt(next.size))),
@@ -228,6 +237,7 @@ export class SceneData {
         instanceCount: index - first,
       })
     }
+    this.pickInstances = effective.map((i) => ({ ...i, world: Array.from(i.world, Math.fround) }))
     this.sourceSpaces = spaces
     return { model: this.model, instances, draws }
   }
@@ -235,6 +245,7 @@ export class SceneData {
     return Object.assign(new SceneData(), this)
   }
   dispose() {
+    this.pickInstances = []
     for (const m of this.meshes.values()) m.data.images.forEach((i) => i.bitmap?.close())
     this.meshes = new Map()
     this.sourceSpaces = new Map()

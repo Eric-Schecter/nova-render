@@ -189,6 +189,10 @@ namespace render
     {
         return impl_->backend->scene.active ? impl_->backend->scene.AssetBounds(id) : std::nullopt;
     }
+    std::optional<SceneHit> Renderer::PickScene(const Ray& ray) const
+    {
+        return impl_->backend->scene.Pick(ray);
+    }
     void Renderer::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
     {
         impl_->backend->SetScene(assets, instances);

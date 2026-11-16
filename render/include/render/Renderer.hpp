@@ -74,6 +74,8 @@ namespace render
         void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances);
         // Bounds in selected asset-local space; absent for unreferenced/inactive IDs.
         std::optional<Bounds>      GetSceneAssetBounds(const std::string& assetId) const;
+        // Synchronous CPU query of the last committed SetScene state; nullopt on miss.
+        std::optional<SceneHit>    PickScene(const Ray& ray) const;
         void                       LoadModel(const std::filesystem::path& glbPath);
         RendererCapabilities       GetCapabilities() const;
         void                       SetRenderMode(RenderMode mode);

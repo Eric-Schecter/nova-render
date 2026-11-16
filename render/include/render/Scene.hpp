@@ -15,6 +15,19 @@ namespace render
         std::array<float, 3> minimum{}, maximum{};
     };
 
+    struct Ray
+    {
+        std::array<float, 3> origin{0, 0, 0}, direction{0, 0, -1};
+        // Instance IDs. Empty includeIds means all; exclusions take precedence.
+        std::vector<std::string> includeIds, excludeIds;
+    };
+    struct SceneHit
+    {
+        std::string          id;
+        double               distance = 0;         // World-space distance, independent of direction magnitude.
+        std::array<float, 3> position{}, normal{}; // World point and unit geometric normal (world winding).
+    };
+
     struct SceneAsset
     {
         std::string           id;

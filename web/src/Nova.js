@@ -222,6 +222,11 @@ class Renderer {
     this.#renderTail = operation.catch(() => {})
     return operation
   }
+  /** Synchronous CPU ray query of the last committed scene; null on miss. */
+  pickScene(ray) {
+    this.#check()
+    return this.#sceneData.pick(ray, !!this.#sceneModel)
+  }
   getSceneAssetBounds(id) {
     this.#check()
     return this.#sceneModel ? this.#sceneData.assetBounds(id) : null
