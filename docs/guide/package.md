@@ -24,7 +24,7 @@ In another project:
 ```cmake
 cmake_minimum_required(VERSION 3.24)
 project(MyApp LANGUAGES CXX)
-find_package(Nova 0.1 CONFIG REQUIRED)
+find_package(Nova 0.2 CONFIG REQUIRED)
 add_executable(app main.cpp)
 target_link_libraries(app PRIVATE Nova::Render)
 ```
@@ -79,3 +79,5 @@ node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.1.0.tgz
 Scripts copy consumers outside the repository. Native validation relocates the SDK, checks all imported library locations, then exercises two probes and a window. Web validation installs offline, copies assets and runs triangle/probe APIs in a real WebGPU browser.
 
 Projects: `examples/sdk-consumer` and `examples/npm-consumer`. Validated SDKs: macOS ARM64 Metal/Vulkan, Windows ARM64 DX12 WARP; npm: Chrome WebGPU. No Linux SDK has been generated/validated. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.
+
+The 0.2 SDK candidate includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. Use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. This does not publish a GitHub Release.

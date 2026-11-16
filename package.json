@@ -16,7 +16,8 @@
     "format:web": "prettier --write web scripts/webgpu docs/.vitepress",
     "check:format:web": "prettier --check web scripts/webgpu docs/.vitepress",
     "pack:sdk": "node scripts/packaging/sdk.mjs",
-    "pack:web": "node scripts/packaging/web.mjs"
+    "pack:web": "node scripts/packaging/web.mjs",
+    "pack:pair": "node scripts/packaging/pair.mjs"
   },
   "devDependencies": {
     "naga-wasi-cli": "0.1.0",

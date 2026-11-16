@@ -31,7 +31,18 @@ for (const [source, name] of [
   ['render/shaders/third_party/fxaa/NOTICE.txt', 'FXAA-NOTICE.txt'],
 ])
   cpSync(join(root, source), join(stage, 'licenses', name))
+const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: root,
+  encoding: 'utf8',
+}).trim()
+const sourceDirty = !!execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+  cwd: root,
+  encoding: 'utf8',
+}).trim()
 const manifest = {
+  schemaVersion: 1,
+  sourceCommit,
+  sourceDirty,
   version,
   assets: Object.fromEntries(
     assets.map((name) => [

@@ -51,3 +51,14 @@ install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/NOTICE.txt"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME FXAA-NOTICE.txt)
 
 include("${CMAKE_CURRENT_LIST_DIR}/SDKPackage.cmake")
+
+# Embed source provenance in the install prefix so paired native/Web archives can be audited.
+execute_process(COMMAND git -C "${PROJECT_SOURCE_DIR}" rev-parse HEAD OUTPUT_VARIABLE nova_source_commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+execute_process(COMMAND git -C "${PROJECT_SOURCE_DIR}" diff --quiet RESULT_VARIABLE nova_source_diff ERROR_QUIET)
+set(nova_source_dirty false)
+if(NOT nova_source_diff EQUAL 0)
+    set(nova_source_dirty true)
+endif()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/nova-build-info.json"
+    "{\n  \"version\": \"${PROJECT_VERSION}\",\n  \"sourceCommit\": \"${nova_source_commit}\",\n  \"sourceDirty\": ${nova_source_dirty},\n  \"platform\": \"${CMAKE_SYSTEM_NAME}\",\n  \"architecture\": \"${CMAKE_SYSTEM_PROCESSOR}\",\n  \"configuration\": \"${CMAKE_BUILD_TYPE}\",\n  \"features\": [\"static-scenes\",\"camera-viewport\",\"scene-picking\",\"material-slots\",\"scene-bvh-shadows\",\"raster-fog\",\"environment-clear\",\"application-ui\"]\n}\n")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/nova-build-info.json" DESTINATION "share/nova-render" RENAME build-info.json)
