@@ -432,7 +432,7 @@ class Renderer {
       rayTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       pathTracing: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       softwareRayTracing: true,
-      metropolis: true,
+      metropolis: this.#device.limits.maxStorageBuffersPerShaderStage >= 8,
       rayTracingDevice: 'WebGPU compute BVH',
       reason:
         this.#device.limits.maxStorageBuffersPerShaderStage >= 8

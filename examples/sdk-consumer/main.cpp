@@ -1,4 +1,6 @@
+#include <fstream>
 #include <iostream>
+#include <render/RayTracingView.hpp>
 #include <render/ReflectionProbeView.hpp>
 #include <render/Window.hpp>
 #include <stdexcept>
@@ -90,6 +92,33 @@ int main(int argc, char** argv)
             instances[1].world[12] = 1;
             window.SetScene(assets, instances);
             window.DrawFrame();
+            render::RayTracingView rayView(renderer);
+            const auto             capabilities = rayView.GetCapabilities();
+            if (capabilities.pathTracing)
+            {
+                rayView.LoadModel(models / "Dual.glb");
+                render::RayTracingSettings settings;
+                settings.maxBounces          = 2;
+                settings.resolutionScale     = 1;
+                settings.mltBootstrapSamples = 512;
+                settings.integrator          = capabilities.softwareRayTracing ? render::RayIntegrator::PathTracing
+                                                                               : render::RayIntegrator::Metropolis;
+                rayView.SetRayTracing(settings);
+                rayView.DrawFrame(96, 96);
+                const auto&   rays   = rayView.DrawFrame(96, 96);
+                size_t        energy = 0;
+                std::ofstream capture("installed-rays.ppm", std::ios::binary);
+                capture << "P6\n96 96\n255\n";
+                for (size_t i = 0; i < rays.pixels.size(); i += 4)
+                {
+                    energy += rays.pixels[i] + rays.pixels[i + 1] + rays.pixels[i + 2];
+                    capture.write(reinterpret_cast<const char*>(rays.pixels.data() + i), 3);
+                }
+                if (!energy || rayView.GetAccumulatedSamples() != 2)
+                    throw std::runtime_error("Installed ray API failed");
+                std::cout << "PASS installed ray API: " << capabilities.rayTracingDevice
+                          << "; software=" << capabilities.softwareRayTracing << std::endl;
+            }
             window.SetScene({}, {});
             if (window.PickScene(ray))
                 throw std::runtime_error("Installed picking clear failed");
