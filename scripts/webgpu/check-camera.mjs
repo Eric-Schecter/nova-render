@@ -47,6 +47,14 @@ try {
           require(Math.abs(u[k] - uniforms[i * 96 + k]) <
             1e-5, 'Native/Web camera uniforms differ ' + i + ':' + k)
       }
+      const standalone = document.createElement('canvas')
+      standalone.style = 'width:8px;height:8px'
+      document.body.append(standalone)
+      const noAssets = await createRenderer({ canvas: standalone, shaderDirectory: '/unused/' })
+      await noAssets.setShader(await (await fetch('/generated/triangle.json')).json())
+      await noAssets.drawFrame()
+      noAssets.dispose()
+      standalone.remove()
       const canvas = document.createElement('canvas')
       canvas.style = 'width:400px;height:300px'
       document.body.replaceChildren(canvas)

@@ -26,18 +26,7 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
     device.destroy()
     throw Error('Cannot create a WebGPU canvas context')
   }
-  try {
-    return new Renderer(
-      canvas,
-      device,
-      context,
-      shaderDirectory,
-      await createViewportSurface(device, shaderDirectory),
-    )
-  } catch (error) {
-    device.destroy()
-    throw error
-  }
+  return new Renderer(canvas, device, context, shaderDirectory)
 }
 class Renderer {
   #canvas
@@ -45,6 +34,8 @@ class Renderer {
   #context
   #outputContext
   #surface
+  #surfaceFrame = false
+  #sceneCanvas = { width: 1, height: 1 }
   #viewCamera
   #viewport = null
   #pipeline
@@ -164,7 +155,7 @@ class Renderer {
         },
         owner = this
       this.#aaView = await createAntiAliasingView({
-        canvas: this.#surface.canvas,
+        canvas: this.#sceneCanvas,
         shaderDirectory: this.#shaderDirectory,
         device: this.#device,
         context: this.#context,
@@ -202,13 +193,21 @@ class Renderer {
   #model
   #shaderDirectory
   #camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 }
-  constructor(canvas, device, context, shaderDirectory, surface) {
+  constructor(canvas, device, context, shaderDirectory) {
     this.#shaderDirectory = shaderDirectory
     this.#canvas = canvas
     this.#device = device
     this.#outputContext = context
-    this.#surface = surface
-    this.#context = surface.context
+    this.#context = {
+      configure: (settings) =>
+        this.#surfaceFrame
+          ? this.#surface.context.configure(settings)
+          : context.configure(settings),
+      getCurrentTexture: () =>
+        this.#surfaceFrame
+          ? this.#surface.context.getCurrentTexture()
+          : context.getCurrentTexture(),
+    }
     device.lost.then((info) => {
       this.#lost = info.message || 'GPU device lost'
     })
@@ -790,7 +789,14 @@ class Renderer {
     }
     const viewport = resolveViewport(this.#viewport, width, height)
     if (!viewport.width || !viewport.height) return 'skipped'
-    this.#surface.resize(viewport.width, viewport.height)
+    this.#surfaceFrame =
+      viewport.x !== 0 || viewport.y !== 0 || viewport.width !== width || viewport.height !== height
+    if (this.#surfaceFrame) {
+      if (!this.#surface)
+        this.#surface = await createViewportSurface(this.#device, this.#shaderDirectory)
+      this.#check()
+      this.#surface.resize(viewport.width, viewport.height)
+    }
     this.#device.pushErrorScope('validation')
     let failure
     try {
@@ -840,7 +846,7 @@ class Renderer {
         pass.end()
         this.#device.queue.submit([encoder.finish()])
       }
-      this.#surface.present(this.#outputContext, viewport, this.#clear)
+      if (this.#surfaceFrame) this.#surface.present(this.#outputContext, viewport, this.#clear)
       await this.#device.queue.onSubmittedWorkDone()
     } catch (e) {
       failure = e
@@ -868,7 +874,7 @@ class Renderer {
     this.#pathFrame = 0
     this.#aaView?.dispose()
     this.#model?.dispose()
-    this.#surface.dispose()
+    this.#surface?.dispose()
     this.#outputContext.unconfigure()
     this.#device.destroy()
   }
