@@ -19,7 +19,8 @@ GPU drivers and operating-system graphics/window services remain required.
 Dynamic dependency DLLs, if present, must be distributed beside the application.
 Sample models and environment maps are not bundled.
 
-This is a local development SDK. No public distribution license has been assigned.
+Official archives are available from [GitHub Releases](https://github.com/Eric-Schecter/nova-render/releases).
+No public distribution license has been assigned.
 Third-party notices are under `share/Nova/licenses` and `share/nova/licenses`.
 
 ## Static scene instances
@@ -56,4 +57,4 @@ Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits c
 
 Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `SetMaterial(slot, material)` / `await setMaterial(slot, material)`. Pass the scene asset ID as the final argument to edit all its instances. Texture maps accept RGBA8 images; `LoadMaterialImage(path)` / `await loadMaterialImage(url)` decodes an image. See the materials API documentation for ranges and atlas limits.
 
-The 0.2 SDK candidate includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. Use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. This does not publish a GitHub Release.
+The 0.2 SDK includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. Use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. See the online [installation guide](https://eric-schecter.github.io/nova-render/guide/package.html) for release downloads.
