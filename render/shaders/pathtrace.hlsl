@@ -259,6 +259,25 @@ bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit)
     return found;
 #endif
 }
+// Camera projection uses existing scene padding; secondary transport is not camera-clipped.
+void cameraRay(float2 p, out float3 origin, out float3 direction)
+{
+    float3 offset = p.x * parameters[10].w * parameters[10].xyz - p.y * abs(parameters[11].w) * parameters[11].xyz;
+    bool   orthographic = parameters[11].w < 0;
+    origin              = parameters[4].xyz + (orthographic ? offset : float3(0, 0, 0));
+    direction           = normalize(parameters[12].xyz + (orthographic ? float3(0, 0, 0) : offset));
+}
+bool traceCamera(float3 origin, float3 direction, out Hit hit)
+{
+    float nearPlane = parameters[16].w, farPlane = parameters[17].w;
+    if (farPlane <= nearPlane)
+        return traceRay(origin, direction, 1000, hit);
+    float cosine = max(dot(direction, parameters[12].xyz), .000001);
+    float start  = nearPlane / cosine;
+    bool  found  = traceRay(origin + direction * start, direction, (farPlane - nearPlane) / cosine, hit);
+    hit.distance += start;
+    return found;
+}
 bool trace(float3 origin, float3 direction, out Hit hit)
 {
     return traceRay(origin, direction, 10000, hit);
@@ -643,7 +662,10 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
     for (uint depth = 0; depth <= bounces; ++depth)
     {
         Hit hit;
-        if (!trace(origin, direction, hit))
+        bool found;
+        [branch] if (depth == 0) found = traceCamera(origin, direction, hit);
+        else found                     = trace(origin, direction, hit);
+        if (!found)
         {
             if (depth < minScatters)
                 break;
@@ -784,7 +806,10 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     for (uint depth = 0; depth <= bounces; ++depth)
     {
         Hit hit;
-        if (!trace(rayOrigin, rayDirection, hit))
+        bool found;
+        [branch] if (depth == 0) found = traceCamera(rayOrigin, rayDirection, hit);
+        else found                     = trace(rayOrigin, rayDirection, hit);
+        if (!found)
             break;
         PathVertex p            = pathVertex(hit, rayOrigin, rayDirection);
         p.beta                  = beta;
@@ -1009,7 +1034,10 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
     for (uint depth = 0; depth <= bounces; ++depth)
     {
         Hit hit;
-        if (!trace(origin, direction, hit))
+        bool found;
+        [branch] if (depth == 0) found = traceCamera(origin, direction, hit);
+        else found                     = trace(origin, direction, hit);
+        if (!found)
             break;
         PathVertex p      = pathVertex(hit, origin, direction);
         float      pdfHit = emitterPdf(hit.primitive, origin, p.position) / max(areaProbability(), 1e-20);
@@ -1070,12 +1098,12 @@ float3 mltEvaluate(out uint pixel)
     uint2  location  = min(uint2(uv * float2(size)), size - 1);
     pixel            = location.y * size.x + location.x;
     float2 p         = uv * 2 - 1;
-    float3 direction = normalize(
-      parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz - p.y * parameters[11].w * parameters[11].xyz);
+    float3 origin, direction;
+    cameraRay(p, origin, direction);
     bool   connect = texels[lightHeader()] > 0;
-    float3 value   = path(parameters[4].xyz, direction, state, asuint(parameters[24]).w, !connect, 2);
+    float3 value   = path(origin, direction, state, asuint(parameters[24]).w, !connect, 2);
     if (connect)
-        value += bidirectional(parameters[4].xyz, direction, state, asuint(parameters[24]).w, 2);
+        value += bidirectional(origin, direction, state, asuint(parameters[24]).w, 2);
     return min(max(value, 0), float3(64, 64, 64));
 }
 float mltIntensity(float3 value)
@@ -1250,12 +1278,11 @@ void mltTransition(inout uint rng, inout float3 value, inout float intensity, in
     if ((options.w & 1u) != 0)
     {
         float2 p         = (float2(id.xy) + .5) / float2(frame.yz) * 2 - 1;
-        float3 direction = normalize(
-          parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz
-          - p.y * parameters[11].w * parameters[11].xyz);
+        float3 origin, direction;
+        cameraRay(p, origin, direction);
         Hit    hit;
         float4 guide = float4(0, 0, 0, -1);
-        if (trace(parameters[4].xyz, direction, hit))
+        if (traceCamera(origin, direction, hit))
         {
             Vertex a = vertices[hit.primitive * 3], b = vertices[hit.primitive * 3 + 1],
                    c       = vertices[hit.primitive * 3 + 2];
@@ -1284,21 +1311,20 @@ void mltTransition(inout uint rng, inout float3 value, inout float intensity, in
         uint state = index * 1973u + (frame.x + sampleIndex) * 9277u + 89173u;
         randomBits(state);
         float2 p         = (float2(id.xy) + float2(random(state), random(state))) / float2(frame.yz) * 2 - 1;
-        float3 direction = normalize(
-          parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz
-          - p.y * parameters[11].w * parameters[11].xyz);
+        float3 origin, direction;
+        cameraRay(p, origin, direction);
         if (useMLT)
         {
-            sum += path(parameters[4].xyz, direction, state, 1);
+            sum += path(origin, direction, state, 1);
             continue;
         }
         bool   connectLightPaths = (options.w & 8u) != 0 && texels[lightHeader()] > 0;
         bool   usePhotons        = (options.w & 16u) != 0 && texels[lightHeader()] > 0;
-        float3 value = path(parameters[4].xyz, direction, state, frame.w, !connectLightPaths && !usePhotons);
+        float3 value             = path(origin, direction, state, frame.w, !connectLightPaths && !usePhotons);
         if (connectLightPaths)
-            value += bidirectional(parameters[4].xyz, direction, state, frame.w);
+            value += bidirectional(origin, direction, state, frame.w);
         if (usePhotons)
-            value += photonCamera(parameters[4].xyz, direction, state, frame.w);
+            value += photonCamera(origin, direction, state, frame.w);
         sum += min(max(value, 0), float3(64, 64, 64));
     }
     if (useMLT)

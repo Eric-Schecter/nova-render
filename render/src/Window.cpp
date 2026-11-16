@@ -251,6 +251,23 @@ namespace render
     {
         return impl_->renderer->GetEnvironment();
     }
+    void Window::SetViewCamera(const Camera& camera)
+    {
+        impl_->renderer->SetViewCamera(camera);
+        impl_->orbitEnabled = false;
+    }
+    Camera Window::GetViewCamera() const
+    {
+        return impl_->renderer->GetViewCamera();
+    }
+    void Window::SetViewport(const std::optional<Viewport>& viewport)
+    {
+        impl_->renderer->SetViewport(viewport);
+    }
+    std::optional<Viewport> Window::GetViewport() const
+    {
+        return impl_->renderer->GetViewport();
+    }
     void Window::SetCamera(const OrbitCamera& camera)
     {
         impl_->renderer->SetCamera(camera);

@@ -7,8 +7,15 @@ uint2 aoSize()
 float3 aoRay(float2 pixel)
 {
     float2 p = (pixel + .5) / float2(aoSize()) * 2 - 1;
-    return normalize(
-      parameters[12].xyz + p.x * parameters[10].w * parameters[10].xyz - p.y * parameters[11].w * parameters[11].xyz);
+    float3 origin, direction;
+    cameraRay(p, origin, direction);
+    return direction;
+}
+float3 aoOrigin(float2 pixel)
+{
+    float3 origin, direction;
+    cameraRay((pixel + .5) / float2(aoSize()) * 2 - 1, origin, direction);
+    return origin;
 }
 float4 aoGuide(uint2 pixel)
 {
@@ -17,7 +24,7 @@ float4 aoGuide(uint2 pixel)
 }
 float3 aoPosition(uint2 pixel)
 {
-    return parameters[4].xyz + aoRay(float2(pixel)) * aoGuide(pixel).w;
+    return aoOrigin(float2(pixel)) + aoRay(float2(pixel)) * aoGuide(pixel).w;
 }
 uint2 aoMipSize(uint level)
 {
@@ -48,7 +55,7 @@ float3 aoMipPosition(uint2 pixel, uint level)
 {
     float2 full = (float2(pixel) + .5) * float(1u << level) - .5;
     float3 ray  = aoRay(full);
-    return parameters[4].xyz + ray * (aoDepth(pixel, level) / max(dot(ray, parameters[12].xyz), .0001));
+    return aoOrigin(full) + ray * (aoDepth(pixel, level) / max(dot(ray, parameters[12].xyz), .0001));
 }
 [numthreads(8, 8, 1)] void AOPrepare(uint3 id : SV_DispatchThreadID) {
     uint2 size = aoSize();
@@ -57,7 +64,7 @@ float3 aoMipPosition(uint2 pixel, uint level)
     Hit    hit;
     float3 ray   = aoRay(float2(id.xy));
     float4 guide = float4(0, 0, 0, -1);
-    if (trace(parameters[4].xyz, ray, hit))
+    if (traceCamera(aoOrigin(float2(id.xy)), ray, hit))
     {
         Vertex a = vertices[hit.primitive * 3], b = vertices[hit.primitive * 3 + 1],
                c = vertices[hit.primitive * 3 + 2];
@@ -111,8 +118,8 @@ float aoSSAO(uint2 pixel, float3 position, float3 n, inout uint rng)
         if (z <= 0)
             continue;
         float2 uv = float2(
-                      dot(delta, parameters[10].xyz) / (z * parameters[10].w),
-                      -dot(delta, parameters[11].xyz) / (z * parameters[11].w))
+                      dot(delta, parameters[10].xyz) / ((parameters[11].w < 0 ? 1 : z) * parameters[10].w),
+                      -dot(delta, parameters[11].xyz) / ((parameters[11].w < 0 ? 1 : z) * abs(parameters[11].w)))
                       * .5
                     + .5;
         if (any(uv < 0) || any(uv >= 1))
@@ -133,7 +140,8 @@ float aoHorizon(uint2 pixel, float3 position, float3 n, uint level, inout uint r
     uint  samples    = asuint(parameters[29]).w;
     uint  directions = min(8u, samples), steps = max(1u, samples / directions);
     float occlusion    = 0;
-    float screenRadius = radius * float(aoSize().y) / (2 * parameters[11].w * max(depth, .001));
+    float screenRadius =
+      radius * float(aoSize().y) / (2 * abs(parameters[11].w) * (parameters[11].w < 0 ? 1 : max(depth, .001)));
     float angleOffset  = random(rng) * 2 * PI;
     for (uint d = 0; d < directions; d++)
     {

@@ -63,6 +63,14 @@ namespace render::detail
     void                             ValidateCamera(const OrbitCamera& camera);
     SceneUniforms                    MakeSceneUniforms(
                          const ModelData&           data,
+                         const Camera&              camera,
+                         float                      aspect,
+                         LightingMode               lighting    = LightingMode::Unlit,
+                         const DirectionalLight&    light       = {},
+                         const EnvironmentData*     environment = nullptr,
+                         const EnvironmentSettings& settings    = {});
+    SceneUniforms                    MakeSceneUniforms(
+                         const ModelData&           data,
                          const OrbitCamera&         camera,
                          float                      aspect,
                          LightingMode               lighting    = LightingMode::Unlit,

@@ -149,6 +149,9 @@ namespace render::detail
         {
             if (!width || !height)
                 return FrameResult::Skipped;
+            const auto earlyViewport = SceneViewport(width, height);
+            if (!earlyViewport.width || !earlyViewport.height)
+                return FrameResult::Skipped;
             WaitIdle();
             if (model && (gpuModel != model || gpuEnvironment != environment))
                 UploadModel();
@@ -224,9 +227,10 @@ namespace render::detail
                     sceneInstanceBuffer->Unmap(0, nullptr);
                 }
             }
-            const auto  topInset    = SceneTopInset(height);
-            const auto  sceneWidth  = width;
-            const auto  sceneHeight = height - topInset;
+            const auto rectangle  = SceneViewport(width, height);
+            const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
+            if (!sceneWidth || !sceneHeight)
+                return FrameResult::Skipped;
             const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
             if (path)
                 UploadPathImage(*path);
@@ -234,7 +238,7 @@ namespace render::detail
             {
                 auto u = MakeSceneUniforms(
                   *model,
-                  camera,
+                  GetViewCamera(),
                   float(sceneWidth) / sceneHeight,
                   lighting,
                   directionalLight,
@@ -282,8 +286,10 @@ namespace render::detail
                 commands->SetGraphicsRootShaderResourceView(5, sceneInstanceBuffer->GetGPUVirtualAddress());
                 commands->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
             }
-            D3D12_VIEWPORT viewport{0, float(topInset), float(sceneWidth), float(sceneHeight), 0, 1};
-            D3D12_RECT     scissor{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
+            D3D12_VIEWPORT viewport{
+              float(rectangle.x), float(rectangle.y), float(sceneWidth), float(sceneHeight), 0, 1};
+            D3D12_RECT scissor{
+              LONG(rectangle.x), LONG(rectangle.y), LONG(rectangle.x + sceneWidth), LONG(rectangle.y + sceneHeight)};
             commands->RSSetViewports(1, &viewport);
             commands->RSSetScissorRects(1, &scissor);
             commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

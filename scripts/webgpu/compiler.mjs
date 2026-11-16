@@ -13,10 +13,11 @@ export async function compile(
     computeEntry = 'CSMain',
     vertexEntry,
     fragmentEntry,
+    maxSourceBytes = 65536,
   } = {},
 ) {
-  if (typeof source !== 'string' || Buffer.byteLength(source) > 65536)
-    throw Error('HLSL source is limited to 64 KiB')
+  if (typeof source !== 'string' || Buffer.byteLength(source) > maxSourceBytes)
+    throw Error(`HLSL source is limited to ${maxSourceBytes / 1024} KiB`)
   if (/^\s*#\s*include/m.test(source)) throw Error('Online examples do not support #include')
   let dxc = process.env.NOVA_DXC_EXECUTABLE || 'dxc'
   if (!process.env.NOVA_DXC_EXECUTABLE && process.platform === 'darwin') {

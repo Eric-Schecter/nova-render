@@ -764,9 +764,10 @@ namespace render::detail
                     vkUnmapMemory(device, sceneInstanceBuffer.memory);
                 }
             }
-            const auto  topInset    = SceneTopInset(extent.height);
-            const auto  sceneWidth  = extent.width;
-            const auto  sceneHeight = extent.height - topInset;
+            const auto rectangle  = SceneViewport(extent.width, extent.height);
+            const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
+            if (!sceneWidth || !sceneHeight)
+                return FrameResult::Skipped;
             const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
             if (path)
                 UploadPathImage(*path);
@@ -774,7 +775,7 @@ namespace render::detail
             {
                 auto uniform = MakeSceneUniforms(
                   *model,
-                  camera,
+                  GetViewCamera(),
                   float(sceneWidth) / sceneHeight,
                   lighting,
                   directionalLight,
@@ -814,8 +815,8 @@ namespace render::detail
             pass.pClearValues      = clearValues;
             vkCmdBeginRenderPass(cmd, &pass, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            VkViewport viewport{0, float(topInset), float(sceneWidth), float(sceneHeight), 0, 1};
-            VkRect2D   scissor{{0, 0}, extent};
+            VkViewport viewport{float(rectangle.x), float(rectangle.y), float(sceneWidth), float(sceneHeight), 0, 1};
+            VkRect2D   scissor{{int32_t(rectangle.x), int32_t(rectangle.y)}, {sceneWidth, sceneHeight}};
             vkCmdSetViewport(cmd, 0, 1, &viewport);
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             if (model)

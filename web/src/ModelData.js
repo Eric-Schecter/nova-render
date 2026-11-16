@@ -1,3 +1,4 @@
+import { cameraFromOrbit, cameraBasis } from './Camera.js'
 import { readAnimation } from './AnimationData.js'
 import { defaultEnvironment } from './EnvironmentData.js'
 import { defaultDirectionalLight } from './Lighting.js'
@@ -323,19 +324,13 @@ export function sceneUniforms(
   environment = null,
   settings = defaultEnvironment(),
 ) {
-  const yaw = (camera.yaw * Math.PI) / 180,
-    pitch = (camera.pitch * Math.PI) / 180,
-    d = camera.distance
-  const target = camera.target || [0, 0, 0]
-  const eye = [
-    d * Math.cos(pitch) * Math.sin(yaw),
-    d * Math.sin(pitch),
-    d * Math.cos(pitch) * Math.cos(yaw),
-  ]
-  for (let i = 0; i < 3; i++) eye[i] += target[i]
-  const f = normalize(eye.map((x, i) => target[i] - x)),
-    s = normalize(cross(f, [0, 1, 0])),
-    u = cross(s, f)
+  const {
+    c,
+    right: s,
+    up: u,
+    forward: f,
+  } = cameraBasis(camera.position ? camera : cameraFromOrbit(camera))
+  const eye = c.position
   const view = [
     s[0],
     u[0],
@@ -354,31 +349,52 @@ export function sceneUniforms(
     dot(f, eye),
     1,
   ]
-  const t = 1 / Math.tan(Math.PI / 8),
-    near = 0.01,
-    far = 200
-  const projection = [
-    t / aspect,
-    0,
-    0,
-    0,
-    0,
-    t,
-    0,
-    0,
-    0,
-    0,
-    far / (near - far),
-    -1,
-    0,
-    0,
-    (near * far) / (near - far),
-    0,
-  ]
-  return new Float32Array([
+  const t = 1 / Math.tan((c.verticalFov * Math.PI) / 360),
+    near = c.nearPlane,
+    far = c.farPlane,
+    half = c.orthographicHeight * 0.5
+  const projection =
+    c.projection === 'orthographic'
+      ? [
+          1 / (half * aspect),
+          0,
+          0,
+          0,
+          0,
+          1 / half,
+          0,
+          0,
+          0,
+          0,
+          1 / (near - far),
+          0,
+          0,
+          0,
+          near / (near - far),
+          1,
+        ]
+      : [
+          t / aspect,
+          0,
+          0,
+          0,
+          0,
+          t,
+          0,
+          0,
+          0,
+          0,
+          far / (near - far),
+          -1,
+          0,
+          0,
+          (near * far) / (near - far),
+          0,
+        ]
+  const values = new Float32Array([
     ...multiply(projection, view),
     ...eye,
-    camera.exposure,
+    c.exposure,
     ...data.baseColor,
     ...data.material,
     ...data.emissive.slice(0, 3),
@@ -388,9 +404,9 @@ export function sceneUniforms(
     ...light.color,
     light.intensity,
     ...s,
-    aspect / t,
+    (c.projection === 'orthographic' ? half : 1 / t) * aspect,
     ...u,
-    1 / t,
+    c.projection === 'orthographic' ? -half : 1 / t,
     ...f,
     environment ? 1 : 0,
     Math.sin((settings.rotation * Math.PI) / 180),
@@ -403,6 +419,9 @@ export function sceneUniforms(
     data.animation ? 1 : 0,
     ...(environment?.irradiance || new Float32Array(36)).map((v, i) => (i === 3 ? 0 : v)),
   ])
+  values[67] = near
+  values[71] = far
+  return values
 }
 
 export function emptyModelData() {

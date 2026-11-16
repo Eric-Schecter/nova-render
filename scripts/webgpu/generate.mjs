@@ -1,5 +1,8 @@
 import { readFile, mkdir, writeFile, rm } from 'node:fs/promises'
-import { compile } from './compiler.mjs'
+import { compile as compileShader } from './compiler.mjs'
+// Repository kernels are larger than editable snippets; HTTP compilation keeps its 64 KiB limit.
+const compile = (source, options = {}) =>
+  compileShader(source, { ...options, maxSourceBytes: 262144 })
 const result = await compile(await readFile('render/shaders/triangle.hlsl', 'utf8'))
 await mkdir('docs/public/generated', { recursive: true })
 await writeFile('docs/public/generated/triangle.json', JSON.stringify(result))
@@ -180,3 +183,8 @@ for (const color of ['Red', 'Blue']) {
     await readFile(`assets/SceneSample/${color}.glb`),
   )
 }
+
+await writeFile(
+  'docs/public/generated/viewport-present.json',
+  JSON.stringify(await compile(await readFile('render/shaders/viewport-present.hlsl', 'utf8'))),
+)

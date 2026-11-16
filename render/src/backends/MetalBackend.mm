@@ -103,6 +103,9 @@ namespace render::detail
         {
             if (!width || !height)
                 return FrameResult::Skipped;
+            const auto earlyViewport = SceneViewport(width, height);
+            if (!earlyViewport.width || !earlyViewport.height)
+                return FrameResult::Skipped;
             @autoreleasepool
             {
                 WaitIdle(); // One frame in flight, matching the other backends.
@@ -178,9 +181,10 @@ namespace render::detail
                       sceneInstanceBuffer.contents,
                       scene.instances.data(),
                       scene.instances.size() * sizeof(InstanceData));
-                const auto  topInset    = SceneTopInset(height);
-                const auto  sceneWidth  = width;
-                const auto  sceneHeight = height - topInset;
+                const auto rectangle  = SceneViewport(width, height);
+                const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
+                if (!sceneWidth || !sceneHeight)
+                    return FrameResult::Skipped;
                 const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
                 if (path)
                     UploadPathImage(*path);
@@ -188,13 +192,20 @@ namespace render::detail
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
                 [encoder setRenderPipelineState:model ? modelPipeline : pipeline];
-                [encoder setViewport:MTLViewport{0, double(topInset), double(sceneWidth), double(sceneHeight), 0, 1}];
+                [encoder setViewport:MTLViewport{
+                                       double(rectangle.x),
+                                       double(rectangle.y),
+                                       double(sceneWidth),
+                                       double(sceneHeight),
+                                       0,
+                                       1}];
+                [encoder setScissorRect:MTLScissorRect{rectangle.x, rectangle.y, sceneWidth, sceneHeight}];
                 [encoder setCullMode:MTLCullModeNone];
                 if (model)
                 {
                     auto uniforms = MakeSceneUniforms(
                       *model,
-                      camera,
+                      GetViewCamera(),
                       float(sceneWidth) / sceneHeight,
                       lighting,
                       directionalLight,

@@ -199,7 +199,9 @@ SkyOut SkyVSMain(uint id : SV_VertexID)
     SkyOut output;
     output.position  = float4(p, 1, 1);
     output.uv        = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
-    output.direction = cameraForward.xyz + p.x * cameraRight.w * cameraRight.xyz + p.y * cameraUp.w * cameraUp.xyz;
+    output.direction =
+      cameraForward.xyz
+      + (cameraUp.w < 0 ? float3(0, 0, 0) : p.x * cameraRight.w * cameraRight.xyz + p.y * cameraUp.w * cameraUp.xyz);
     return output;
 }
 float4 SkyPSMain(SkyOut input)
@@ -256,7 +258,7 @@ float4 PSMain(VertexOut input)
     float3 sampled = normalTexture.Sample(textureSampler, uv).xyz * 2 - 1;
     sampled.xy *= matFactor.z;
     n               = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
-    float3 v        = normalize(eyeExposure.xyz - input.worldPosition);
+    float3 v        = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - input.worldPosition);
     float4 mr       = materialTexture.Sample(textureSampler, uv);
     float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);

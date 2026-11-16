@@ -1,6 +1,8 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "ModelData.hpp"
 #include "AnimationData.hpp"
+#include "CameraData.hpp"
+#include <glm/gtc/quaternion.hpp>
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -304,22 +306,26 @@ namespace render::detail
     }
     SceneUniforms MakeSceneUniforms(
       const ModelData&           data,
-      const OrbitCamera&         camera,
+      const Camera&              camera,
       float                      aspect,
       LightingMode               lighting,
       const DirectionalLight&    light,
       const EnvironmentData*     environment,
       const EnvironmentSettings& settings)
     {
-        const float     yaw = glm::radians(camera.yaw), pitch = glm::radians(camera.pitch);
-        const glm::vec3 target(camera.target[0], camera.target[1], camera.target[2]);
-        const glm::vec3 eye = target
-                              + glm::vec3(
-                                camera.distance * std::cos(pitch) * std::sin(yaw),
-                                camera.distance * std::sin(pitch),
-                                camera.distance * std::cos(pitch) * std::cos(yaw));
-        const auto vp = glm::perspectiveRH_ZO(glm::radians(45.0f), aspect, 0.01f, 200.0f)
-                        * glm::lookAtRH(eye, target, glm::vec3(0, 1, 0));
+        const auto      c = ValidateViewCamera(camera);
+        const glm::vec3 eye(c.position[0], c.position[1], c.position[2]);
+        const glm::quat rotation(c.orientation[3], c.orientation[0], c.orientation[1], c.orientation[2]);
+        const auto      right = rotation * glm::vec3(1, 0, 0), up = rotation * glm::vec3(0, 1, 0),
+                   forward     = rotation * glm::vec3(0, 0, -1);
+        const float halfHeight = c.projection == Projection::Orthographic ? c.orthographicHeight * .5f
+                                                                          : std::tan(glm::radians(c.verticalFov) * .5f);
+        const auto  projection =
+          c.projection == Projection::Orthographic
+             ? glm::orthoRH_ZO(
+                -halfHeight * aspect, halfHeight * aspect, -halfHeight, halfHeight, c.nearPlane, c.farPlane)
+             : glm::perspectiveRH_ZO(glm::radians(c.verticalFov), aspect, c.nearPlane, c.farPlane);
+        const auto    vp = projection * glm::translate(glm::mat4_cast(glm::conjugate(rotation)), -eye);
         SceneUniforms result{};
         std::memcpy(result.viewProjection, glm::value_ptr(vp), 64);
         result.eyeExposure[0] = eye.x;
@@ -337,17 +343,14 @@ namespace render::detail
             result.lightColorIntensity[k] = light.color[k];
         }
         result.lightColorIntensity[3] = light.intensity;
-        const glm::vec3 forward       = glm::normalize(target - eye),
-                        right         = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0))),
-                        up            = glm::cross(right, forward);
         for (int k = 0; k < 3; ++k)
         {
             result.cameraRight[k]   = right[k];
             result.cameraUp[k]      = up[k];
             result.cameraForward[k] = forward[k];
         }
-        result.cameraRight[3]       = std::tan(glm::radians(22.5f)) * aspect;
-        result.cameraUp[3]          = std::tan(glm::radians(22.5f));
+        result.cameraRight[3]       = halfHeight * aspect;
+        result.cameraUp[3]          = halfHeight;
         result.cameraForward[3]     = environment ? 1.0f : 0.0f;
         result.environmentParams[0] = std::sin(glm::radians(settings.rotation));
         result.environmentParams[1] = std::cos(glm::radians(settings.rotation));
@@ -361,6 +364,20 @@ namespace render::detail
                 std::copy(environment->irradiance[k].begin(), environment->irradiance[k].end(), result.irradiance[k]);
         result.irradiance[0][3] = 0; // Reserved raw-HDR flag; environment padding must not enable it.
         result.emissive[3]      = lighting == LightingMode::PBR ? 1.0f : 0.0f;
+        result.cameraUp[3]      = c.projection == Projection::Orthographic ? -halfHeight : halfHeight;
+        result.irradiance[1][3] = c.nearPlane;
+        result.irradiance[2][3] = c.farPlane;
         return result;
+    }
+    SceneUniforms MakeSceneUniforms(
+      const ModelData&           data,
+      const OrbitCamera&         camera,
+      float                      aspect,
+      LightingMode               lighting,
+      const DirectionalLight&    light,
+      const EnvironmentData*     environment,
+      const EnvironmentSettings& settings)
+    {
+        return MakeSceneUniforms(data, CameraFromOrbit(camera), aspect, lighting, light, environment, settings);
     }
 } // namespace render::detail

@@ -114,6 +114,92 @@ int main(int argc, char** argv)
         draw();
         if (backend->scene.active)
             throw std::runtime_error("LoadModel did not exit scene mode");
+        backend->SetAntiAliasing({render::AAMethod::FXAA});
+        render::Camera cameraView;
+        cameraView.position           = {0, 0, 5};
+        cameraView.projection         = render::Projection::Orthographic;
+        cameraView.orthographicHeight = 4;
+        backend->SetViewCamera(cameraView);
+        backend->SetViewport(render::Viewport{30, 20, 120, 90});
+        draw();
+        if (backend->GetRasterAAImage().width != 120 || backend->GetRasterAAImage().height != 90)
+            throw std::runtime_error("Viewport did not size AA render target");
+        auto colored = [&] {
+            size_t      n  = 0;
+            const auto& im = backend->GetRasterAAImage();
+            for (size_t k = 0; k < im.pixels.size(); k += 4)
+                if (im.pixels[k] > 150 && im.pixels[k] > im.pixels[k + 2] * 2)
+                    n++;
+            return n;
+        };
+        const auto before = colored();
+        if (before < 50)
+            throw std::runtime_error("Orthographic camera invisible");
+        cameraView.position[2] = 10;
+        backend->SetViewCamera(cameraView);
+        draw();
+        if (colored() != before)
+            throw std::runtime_error("Orthographic size changes with distance");
+        cameraView.nearPlane = 12;
+        cameraView.farPlane  = 20;
+        backend->SetViewCamera(cameraView);
+        draw();
+        if (colored() != 0)
+            throw std::runtime_error("Near clipping ignored");
+        cameraView.nearPlane = .01f;
+        cameraView.farPlane  = 8;
+        backend->SetViewCamera(cameraView);
+        draw();
+        if (colored() != 0)
+            throw std::runtime_error("Far clipping ignored");
+        cameraView.farPlane    = 200;
+        cameraView.orientation = {0, 0, .38268343f, .9238795f};
+        backend->SetViewCamera(cameraView);
+        draw();
+        if (colored() < 50)
+            throw std::runtime_error("Camera roll lost geometry");
+        backend->SetViewport(render::Viewport{10, 10, 10000, 10000});
+        draw();
+        backend->SetViewport(std::nullopt);
+        draw();
+        backend->SetCamera({});
+        draw();
+        cameraView.position    = {0, 10, 0};
+        cameraView.orientation = {-.70710678f, 0, 0, .70710678f};
+        backend->SetViewCamera(cameraView);
+        draw();
+        if (colored() < 50)
+            throw std::runtime_error("Vertical camera lost geometry");
+        backend->SetAntiAliasing({render::AAMethod::TAA});
+        backend->SetViewCamera(render::Camera{});
+        draw();
+        backend->SetViewCamera(backend->GetViewCamera());
+        backend->SetViewport(backend->GetViewport());
+        draw();
+        if (backend->GetAntiAliasingHistoryFrames() != 2)
+            throw std::runtime_error("Unchanged camera reset temporal history");
+        backend->SetViewport(render::Viewport{100000, 100000, 1, 1});
+        if (backend->DrawFrame() != render::FrameResult::Skipped)
+            throw std::runtime_error("Outside viewport did not suspend frame");
+        backend->SetViewport(std::nullopt);
+        draw();
+        if (backend->GetCapabilities().rayTracing)
+        {
+            cameraView.orientation = {0, 0, 0, 1};
+            cameraView.position    = {0, 0, 5};
+            cameraView.nearPlane   = .01f;
+            cameraView.farPlane    = 200;
+            backend->SetViewCamera(cameraView);
+            backend->SetRenderMode(render::RenderMode::RayTracing);
+            draw();
+            if (!backend->GetAccumulatedSamples())
+                throw std::runtime_error("Orthographic ray tracing did not accumulate");
+            cameraView.nearPlane = 6;
+            cameraView.farPlane  = 10;
+            backend->SetViewCamera(cameraView);
+            draw();
+            backend->SetRenderMode(render::RenderMode::Raster);
+        }
         backend.reset();
         glfwDestroyWindow(window);
         window = nullptr;

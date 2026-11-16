@@ -1,5 +1,6 @@
 #pragma once
 #include "AnimationData.hpp"
+#include "CameraData.hpp"
 #include "Color.hpp"
 #include "ModelData.hpp"
 #include "ParameterPanel.hpp"
@@ -219,6 +220,31 @@ namespace render::detail
             clearColor = value;
         }
         OrbitCamera GetCamera() const { return camera; }
+        Camera      GetViewCamera() const { return viewCamera ? *viewCamera : CameraFromOrbit(camera); }
+        void        SetViewCamera(const Camera& value)
+        {
+            const auto next = ValidateViewCamera(value);
+            if (viewCamera && SameCamera(*viewCamera, next))
+                return;
+            viewCamera = next;
+            rasterAA.Reset();
+            pathSession.Reset();
+        }
+        void SetViewport(const std::optional<Viewport>& value)
+        {
+            ValidateViewport(value);
+            if (SameViewport(viewport, value))
+                return;
+            viewport = value;
+            rasterAA.Reset();
+            pathSession.Reset();
+        }
+        std::optional<Viewport> GetViewport() const { return viewport; }
+        Viewport                SceneViewport(uint32_t width, uint32_t height) const
+        {
+            return ResolveViewport(viewport, width, height, SceneTopInset(height));
+        }
+
         void        SetDirectionalLight(const DirectionalLight& value)
         {
             if (std::memcmp(&directionalLight, &value, sizeof(value)) != 0)
@@ -234,6 +260,9 @@ namespace render::detail
         }
         void SetCamera(const OrbitCamera& value)
         {
+            if (viewCamera)
+                rasterAA.Reset();
+            viewCamera.reset();
             if (
               std::abs(value.yaw - camera.yaw) > 20 || std::abs(value.pitch - camera.pitch) > 20
               || std::abs(value.distance - camera.distance) > 2 || value.exposure != camera.exposure
@@ -279,7 +308,7 @@ namespace render::detail
                     CreateRasterAADevice();
                 rasterAA.current = MakeSceneUniforms(
                   *model,
-                  camera,
+                  GetViewCamera(),
                   float(width) / height,
                   lighting,
                   directionalLight,
@@ -294,7 +323,7 @@ namespace render::detail
             }
             const auto uniform = MakeSceneUniforms(
               *model,
-              camera,
+              GetViewCamera(),
               float(width) / height,
               LightingMode::PBR,
               directionalLight,
@@ -341,6 +370,14 @@ namespace render::detail
               animation.Clips(),
               animation.state,
               rasterSettings);
+            if (
+              oldCamera.yaw != camera.yaw || oldCamera.pitch != camera.pitch || oldCamera.distance != camera.distance
+              || oldCamera.target != camera.target || oldCamera.exposure != camera.exposure)
+            {
+                viewCamera.reset();
+                rasterAA.Reset();
+                pathSession.Reset();
+            }
             const auto nextAA = rasterSettings;
             rasterSettings    = previousAA;
             if (nextAA.method != previousAA.method)
@@ -365,6 +402,8 @@ namespace render::detail
         EnvironmentSettings                    environmentSettings;
         std::shared_ptr<const ModelData>       model;
         OrbitCamera                            camera;
+        std::optional<Camera>                  viewCamera;
+        std::optional<Viewport>                viewport;
         DirectionalLight                       directionalLight;
         LightingMode                           lighting = LightingMode::Unlit;
 

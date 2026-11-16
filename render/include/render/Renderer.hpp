@@ -97,6 +97,10 @@ namespace render
         bool                 EnableParameterPanel(const ParameterPanelConfig& config);
         void                 SetClearColor(const std::array<float, 4>& color);
         std::array<float, 4> GetClearColor() const;
+        void                    SetViewCamera(const Camera& camera);
+        Camera                  GetViewCamera() const;
+        void                    SetViewport(const std::optional<Viewport>& viewport);
+        std::optional<Viewport> GetViewport() const;
         void                 SetCamera(const OrbitCamera& camera);
         OrbitCamera          GetCamera() const;
         GraphicsAPI          GetAPI() const;

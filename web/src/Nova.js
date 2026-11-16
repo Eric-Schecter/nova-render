@@ -1,3 +1,6 @@
+import { copyViewCamera, cameraFromOrbit, copyViewport, resolveViewport } from './Camera.js'
+import { createViewportSurface } from './ViewportSurface.js'
+export { cameraFromOrbit } from './Camera.js'
 import { defaultPostProcessing, copyPostProcessing } from './PostProcessing.js'
 import { createAntiAliasingView } from './AntiAliasingView.js'
 import { defaultAmbientOcclusion, copyAmbientOcclusion } from './AmbientOcclusion.js'
@@ -23,12 +26,27 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
     device.destroy()
     throw Error('Cannot create a WebGPU canvas context')
   }
-  return new Renderer(canvas, device, context, shaderDirectory)
+  try {
+    return new Renderer(
+      canvas,
+      device,
+      context,
+      shaderDirectory,
+      await createViewportSurface(device, shaderDirectory),
+    )
+  } catch (error) {
+    device.destroy()
+    throw error
+  }
 }
 class Renderer {
   #canvas
   #device
   #context
+  #outputContext
+  #surface
+  #viewCamera
+  #viewport = null
   #pipeline
   #triangleShader
   #triangleAA = {}
@@ -102,7 +120,7 @@ class Renderer {
           prepare: async (w, h, settings, frames) => {
             if (this.#model)
               await this.#model.prepareAA(
-                this.#camera,
+                this.getViewCamera(),
                 w,
                 h,
                 this.#lighting,
@@ -146,7 +164,7 @@ class Renderer {
         },
         owner = this
       this.#aaView = await createAntiAliasingView({
-        canvas: this.#canvas,
+        canvas: this.#surface.canvas,
         shaderDirectory: this.#shaderDirectory,
         device: this.#device,
         context: this.#context,
@@ -184,11 +202,13 @@ class Renderer {
   #model
   #shaderDirectory
   #camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 }
-  constructor(canvas, device, context, shaderDirectory) {
+  constructor(canvas, device, context, shaderDirectory, surface) {
     this.#shaderDirectory = shaderDirectory
     this.#canvas = canvas
     this.#device = device
-    this.#context = context
+    this.#outputContext = context
+    this.#surface = surface
+    this.#context = surface.context
     device.lost.then((info) => {
       this.#lost = info.message || 'GPU device lost'
     })
@@ -539,10 +559,39 @@ class Renderer {
     this.#lighting = mode
     this.#parameterPanel?.refresh()
   }
+  getViewCamera() {
+    this.#check()
+    return copyViewCamera(this.#viewCamera || cameraFromOrbit(this.#camera))
+  }
+  setViewCamera(value) {
+    this.#check()
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw Error('Camera settings must be an object')
+    const camera = copyViewCamera({ ...this.getViewCamera(), ...value })
+    this.disableOrbitControls()
+    if (this.#viewCamera && JSON.stringify(this.#viewCamera) === JSON.stringify(camera)) return
+    this.#viewCamera = camera
+    this.#resetAA()
+    this.resetAccumulation()
+  }
+  getViewport() {
+    this.#check()
+    return this.#viewport ? { ...this.#viewport } : null
+  }
+  setViewport(value) {
+    this.#check()
+    const next = copyViewport(value)
+    if (JSON.stringify(this.#viewport) === JSON.stringify(next)) return
+    this.#viewport = next
+    this.#resetAA()
+    this.resetAccumulation()
+  }
   setCamera(camera) {
     this.#check()
     const value = { ...this.#camera, ...camera }
     validateCamera(value)
+    if (this.#viewCamera) this.#resetAA()
+    this.#viewCamera = undefined
     if (
       Math.abs(value.yaw - this.#camera.yaw) > 20 ||
       Math.abs(value.pitch - this.#camera.pitch) > 20 ||
@@ -732,13 +781,16 @@ class Renderer {
     if (this.#canvas.width !== width) this.#canvas.width = width
     if (this.#canvas.height !== height) this.#canvas.height = height
     if (!this.#configured) {
-      this.#context.configure({
+      this.#outputContext.configure({
         device: this.#device,
         format: navigator.gpu.getPreferredCanvasFormat(),
         alphaMode: 'opaque',
       })
       this.#configured = true
     }
+    const viewport = resolveViewport(this.#viewport, width, height)
+    if (!viewport.width || !viewport.height) return 'skipped'
+    this.#surface.resize(viewport.width, viewport.height)
     this.#device.pushErrorScope('validation')
     let failure
     try {
@@ -747,14 +799,14 @@ class Renderer {
         !this.#aoSettings.enabled &&
         (this.#aaSettings.method !== 'off' || this.#postSettings.enabled)
       )
-        await this.#drawAA(width, height)
+        await this.#drawAA(viewport.width, viewport.height)
       else if (this.#model) {
         if (this.#renderMode === 'ray-tracing' || this.#aoSettings.enabled)
           await this.#model.drawPath(
-            this.#camera,
+            this.getViewCamera(),
             this.#clear,
-            width,
-            height,
+            viewport.width,
+            viewport.height,
             this.#lighting,
             this.#directionalLight,
             this.#environmentSettings,
@@ -763,10 +815,10 @@ class Renderer {
           )
         else
           this.#model.draw(
-            this.#camera,
+            this.getViewCamera(),
             this.#clear,
-            width,
-            height,
+            viewport.width,
+            viewport.height,
             this.#lighting,
             this.#directionalLight,
             this.#environmentSettings,
@@ -788,6 +840,7 @@ class Renderer {
         pass.end()
         this.#device.queue.submit([encoder.finish()])
       }
+      this.#surface.present(this.#outputContext, viewport, this.#clear)
       await this.#device.queue.onSubmittedWorkDone()
     } catch (e) {
       failure = e
@@ -815,7 +868,8 @@ class Renderer {
     this.#pathFrame = 0
     this.#aaView?.dispose()
     this.#model?.dispose()
-    this.#context.unconfigure()
+    this.#surface.dispose()
+    this.#outputContext.unconfigure()
     this.#device.destroy()
   }
 }
