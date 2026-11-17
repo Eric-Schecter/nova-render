@@ -379,4 +379,16 @@ namespace render
     {
         return impl_->backend->ValidationErrorCount();
     }
+    void Renderer::SetHybrid(const HybridSettings& settings)
+    {
+        impl_->backend->SetHybrid(settings);
+    }
+    HybridSettings Renderer::GetHybrid() const
+    {
+        return impl_->backend->GetHybrid();
+    }
+    HybridCapabilities Renderer::GetHybridCapabilities() const
+    {
+        return impl_->backend->GetHybridCapabilities();
+    }
 } // namespace render

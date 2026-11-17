@@ -377,7 +377,7 @@ namespace render::detail
 
 #include "D3D12Model.inc"
         ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit;
+          aaDeferred, aaOit, aaHybridShadow;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
         ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
@@ -408,7 +408,10 @@ namespace render::detail
             info.DepthStencilState.BackFace                                   = face;
             info.SampleMask                                                   = UINT_MAX;
             info.PrimitiveTopologyType                                        = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-            info.NumRenderTargets = std::string(file) == "model-gbuffer" ? 4 : std::string(file) == "model-oit" ? 2 : 1;
+            info.NumRenderTargets = (std::string(file) == "model-gbuffer" || std::string(file) == "model-hybrid-shadow")
+                                      ? 4
+                                    : std::string(file) == "model-oit" ? 2
+                                                                       : 1;
             for (UINT i = 1; i < info.NumRenderTargets; i++)
             {
                 info.RTVFormats[i]              = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -438,10 +441,10 @@ namespace render::detail
         {
             AAExternalScene external;
             external.device = device.Get();
-            external.bindGBuffer = [this](void*, const std::array<void*, 4>& views) {
+            external.bindGBuffer = [this](void*, const std::array<void*, 8>& views, int program) {
                 auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
                 handle.ptr += 8 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-                for (int i = 0; i < 4; i++)
+                for (int i = 0; i < 8; i++)
                 {
                     auto*                           image = static_cast<ID3D12Resource*>(views[i]);
                     D3D12_SHADER_RESOURCE_VIEW_DESC d{};
@@ -503,14 +506,15 @@ namespace render::detail
                 cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                if (pass.program == -5)
+                if (pass.program == -5 || pass.program == -7)
                 {
-                    if (!aaDeferred)
-                        aaDeferred = AAPipeline("model-deferred", true, 1);
+                    auto& active = pass.program == -7 ? aaHybridShadow : aaDeferred;
+                    if (!active)
+                        active = AAPipeline(pass.program == -7 ? "model-hybrid-shadow" : "model-deferred", true, 1);
                     auto h = modelHeap->GetGPUDescriptorHandleForHeapStart();
                     h.ptr += 8 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                     cmd->SetGraphicsRootDescriptorTable(9, h);
-                    cmd->SetPipelineState(aaDeferred.Get());
+                    cmd->SetPipelineState(active.Get());
                     cmd->DrawInstanced(3, 1, 0, 0);
                     return;
                 }

@@ -86,7 +86,7 @@ export function instrumentRenderer(renderer, canvas) {
         !visible() ? 'paused' : !active ? 'idle' : ray ? 'accumulating' : 'rendering',
       ),
       accumulatedFrames:
-        renderer.getRenderMode() === 'raster'
+        renderer.getRenderMode() !== 'ray-tracing'
           ? renderer.getAntiAliasingHistoryFrames()
           : renderer.getAccumulatedSamples(),
     }
@@ -107,18 +107,24 @@ export function instrumentRenderer(renderer, canvas) {
           height: Math.max(1, Math.round(canvas.height * scale)),
           scale,
           samples: ray ? settings.samplesPerFrame : ['msaa', 'ssaa'].includes(aa.method) ? 4 : 1,
-          method: ray
-            ? { path: 'PT', bidirectional: 'BDPT', 'photon-mapping': 'Photon mapping', mlt: 'MLT' }[
-                settings.integrator
-              ]
-            : {
-                off: 'Raster',
-                fxaa: 'FXAA',
-                smaa: 'SMAA 1x',
-                msaa: 'MSAA 4x',
-                ssaa: 'SSAA 2×2',
-                taa: 'TAA',
-              }[aa.method],
+          method:
+            renderer.getRenderMode() === 'hybrid'
+              ? 'Hybrid'
+              : ray
+                ? {
+                    path: 'PT',
+                    bidirectional: 'BDPT',
+                    'photon-mapping': 'Photon mapping',
+                    mlt: 'MLT',
+                  }[settings.integrator]
+                : {
+                    off: 'Raster',
+                    fxaa: 'FXAA',
+                    smaa: 'SMAA 1x',
+                    msaa: 'MSAA 4x',
+                    ssaa: 'SSAA 2×2',
+                    taa: 'TAA',
+                  }[aa.method],
         })
         lastFinished = performance.now()
       }

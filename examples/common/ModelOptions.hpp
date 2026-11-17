@@ -31,7 +31,7 @@ namespace example
             throw std::invalid_argument(
               "Usage: example model.glb [environment.nenv for environment example] [--api metal|vulkan|dx12] [--warp] "
               "[--frames N] [--spin] [--environment path.nenv] "
-              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray] "
+              "[--light-direction X Y Z] [--light-color R G B] [--light-intensity N] [--mode raster|ray|hybrid] "
               "[--spp N] "
               "[--bounces N] [--scale N] [--integrator path|bidirectional|photon-mapping|mlt] [--compare-samples N | "
               "--compare-ms N]");
@@ -94,6 +94,8 @@ namespace example
                 const std::string mode = argv[++i];
                 if (mode == "raster")
                     options.mode = render::RenderMode::Raster;
+                else if (mode == "hybrid")
+                    options.mode = render::RenderMode::Hybrid;
                 else if (mode == "ray" || mode == "path")
                     options.mode = render::RenderMode::PathTracing;
                 else

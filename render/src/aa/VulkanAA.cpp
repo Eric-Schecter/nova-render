@@ -90,7 +90,7 @@ namespace render::detail
             VkDescriptorSetLayout            computeSetLayout{};
             VkPipeline                       pipelines[30]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
-              surfaceMSPass{}, externalLoadPass{}, oitPass{};
+              surfaceMSPass{}, externalLoadPass{}, oitPass{}, surfaceLoadPass{};
             VkSampler    linear{}, point{};
             Texture      textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             Buffer       uniforms, readback;
@@ -727,6 +727,7 @@ namespace render::detail
                 externalLoadPass = MakePass(true, false, true, false, true);
                 oitPass          = MakePass(true, false, true, false, true, true);
                 externalMSPass = MakePass(true, true, true);
+                surfaceLoadPass  = MakePass(true, false, false, true, true);
                 surfacePass    = MakePass(true, false, false, true);
                 surfaceMSPass  = MakePass(true, true, false, true);
                 for (int i = 0; i < 30; i++)
@@ -801,7 +802,8 @@ namespace render::detail
                       surfacePass,
                       surfaceMSPass,
                       externalLoadPass,
-                      oitPass})
+                      oitPass,
+                      surfaceLoadPass})
                     if (p)
                         api.vkDestroyRenderPass(device, p, nullptr);
                 for (auto s : {linear, point})
@@ -971,10 +973,10 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool               nativeScene = p.program < 0;
-                    const int                attachments = (p.program == 17 || p.program == 22 || p.program == -4) ? 4
-                                                           : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
-                                                             ? 2
-                                                             : 1;
+                    const int                attachments =
+                      (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)  ? 4
+                                     : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
+                                                                                                                 : 1;
                     auto&                    target      = textures[p.target];
                     std::vector<VkImageView> views;
                     for (int a = 0; a < attachments; a++)
@@ -1043,6 +1045,7 @@ namespace render::detail
                     api.vkUpdateDescriptorSets(device, 19, writes.data(), 0, nullptr);
                     VkRenderPass            renderPass = (p.program == 17 || p.program == 22 || p.program == -4)
                                                            ? (p.multisampled ? surfaceMSPass : surfacePass)
+                                                         : p.program == -7 ? surfaceLoadPass
                                                          : p.program == -6 ? oitPass
                                                          : p.program == -5 ? externalLoadPass
                                                          : nativeScene ? (p.multisampled ? externalMSPass : externalPass)
@@ -1069,7 +1072,7 @@ namespace render::detail
                         clears[2].color = {{0, 0, 0, 1}};
                         clears[3].color = {{1000, 1000, 0, 1}};
                     }
-                    if ((p.program >= 22 && p.program != 23) || p.program == -4)
+                    if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7)
                         for (int a = 0; a < attachments; ++a)
                             clears[a].color = {{0, 0, 0, 0}};
                     if (p.program == -6)
@@ -1098,12 +1101,12 @@ namespace render::detail
                         VkRect2D scissor{{0, 0}, {target.width, target.height}};
                         api.vkCmdSetViewport(command, 0, 1, &viewport);
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
-                        if (p.program == -5 && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
                         {
-                            std::array<void*, 4> views{};
-                            for (int i = 0; i < 4; i++)
+                            std::array<void*, 8> views{};
+                            for (int i = 0; i < 8; i++)
                                 views[i] = reinterpret_cast<void*>(textures[p.sources[i]].view);
-                            external.bindGBuffer(command, views);
+                            external.bindGBuffer(command, views, p.program);
                         }
                         if (p.program != -3)
                             external.draw(p, reinterpret_cast<void*>(command), reinterpret_cast<void*>(renderPass));

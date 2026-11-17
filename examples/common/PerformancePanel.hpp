@@ -40,7 +40,7 @@ namespace example
                 target.WaitIdle();
                 meter.Record(start);
                 const auto path                      = target.GetRayTracing();
-                const bool ray                       = target.GetRenderMode() != render::RenderMode::Raster;
+                const bool ray                       = target.GetRenderMode() == render::RenderMode::RayTracing;
                 scale                                = ray ? path.resolutionScale : 1;
                 samples                              = ray ? path.samplesPerFrame : 1;
                 accumulated                          = ray ? target.GetAccumulatedSamples() : 0;
@@ -55,6 +55,11 @@ namespace example
                     scale       = aa.method == render::AAMethod::SSAA ? 2.f : 1.f;
                     samples     = aa.method == render::AAMethod::SSAA || aa.method == render::AAMethod::MSAA ? 4 : 1;
                     accumulated = target.GetAntiAliasingHistoryFrames();
+                }
+                if (target.GetRenderMode() == render::RenderMode::Hybrid)
+                {
+                    method      = "Hybrid";
+                    accumulated = 0;
                 }
                 float inset = 0;
 #ifdef NOVA_EXAMPLE_UI

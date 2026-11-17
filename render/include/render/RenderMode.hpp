@@ -7,6 +7,7 @@ namespace render
     {
         Raster,
         RayTracing,
+        Hybrid      = 2,
         PathTracing = RayTracing // Compatibility alias.
     };
     enum class PathIntegrator

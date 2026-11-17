@@ -47,6 +47,7 @@ export default defineConfig({
           { text: '16 · Raster pipelines', link: '/examples/pipelines' },
           { text: '17 · Deferred models', link: '/examples/deferred' },
           { text: '18 · Alpha materials', link: '/examples/material-alpha' },
+          { text: '19 · Hybrid rendering', link: '/examples/hybrid' },
         ],
       },
       {
@@ -68,6 +69,7 @@ export default defineConfig({
           { text: 'Reflection probes', link: '/api/probe' },
           { text: 'Raster pipeline laboratory', link: '/api/pipelines' },
           { text: 'Model raster pipelines', link: '/api/raster' },
+          { text: 'Hybrid rendering', link: '/api/hybrid' },
           { text: 'Parameter panels', link: '/api/ui' },
           { text: 'Types and configuration', link: '/api/types' },
           { text: 'Backend selection', link: '/api/selection' },

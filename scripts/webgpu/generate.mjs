@@ -139,11 +139,19 @@ for (const [name, vertexEntry, fragmentEntry] of [
   ['model-gbuffer', 'VSMain', 'GBufferPSMain'],
   ['model-oit', 'VSMain', 'OITPSMain'],
   ['model-deferred', 'SkyVSMain', 'DeferredPSMain'],
+  ['model-hybrid-shadow', 'SkyVSMain', 'HybridShadowPSMain'],
   ['sky-aa', 'SkyVSMain', 'SkyPSMain'],
   ['model-motion', 'MotionVSMain', 'MotionPSMain'],
   ['sky-motion', 'SkyVSMain', 'SkyMotionPSMain'],
 ]) {
-  const data = await compile(rasterSource, { model: true, vertexEntry, fragmentEntry })
+  // The Hybrid visibility kernel needs inlining to retain storage-matrix layout
+  // through Naga's function-local struct lowering. Covered by native/Web ray parity.
+  const data = await compile(rasterSource, {
+    model: true,
+    vertexEntry,
+    fragmentEntry,
+    optimizeModel: name === 'model-hybrid-shadow',
+  })
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
 }
 

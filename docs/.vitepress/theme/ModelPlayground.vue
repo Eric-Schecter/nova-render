@@ -2,6 +2,9 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import { showHybrid } from '../../../web/examples/hybrid.js'
+import hybridJS from '../../../web/examples/hybrid.js?raw'
+import hybridCPP from '../../../examples/hybrid/main.cpp?raw'
 import { showDeferred } from '../../../web/examples/deferred.js'
 import deferredJS from '../../../web/examples/deferred.js?raw'
 import deferredCPP from '../../../examples/deferred/main.cpp?raw'
@@ -29,6 +32,7 @@ import helmetJS from '../../../web/examples/helmet.js?raw'
 import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
 const props = defineProps({
+  hybrid: Boolean,
   deferred: Boolean,
   lighting: Boolean,
   environment: Boolean,
@@ -37,51 +41,57 @@ const props = defineProps({
   weekend: Boolean,
   ao: Boolean,
 })
-const jsSource = props.deferred
-  ? deferredJS
-  : props.ao
-    ? aoJS
-    : props.weekend
-      ? weekendJS
-      : props.comparison
-        ? comparisonJS
-        : props.animation
-          ? animationJS
-          : props.environment
-            ? environmentJS
-            : props.lighting
-              ? lightingJS
-              : helmetJS
-const cppSource = props.deferred
-  ? deferredCPP
-  : props.ao
-    ? aoCPP
-    : props.weekend
-      ? environmentCPP
-      : props.comparison
-        ? comparisonCPP
-        : props.animation
-          ? animationCPP
-          : props.environment
-            ? environmentCPP
-            : props.lighting
-              ? lightingCPP
-              : helmetCPP
-const showExample = props.deferred
-  ? showDeferred
-  : props.ao
-    ? showAO
-    : props.weekend
-      ? showWeekend
-      : props.comparison
-        ? showComparison
-        : props.animation
-          ? showAnimation
-          : props.environment
-            ? showEnvironment
-            : props.lighting
-              ? showLighting
-              : showHelmet
+const jsSource = props.hybrid
+  ? hybridJS
+  : props.deferred
+    ? deferredJS
+    : props.ao
+      ? aoJS
+      : props.weekend
+        ? weekendJS
+        : props.comparison
+          ? comparisonJS
+          : props.animation
+            ? animationJS
+            : props.environment
+              ? environmentJS
+              : props.lighting
+                ? lightingJS
+                : helmetJS
+const cppSource = props.hybrid
+  ? hybridCPP
+  : props.deferred
+    ? deferredCPP
+    : props.ao
+      ? aoCPP
+      : props.weekend
+        ? environmentCPP
+        : props.comparison
+          ? comparisonCPP
+          : props.animation
+            ? animationCPP
+            : props.environment
+              ? environmentCPP
+              : props.lighting
+                ? lightingCPP
+                : helmetCPP
+const showExample = props.hybrid
+  ? showHybrid
+  : props.deferred
+    ? showDeferred
+    : props.ao
+      ? showAO
+      : props.weekend
+        ? showWeekend
+        : props.comparison
+          ? showComparison
+          : props.animation
+            ? showAnimation
+            : props.environment
+              ? showEnvironment
+              : props.lighting
+                ? showLighting
+                : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('Loading model…'),
@@ -172,19 +182,21 @@ onBeforeUnmount(() => {
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
       <strong>{{
-        deferred
-          ? 'Deferred model rendering'
-          : ao
-            ? 'Ambient occlusion'
-            : comparison
-              ? 'Integrator comparison'
-              : animation
-                ? 'Skeletal animation'
-                : environment
-                  ? 'Skybox and environment lighting'
-                  : lighting
-                    ? 'PBR lighting'
-                    : 'Model loading'
+        hybrid
+          ? 'Hybrid rendering'
+          : deferred
+            ? 'Deferred model rendering'
+            : ao
+              ? 'Ambient occlusion'
+              : comparison
+                ? 'Integrator comparison'
+                : animation
+                  ? 'Skeletal animation'
+                  : environment
+                    ? 'Skybox and environment lighting'
+                    : lighting
+                      ? 'PBR lighting'
+                      : 'Model loading'
       }}</strong>
       <div>
         <button

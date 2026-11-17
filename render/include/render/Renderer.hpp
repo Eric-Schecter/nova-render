@@ -2,6 +2,7 @@
 #include "Animation.hpp"
 #include "AntiAliasing.hpp"
 #include "Atmosphere.hpp"
+#include "Hybrid.hpp"
 #include "Image.hpp"
 #include "Lights.hpp"
 #include "Material.hpp"
@@ -89,6 +90,9 @@ namespace render
         void                    SetMaterial(uint32_t slot, const Material& material, const std::string& assetId = {});
         void                    LoadModel(const std::filesystem::path& glbPath);
         RendererCapabilities    GetCapabilities() const;
+        void                    SetHybrid(const HybridSettings& settings);
+        HybridSettings          GetHybrid() const;
+        HybridCapabilities      GetHybridCapabilities() const;
         void                    SetRenderMode(RenderMode mode);
         RenderMode              GetRenderMode() const;
         void                    SetPathTracing(const PathTracingSettings& settings);

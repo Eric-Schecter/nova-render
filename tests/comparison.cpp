@@ -83,14 +83,14 @@ int main(int argc, char** argv)
         bool rejected = false;
         try
         {
-            window.SetRenderMode(static_cast<render::RenderMode>(2));
+            window.SetRenderMode(static_cast<render::RenderMode>(3));
         }
         catch (const std::invalid_argument&)
         {
             rejected = true;
         }
         if (!rejected)
-            throw std::runtime_error("Unexpected third render mode");
+            throw std::runtime_error("Unexpected invalid render mode");
         rejected = false;
         try
         {

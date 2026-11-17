@@ -67,7 +67,11 @@ namespace render::detail
         AAOitAccum = 89,
         AAOitReveal,
         AARawOpaque,
-        AAResourceCount = 92
+        AAHybridShadow0 = 92,
+        AAHybridShadow1,
+        AAHybridShadow2,
+        AAHybridShadow3,
+        AAResourceCount = 96
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -86,7 +90,7 @@ namespace render::detail
         void*                                            device      = nullptr;
         uint32_t                                         queueFamily = 0;
         std::function<void(const AAPass&, void*, void*)> draw;
-        std::function<void(void*, const std::array<void*, 4>&)> bindGBuffer;
+        std::function<void(void*, const std::array<void*, 8>&, int)> bindGBuffer;
     };
     struct AASpec
     {
@@ -158,7 +162,7 @@ namespace render::detail
             used[p.target] = true;
             for (int source : p.sources)
                 used[source] = true;
-            if (p.program == 17 || p.program == 22 || p.program == -4)
+            if (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)
             {
                 for (int i = 1; i < 4; i++)
                     used[p.target + i] = true;

@@ -17,7 +17,7 @@ uint32_t                    pathWidth = 0, pathHeight = 0;
 VkSampler                   modelSampler   = VK_NULL_HANDLE;
 VkDescriptorSetLayout       modelSetLayout = VK_NULL_HANDLE, gBufferSetLayout = VK_NULL_HANDLE;
 VkDescriptorPool            modelPool      = VK_NULL_HANDLE;
-VkDescriptorSet             modelSet       = VK_NULL_HANDLE, gBufferSet = VK_NULL_HANDLE;
+VkDescriptorSet             modelSet = VK_NULL_HANDLE, gBufferSet = VK_NULL_HANDLE, hybridGBufferSet = VK_NULL_HANDLE;
 bool                        modelReady     = false;
 uint32_t                    memoryType(uint32_t bits, VkMemoryPropertyFlags flags)
 {
@@ -309,17 +309,19 @@ void uploadModel()
     layoutInfo.bindingCount = 16;
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
-    VkDescriptorSetLayoutBinding gBindings[4]{};
-    for(int i=0;i<4;i++)gBindings[i]={uint32_t(17+i),VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr};
-    layoutInfo.bindingCount=4;layoutInfo.pBindings=gBindings;
+    VkDescriptorSetLayoutBinding gBindings[8]{};
+    for (int i = 0; i < 8; i++)
+        gBindings[i] = {uint32_t(17 + i), VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    layoutInfo.bindingCount = 8;
+    layoutInfo.pBindings    = gBindings;
     check(vkCreateDescriptorSetLayout(device,&layoutInfo,nullptr,&gBufferSetLayout),"Create G-buffer descriptor layout");
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 12},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 24},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    poolInfo.maxSets       = 2;
+    poolInfo.maxSets       = 3;
     poolInfo.poolSizeCount = 4;
     poolInfo.pPoolSizes    = sizes;
     check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &modelPool), "Create model descriptor pool");
@@ -329,6 +331,7 @@ void uploadModel()
     alloc.pSetLayouts        = &modelSetLayout;
     check(vkAllocateDescriptorSets(device, &alloc, &modelSet), "Allocate model descriptors");
     alloc.pSetLayouts=&gBufferSetLayout;check(vkAllocateDescriptorSets(device,&alloc,&gBufferSet),"Allocate G-buffer descriptors");
+    check(vkAllocateDescriptorSets(device, &alloc, &hybridGBufferSet), "Allocate Hybrid G-buffer descriptors");
     VkDescriptorBufferInfo bufferInfo[] = {
       {modelUniform.buffer, 0, sizeof(SceneUniforms)},
       {modelVertices.buffer, 0, VK_WHOLE_SIZE},

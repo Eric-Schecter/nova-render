@@ -305,13 +305,24 @@ export function attachParameterPanel(
       for (const [value, text] of [
         ['raster', 'Raster'],
         ['ray-tracing', 'Ray tracing'],
+        ['hybrid', 'Hybrid'],
       ]) {
         const option = document.createElement('option')
         option.value = value
         option.textContent = text
-        if (value !== 'raster' && !capabilities.pathTracing) {
+        if (value === 'ray-tracing' && !capabilities.pathTracing) {
           option.disabled = true
           option.title = capabilities.reason
+        }
+        if (value === 'hybrid') {
+          const caps = adapter.getHybridCapabilities?.(),
+            aa = adapter.getAntiAliasing()
+          option.disabled =
+            !caps?.supported ||
+            ['msaa', 'taa'].includes(aa.method) ||
+            aa.split ||
+            !!adapter.getAmbientOcclusion?.().enabled
+          option.title = caps?.reason || ''
         }
         select.append(option)
       }
@@ -323,6 +334,62 @@ export function attachParameterPanel(
       label.append(select)
       renderer.append(label)
       fields.set('renderMode', { input: select })
+      if (adapter.getRenderMode() === 'hybrid' && adapter.getHybrid) {
+        const h = adapter.getHybrid(),
+          row = document.createElement('label'),
+          toggle = document.createElement('input')
+        row.textContent = 'Hybrid shadows'
+        toggle.type = 'checkbox'
+        toggle.checked = h.shadows
+        toggle.setAttribute('aria-label', 'Hybrid shadows')
+        toggle.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ shadows: toggle.checked })),
+          { signal: fieldEvents.signal },
+        )
+        row.prepend(toggle)
+        renderer.append(row)
+        fields.set('hybrid_shadows', { input: toggle })
+        slider(
+          renderer,
+          'hybrid_shadowSamples',
+          'Shadow rays/pixel/light',
+          'Shadow rays per pixel per light',
+          1,
+          16,
+          1,
+          (v) => adapter.setHybrid({ shadowSamples: v }),
+        )
+        const viewRow = document.createElement('label'),
+          view = document.createElement('select')
+        viewRow.textContent = 'Hybrid view'
+        view.setAttribute('aria-label', 'Hybrid view')
+        for (const value of ['final', 'shadows']) {
+          const option = document.createElement('option')
+          option.value = value
+          option.textContent = value === 'final' ? 'Final' : 'Shadows'
+          view.append(option)
+        }
+        view.value = h.view
+        view.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ view: view.value })),
+          { signal: fieldEvents.signal },
+        )
+        viewRow.append(view)
+        renderer.append(viewRow)
+        fields.set('hybrid_view', { input: view })
+        slider(
+          renderer,
+          'hybrid_shadowLight',
+          'Visibility light',
+          'Visibility light',
+          0,
+          15,
+          1,
+          (v) => adapter.setHybrid({ shadowLight: v }),
+        )
+      }
       if (current.pathTracing) {
         const integratorRow = document.createElement('label'),
           integrator = document.createElement('select')
@@ -631,6 +698,17 @@ export function attachParameterPanel(
     }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (key.startsWith('hybrid_')) {
+        const name = key.slice(7),
+          value = adapter.getHybrid()[name]
+        if (name === 'shadows') field.input.checked = value
+        else field.input.value = value
+        if (field.output) field.output.textContent = String(value)
+        if (name === 'shadowLight')
+          field.input.closest('label').style.display =
+            adapter.getHybrid().view === 'shadows' ? '' : 'none'
+        continue
+      }
       if (key.startsWith('raster_')) {
         const keyName = key.slice(7),
           raster = adapter.getRasterSettings()
@@ -640,22 +718,24 @@ export function attachParameterPanel(
           field.input.closest('label').style.display = raster.view === 'final' ? 'none' : ''
         }
         field.input.disabled =
-          adapter.getRenderMode() !== 'raster' ||
+          adapter.getRenderMode() === 'ray-tracing' ||
           !!adapter.getAmbientOcclusion?.().enabled ||
           (keyName === 'view' && raster.pipeline !== 'deferred')
         if (keyName === 'pipeline')
           for (const option of field.input.options)
             option.disabled =
-              option.value === 'deferred' && adapter.getAntiAliasing().method === 'msaa'
+              (option.value === 'deferred' && adapter.getAntiAliasing().method === 'msaa') ||
+              (option.value === 'forward' && adapter.getRenderMode() === 'hybrid')
         continue
       }
       if (key === 'aaMethod') {
         field.input.value = adapter.getAntiAliasing().method
         for (const option of field.input.options)
           option.disabled =
-            option.value === 'msaa' && adapter.getRasterSettings?.().pipeline === 'deferred'
+            (option.value === 'msaa' && adapter.getRasterSettings?.().pipeline === 'deferred') ||
+            (option.value === 'taa' && adapter.getRenderMode() === 'hybrid')
         field.input.disabled =
-          adapter.getRenderMode() !== 'raster' || !!adapter.getAmbientOcclusion?.().enabled
+          adapter.getRenderMode() === 'ray-tracing' || !!adapter.getAmbientOcclusion?.().enabled
         field.input.title = field.input.disabled
           ? 'Available for raster rendering without AO diagnostic'
           : ''

@@ -36,11 +36,13 @@ namespace render::detail
           bool                          triangle      = false,
           const PostProcessingSettings& requestedPost = {},
           const RasterSettings&         modelSettings = {},
-          bool                          transparent   = false)
+          bool                          transparent   = false,
+          bool                          hybrid        = false,
+          bool                          hybridDebug   = false)
         {
             auto settings     = requestedSettings;
             auto postSettings = requestedPost;
-            if (modelSettings.view != GBufferView::Final)
+            if (modelSettings.view != GBufferView::Final || hybridDebug)
             {
                 settings.method      = AAMethod::Off;
                 settings.split       = false;
@@ -105,7 +107,16 @@ namespace render::detail
             if (deferred)
             {
                 add(-4, AAModelBase);
+                if (hybrid)
+                {
+                    auto* shadow = add(-7, AAHybridShadow0);
+                    for (int i = 0; i < 4; i++)
+                        shadow->sources[i] = AAModelBase + i;
+                }
                 auto* p = add(-5, sceneColor);
+                if (hybrid)
+                    for (int i = 0; i < 4; i++)
+                        p->sources[4 + i] = AAHybridShadow0 + i;
                 for (int i = 0; i < 4; i++)
                     p->sources[i] = AAModelBase + i;
             }

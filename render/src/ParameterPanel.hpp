@@ -1,6 +1,7 @@
 #pragma once
 #include "render/Animation.hpp"
 #include "render/AntiAliasing.hpp"
+#include "render/Hybrid.hpp"
 #include "render/Model.hpp"
 #include "render/ParameterPanel.hpp"
 #include "render/RasterPipeline.hpp"
@@ -51,7 +52,9 @@ namespace render::detail
           const std::vector<AnimationClip>& clips,
           AnimationState&                   animation,
           AntiAliasingSettings&             aa,
-          RasterSettings&                   raster);
+          RasterSettings&                   raster,
+          HybridSettings&                   hybrid,
+          const HybridCapabilities&         hybridCaps);
         bool WantsMouse() const;
         bool WantsKeyboard() const;
 

@@ -6,4 +6,24 @@ Native AA/deferred devices expose their owned output texture to the model presen
 
 `nova_gpu_presentation_test` verifies Forward and Deferred on Apple M4 Metal and Vulkan/MoltenVK: three consecutive GPU frames perform zero readbacks, then an explicit capture matches the legacy image path (MAE < 0.05/255). The deferred and alpha material regression tests also pass (six targeted native tests in total). DX12 runtime validation remains deferred.
 
-This is an internal foundation; the Hybrid mode and individual effect capabilities are added in subsequent implementation stages. Existing public Raster/Ray behavior remains unchanged at this stage.
+## Hybrid per-light shadows
+
+Current source exposes Hybrid as the third mode, with shared HLSL, paired settings/capabilities, static-model and instance BVHs, per-light directional/point/spot visibility, MASK coverage, OIT overlays and GPU presentation. The visibility kernel uses GPU fragment-shader BVH traversal; it does not claim hardware ray queries. AO, reflections, DDGI and temporal reconstruction remain unavailable.
+
+`nova_hybrid_test` and `scripts/webgpu/check-hybrid.mjs` cover single-model traversal, five independent light slots, visibility diagnostics, AA restrictions, zero automatic native readbacks and Raster/Hybrid lighting parity. Metal, Vulkan and WebGPU agree within 0.015/255 maximum mean absolute channel error for these captures.
+
+The G-buffer now stores split logarithmic view depth rather than half-float world XYZ. Two half values retain enough depth precision for ray-origin reconstruction across near/far ranges without exceeding the baseline 32-byte attachment budget. The Web visibility kernel requires DXC optimization/inlining: unoptimized function-local matrix storage loses layout through SPIR-V/WGSL lowering. Native/Web transformed-instance ray tests guard this boundary.
+
+## Original reference geometry and camera baseline
+
+Run `python3 scripts/reference/prepare_hybrid.py --profile reference-import`, then `node scripts/reference/hybrid-scenes.mjs`. The pinned archive and converted models remain under ignored `build/reference/hybrid-rendering`; no reference assets are bundled in the SDK or documentation example.
+
+`nova_hybrid_reference_test metal` / `vulkan` and `scripts/webgpu/check-hybrid-reference.mjs` use the original Shadows, Reflections and Global Illumination scenes, all twelve pinned cameras, source-space transforms and the expected assembled triangle counts (147130 / 234124 / 15864). The profile fixes a shared hard directional light, no HDR, 320×180, 60° FOV and 1/1000 clipping.
+
+The 72 captures across three backends establish framing and direct-light/shadow parity. Native Raster/Hybrid MAE is zero for the twelve views; native/Web maximum MAE is below 0.11/255. Captures were visually inspected for the pillar rows/bunny, reflection spheres and indoor Suzanne scene. This does not establish reflection/GI fidelity: those effects are still unimplemented, Pica/Sponza conversion and their eight cameras remain pending, and the original Windows executable has not been compared on this Mac.
+
+## Regression and example UI
+
+The 103-test native suite passed on Metal and Vulkan/MoltenVK (102 initial passes; the comparison test was updated to use an undefined enum value after Hybrid became mode 2, rebuilt and passed on rerun). WebGPU alpha-material/OIT and multi-instance light-shadow regressions passed. The six affected model/Hybrid entries also compile to DXIL; this is compilation coverage only, not Windows execution.
+
+The native Hybrid example rendered three frames on Metal and Vulkan with zero validation errors. The built VitePress example was exercised in Chrome WebGPU: Raster/Hybrid panel rebuilding, shadow master, visibility view and AA restrictions passed. Desktop and narrow-screen screenshots are retained under `build/validation/hybrid-shadow`; the local preview serves the current build.

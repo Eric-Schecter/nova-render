@@ -181,9 +181,18 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
         InstanceData instance = instances[i];
         if (instance.uv.z < .5)
             continue;
-        float3x3 inverse        = transpose((float3x3)instance.normalMatrix);
-        float3   localOrigin    = mul(inverse, origin - mul(instance.world, float4(0, 0, 0, 1)).xyz);
-        float3   localDirection = mul(inverse, direction);
+        // Explicit BVH transform components; the Web visibility kernel is optimized
+        // to inline matrix storage access before SPIR-V/WGSL lowering.
+        float3 translation = float3(instances[i].world._m03, instances[i].world._m13, instances[i].world._m23);
+        float3 nx =
+          float3(instances[i].normalMatrix._m00, instances[i].normalMatrix._m10, instances[i].normalMatrix._m20);
+        float3 ny =
+          float3(instances[i].normalMatrix._m01, instances[i].normalMatrix._m11, instances[i].normalMatrix._m21);
+        float3 nz =
+          float3(instances[i].normalMatrix._m02, instances[i].normalMatrix._m12, instances[i].normalMatrix._m22);
+        float3   delta          = origin - translation;
+        float3   localOrigin    = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
+        float3   localDirection = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
         uint     root = header + 1 + uint(instance.uv.y), node = 0, count = uint(instance.uv.w);
         [loop] while (node < count)
         {
@@ -216,12 +225,12 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
         return 1;
     uint         header   = uint(irradiance[3].w) - 1;
     InstanceData settings = instances[header];
-    if (settings.emissive.y < .5 || settings.emissive.x < .5)
+    if ((irradiance[1].w > .5 ? irradiance[4].w < .5 : settings.emissive.y < .5) || settings.emissive.x < .5)
         return 1;
     light          = normalize(light);
     float3 axis    = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
-    uint   count   = softness < .0001 ? 1 : uint(settings.emissive.w);
+    uint   count   = softness < .0001 ? 1 : uint(irradiance[1].w > .5 ? irradiance[2].w : settings.emissive.w);
     float  visible = 0;
     [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
     {
@@ -240,7 +249,7 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
         return 1;
     uint         header   = uint(irradiance[3].w) - 1;
     InstanceData settings = instances[header];
-    if (settings.emissive.y < .5 || settings.emissive.x < .5)
+    if ((irradiance[1].w > .5 ? irradiance[4].w < .5 : settings.emissive.y < .5) || settings.emissive.x < .5)
         return 1;
     float3 origin   = position + normalize(normal) * settings.uv.x;
     float3 delta    = lightPosition - origin;
@@ -250,7 +259,7 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
     float3 light   = delta / distance;
     float3 axis    = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
-    uint   count   = softness < .0001 ? 1 : uint(settings.emissive.w);
+    uint   count   = softness < .0001 ? 1 : uint(irradiance[1].w > .5 ? irradiance[2].w : settings.emissive.w);
     float  visible = 0;
     [loop] for (uint i = 0; i < count; ++i)
     {
@@ -411,6 +420,8 @@ struct SurfaceData
     float3 position, normal, geometricNormal, base, emissive;
     float  metallic, roughness, ao;
     float  opacity, alphaInfo;
+    float4 visibility0, visibility1, visibility2, visibility3;
+    uint   useVisibility;
 };
 SurfaceData sampleSurface(VertexOut input)
 {
@@ -450,6 +461,8 @@ SurfaceData sampleSurface(VertexOut input)
     float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
     SurfaceData result;
+    result.useVisibility = 0;
+    result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
     result.opacity         = baseSample.a * baseFactor.a;
     result.alphaInfo       = alphaInfo;
     result.position        = input.worldPosition;
@@ -461,6 +474,13 @@ SurfaceData sampleSurface(VertexOut input)
     result.ao              = ao;
     result.emissive        = emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
     return result;
+}
+float hybridVisibility(SurfaceData s, uint index)
+{
+    return index < 4    ? s.visibility0[index]
+           : index < 8  ? s.visibility1[index - 4]
+           : index < 12 ? s.visibility2[index - 8]
+                        : s.visibility3[min(index - 12, 3)];
 }
 float4 shadeSurface(SurfaceData s)
 {
@@ -510,7 +530,9 @@ float4 shadeSurface(SurfaceData s)
             if (attenuation <= 0)
                 continue;
             float visibility = 1;
-            if (source.uv.z > .5)
+            if (s.useVisibility)
+                visibility = hybridVisibility(s, i);
+            else if (source.uv.z > .5)
                 visibility = type == 0
                                ? sceneVisibility(s.position, s.geometricNormal, l, source.uv.w)
                                : localLightVisibility(s.position, s.geometricNormal, source.material.xyz, source.uv.w);
@@ -527,11 +549,11 @@ float4 shadeSurface(SurfaceData s)
           metallic,
           roughness,
           lightColorIntensity.rgb * lightColorIntensity.w
-            * sceneVisibility(
+            * (s.useVisibility?s.visibility0.x:sceneVisibility(
               s.position,
               s.geometricNormal,
               lightDirection.xyz,
-              irradiance[3].w > .5 ? instances[uint(irradiance[3].w) - 1].emissive.z : 0));
+              irradiance[3].w > .5 ? instances[uint(irradiance[3].w) - 1].emissive.z : 0)));
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
     float3 f  = fresnel(saturate(dot(n, v)), f0);
     if (cameraForward.w > 0.5)
@@ -624,7 +646,11 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     ModelGBuffer o;
     o.baseRoughness    = float4(s.base, s.roughness);
     o.normals          = float4(octEncode(s.normal), octEncode(s.geometricNormal));
-    o.positionAO       = float4(s.position - eyeExposure.xyz, s.ao);
+    // Split logarithmic view depth avoids half-float world-position quantization.
+    // Both halves survive RGBA16F storage, preserving near/far scale without an extra target.
+    float depth        = log2(max(1e-20, dot(s.position - eyeExposure.xyz, cameraForward.xyz)));
+    float high         = f16tof32(f32tof16(depth));
+    o.positionAO       = float4(high, depth - high, s.ao, 0);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     return o;
 }
@@ -632,6 +658,52 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 [[vk::binding(18, 1)]] Texture2D<float4> gNormals : register(t18);
 [[vk::binding(19, 1)]] Texture2D<float4> gPosition : register(t19);
 [[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
+[[vk::binding(21, 1)]] Texture2D<float4> hybridShadow0 : register(t21);
+[[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
+[[vk::binding(23, 1)]] Texture2D<float4> hybridShadow2 : register(t23);
+[[vk::binding(24, 1)]] Texture2D<float4> hybridShadow3 : register(t24);
+float3                                   surfacePosition(SkyOut input, float2 encodedDepth)
+{
+    float depth = exp2(encodedDepth.x + encodedDepth.y);
+    if (cameraUp.w >= 0)
+        return eyeExposure.xyz + input.direction * depth;
+    float2 ndc = float2(input.uv.x * 2 - 1, 1 - input.uv.y * 2);
+    return eyeExposure.xyz + cameraForward.xyz * depth + cameraRight.xyz * (ndc.x * cameraRight.w)
+           + cameraUp.xyz * (ndc.y * abs(cameraUp.w));
+}
+// Sixteen independent light visibilities; no single scalar shadow factor is shared across lights.
+ModelGBuffer HybridShadowPSMain(SkyOut input)
+{
+    int3         pixel = int3(int2(input.position.xy), 0);
+    ModelGBuffer output;
+    float        visibility[16];
+    [unroll] for (uint j = 0; j < 16; j++) visibility[j] = 1;
+    if (gBase.Load(pixel).w > 0 && irradiance[4].w > .5 && irradiance[3].w > .5)
+    {
+        float3 position = surfacePosition(input, gPosition.Load(pixel).xy), normal = octDecode(gNormals.Load(pixel).zw);
+        uint   header        = uint(irradiance[3].w) - 1;
+        InstanceData globals = instances[header];
+        if (globals.uv.w > .5)
+        {
+            uint count = min(16, uint(globals.uv.y)), offset = uint(globals.uv.z);
+            [loop] for (uint i = 0; i < count; i++)
+            {
+                InstanceData light = instances[offset + i];
+                if (light.uv.z > .5 && light.baseColor.w > 0)
+                    visibility[i] = uint(light.emissive.w) == 0
+                                      ? sceneVisibility(position, normal, light.emissive.xyz, light.uv.w)
+                                      : localLightVisibility(position, normal, light.material.xyz, light.uv.w);
+            }
+        }
+        else
+            visibility[0] = sceneVisibility(position, normal, lightDirection.xyz, globals.emissive.z);
+    }
+    output.baseRoughness    = float4(visibility[0], visibility[1], visibility[2], visibility[3]);
+    output.normals          = float4(visibility[4], visibility[5], visibility[6], visibility[7]);
+    output.positionAO       = float4(visibility[8], visibility[9], visibility[10], visibility[11]);
+    output.emissiveMetallic = float4(visibility[12], visibility[13], visibility[14], visibility[15]);
+    return output;
+}
 float3                                   diagnosticLinear(float3 c)
 {
     c = saturate(c);
@@ -650,7 +722,7 @@ float4 DeferredPSMain(SkyOut input)
     uint   debug = uint(irradiance[8].w);
     if (base.w <= 0)
     {
-        if (debug != 0)
+        if (debug != 0 || (irradiance[1].w > .5 && irradiance[5].w > .5))
             return float4(0, 0, 0, 1);
         if (cameraForward.w > .5 && skyParams.y > .5)
             return float4(
@@ -662,12 +734,23 @@ float4 DeferredPSMain(SkyOut input)
     }
     float4      normals = gNormals.Load(pixel), pos = gPosition.Load(pixel), emission = gEmission.Load(pixel);
     SurfaceData s;
+    s.useVisibility = irradiance[1].w > .5 ? 1 : 0;
+    s.visibility0 = s.visibility1 = s.visibility2 = s.visibility3 = 1;
+    if (s.useVisibility)
+    {
+        s.visibility0 = hybridShadow0.Load(pixel);
+        s.visibility1 = hybridShadow1.Load(pixel);
+        s.visibility2 = hybridShadow2.Load(pixel);
+        s.visibility3 = hybridShadow3.Load(pixel);
+    }
+    if (s.useVisibility && irradiance[5].w > .5)
+        return float4(diagnosticLinear(hybridVisibility(s, uint(irradiance[5].w) - 1).xxx), 1);
     s.base            = base.rgb;
     s.roughness       = base.w;
     s.normal          = octDecode(normals.xy);
     s.geometricNormal = octDecode(normals.zw);
-    s.position        = pos.xyz + eyeExposure.xyz;
-    s.ao              = pos.w;
+    s.position        = surfacePosition(input, pos.xy);
+    s.ao              = pos.z;
     s.emissive        = emission.rgb;
     s.metallic        = emission.w;
     if (debug == 0)

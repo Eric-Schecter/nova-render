@@ -574,10 +574,10 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool                  nativeScene = p.program < 0;
-                    const int attachments = (p.program == 17 || p.program == 22 || p.program == -4) ? 4
-                                            : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
-                                              ? 2
-                                              : 1;
+                    const int                   attachments =
+                      (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)  ? 4
+                                        : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
+                                                                                                                    : 1;
                     auto&                       target      = textures[p.target];
                     D3D12_CPU_DESCRIPTOR_HANDLE targets[4];
                     for (int a = 0; a < attachments; a++)
@@ -607,7 +607,7 @@ namespace render::detail
                             colors[a][2]                = 0;
                             colors[a][3]                = 1;
                         }
-                        if ((p.program >= 22 && p.program != 23) || p.program == -4)
+                        if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7)
                             std::fill(std::begin(colors[a]), std::end(colors[a]), 0.f);
                         if (p.program == -6)
                             std::fill(std::begin(colors[a]), std::end(colors[a]), a == 0 ? 0.f : 1.f);
@@ -625,7 +625,7 @@ namespace render::detail
                                   : p.multisampled                                        ? depthMS
                                                                                           : depth;
                         Transition(d, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-                        if (p.program != -5 && p.program != -6)
+                        if (p.program != -5 && p.program != -6 && p.program != -7)
                             commands->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1, 0, 0, nullptr);
                     }
                     commands->OMSetRenderTargets(attachments, targets, FALSE, scene ? &dsv : nullptr);
@@ -641,15 +641,15 @@ namespace render::detail
                         D3D12_RECT scissor{0, 0, LONG(target.width), LONG(target.height)};
                         commands->RSSetViewports(1, &viewport);
                         commands->RSSetScissorRects(1, &scissor);
-                        if (p.program == -5)
-                            for (int i = 0; i < 4; i++)
+                        if (p.program == -5 || p.program == -7)
+                            for (int i = 0; i < 8; i++)
                                 Transition(textures[p.sources[i]], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                        if (p.program == -5 && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
                         {
-                            std::array<void*, 4> views{};
-                            for (int i = 0; i < 4; i++)
+                            std::array<void*, 8> views{};
+                            for (int i = 0; i < 8; i++)
                                 views[i] = textures[p.sources[i]].resource.Get();
-                            external.bindGBuffer(commands.Get(), views);
+                            external.bindGBuffer(commands.Get(), views, p.program);
                         }
                         if (p.program != -3)
                             external.draw(p, commands.Get(), nullptr);

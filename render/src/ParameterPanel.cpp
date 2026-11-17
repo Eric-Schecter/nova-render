@@ -117,7 +117,9 @@ namespace render::detail
       const std::vector<AnimationClip>& clips,
       AnimationState&                   animation,
       AntiAliasingSettings&             aa,
-      RasterSettings&                   raster)
+      RasterSettings&                   raster,
+      HybridSettings&                   hybrid,
+      const HybridCapabilities&         hybridCaps)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -147,13 +149,15 @@ namespace render::detail
         size     = ImGui::GetWindowSize();
         if (open)
         {
-            ImGui::BeginDisabled(mode != RenderMode::Raster);
+            ImGui::BeginDisabled(mode == RenderMode::RayTracing);
             const char* aaNames[] = {"Off", "FXAA", "SMAA 1x", "MSAA 4x", "SSAA 2x2", "TAA"};
             if (ImGui::BeginCombo("Anti-aliasing", aaNames[unsigned(aa.method)]))
             {
                 for (int i = 0; i < 6; i++)
                 {
-                    ImGui::BeginDisabled(i == 3 && raster.pipeline == RasterPipeline::Deferred);
+                    ImGui::BeginDisabled(
+                      (i == 3 && raster.pipeline == RasterPipeline::Deferred)
+                      || (i == 5 && mode == RenderMode::Hybrid));
                     if (ImGui::Selectable(aaNames[i], unsigned(aa.method) == unsigned(i)))
                         aa.method = AAMethod(i);
                     ImGui::EndDisabled();
@@ -167,7 +171,8 @@ namespace render::detail
                 {
                     for (int i = 0; i < 2; i++)
                     {
-                        ImGui::BeginDisabled(i == 1 && aa.method == AAMethod::MSAA);
+                        ImGui::BeginDisabled(
+                          (i == 1 && aa.method == AAMethod::MSAA) || (i == 0 && mode == RenderMode::Hybrid));
                         if (ImGui::Selectable(pipelines[i], unsigned(raster.pipeline) == unsigned(i)))
                         {
                             raster.pipeline = RasterPipeline(i);
@@ -229,10 +234,19 @@ namespace render::detail
             {
                 ImGui::TextUnformatted("Mode");
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::BeginCombo("##RenderMode", mode == RenderMode::Raster ? "Raster" : "Ray tracing"))
+                if (ImGui::BeginCombo(
+                      "##RenderMode",
+                      mode == RenderMode::Raster   ? "Raster"
+                      : mode == RenderMode::Hybrid ? "Hybrid"
+                                                   : "Ray tracing"))
                 {
                     if (ImGui::Selectable("Raster", mode == RenderMode::Raster))
                         assets.requestedMode = RenderMode::Raster;
+                    ImGui::BeginDisabled(
+                      !hybridCaps.supported || aa.method == AAMethod::MSAA || aa.method == AAMethod::TAA || aa.split);
+                    if (ImGui::Selectable("Hybrid", mode == RenderMode::Hybrid))
+                        assets.requestedMode = RenderMode::Hybrid;
+                    ImGui::EndDisabled();
                     ImGui::BeginDisabled(!capabilities.pathTracing);
                     if (ImGui::Selectable("Ray tracing", mode == RenderMode::RayTracing))
                         assets.requestedMode = RenderMode::PathTracing;
@@ -241,7 +255,24 @@ namespace render::detail
                     ImGui::EndDisabled();
                     ImGui::EndCombo();
                 }
-                if (mode != RenderMode::Raster)
+                if (mode == RenderMode::Hybrid)
+                {
+                    ImGui::Checkbox("Hybrid shadows", &hybrid.shadows);
+                    int samples = int(hybrid.shadowSamples);
+                    if (ImGui::SliderInt("Shadow rays/pixel/light", &samples, 1, 16))
+                        hybrid.shadowSamples = uint32_t(samples);
+                    int view = int(hybrid.view);
+                    if (ImGui::Combo("Hybrid view", &view, "Final\0Shadows\0"))
+                        hybrid.view = HybridView(view);
+                    if (hybrid.view == HybridView::Shadows)
+                    {
+                        int light = int(hybrid.shadowLight);
+                        if (ImGui::SliderInt("Visibility light", &light, 0, 15))
+                            hybrid.shadowLight = uint32_t(light);
+                    }
+                    ImGui::TextDisabled("GPU shader BVH; raster primary visibility");
+                }
+                if (mode == RenderMode::RayTracing)
                 {
                     ImGui::TextUnformatted("Integrator");
                     ImGui::SetNextItemWidth(-1);

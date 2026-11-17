@@ -293,7 +293,7 @@ namespace render::detail
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit;
+          aaDeferred, aaOit, aaHybridShadow;
         id<MTLDepthStencilState>               oitDepthState;
         id<MTLBuffer>                          aaPreviousPalette;
         id<MTLRenderPipelineState>             AAPipeline(const char* file, uint32_t samples)
@@ -312,7 +312,7 @@ namespace render::detail
             desc.vertexFunction                  = [library newFunctionWithName:@"vertexMain"];
             desc.fragmentFunction                = [library newFunctionWithName:@"fragmentMain"];
             desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
-            if (std::string(file) == "model-gbuffer.metallib")
+            if (std::string(file) == "model-gbuffer.metallib" || std::string(file) == "model-hybrid-shadow.metallib")
                 for (int i = 1; i < 4; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
             if (std::string(file) == "model-oit.metallib")
@@ -342,9 +342,9 @@ namespace render::detail
             oitDepthState          = [device newDepthStencilStateWithDescriptor:d];
             AAExternalScene external;
             external.device = (__bridge void*)device;
-            external.bindGBuffer = [](void* encoder, const std::array<void*, 4>& views) {
+            external.bindGBuffer = [](void* encoder, const std::array<void*, 8>& views, int program) {
                 auto e = (__bridge id<MTLRenderCommandEncoder>)encoder;
-                for (int i = 0; i < 4; i++)
+                for (int i = 0; i < 8; i++)
                     [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:17 + i];
             };
             external.draw   = [this](const AAPass& pass, void* encoder, void*) {
@@ -381,11 +381,13 @@ namespace render::detail
                 [e setFragmentTexture:environmentTexture atIndex:8];
                 [e setFragmentTexture:backgroundTexture atIndex:9];
                 [e setFragmentSamplerState:modelSampler atIndex:7];
-                if (pass.program == -5)
+                if (pass.program == -5 || pass.program == -7)
                 {
-                    if (!aaDeferred)
-                        aaDeferred = AAPipeline("model-deferred.metallib", 1);
-                    [e setRenderPipelineState:aaDeferred];
+                    auto& active = pass.program == -7 ? aaHybridShadow : aaDeferred;
+                    if (!active)
+                        active = AAPipeline(
+                          pass.program == -7 ? "model-hybrid-shadow.metallib" : "model-deferred.metallib", 1);
+                    [e setRenderPipelineState:active];
                     [e setDepthStencilState:skyDepthState];
                     [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                     return;

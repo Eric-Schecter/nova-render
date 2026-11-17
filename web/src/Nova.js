@@ -1,3 +1,4 @@
+import { defaultHybrid, copyHybrid, hybridCapabilities } from './Hybrid.js'
 import {
   defaultRasterSettings,
   copyRasterSettings,
@@ -52,6 +53,21 @@ class Renderer {
   #triangleShader
   #triangleAA = {}
   #aaView
+  #hybrid = defaultHybrid()
+  getHybrid() {
+    this.#check()
+    return { ...this.#hybrid }
+  }
+  setHybrid(value) {
+    this.#check()
+    this.#hybrid = copyHybrid({ ...this.#hybrid, ...value })
+    this.#resetAA()
+    this.#parameterPanel?.refresh()
+  }
+  getHybridCapabilities() {
+    this.#check()
+    return hybridCapabilities(!!this.#model?.skinned)
+  }
   #rasterSettings = defaultRasterSettings()
   getRasterSettings() {
     this.#check()
@@ -64,6 +80,8 @@ class Renderer {
   setRasterSettings(value) {
     this.#check()
     const next = copyRasterSettings({ ...this.#rasterSettings, ...value })
+    if (this.#renderMode === 'hybrid' && next.pipeline !== 'deferred')
+      throw Error('Hybrid requires Deferred raster visibility')
     if (next.pipeline === 'deferred' && this.#aaSettings.method === 'msaa')
       throw Error('Deferred MSAA is not supported')
     if (next.pipeline === 'deferred' && this.#aoSettings.enabled)
@@ -83,6 +101,8 @@ class Renderer {
     return data?.materials?.some((m) => (m.alphaMode || 'OPAQUE') !== 'OPAQUE') || false
   }
   #validateMaterials(data) {
+    if (this.#renderMode === 'hybrid' && data.animation)
+      throw Error('Hybrid currently requires static geometry')
     if (this.#hasAlpha(data) && (this.#renderMode === 'ray-tracing' || this.#aoSettings.enabled))
       throw Error('Alpha materials currently require raster rendering')
     if (
@@ -133,6 +153,8 @@ class Renderer {
   setAntiAliasing(value) {
     this.#check()
     const next = { ...this.#aaSettings, ...value }
+    if (this.#renderMode === 'hybrid' && (['msaa', 'taa'].includes(next.method) || next.split))
+      throw Error('Hybrid supports Off/FXAA/SMAA/SSAA without AA split')
     if (
       !['off', 'fxaa', 'smaa', 'msaa', 'ssaa', 'taa'].includes(next.method) ||
       !Number.isFinite(next.historyWeight) ||
@@ -159,6 +181,9 @@ class Renderer {
       throw Error('Deferred requires a model or scene')
     if (!this.#aaView) {
       const scene = {
+          get hybrid() {
+            return owner.#renderMode === 'hybrid' ? owner.#hybrid : null
+          },
           get raster() {
             return owner.#rasterSettings
           },
@@ -173,6 +198,8 @@ class Renderer {
               i === 3 || !this.#model ? v : v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
             ),
           prepare: async (w, h, settings, frames) => {
+            if (this.#model)
+              this.#model.setHybrid(this.#renderMode === 'hybrid' ? this.#hybrid : null)
             if (this.#model)
               await this.#model.prepareAA(
                 this.getViewCamera(),
@@ -518,8 +545,22 @@ class Renderer {
   setRenderMode(mode) {
     this.#check()
     if (mode === 'path-tracing') mode = 'ray-tracing'
-    if (!['raster', 'ray-tracing'].includes(mode)) throw Error('Invalid render mode')
-    if (mode !== 'raster') {
+    if (!['raster', 'ray-tracing', 'hybrid'].includes(mode)) throw Error('Invalid render mode')
+    if (mode === 'hybrid') {
+      const caps = this.getHybridCapabilities()
+      if (!caps.supported) throw Error(caps.reason)
+      if (!this.#sceneModel && !this.#model?.triangles)
+        throw Error('Hybrid requires a model or scene')
+      if (
+        this.#aoSettings.enabled ||
+        ['msaa', 'taa'].includes(this.#aaSettings.method) ||
+        this.#aaSettings.split
+      )
+        throw Error(
+          'Disable separate AO preview and select Off/FXAA/SMAA/SSAA without split before Hybrid',
+        )
+    }
+    if (mode === 'ray-tracing') {
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
       if (!this.#sceneModel && !this.#model?.triangles)
         throw Error('Path tracing requires a loaded model')
@@ -527,6 +568,7 @@ class Renderer {
     if (mode === this.#renderMode) return
     this.#resetAA()
     this.#renderMode = mode
+    if (mode === 'hybrid') this.#rasterSettings = { ...this.#rasterSettings, pipeline: 'deferred' }
     this.resetAccumulation()
     if (this.#pathFrame) cancelAnimationFrame(this.#pathFrame)
     this.#pathFrame = 0
@@ -569,6 +611,8 @@ class Renderer {
     const next = copyAmbientOcclusion(value)
     if (next.enabled && this.#rasterSettings.pipeline === 'deferred')
       throw Error('Deferred cannot use the separate BVH AO preview path')
+    if (next.enabled && this.#renderMode === 'hybrid')
+      throw Error('Separate AO preview is unavailable in Hybrid')
     if (next.enabled && !this.getCapabilities().rayTracing)
       throw Error(this.getCapabilities().reason)
     this.#resetAA()
@@ -631,7 +675,7 @@ class Renderer {
       !this.#continuous ||
       this.#disposed ||
       this.#pathError ||
-      (this.#renderMode === 'raster' &&
+      (this.#renderMode !== 'ray-tracing' &&
         !this.#aoSettings.enabled &&
         !this.#animationPlaying() &&
         !this.#taaActive() &&
@@ -732,7 +776,7 @@ class Renderer {
   }
   getLightingCapabilities() {
     this.#check()
-    const supported = this.#renderMode === 'raster' || this.getCapabilities().pathTracing
+    const supported = this.#renderMode !== 'ray-tracing' || this.getCapabilities().pathTracing
     return {
       directional: supported,
       point: supported,
@@ -742,11 +786,11 @@ class Renderer {
       pointShadows: supported,
       spotShadows: supported,
       shadowRequiresScene: this.#renderMode === 'raster',
-      collectionLightSubpaths: supported && this.#renderMode !== 'raster',
-      collectionPhotonEmission: supported && this.#renderMode !== 'raster',
-      sourceLightTypes: supported && this.#renderMode !== 'raster' ? ['point', 'spot'] : [],
+      collectionLightSubpaths: supported && this.#renderMode === 'ray-tracing',
+      collectionPhotonEmission: supported && this.#renderMode === 'ray-tracing',
+      sourceLightTypes: supported && this.#renderMode === 'ray-tracing' ? ['point', 'spot'] : [],
       estimator:
-        this.#renderMode === 'raster'
+        this.#renderMode !== 'ray-tracing'
           ? this.#rasterSettings.pipeline === 'deferred'
             ? 'deferred-pbr'
             : 'raster-pbr'
@@ -837,6 +881,9 @@ class Renderer {
         setAntiAliasing: (value) => this.setAntiAliasing(value),
         getAmbientOcclusion: () => this.getAmbientOcclusion(),
         getCapabilities: () => this.getCapabilities(),
+        getHybrid: () => this.getHybrid(),
+        setHybrid: (v) => this.setHybrid(v),
+        getHybridCapabilities: () => this.getHybridCapabilities(),
         getRenderMode: () => this.getRenderMode(),
         setRenderMode: (mode) => this.setRenderMode(mode),
         getAnimations: () => this.getAnimations(),
@@ -860,11 +907,12 @@ class Renderer {
         getEnvironment: () => this.getEnvironment(),
         setEnvironment: (value) => this.setEnvironment(value),
         getMode: () => ({
+          renderMode: this.#renderMode,
           camera: !!this.#model,
           environment: !!this.#environment,
           lighting:
             !!this.#model && (this.#lighting === 'pbr' || this.#renderMode === 'ray-tracing'),
-          pathTracing: this.#renderMode !== 'raster',
+          pathTracing: this.#renderMode === 'ray-tracing',
           animation: this.getAnimations()
             .map((c) => c.name)
             .join('|'),
@@ -1027,7 +1075,7 @@ class Renderer {
     let failure
     try {
       if (
-        this.#renderMode === 'raster' &&
+        this.#renderMode !== 'ray-tracing' &&
         !this.#aoSettings.enabled &&
         (this.#aaSettings.method !== 'off' ||
           this.#postSettings.enabled ||

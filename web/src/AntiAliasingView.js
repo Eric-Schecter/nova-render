@@ -268,7 +268,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 92; i++)
+    for (let i = 0; i < 96; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -284,7 +284,9 @@ export async function createAntiAliasingView({
     context.configure({ device, format, alphaMode: 'opaque' })
   }
   function plan() {
-    const debug = external?.raster?.view && external.raster.view !== 'final'
+    const debug =
+      (external?.raster?.view && external.raster.view !== 'final') ||
+      external?.hybrid?.view === 'shadows'
     const effectiveMethod = debug ? 'off' : settings.method
     const taa = effectiveMethod === 'taa',
       jitter = taa
@@ -392,7 +394,12 @@ export async function createAntiAliasingView({
         sceneColor = oit ? 91 : 17
       if (external.raster?.pipeline === 'deferred') {
         add(-4, 85)
+        if (external.hybrid) {
+          const shadow = add(-7, 92)
+          shadow.sources.splice(0, 4, 85, 86, 87, 88)
+        }
         const p = add(-5, sceneColor)
+        if (external.hybrid) p.sources.splice(4, 4, 92, 93, 94, 95)
         p.sources.splice(0, 4, 85, 86, 87, 88)
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
@@ -499,7 +506,7 @@ export async function createAntiAliasingView({
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
       if (p.program === -6) used.add(p.target + 1)
-      if (p.program === 17 || p.program === -4) {
+      if (p.program === 17 || p.program === -4 || p.program === -7) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
       }
       if (p.program === 0 || p.program === 10 || p.program === 16) used.add(p.target + 1)
@@ -511,7 +518,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 92; i++) {
+    for (let i = 0; i < 96; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -604,7 +611,7 @@ export async function createAntiAliasingView({
       const colorAttachments = Array.from(
         {
           length:
-            p.program === 17 || p.program === -4
+            p.program === 17 || p.program === -4 || p.program === -7
               ? 4
               : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
                 ? 2
@@ -648,7 +655,8 @@ export async function createAntiAliasingView({
                       ? depthMS
                       : depth
                 ).createView(),
-                depthLoadOp: p.program === -5 || p.program === -6 ? 'load' : 'clear',
+                depthLoadOp:
+                  p.program === -5 || p.program === -6 || p.program === -7 ? 'load' : 'clear',
                 depthClearValue: 1,
                 depthStoreOp: 'store',
               },
@@ -663,7 +671,9 @@ export async function createAntiAliasingView({
             p.program === -2,
             p.ms ? 4 : 1,
             p.program,
-            p.program === -5 ? p.sources.slice(0, 4).map((i) => textures[i]) : null,
+            p.program === -5 || p.program === -7
+              ? p.sources.slice(0, 8).map((i) => textures[i])
+              : null,
           )
         pass.end()
         return

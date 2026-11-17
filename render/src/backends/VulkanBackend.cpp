@@ -100,7 +100,7 @@ namespace render::detail
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
-          aaDeferred{}, aaOit{};
+          aaDeferred{}, aaOit{}, aaHybridShadow{};
         VkPipeline  AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
@@ -123,6 +123,8 @@ namespace render::detail
             }
             if (std::string(name) == "model-oit")
                 stages[1].pName = "OITPSMain";
+            if (std::string(name) == "model-hybrid-shadow")
+                stages[1].pName = "HybridShadowPSMain";
             VkPipelineVertexInputStateCreateInfo   input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
             VkPipelineInputAssemblyStateCreateInfo assembly{
               VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -155,7 +157,10 @@ namespace render::detail
                     b.colorBlendOp = b.alphaBlendOp = VK_BLEND_OP_ADD;
                 }
             VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-            blend.attachmentCount = std::string(name) == "model-gbuffer" ? 4 : std::string(name) == "model-oit" ? 2 : 1;
+            blend.attachmentCount = (std::string(name) == "model-gbuffer" || std::string(name) == "model-hybrid-shadow")
+                                      ? 4
+                                    : std::string(name) == "model-oit" ? 2
+                                                                       : 1;
             blend.pAttachments                        = color;
             VkDynamicState                   states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
             VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
@@ -188,29 +193,30 @@ namespace render::detail
             external.physical    = reinterpret_cast<void*>(physical);
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
-            external.bindGBuffer = [this](void* command, const std::array<void*, 4>& views) {
-                VkDescriptorImageInfo images[4]{};
-                VkWriteDescriptorSet  writes[4]{};
-                for (int i = 0; i < 4; i++)
+            external.bindGBuffer = [this](void* command, const std::array<void*, 8>& views, int program) {
+                auto                  activeSet = program == -7 ? hybridGBufferSet : gBufferSet;
+                VkDescriptorImageInfo images[8]{};
+                VkWriteDescriptorSet  writes[8]{};
+                for (int i = 0; i < 8; i++)
                 {
                     images[i].imageView   = reinterpret_cast<VkImageView>(views[i]);
                     images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                     auto& w               = writes[i];
                     w                     = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                    w.dstSet              = gBufferSet;
+                    w.dstSet              = activeSet;
                     w.dstBinding          = 17 + i;
                     w.descriptorCount     = 1;
                     w.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                     w.pImageInfo          = &images[i];
                 }
-                vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+                vkUpdateDescriptorSets(device, 8, writes, 0, nullptr);
                 vkCmdBindDescriptorSets(
                   reinterpret_cast<VkCommandBuffer>(command),
                   VK_PIPELINE_BIND_POINT_GRAPHICS,
                   layout,
                   1,
                   1,
-                  &gBufferSet,
+                  &activeSet,
                   0,
                   nullptr);
             };
@@ -265,11 +271,13 @@ namespace render::detail
                 if (pass.program!=-5 && (pass.target == AARawBaseline || ((pass.target == AARawColor || pass.program==-4) && !rasterSettings.split)))
                     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
-                if (pass.program == -5)
+                if (pass.program == -5 || pass.program == -7)
                 {
-                    if (!aaDeferred)
-                        aaDeferred = AAPipeline("model-deferred", true, 1, renderPass);
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, aaDeferred);
+                    auto& active = pass.program == -7 ? aaHybridShadow : aaDeferred;
+                    if (!active)
+                        active = AAPipeline(
+                          pass.program == -7 ? "model-hybrid-shadow" : "model-deferred", true, 1, renderPass);
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, active);
                     vkCmdDraw(cmd, 3, 1, 0, 0);
                     return;
                 }
@@ -327,6 +335,7 @@ namespace render::detail
             release(aaOit);
             release(aaGBuffer);
             release(aaDeferred);
+            release(aaHybridShadow);
             release(aaMotion);
             release(aaSkyMotion);
             destroyModelBuffer(aaPreviousUniform);

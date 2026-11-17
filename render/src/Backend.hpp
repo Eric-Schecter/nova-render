@@ -21,7 +21,9 @@ namespace render::detail
         SceneData   scene;
         void        ValidateMaterialState(const ModelData* next) const
         {
-            if (mode != RenderMode::Raster && HasAlpha(next))
+            if (mode == RenderMode::Hybrid && next && next->animation)
+                throw std::invalid_argument("Hybrid currently requires static geometry");
+            if (mode == RenderMode::RayTracing && HasAlpha(next))
                 throw std::invalid_argument("MASK/BLEND ray tracing is not supported; select raster first");
             if (
               HasBlend(next)
@@ -29,6 +31,26 @@ namespace render::detail
                 throw std::invalid_argument(
                   "BLEND supports Off/FXAA/SMAA/SSAA without AA split; choose a compatible AA method first");
         }
+        HybridSettings     hybrid;
+        HybridCapabilities GetHybridCapabilities() const
+        {
+            HybridCapabilities c;
+            if (model && model->animation)
+            {
+                c.supported = false;
+                c.reason    = "Hybrid currently requires static geometry";
+            }
+            return c;
+        }
+        void SetHybrid(const HybridSettings& value)
+        {
+            if (
+              value.shadowSamples < 1 || value.shadowSamples > 16 || unsigned(value.view) > 1 || value.shadowLight > 15)
+                throw std::invalid_argument("Invalid Hybrid settings");
+            hybrid = value;
+            rasterAA.Reset();
+        }
+        HybridSettings GetHybrid() const { return hybrid; }
         void        SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
         {
             const auto previousMode = mode;
@@ -91,10 +113,10 @@ namespace render::detail
                 c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
                 c.maxLights                                                                              = 16;
                 c.shadowRequiresScene = mode == RenderMode::Raster;
-                c.estimator           = mode == RenderMode::Raster
+                c.estimator           = mode != RenderMode::RayTracing
                                           ? (modelRaster.pipeline == RasterPipeline::Deferred ? "deferred-pbr" : "raster-pbr")
                                           : "camera-and-source-paths";
-                if (mode != RenderMode::Raster)
+                if (mode == RenderMode::RayTracing)
                 {
                     c.collectionLightSubpaths = c.collectionPhotonEmission = true;
                     c.sourceLightTypes                                     = {LightType::Point, LightType::Spot};
@@ -132,7 +154,23 @@ namespace render::detail
         const std::vector<InstanceData>& RasterInstances() const { return rasterInstances; }
         void                             RebuildRasterInstances()
         {
+            const bool singleHybrid = mode == RenderMode::Hybrid && !scene.active && model && !model->vertices.empty();
             rasterInstances = scene.active ? scene.instances : std::vector<InstanceData>{};
+            if (singleHybrid)
+            {
+                if (singleBVHModel != model)
+                {
+                    singleBVHModel = model;
+                    singleBVH      = std::make_shared<PickMesh>(model);
+                }
+                InstanceData identity{};
+                for (int k : {0, 5, 10, 15})
+                    identity.world[k] = identity.normal[k] = 1;
+                identity.uv[0] = 1;
+                identity.uv[2] = 1;
+                identity.uv[3] = float(singleBVH->ShadowNodeCount());
+                rasterInstances.push_back(identity);
+            }
             if (model)
                 for (const auto& record : model->materialRecords)
                 {
@@ -147,7 +185,7 @@ namespace render::detail
             globals.material[0]  = fogSettings.nearDistance;
             globals.material[1]  = fogSettings.farDistance;
             globals.material[2]  = fogSettings.density;
-            globals.emissive[0]  = scene.active ? float(scene.instances.size()) : 0;
+            globals.emissive[0]  = scene.active ? float(scene.instances.size()) : singleHybrid ? 1.f : 0;
             globals.emissive[1]  = shadowSettings.enabled ? 1.f : 0.f;
             globals.emissive[2]  = shadowSettings.softness;
             globals.emissive[3]  = float(shadowSettings.samples);
@@ -155,6 +193,13 @@ namespace render::detail
             rasterInstances.push_back(globals);
             if (scene.active)
                 rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
+            if (singleHybrid)
+                for (const auto& row : singleBVH->ShadowRecords())
+                {
+                    InstanceData record;
+                    std::memcpy(&record, row.data(), 192);
+                    rasterInstances.push_back(record);
+                }
             rasterInstances[rasterGlobals].uv[2] = float(rasterInstances.size());
             rasterInstances[rasterGlobals].uv[3] = lightCollectionActive ? 1.f : 0.f;
             unsigned count                       = 0;
@@ -217,7 +262,12 @@ namespace render::detail
                 parameterPanel->ConfigureUI(assets.config.configureUI);
 #endif
         }
-        float MaterialMode() const { return scene.active ? 1.f : model && !model->materialRecords.empty() ? 2.f : 0.f; }
+        float MaterialMode() const
+        {
+            return scene.active || (mode == RenderMode::Hybrid && model && !model->vertices.empty()) ? 1.f
+                   : model && !model->materialRecords.empty()                                        ? 2.f
+                                                                                                     : 0.f;
+        }
         void        ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
         {
             pathAPI    = api;
@@ -247,9 +297,21 @@ namespace render::detail
         }
         void SetRenderMode(RenderMode value)
         {
-            if (value != RenderMode::Raster && value != RenderMode::PathTracing)
+            if (value != RenderMode::Raster && value != RenderMode::RayTracing && value != RenderMode::Hybrid)
                 throw std::invalid_argument("Invalid render mode");
-            if (value != RenderMode::Raster)
+            if (value == RenderMode::Hybrid)
+            {
+                if (!scene.active && (!model || model->vertices.empty()))
+                    throw std::invalid_argument("Hybrid requires a model or scene");
+                auto caps = GetHybridCapabilities();
+                if (!caps.supported)
+                    throw std::invalid_argument(caps.reason);
+                if (
+                  rasterSettings.method == AAMethod::MSAA || rasterSettings.method == AAMethod::TAA
+                  || rasterSettings.split)
+                    throw std::invalid_argument("Hybrid supports Off/FXAA/SMAA/SSAA without AA split");
+            }
+            if (value == RenderMode::RayTracing)
             {
                 if (!scene.active && (!model || model->vertices.empty()))
                     throw std::invalid_argument("Load a model before path tracing");
@@ -260,6 +322,10 @@ namespace render::detail
             if (mode != value)
             {
                 mode = value;
+                rasterAA.gpuPresentation = mode == RenderMode::Hybrid;
+                if (mode == RenderMode::Hybrid)
+                    modelRaster.pipeline = RasterPipeline::Deferred;
+                RebuildRasterInstances();
                 rasterAA.Reset();
                 pathSession.Reset();
             }
@@ -285,6 +351,8 @@ namespace render::detail
         RasterSettings         GetRasterSettings() const { return modelRaster; }
         void                   SetRasterSettings(const RasterSettings& value)
         {
+            if (mode == RenderMode::Hybrid && value.pipeline != RasterPipeline::Deferred)
+                throw std::invalid_argument("Hybrid requires Deferred raster visibility");
             if (
               unsigned(value.pipeline) > 1 || unsigned(value.view) > 9 || !std::isfinite(value.debugRange)
               || value.debugRange <= 0 || value.debugRange > 1000000)
@@ -298,6 +366,10 @@ namespace render::detail
         }
         void                   SetAntiAliasing(const AntiAliasingSettings& value)
         {
+            if (
+              mode == RenderMode::Hybrid
+              && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
+                throw std::invalid_argument("Hybrid supports Off/FXAA/SMAA/SSAA without AA split");
             if (
               HasBlend(model.get()) && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
                 throw std::invalid_argument("BLEND supports Off/FXAA/SMAA/SSAA without AA split");
@@ -532,6 +604,8 @@ namespace render::detail
         }
         AntiAliasingSettings   rasterSettings;
         PostProcessingSettings postSettings;
+        std::shared_ptr<const ModelData> singleBVHModel;
+        std::shared_ptr<PickMesh>        singleBVH;
         detail::RasterAA       rasterAA;
         bool                   aaTriangle = false;
         std::optional<Image>   presentedImage;
@@ -544,7 +618,7 @@ namespace render::detail
         {
             if (presentedImage)
                 return &*presentedImage;
-            if (mode == RenderMode::Raster)
+            if (mode != RenderMode::RayTracing)
             {
                 if (
                   rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled
@@ -564,8 +638,16 @@ namespace render::detail
                   environmentSettings);
                 rasterAA.current.lightDirection[3] = MaterialMode();
                 ApplyRasterSettings(rasterAA.current);
+                rasterAA.current.irradiance[1][3] = mode == RenderMode::Hybrid ? 1.f : 0.f;
+                rasterAA.current.irradiance[2][3] = float(hybrid.shadowSamples);
+                rasterAA.current.irradiance[4][3] = hybrid.shadows ? 1.f : 0.f;
+                rasterAA.current.irradiance[5][3] =
+                  hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : 0.f;
                 const bool debug                  = modelRaster.view != GBufferView::Final;
-                rasterAA.current.irradiance[0][3] = !debug && postSettings.enabled ? 1.f : 0.f;
+                rasterAA.current.irradiance[0][3] =
+                  !debug && !(mode == RenderMode::Hybrid && hybrid.view == HybridView::Shadows) && postSettings.enabled
+                    ? 1.f
+                    : 0.f;
                 rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
                 rasterAA.current.irradiance[8][3] = float(modelRaster.view);
                 const auto& image                 = rasterAA.Render(
@@ -576,7 +658,9 @@ namespace render::detail
                   aaTriangle,
                   postSettings,
                   modelRaster,
-                  HasBlend(model.get()));
+                  HasBlend(model.get()),
+                  mode == RenderMode::Hybrid,
+                  hybrid.view == HybridView::Shadows);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }
@@ -620,6 +704,7 @@ namespace render::detail
             const auto previous       = animation.state;
             const auto previousAA     = rasterSettings;
             const auto previousRaster = modelRaster;
+            const auto previousHybrid = hybrid;
             const auto oldClear       = clearColor;
             const auto oldCamera      = camera;
             const auto oldLight       = directionalLight;
@@ -640,7 +725,13 @@ namespace render::detail
               animation.Clips(),
               animation.state,
               rasterSettings,
-              modelRaster);
+              modelRaster,
+              hybrid,
+              GetHybridCapabilities());
+            if (
+              previousHybrid.shadows != hybrid.shadows || previousHybrid.shadowSamples != hybrid.shadowSamples
+              || previousHybrid.view != hybrid.view || previousHybrid.shadowLight != hybrid.shadowLight)
+                rasterAA.Reset();
             if (
               oldCamera.yaw != camera.yaw || oldCamera.pitch != camera.pitch || oldCamera.distance != camera.distance
               || oldCamera.target != camera.target || oldCamera.exposure != camera.exposure)

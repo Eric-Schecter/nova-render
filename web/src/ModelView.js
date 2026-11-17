@@ -1,3 +1,4 @@
+import { PickMesh } from './Picking.js'
 import { lightRecords } from './Lighting.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
 import { materialMipmaps } from './TextureFiltering.js'
@@ -37,7 +38,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     rasterGlobals = 0,
     rasterFog = copyFog(),
     rasterShadows = copyShadows(),
-    shadowInstanceCount = 0
+    shadowInstanceCount = 0,
+    singleHybrid = false,
+    singleBVH = null,
+    hybrid = null
   let depth,
     cube,
     backgroundCube,
@@ -176,7 +180,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ],
       })
     const gBufferLayout = device.createBindGroupLayout({
-      entries: [17, 18, 19, 20].map((binding) => ({
+      entries: [17, 18, 19, 20, 21, 22, 23, 24].map((binding) => ({
         binding,
         visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float' },
@@ -192,6 +196,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       gbuffer = false,
       deferred = false,
       oit = false,
+      hybridShadow = false,
     ) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
@@ -202,36 +207,39 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       }
       return device.createRenderPipelineAsync({
         layout: device.createPipelineLayout({
-          bindGroupLayouts: deferred ? [layout, gBufferLayout] : [layout],
+          bindGroupLayouts: deferred || hybridShadow ? [layout, gBufferLayout] : [layout],
         }),
         vertex: {
           module: vertex,
-          entryPoint: deferred
-            ? 'SkyVSMain'
-            : motion
-              ? sky
-                ? 'SkyVSMain'
-                : 'MotionVSMain'
-              : sky
-                ? 'SkyVSMain'
-                : 'VSMain',
+          entryPoint:
+            deferred || hybridShadow
+              ? 'SkyVSMain'
+              : motion
+                ? sky
+                  ? 'SkyVSMain'
+                  : 'MotionVSMain'
+                : sky
+                  ? 'SkyVSMain'
+                  : 'VSMain',
         },
         fragment: {
           module: fragment,
-          entryPoint: oit
-            ? 'OITPSMain'
-            : deferred
-              ? 'DeferredPSMain'
-              : gbuffer
-                ? 'GBufferPSMain'
-                : motion
-                  ? sky
-                    ? 'SkyMotionPSMain'
-                    : 'MotionPSMain'
-                  : sky
-                    ? 'SkyPSMain'
-                    : 'PSMain',
-          targets: Array.from({ length: oit ? 2 : gbuffer ? 4 : 1 }, (_, i) => ({
+          entryPoint: hybridShadow
+            ? 'HybridShadowPSMain'
+            : oit
+              ? 'OITPSMain'
+              : deferred
+                ? 'DeferredPSMain'
+                : gbuffer
+                  ? 'GBufferPSMain'
+                  : motion
+                    ? sky
+                      ? 'SkyMotionPSMain'
+                      : 'MotionPSMain'
+                    : sky
+                      ? 'SkyPSMain'
+                      : 'PSMain',
+          targets: Array.from({ length: oit ? 2 : gbuffer || hybridShadow ? 4 : 1 }, (_, i) => ({
             ...(oit
               ? {
                   blend:
@@ -253,8 +261,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         multisample: { count: samples },
         depthStencil: {
           format: 'depth32float',
-          depthWriteEnabled: !sky && !deferred && !oit,
-          depthCompare: sky || deferred ? 'always' : oit ? 'less-equal' : 'less',
+          depthWriteEnabled: !sky && !deferred && !oit && !hybridShadow,
+          depthCompare: sky || deferred || hybridShadow ? 'always' : oit ? 'less-equal' : 'less',
         },
       })
     }
@@ -285,7 +293,11 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     function uploadInstances(bytes, draws, shadowRecords = new Float32Array(0)) {
       cachedBytes = bytes
       cachedShadows = shadowRecords
-      shadowInstanceCount = draws ? draws.reduce((n, d) => n + d.instanceCount, 0) : 0
+      shadowInstanceCount = draws
+        ? draws.reduce((n, d) => n + d.instanceCount, 0)
+        : singleHybrid
+          ? 1
+          : 0
       rasterGlobals = bytes.byteLength / 192
       const size = Math.max(
         192,
@@ -317,6 +329,24 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     uploadInstances(data.materialRecords || new Float32Array(0), null)
     return {
       data,
+      setHybrid(settings) {
+        hybrid = settings
+        if (sceneDraws !== null) return
+        if (settings && !singleHybrid) {
+          singleBVH ||= new PickMesh(data)
+          const bytes = new Float32Array(48 + (data.materialRecords?.length || 0))
+          for (const k of [0, 5, 10, 15, 16, 21, 26, 31]) bytes[k] = 1
+          bytes[44] = 1
+          bytes[46] = 1
+          bytes[47] = singleBVH.nodes.length
+          bytes.set(data.materialRecords || [], 48)
+          singleHybrid = true
+          uploadInstances(bytes, null, singleBVH.shadowRecords())
+        } else if (!settings && singleHybrid) {
+          singleHybrid = false
+          uploadInstances(data.materialRecords || new Float32Array(0), null)
+        }
+      },
       async prepareAA(
         camera,
         width,
@@ -339,6 +369,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
               'model-gbuffer',
               'model-deferred',
               'model-oit',
+              'model-hybrid-shadow',
             ].map(async (n) => {
               const r = await fetch(dir + n + '.json')
               if (!r.ok) throw Error('Missing raster AA shader ' + n)
@@ -362,6 +393,17 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             false,
             true,
           )
+          aaPipelines.hybridShadow = await pipelineFor(
+            packages[7],
+            false,
+            1,
+            false,
+            true,
+            false,
+            false,
+            false,
+            true,
+          )
           aaPipelines.motion = await pipelineFor(packages[2], false, 1, true, true)
           aaPipelines.skyMotion = await pipelineFor(packages[3], true, 1, true, true)
         }
@@ -374,10 +416,15 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
         )
-        currentScene[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
+        currentScene[35] =
+          sceneDraws !== null || singleHybrid ? 1 : data.materialRecords?.length ? 2 : 0
         currentScene[75] = rasterGlobals + 1
+        currentScene[67] = hybrid ? 1 : 0
+        currentScene[71] = hybrid?.shadowSamples || 1
+        currentScene[79] = hybrid?.shadows ? 1 : 0
+        currentScene[83] = hybrid?.view === 'shadows' ? hybrid.shadowLight + 1 : 0
         currentScene[63] =
-          rasterSettings?.view && rasterSettings.view !== 'final'
+          (rasterSettings?.view && rasterSettings.view !== 'final') || hybrid?.view === 'shadows'
             ? 0
             : postSettings?.enabled
               ? 1
@@ -402,19 +449,19 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
       },
       drawAA(pass, motion, count, settings, program, gbuffers) {
-        if (program === -5) {
+        if (program === -5 || program === -7) {
           pass.setBindGroup(0, bindGroup)
           pass.setBindGroup(
             1,
             device.createBindGroup({
               layout: gBufferLayout,
-              entries: [17, 18, 19, 20].map((binding, i) => ({
+              entries: [17, 18, 19, 20, 21, 22, 23, 24].map((binding, i) => ({
                 binding,
                 resource: gbuffers[i].createView(),
               })),
             }),
           )
-          pass.setPipeline(aaPipelines.deferred)
+          pass.setPipeline(program === -7 ? aaPipelines.hybridShadow : aaPipelines.deferred)
           pass.draw(3)
           return
         }

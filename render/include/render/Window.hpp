@@ -1,6 +1,7 @@
 #pragma once
 #include "Animation.hpp"
 #include "Atmosphere.hpp"
+#include "Hybrid.hpp"
 #include "Image.hpp"
 #include "Material.hpp"
 #include "PostProcessing.hpp"
@@ -59,6 +60,9 @@ namespace render
         void                    SetCloseOnEscape(bool enabled);
         void                    LoadModel(const std::filesystem::path& glbPath);
         RendererCapabilities    GetCapabilities() const;
+        void                    SetHybrid(const HybridSettings& settings);
+        HybridSettings          GetHybrid() const;
+        HybridCapabilities      GetHybridCapabilities() const;
         void                    SetRenderMode(RenderMode mode);
         RenderMode              GetRenderMode() const;
         void                    SetPathTracing(const PathTracingSettings& settings);
