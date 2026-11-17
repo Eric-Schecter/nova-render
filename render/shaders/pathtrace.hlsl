@@ -35,7 +35,7 @@ uint                                             randomBits(inout uint state)
 // well-defined across all path-length changes (maximum 8 bounces).
 static uint       mltMode = 0, mltDimension = 0, mltSeed = 0, mltAddress = 0;
 static bool       mltLarge       = false;
-static const uint MLT_DIMENSIONS = 192, MLT_MAX_CHAINS = 1024;
+static const uint MLT_DIMENSIONS = 256, MLT_MAX_CHAINS = 1024;
 uint              mltHash(uint value)
 {
     value ^= value >> 16;
@@ -694,9 +694,72 @@ float3 pathOrigin(PathVertex p, float3 direction)
 {
     return p.position + p.geometric * (dot(p.geometric, direction) < 0 ? -.0006 : .0006);
 }
-// Explicit analytic lights use camera-path next-event estimation in every integrator.
+// Local analytic sources have delta position, with directional density in solid angle.
+// The area-emitter table remains one source group; each active local light is
+// another group. Uniform group selection has full support, including dark scenes.
+uint localSourceCount()
+{
+    uint4 info  = asuint(parameters[32]);
+    uint  count = 0;
+    if (info.x != 0)
+        for (uint i = 0; i < info.y; ++i)
+            if (parameters[35 + 4 * i].w > .5 && parameters[33 + 4 * i].w > 0 && any(parameters[33 + 4 * i].rgb > 0))
+                ++count;
+    return count;
+}
+uint sourceGroupCount()
+{
+    return localSourceCount() + (texels[lightHeader()] > 0 ? 1u : 0u);
+}
+uint localSourceIndex(uint selected)
+{
+    uint count = 0;
+    for (uint i = 0; i < asuint(parameters[32]).y; ++i)
+        if (parameters[35 + 4 * i].w > .5 && parameters[33 + 4 * i].w > 0 && any(parameters[33 + 4 * i].rgb > 0))
+        {
+            if (count++ == selected)
+                return i;
+        }
+    return 0;
+}
+bool deltaSource(PathVertex p)
+{
+    return p.primitive >= 0xfffffff0u;
+}
+uint deltaIndex(PathVertex p)
+{
+    return 0xffffffffu - p.primitive;
+}
+float sourceFalloff(uint index, float3 direction)
+{
+    uint   at   = 33 + 4 * index;
+    float4 axis = parameters[at + 2], options = parameters[at + 3];
+    if (axis.w < 1.5)
+        return 1;
+    float c = dot(axis.xyz, direction);
+    return options.x > options.y + 1e-6 ? smoothstep(options.y, options.x, c) : step(options.y, c);
+}
+float sourceDistanceFalloff(uint index, float distanceSquared)
+{
+    float range = parameters[34 + 4 * index].w;
+    // Match the direct estimator's inverse-square near-source clamp and range.
+    return min(distanceSquared / .01, 1)
+           * (range > 0 ? pow(saturate(1 - pow(sqrt(distanceSquared) / range, 4)), 2) : 1);
+}
+float sourceDirectionPdf(PathVertex p, float3 direction)
+{
+    if (!deltaSource(p))
+        return abs(dot(p.geometric, direction)) / (2 * PI);
+    uint   at     = 33 + 4 * deltaIndex(p);
+    float4 axis   = parameters[at + 2];
+    float  cosine = parameters[at + 3].y;
+    return axis.w < 1.5 ? 1 / (4 * PI)
+                        : (dot(axis.xyz, direction) >= cosine ? 1 / max(2 * PI * (1 - cosine), 1e-20) : 0);
+}
+// Analytic direct lighting for PT and the photon camera pass.
 // They are delta lights (not visible emitter geometry); visibility softness is a filter.
-float3 analyticLights(PathVertex surface, float3 v, inout uint state)
+float3 analyticLights(
+  PathVertex surface, float3 v, inout uint state, bool includeLocal = true, bool includeDirectional = true)
 {
     uint4  info = asuint(parameters[32]);
     float3 n, geometric;
@@ -718,6 +781,8 @@ float3 analyticLights(PathVertex surface, float3 v, inout uint state)
         if (color.w <= 0)
             continue;
         uint   type        = uint(directionType.w);
+        if ((type != 0 && !includeLocal) || (type == 0 && !includeDirectional))
+            continue;
         float3 l           = directionType.xyz;
         float  attenuation = 1, maxDistance = 1e30;
         if (type != 0)
@@ -766,7 +831,14 @@ float3 analyticLights(PathVertex surface, float3 v, inout uint state)
     }
     return sum;
 }
-float3 path(float3 origin, float3 direction, inout uint state, uint bounces, bool emitters = true, uint minScatters = 0)
+float3 path(
+  float3     origin,
+  float3     direction,
+  inout uint state,
+  uint       bounces,
+  bool       emitters     = true,
+  uint       minScatters  = 0,
+  bool       includeLocal = true)
 {
     float3 sum = 0, weight = 1;
     float  previousPdf = 0;
@@ -802,7 +874,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         float  metal = surface.metal, roughness = surface.roughness;
         float3 position = origin + direction * hit.distance, light = parameters[8].xyz;
         if (depth + 1 >= minScatters && asuint(parameters[32]).x != 0)
-            sum += weight * analyticLights(surface, v, state);
+            sum += weight * analyticLights(surface, v, state, includeLocal);
         if (
           asuint(parameters[32]).x == 0 && depth + 1 >= minScatters && parameters[9].w > 0 && dot(n, light) > 0
           && dot(geometric, light) > 0)
@@ -845,10 +917,64 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
 }
 float sourcePdf(PathVertex p)
 {
+    if (deltaSource(p))
+        return 1; // Discrete position mass; group selection is applied separately.
     float3 a = vertices[p.primitive * 3].position.xyz, b = vertices[p.primitive * 3 + 1].position.xyz,
            c   = vertices[p.primitive * 3 + 2].position.xyz;
     float area = .5 * length(cross(b - a, c - a));
     return area > 0 ? asfloat(texels[texels[lightHeader() + 2] + p.primitive]) / area : 0;
+}
+// Sample position and initial ray once for BDPT and photon tracing. Area PDFs
+// are continuous; the point/spot source position uses a discrete mass instead.
+bool sampleSource(inout uint state, out PathVertex emitter, out float3 origin, out float3 direction, out float3 beta)
+{
+    emitter = (PathVertex)0;
+    origin = direction = beta = 0;
+    uint groups               = sourceGroupCount();
+    if (groups == 0)
+        return false;
+    bool area     = texels[lightHeader()] > 0;
+    uint selected = min(uint(random(state) * groups), groups - 1);
+    if (area && selected == 0)
+    {
+        uint   h         = lightHeader();
+        uint   record    = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
+        uint   primitive = texels[record + 2];
+        float  r = sqrt(random(state)), s = random(state);
+        float3 bary = float3(1 - r, r * (1 - s), r * s);
+        Hit    source;
+        source.primitive = primitive;
+        source.bary      = bary.yz;
+        source.distance  = 0;
+        float3 position  = vertices[primitive * 3].position.xyz * bary.x
+                          + vertices[primitive * 3 + 1].position.xyz * bary.y
+                          + vertices[primitive * 3 + 2].position.xyz * bary.z;
+        emitter   = pathVertex(source, position, float3(0, 0, 1));
+        float pdf = sourcePdf(emitter) / groups;
+        if (pdf <= 0)
+            return false;
+        emitter.beta = emitter.emission / pdf;
+        direction    = cosineDirection(random(state) < .5 ? emitter.geometric : -emitter.geometric, state);
+        origin       = pathOrigin(emitter, direction);
+        beta         = emitter.beta * (2 * PI);
+    }
+    else
+    {
+        uint index = localSourceIndex(selected - (area ? 1u : 0u)), at = 33 + 4 * index;
+        emitter.position  = parameters[at + 1].xyz;
+        emitter.primitive = 0xffffffffu - index;
+        emitter.emission  = parameters[at].rgb * parameters[at].w;
+        emitter.beta      = emitter.emission * groups;
+        float4 axis       = parameters[at + 2];
+        float  c          = lerp(1, axis.w < 1.5 ? -1 : parameters[at + 3].y, random(state));
+        float  phi = 2 * PI * random(state), r = sqrt(max(0, 1 - c * c));
+        float3 n  = axis.w < 1.5 ? float3(0, 1, 0) : axis.xyz;
+        float3 t  = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n));
+        direction = t * (r * cos(phi)) + cross(n, t) * (r * sin(phi)) + n * c;
+        origin    = emitter.position;
+        beta      = emitter.beta * sourceFalloff(index, direction) / sourceDirectionPdf(emitter, direction);
+    }
+    return any(beta > 0);
 }
 PathVertex pathPoint(uint eyeCount, uint lightCount, uint index)
 {
@@ -862,14 +988,19 @@ float connectionWeight(uint eyeCount, uint lightCount)
     if (count == 1)
         return 1;
     PathVertex endpoint  = pathPoint(eyeCount, lightCount, count - 1);
-    float      pdfSource = sourcePdf(endpoint);
+    bool       deltaEndpoint = deltaSource(endpoint);
+    float      pdfSource     = sourcePdf(endpoint) / max(1u, sourceGroupCount());
     if (pdfSource <= 0)
         return lightCount == 0 ? 1 : 0;
     // Adjacent strategy density ratios: p_k/p_(k+1). The common camera-ray
     // density and all unchanged path edges cancel. Stream log-sum-exp so no
     // duplicate full-path array or per-strategy scratch arrays are needed.
-    float current = 0, maximum = 0, total = 1, chosen = selected == count ? 0 : -1e30;
-    for (int k = int(count) - 1; k >= 1; --k)
+    // A camera walk cannot hit a delta-position emitter. Begin at the last
+    // valid strategy (one source vertex), excluding eye-only from MIS entirely.
+    float current = 0, maximum = 0, total = 1;
+    uint  first  = deltaEndpoint ? count - 1 : count;
+    float chosen = selected == first ? 0 : -1e30;
+    for (int k = int(first) - 1; k >= 1; --k)
     {
         PathVertex target   = pathPoint(eyeCount, lightCount, uint(k));
         PathVertex fromEye  = pathPoint(eyeCount, lightCount, uint(k - 1));
@@ -888,7 +1019,7 @@ float connectionWeight(uint eyeCount, uint lightCount)
             d                    = normalize(delta);
             float pdf;
             if (k + 1 == int(count) - 1)
-                pdf = abs(dot(fromLight.geometric, d)) / (2 * PI);
+                pdf = sourceDirectionPdf(fromLight, d);
             else
             {
                 float3 next = pathPoint(eyeCount, lightCount, uint(k + 2)).position;
@@ -914,8 +1045,8 @@ float connectionWeight(uint eyeCount, uint lightCount)
 }
 float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bounces, uint minScatters = 0)
 {
-    // This estimator contains finite emitters only; CSMain separately evaluates
-    // environment/delta lights with the shared camera-path estimator.
+    // Finite-area and delta-position sources share the same surface strategies.
+    // Environment and directional sources retain the camera-path estimator.
     uint   header   = lightHeader();
     float3 result   = 0;
     uint   eyeCount = 0, lightCount = 0;
@@ -942,34 +1073,21 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
         rayOrigin    = pathOrigin(p, l);
         rayDirection = l;
     }
-    // The source position is independent of the eye path. Its area PMF is the
-    // same table as PT NEE, but is not multiplied by the environment mixture.
-    uint   record    = texels[header + 1] + 4 * selectLightCDF(texels[header + 1], texels[header], 4, random(state));
-    uint   primitive = texels[record + 2];
-    float  r = sqrt(random(state)), s = random(state);
-    float3 bary = float3(1 - r, r * (1 - s), r * s);
-    Hit    source;
-    source.primitive = primitive;
-    source.bary      = bary.yz;
-    source.distance  = 0;
-    float3 position  = vertices[primitive * 3].position.xyz * bary.x + vertices[primitive * 3 + 1].position.xyz * bary.y
-                      + vertices[primitive * 3 + 2].position.xyz * bary.z;
-    PathVertex emitter = pathVertex(source, position, float3(0, 0, 1));
-    float      pdfA    = sourcePdf(emitter);
-    if (pdfA > 0 && any(emitter.emission > 0))
+    PathVertex emitter;
+    if (sampleSource(state, emitter, rayOrigin, rayDirection, beta))
     {
-        emitter.beta                = emitter.emission / pdfA;
         lightVertices[lightCount++] = emitter;
-        float3 n                    = random(state) < .5 ? emitter.geometric : -emitter.geometric;
-        rayDirection                = cosineDirection(n, state);
-        rayOrigin                   = pathOrigin(emitter, rayDirection);
-        beta                        = emitter.beta * (2 * PI);
         for (uint depth = 1; depth < bounces; ++depth)
         {
             Hit hit;
             if (!trace(rayOrigin, rayDirection, hit))
                 break;
             PathVertex p                = pathVertex(hit, rayOrigin, rayDirection);
+            if (depth == 1 && deltaSource(emitter))
+            {
+                float3 delta = p.position - emitter.position;
+                beta *= sourceDistanceFalloff(deltaIndex(emitter), dot(delta, delta));
+            }
             p.beta                      = beta;
             lightVertices[lightCount++] = p;
             if (depth + 1 == bounces)
@@ -984,9 +1102,15 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             rayDirection = l;
         }
     }
+    float diskRadius = 0, diskAngle = 0;
+    if (localSourceCount() > 0 && asuint(parameters[32]).z != 0)
+    {
+        diskRadius = sqrt(random(state));
+        diskAngle  = 2 * PI * random(state);
+    }
     for (uint e = 0; e < eyeCount; ++e)
     {
-        if (e >= minScatters && any(eyeVertices[e].emission > 0))
+        if (texels[header] > 0 && e >= minScatters && any(eyeVertices[e].emission > 0))
             result += eyeVertices[e].beta * eyeVertices[e].emission * connectionWeight(e + 1, 0);
         if (e >= bounces)
             continue;
@@ -1011,10 +1135,29 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
                 continue;
             float3 start = pathOrigin(eyeVertices[e], d), end = pathOrigin(lightVertices[l], -d), segment = end - start;
             Hit    shadow;
-            if (traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
+            bool   deltaConnection = l == 0 && deltaSource(lightVertices[l]);
+            bool   shadowEnabled   = true;
+            float  sourceFactor    = abs(dot(lightVertices[l].geometric, -d));
+            [branch] if (deltaConnection)
+            {
+                uint   at = 33 + 4 * deltaIndex(lightVertices[l]);
+                float3 t  = normalize(cross(abs(d.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), d));
+                float3 offset =
+                  (t * cos(diskAngle) + cross(d, t) * sin(diskAngle)) * diskRadius * parameters[at + 3].w * .006;
+                float3 n, g;
+                pathFrame(eyeVertices[e], v, n, g);
+                start         = eyeVertices[e].position + g * asfloat(asuint(parameters[32]).w);
+                end           = lightVertices[l].position + offset;
+                shadowEnabled = asuint(parameters[32]).z != 0 && parameters[at + 3].z > .5;
+                sourceFactor  = sourceFalloff(deltaIndex(lightVertices[l]), -d)
+                               * sourceDistanceFalloff(deltaIndex(lightVertices[l]), distance2);
+            }
+            segment = end - start;
+            if (
+              shadowEnabled && length(segment) > .001
+              && traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
                 continue;
-            float geometry =
-              abs(dot(eyeVertices[e].geometric, d)) * abs(dot(lightVertices[l].geometric, -d)) / distance2;
+            float geometry = abs(dot(eyeVertices[e].geometric, d)) * sourceFactor / distance2;
             float w = connectionWeight(e + 1, l + 1);
             result += eyeVertices[e].beta * lightVertices[l].beta * fEye * fLight * geometry * w;
         }
@@ -1065,33 +1208,25 @@ void scratchVectorStore(uint at, float3 v)
 }[numthreads(64, 1, 1)] void PhotonMain(uint3 id : SV_DispatchThreadID)
 {
     uint count = photonCount(), h = lightHeader(), bounces = asuint(parameters[24]).w;
-    if (id.x >= count || texels[h] == 0)
+    if (id.x >= count || sourceGroupCount() == 0)
         return;
     uint state = id.x * 1973u + asuint(parameters[24]).x * 9277u + 0x68bc21ebu;
     randomBits(state);
-    uint   record    = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
-    uint   primitive = texels[record + 2];
-    float  r = sqrt(random(state)), s = random(state);
-    float3 bary     = float3(1 - r, r * (1 - s), r * s);
-    float3 position = vertices[primitive * 3].position.xyz * bary.x + vertices[primitive * 3 + 1].position.xyz * bary.y
-                      + vertices[primitive * 3 + 2].position.xyz * bary.z;
-    Hit source;
-    source.primitive   = primitive;
-    source.bary        = bary.yz;
-    source.distance    = 0;
-    PathVertex emitter = pathVertex(source, position, float3(0, 0, 1));
-    float      pdf     = sourcePdf(emitter);
-    if (pdf <= 0 || !any(emitter.emission > 0))
+    PathVertex emitter;
+    float3     direction, origin, beta;
+    if (!sampleSource(state, emitter, origin, direction, beta))
         return;
-    float3 n         = random(state) < .5 ? emitter.geometric : -emitter.geometric;
-    float3 direction = cosineDirection(n, state), origin = pathOrigin(emitter, direction),
-           beta = emitter.emission * (2 * PI / pdf);
     for (uint depth = 1; depth <= bounces; ++depth)
     {
         Hit hit;
         if (!trace(origin, direction, hit))
             break;
         PathVertex p = pathVertex(hit, origin, direction);
+        if (depth == 1 && deltaSource(emitter))
+        {
+            float3 delta = p.position - emitter.position;
+            beta *= sourceDistanceFalloff(deltaIndex(emitter), dot(delta, delta));
+        }
         if (depth >= 2 && p.transmission == 0)
         {
             uint slot = id.x * bounces + depth - 1, at = photonRecords() + slot * 16;
@@ -1164,30 +1299,39 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
             break;
         float3 v      = -direction;
         bool   gather = p.transmission == 0 && p.metal < .5 && p.roughness > .2;
+        if (asuint(parameters[32]).x != 0)
+            result += beta * analyticLights(p, v, state, true, false);
+        float3 l;
         // Pure finite-area NEE; no environment mixture, and no BSDF competitor
         // at a gather vertex because the camera walk stops there.
-        uint   h = lightHeader(), record = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
-        uint   primitive = texels[record + 2];
-        float  r = sqrt(random(state)), s = random(state);
-        float3 bary = float3(1 - r, r * (1 - s), r * s);
-        Hit    lightHit;
-        lightHit.primitive = primitive;
-        lightHit.bary      = bary.yz;
-        lightHit.distance  = 0;
-        float3 lp = vertices[primitive * 3].position.xyz * bary.x + vertices[primitive * 3 + 1].position.xyz * bary.y
-                    + vertices[primitive * 3 + 2].position.xyz * bary.z;
-        PathVertex light = pathVertex(lightHit, lp, float3(0, 0, 1));
-        float3     delta = lp - p.position, l = normalize(delta);
-        float      cosine = abs(dot(light.geometric, -l));
-        float      pdf    = cosine > 1e-8 ? sourcePdf(light) * dot(delta, delta) / cosine : 0;
-        float3     f      = pathF(p, v, l);
-        if (pdf > 0 && any(f > 0))
+        if (texels[lightHeader()] > 0)
         {
-            float3 start = pathOrigin(p, l), segment = pathOrigin(light, -l) - start;
-            Hit    shadow;
-            if (!traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
-                result += beta * f * abs(dot(p.geometric, l)) * light.emission / pdf
-                          * (gather ? 1 : misWeight(pdf, pathPdf(p, v, l)));
+            uint h           = lightHeader(),
+                 record      = texels[h + 1] + 4 * selectLightCDF(texels[h + 1], texels[h], 4, random(state));
+            uint   primitive = texels[record + 2];
+            float  r = sqrt(random(state)), s = random(state);
+            float3 bary = float3(1 - r, r * (1 - s), r * s);
+            Hit    lightHit;
+            lightHit.primitive = primitive;
+            lightHit.bary      = bary.yz;
+            lightHit.distance  = 0;
+            float3 lp          = vertices[primitive * 3].position.xyz * bary.x
+                        + vertices[primitive * 3 + 1].position.xyz * bary.y
+                        + vertices[primitive * 3 + 2].position.xyz * bary.z;
+            PathVertex light = pathVertex(lightHit, lp, float3(0, 0, 1));
+            float3     delta = lp - p.position;
+            l                = normalize(delta);
+            float  cosine    = abs(dot(light.geometric, -l));
+            float  pdf       = cosine > 1e-8 ? sourcePdf(light) * dot(delta, delta) / cosine : 0;
+            float3 f         = pathF(p, v, l);
+            if (pdf > 0 && any(f > 0))
+            {
+                float3 start = pathOrigin(p, l), segment = pathOrigin(light, -l) - start;
+                Hit    shadow;
+                if (!traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
+                    result += beta * f * abs(dot(p.geometric, l)) * light.emission / pdf
+                              * (gather ? 1 : misWeight(pdf, pathPdf(p, v, l)));
+            }
         }
         if (gather)
         {
@@ -1218,8 +1362,8 @@ float3 mltEvaluate(out uint pixel)
     float2 p         = uv * 2 - 1;
     float3 origin, direction;
     cameraRay(p, origin, direction);
-    bool   connect = texels[lightHeader()] > 0;
-    float3 value   = path(origin, direction, state, asuint(parameters[24]).w, !connect, 2);
+    bool   connect = sourceGroupCount() > 0;
+    float3 value   = path(origin, direction, state, asuint(parameters[24]).w, !connect, 2, !connect);
     if (connect)
         value += bidirectional(origin, direction, state, asuint(parameters[24]).w, 2);
     return min(max(value, 0), float3(64, 64, 64));
@@ -1436,9 +1580,10 @@ void mltTransition(inout uint rng, inout float3 value, inout float intensity, in
             sum += path(origin, direction, state, 1);
             continue;
         }
-        bool   connectLightPaths = (options.w & 8u) != 0 && texels[lightHeader()] > 0;
-        bool   usePhotons        = (options.w & 16u) != 0 && texels[lightHeader()] > 0;
-        float3 value             = path(origin, direction, state, frame.w, !connectLightPaths && !usePhotons);
+        bool   connectLightPaths = (options.w & 8u) != 0 && sourceGroupCount() > 0;
+        bool   usePhotons        = (options.w & 16u) != 0 && sourceGroupCount() > 0;
+        float3 value             = path(
+          origin, direction, state, frame.w, !connectLightPaths && !usePhotons, 0, !connectLightPaths && !usePhotons);
         if (connectLightPaths)
             value += bidirectional(origin, direction, state, frame.w);
         if (usePhotons)

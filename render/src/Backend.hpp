@@ -78,7 +78,12 @@ namespace render::detail
                 c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
                 c.maxLights                                                                              = 16;
                 c.shadowRequiresScene = mode == RenderMode::Raster;
-                c.estimator           = mode == RenderMode::Raster ? "raster-pbr" : "camera-path-nee";
+                c.estimator           = mode == RenderMode::Raster ? "raster-pbr" : "camera-and-source-paths";
+                if (mode != RenderMode::Raster)
+                {
+                    c.collectionLightSubpaths = c.collectionPhotonEmission = true;
+                    c.sourceLightTypes                                     = {LightType::Point, LightType::Spot};
+                }
             }
             else
                 c.reason = "Light collections require Metal, Vulkan or DX12";

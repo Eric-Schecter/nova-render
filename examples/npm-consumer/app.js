@@ -90,7 +90,10 @@ window.validation = (async () => {
   await renderer.drawFrame()
   if (
     renderer.getAccumulatedSamples() !== 2 ||
-    renderer.getLightingCapabilities().estimator !== 'camera-path-nee'
+    renderer.getLightingCapabilities().estimator !== 'camera-and-source-paths' ||
+    !renderer.getLightingCapabilities().collectionLightSubpaths ||
+    !renderer.getLightingCapabilities().collectionPhotonEmission ||
+    renderer.getLightingCapabilities().sourceLightTypes.join(',') !== 'point,spot'
   )
     throw Error('Installed ray scene lights failed')
   renderer.setRenderMode('raster')

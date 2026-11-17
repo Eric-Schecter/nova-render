@@ -35,8 +35,9 @@ namespace render
         unsigned    maxLights          = 0;
         bool        directionalShadows = false, pointShadows = false, spotShadows = false;
         bool        shadowRequiresScene = true;
-        // Analytic collections use camera-path NEE in ray modes, not source subpaths or photon emission.
+        // Ray source subpaths / photon emission support point and spot; directional remains camera NEE.
         bool        collectionLightSubpaths = false, collectionPhotonEmission = false;
+        std::vector<LightType> sourceLightTypes;
         std::string estimator;
         std::string reason;
     };

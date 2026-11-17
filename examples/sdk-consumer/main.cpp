@@ -123,7 +123,10 @@ int main(int argc, char** argv)
                 window.DrawFrame();
                 if (
                   window.GetAccumulatedSamples() != 2
-                  || window.GetLightingCapabilities().estimator != "camera-path-nee")
+                  || window.GetLightingCapabilities().estimator != "camera-and-source-paths"
+                  || !window.GetLightingCapabilities().collectionLightSubpaths
+                  || !window.GetLightingCapabilities().collectionPhotonEmission
+                  || window.GetLightingCapabilities().sourceLightTypes.size() != 2)
                     throw std::runtime_error("Installed scene ray lights failed");
                 window.SetRenderMode(render::RenderMode::Raster);
             }

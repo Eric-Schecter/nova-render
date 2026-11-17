@@ -287,7 +287,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
             ? (14 * w * h +
                 16 +
                 (path.mltBootstrapSamples ?? 262144) * 2 +
-                Math.min(1024, w * h) * 200) *
+                Math.min(1024, w * h) * 264) *
               4
             : w * h * 16 +
               (path.integrator === 'photon-mapping'

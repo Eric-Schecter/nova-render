@@ -26,7 +26,7 @@ namespace render::detail
             uint32_t bootstrap;
             std::memcpy(&bootstrap, &p.clear[3], 4);
             const size_t pixels = size_t(p.frame[1]) * p.frame[2];
-            return (14 * pixels + 16 + size_t(bootstrap) * 2 + std::min(size_t(1024), pixels) * 200) * 4;
+            return (14 * pixels + 16 + size_t(bootstrap) * 2 + std::min(size_t(1024), pixels) * 264) * 4;
         }
         return size_t(p.frame[1]) * p.frame[2] * 16
                + ((p.options[3] & 16u) ? (size_t(32768) + size_t(p.images[2][3]) * p.frame[3] * 16) * 4 : 0);

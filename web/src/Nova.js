@@ -664,9 +664,10 @@ class Renderer {
       pointShadows: supported,
       spotShadows: supported,
       shadowRequiresScene: this.#renderMode === 'raster',
-      collectionLightSubpaths: false,
-      collectionPhotonEmission: false,
-      estimator: this.#renderMode === 'raster' ? 'raster-pbr' : 'camera-path-nee',
+      collectionLightSubpaths: supported && this.#renderMode !== 'raster',
+      collectionPhotonEmission: supported && this.#renderMode !== 'raster',
+      sourceLightTypes: supported && this.#renderMode !== 'raster' ? ['point', 'spot'] : [],
+      estimator: this.#renderMode === 'raster' ? 'raster-pbr' : 'camera-and-source-paths',
       reason: supported ? '' : 'Current device or scene does not support ray tracing',
     }
   }

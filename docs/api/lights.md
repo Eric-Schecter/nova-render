@@ -42,7 +42,26 @@ Invalid values, duplicate IDs and excess counts throw before replacing the previ
 
 This release supports up to **16 total lights** in raster and ray-tracing modes on Metal, Vulkan, DX12 and WebGPU. Disabled entries count toward the limit. Collection state survives mode switches, and changes reset progressive accumulation without re-uploading geometry. Empty collections remove the legacy direct light while leaving environment/emission intact.
 
-Ray tracing evaluates directional/point/spot collections with camera-path next-event estimation, including indirect camera-path bounces. `estimator` reports `raster-pbr` or `camera-path-nee`. This estimator is also used for analytic lights in BDPT, photon mapping and MLT; finite emissive geometry retains its existing source-path estimators. **Collection lights do not generate BDPT light subpaths or photons** (`collectionLightSubpaths` and `collectionPhotonEmission` are false). Do not interpret their presence in those integrators as analytic-light caustic source sampling. The `lightSampling` switch controls area/HDR MIS; analytic delta lights always use explicit direct sampling.
+Ray tracing supports point/spot **BDPT source subpaths and photon emission**, including scenes with no emissive mesh. `collectionLightSubpaths` and `collectionPhotonEmission` are true in ray mode; `sourceLightTypes` is `[point, spot]`. `estimator` reports `raster-pbr` or `camera-and-source-paths`. These fields describe available estimators, not the currently selected integrator. PT uses camera-path NEE, BDPT combines eye and light subpaths with MIS, and photon mapping combines direct NEE with indirect photon density estimates. MLT uses the same BDPT target for indirect transport. Directional lights and HDR illumination retain camera-path estimation.
+
+Point sources emit over the sphere; spot sources sample their outer cone and weight the smooth inner/outer falloff. Position is a discrete delta, never an area PDF. Source selection probabilities and emission-direction PDFs normalize light-path throughput and photon flux. Mixed emissive geometry and local lights share emission selection, with no duplicate camera-path local-light term. The `lightSampling` switch still controls PT area/HDR MIS.
+
+Range and the near-source inverse-square clamp apply to the first source-to-surface segment; subsequent bounces transport that energy normally. Point/spot lights remain ideal point sources: `shadowSoftness` filters direct visibility, not photon emission or physical source size. Static snapshots, finite bounce limits, photon density bias, and the existing radiance clamp still apply.
+
+Select the estimator through the existing ray settings; no light-specific backend calls are needed:
+
+```cpp
+auto settings = window.GetRayTracing();
+settings.integrator = render::PathIntegrator::Bidirectional; // or PhotonMapping
+window.SetRayTracing(settings);
+window.SetRenderMode(render::RenderMode::RayTracing);
+```
+
+```js
+renderer.setRayTracing({ ...renderer.getRayTracing(), integrator: 'bidirectional' })
+// Use 'photon-mapping' for photon emission and density reconstruction.
+renderer.setRenderMode('ray-tracing')
+```
 
 `directionalShadows`, `pointShadows` and `spotShadows` are true on supported raster and ray backends. Both obey per-light cast flags and the global shadow switch. Raster shadows require opaque static `SetScene` geometry (`shadowRequiresScene` is true); ray tracing accepts static single models and multi-instance scenes (`shadowRequiresScene` is false). Every enabled light with `castShadow: true` casts its own BVH shadow. Point/spot rays end at the light source, so objects behind the source do not occlude it. Range and spot-cone attenuation are applied before shadow visibility.
 
@@ -50,6 +69,10 @@ Zero `shadowSoftness` uses one hard visibility ray. Raster positive values use t
 
 `SetDirectionalLight` / `setDirectionalLight` exits collection mode and restores the compatible single-light rendering path. `GetLights` then reports one `__directional` entry. Built-in parameter panels do not overwrite application-owned collections; edit collections through the API or your application UI.
 
-## 0.6.0 validation
+## 0.7.0 validation
 
-Metal, Vulkan and WebGPU pass six-light linear additivity, disabled/empty collections, point range and spot cones, shadow toggles, accumulation reset, four integrators, multi-instance transforms and runtime materials. Vulkan prefers hardware queries and falls back to shared-HLSL compute BVH when unavailable; `softwareRayTracing` truthfully reports the fallback. macOS Vulkan validation uses this compute path; Metal uses native acceleration structures. DX12 shaders compile to DXIL, but Windows hardware/WARP runtime and native SDK validation remain deferred at the user's request. No Windows SDK is published in 0.6.0.
+Metal, Vulkan and WebGPU pass six-light linear additivity, disabled/empty collections, point range and spot cones, shadow toggles, accumulation reset, four integrators, multi-instance transforms and runtime materials. Vulkan prefers hardware queries and falls back to shared-HLSL compute BVH when unavailable; `softwareRayTracing` truthfully reports the fallback. macOS Vulkan validation uses this compute path; Metal uses native acceleration structures. DX12 shaders compile to DXIL, but Windows hardware/WARP runtime and native SDK validation remain deferred at the user's request. No Windows SDK is published in 0.7.0.
+
+Non-emissive Cornell and glass-caustic scenes audit point/spot source energy against independent high-sample references, diffuse photon convergence, glass-caustic energy, disabled/range-limited sources and native/Web parity. The source sampler and all kernels are shared HLSL. See the renderer tests `source-lights-metal`, `source-lights-vulkan` and `scripts/webgpu/check-source-lights.mjs`.
+
+For sharp glass caustics the validation reports, without asserting monotonic improvement, both raw pixel MSE and 4-by-4 block-integrated MSE against an independent BDPT reference. Shrinking photon kernels retain finite-budget density bias: pixel MSE is not guaranteed to decrease monotonically. The supplied glass spot fixture still shows a roughly 16% mean-energy difference at its finite test budget; this is not a claim of pixel-identical or unbiased photon reconstruction.
