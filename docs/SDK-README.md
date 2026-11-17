@@ -7,7 +7,7 @@ Use the same configuration, compatible compiler ABI and Windows C++ runtime.
 A Debug archive does not contain a Release build of Nova.
 
 ```cmake
-find_package(Nova 0.2 CONFIG REQUIRED)
+find_package(Nova 0.8 CONFIG REQUIRED)
 add_executable(app main.cpp)
 target_link_libraries(app PRIVATE Nova::Render)
 ```
