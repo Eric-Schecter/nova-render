@@ -36,7 +36,7 @@ Clear an environment with an empty native path or a `null`/empty web URL. Existi
 
 ## GPU scene shadows
 
-`SetShadows(SceneShadowSettings)` / `GetShadows()` match `setShadows(settings)` / `getShadows()`. These shadows affect the main directional light on opaque, static raster scene instances. They use shared HLSL BVH traversal on the GPU on Metal, Vulkan, DX12 and WebGPU; no hardware ray-query extension or CPU depth-map rasterization is required. Studio fill and environment lighting remain unshadowed. Single-model path tracing retains its own transport shadows.
+`SetShadows(SceneShadowSettings)` / `GetShadows()` match `setShadows(settings)` / `getShadows()`. These shadows affect the legacy main directional light or each collection directional light with `castShadow` enabled on opaque, static raster scene instances. Point/spot shadows remain unsupported. They use shared HLSL BVH traversal on the GPU on Metal, Vulkan, DX12 and WebGPU; no hardware ray-query extension or CPU depth-map rasterization is required. Studio fill and environment lighting remain unshadowed. Single-model path tracing retains its own transport shadows.
 
 - `enabled`: false by default.
 - `softness`: 0–4, default 1; zero produces hard shadows. Positive values sample a directional light disk (0.006 radians per unit).

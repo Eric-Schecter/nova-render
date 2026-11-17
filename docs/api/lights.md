@@ -37,8 +37,12 @@ Invalid values, duplicate IDs and excess counts throw before replacing the previ
 
 ## Capabilities and scope
 
-This release supports up to **16 total lights**, in any combination, on **Metal and WebGPU raster** paths. The limit includes disabled entries. `directional`, `point`, `spot` and `maxLights` describe collection support for the current backend and mode. Vulkan, DX12 and ray tracing retain their legacy single directional light; collection setters throw there. Switching to ray tracing while a collection is active throws; restore the legacy light first.
+This release supports up to **16 total lights**, in any combination, on **Metal, Vulkan, DX12 and WebGPU raster** paths. The limit includes disabled entries. `directional`, `point`, `spot` and `maxLights` describe collection support for the current backend and mode. Ray tracing retains its legacy single directional light; collection setters throw in that mode. Switching to ray tracing while a collection is active throws; restore the legacy light first.
 
 `directionalShadows` is true on supported raster backends. Shadows require opaque static `SetScene` geometry and the global shadow switch (`shadowRequiresScene` is true). Every enabled directional light can cast its own BVH shadow with its own direction/softness. `pointShadows` and `spotShadows` are false: setting their `castShadow` to true is rejected, including disabled entries. No point/spot shadow fallback is fabricated.
 
 `SetDirectionalLight` / `setDirectionalLight` exits collection mode and restores the compatible single-light rendering path. `GetLights` then reports one `__directional` entry. Built-in parameter panels do not overwrite application-owned collections; edit collections through the API or your application UI.
+
+## 0.4.0 validation
+
+Metal and Vulkan (MoltenVK on macOS) pass the same six-light pixel tests, independent directional-shadow tests, and relocated SDK consumer checks. WebGPU passes the matching six-light tests. DX12 uses the same HLSL and existing instance-buffer upload path; its vertex/fragment shaders compile to DXIL. Windows hardware/WARP runtime and native SDK validation are **deferred** because the validation host is unavailable. No Windows SDK is published in 0.4.0; do not treat shader compilation as a successful DX12 rendering test. Ray tracing collection support and point/spot shadows remain unsupported.
