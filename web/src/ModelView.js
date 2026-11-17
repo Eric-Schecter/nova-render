@@ -191,6 +191,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       aa = false,
       gbuffer = false,
       deferred = false,
+      oit = false,
     ) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
@@ -217,18 +218,34 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         },
         fragment: {
           module: fragment,
-          entryPoint: deferred
-            ? 'DeferredPSMain'
-            : gbuffer
-              ? 'GBufferPSMain'
-              : motion
-                ? sky
-                  ? 'SkyMotionPSMain'
-                  : 'MotionPSMain'
-                : sky
-                  ? 'SkyPSMain'
-                  : 'PSMain',
-          targets: Array.from({ length: gbuffer ? 4 : 1 }, () => ({
+          entryPoint: oit
+            ? 'OITPSMain'
+            : deferred
+              ? 'DeferredPSMain'
+              : gbuffer
+                ? 'GBufferPSMain'
+                : motion
+                  ? sky
+                    ? 'SkyMotionPSMain'
+                    : 'MotionPSMain'
+                  : sky
+                    ? 'SkyPSMain'
+                    : 'PSMain',
+          targets: Array.from({ length: oit ? 2 : gbuffer ? 4 : 1 }, (_, i) => ({
+            ...(oit
+              ? {
+                  blend:
+                    i === 0
+                      ? {
+                          color: { srcFactor: 'one', dstFactor: 'one' },
+                          alpha: { srcFactor: 'one', dstFactor: 'one' },
+                        }
+                      : {
+                          color: { srcFactor: 'zero', dstFactor: 'one-minus-src-alpha' },
+                          alpha: { srcFactor: 'zero', dstFactor: 'one-minus-src-alpha' },
+                        },
+                }
+              : {}),
             format: aa ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat(),
           })),
         },
@@ -236,8 +253,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         multisample: { count: samples },
         depthStencil: {
           format: 'depth32float',
-          depthWriteEnabled: !sky && !deferred,
-          depthCompare: sky || deferred ? 'always' : 'less',
+          depthWriteEnabled: !sky && !deferred && !oit,
+          depthCompare: sky || deferred ? 'always' : oit ? 'less-equal' : 'less',
         },
       })
     }
@@ -321,6 +338,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
               'sky-motion',
               'model-gbuffer',
               'model-deferred',
+              'model-oit',
             ].map(async (n) => {
               const r = await fetch(dir + n + '.json')
               if (!r.ok) throw Error('Missing raster AA shader ' + n)
@@ -334,6 +352,16 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           }
           aaPipelines.gbuffer = await pipelineFor(packages[4], false, 1, false, true, true)
           aaPipelines.deferred = await pipelineFor(packages[5], false, 1, false, true, false, true)
+          aaPipelines.oit = await pipelineFor(
+            packages[6],
+            false,
+            1,
+            false,
+            true,
+            false,
+            false,
+            true,
+          )
           aaPipelines.motion = await pipelineFor(packages[2], false, 1, true, true)
           aaPipelines.skyMotion = await pipelineFor(packages[3], true, 1, true, true)
         }
@@ -390,19 +418,22 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           pass.draw(3)
           return
         }
-        const gbuffer = program === -4
+        const gbuffer = program === -4,
+          oit = program === -6
         pass.setBindGroup(0, bindGroup)
-        if (!gbuffer && environment && settings.showBackground) {
+        if (!gbuffer && !oit && environment && settings.showBackground) {
           pass.setPipeline(motion ? aaPipelines.skyMotion : aaPipelines['sky' + count])
           pass.draw(3)
         }
         if (data.vertices.length) {
           pass.setPipeline(
-            gbuffer
-              ? aaPipelines.gbuffer
-              : motion
-                ? aaPipelines.motion
-                : aaPipelines['model' + count],
+            oit
+              ? aaPipelines.oit
+              : gbuffer
+                ? aaPipelines.gbuffer
+                : motion
+                  ? aaPipelines.motion
+                  : aaPipelines['model' + count],
           )
           if (sceneDraws !== null) {
             for (const draw of sceneDraws)
@@ -458,6 +489,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         collection = null,
         shadows = undefined,
       ) {
+        if (data.materials?.some((m) => (m.alphaMode || 'OPAQUE') !== 'OPAQUE'))
+          throw Error('Alpha materials currently require raster rendering')
         if (disposed) throw Error('Model has been disposed')
         const source = rayProvider ? rayProvider() : data
         if (!source.vertices.length) throw Error('Path tracing requires a loaded model')

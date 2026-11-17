@@ -142,7 +142,7 @@ bool shadowBox(float3 low, float3 high, float3 origin, float3 direction, float m
     }
     return true;
 }
-bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance)
+bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase)
 {
     float3 a = tri.baseColor.xyz, e = tri.material.xyz - a, f = tri.emissive.xyz - a, p = cross(direction, f);
     float  determinant = dot(e, p);
@@ -156,7 +156,21 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
     float3 q = cross(delta, e);
     float  v = dot(direction, q) * inverse;
     float  distance = dot(f, q) * inverse;
-    return v >= 0 && u + v <= 1 && distance > 1e-5 && distance < maxDistance;
+    if (!(v >= 0 && u + v <= 1 && distance > 1e-5 && distance < maxDistance))
+        return false;
+    InstanceData material = instances[materialBase + uint(tri.emissive.w)];
+    uint         flags = uint(material.emissive.w), mode = flags & 3;
+    if (mode == 2 || ((flags & 4) == 0 && determinant <= 0))
+        return false;
+    if (mode == 1)
+    {
+        float2 uv =
+          tri.uv.xy * (1 - u - v) + tri.uv.zw * u + float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]) * v;
+        uv = frac(uv) * material.uv.xy + material.uv.zw;
+        if (baseTexture.SampleLevel(textureSampler, uv, 0).a * material.baseColor.a < frac(material.emissive.w) * 4)
+            return false;
+    }
+    return true;
 }
 bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistance)
 {
@@ -188,7 +202,8 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
                                                               instances[root + uint(box.uv.z) + t],
                                                               localOrigin,
                                                               localDirection,
-                                                              maxDistance)) return true;
+                                                              maxDistance,
+                                                              uint(instance.uv.x))) return true;
             node = uint(box.baseColor.w);
         }
     }
@@ -255,6 +270,7 @@ struct VertexOut
     float2                uv : TEXCOORD2;
     nointerpolation float generatedNormal : TEXCOORD3;
     nointerpolation uint  instanceIndex : TEXCOORD4;
+    nointerpolation float winding : TEXCOORD5;
 };
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -273,6 +289,9 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         v.normal.xyz          = mul((float3x3)instance.normalMatrix, v.normal.xyz);
     }
     VertexOut o;
+    o.winding = 1;
+    if (lightDirection.w > .5 && lightDirection.w < 1.5)
+        o.winding = determinant((float3x3)instances[instanceId].world) < 0 ? -1 : 1;
     o.instanceIndex   = materialIndex;
     o.position        = mul(viewProjection, v.position);
     o.worldPosition   = v.position.xyz;
@@ -389,9 +408,11 @@ struct SurfaceData
 {
     float3 position, normal, geometricNormal, base, emissive;
     float  metallic, roughness, ao;
+    float  opacity, alphaInfo;
 };
 SurfaceData sampleSurface(VertexOut input)
 {
+    float  alphaInfo  = .125;
     float2 uv         = input.uv;
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
     if (lightDirection.w > .5)
@@ -401,8 +422,10 @@ SurfaceData sampleSurface(VertexOut input)
         baseFactor            = instance.baseColor;
         matFactor             = instance.material;
         emissionFactor.rgb    = instance.emissive.rgb;
+        alphaInfo             = instance.emissive.w;
     }
-    float3 base = baseTexture.Sample(textureSampler, uv).rgb * baseFactor.rgb;
+    float4 baseSample = baseTexture.Sample(textureSampler, uv);
+    float3 base       = baseSample.rgb * baseFactor.rgb;
     float3 n   = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
     if (input.generatedNormal > .5)
@@ -425,6 +448,8 @@ SurfaceData sampleSurface(VertexOut input)
     float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
     SurfaceData result;
+    result.opacity         = baseSample.a * baseFactor.a;
+    result.alphaInfo       = alphaInfo;
     result.position        = input.worldPosition;
     result.normal          = n;
     result.geometricNormal = normalize(input.normal);
@@ -526,10 +551,44 @@ float4 shadeSurface(SurfaceData s)
     return float4(applyFog(displayRadiance(color), s.position), 1);
 }
 
-float4 PSMain(VertexOut input)
+void materialCoverage(inout SurfaceData s, bool face, float winding, bool transparent)
+{
+    bool front = winding < 0 ? !face : face;
+    uint flags = (uint)s.alphaInfo, mode = flags & 3;
+    if ((flags & 4) == 0 && !front)
+        discard;
+    if (mode == 1 && s.opacity < frac(s.alphaInfo) * 4)
+        discard;
+    if (transparent ? (mode != 2 || s.opacity <= 0) : mode == 2)
+        discard;
+    if (!front)
+    {
+        s.normal          = -s.normal;
+        s.geometricNormal = -s.geometricNormal;
+    }
+}
+float4 PSMain(VertexOut input, bool face : SV_IsFrontFace)
   : SV_Target
 {
-    return shadeSurface(sampleSurface(input));
+    SurfaceData s = sampleSurface(input);
+    materialCoverage(s, face, input.winding, false);
+    return shadeSurface(s);
+}
+struct OITOutput
+{
+    float4 accumulation : SV_Target0;
+    float4 revealage : SV_Target1;
+};
+OITOutput OITPSMain(VertexOut input, bool face : SV_IsFrontFace)
+{
+    SurfaceData s = sampleSurface(input);
+    materialCoverage(s, face, input.winding, true);
+    float     depth  = max(0, dot(s.position - eyeExposure.xyz, cameraForward.xyz));
+    float     weight = clamp(1 / (1 + .01 * depth * depth), .01, 1);
+    OITOutput o;
+    o.accumulation = float4(shadeSurface(s).rgb * s.opacity * weight, s.opacity * weight);
+    o.revealage    = s.opacity.xxxx;
+    return o;
 }
 
 // Four 8-byte targets fit WebGPU's baseline 32-byte attachment budget.
@@ -556,9 +615,10 @@ struct ModelGBuffer
     float4 positionAO : SV_Target2;
     float4 emissiveMetallic : SV_Target3;
 };
-ModelGBuffer GBufferPSMain(VertexOut input)
+ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 {
     SurfaceData  s = sampleSurface(input);
+    materialCoverage(s, face, input.winding, false);
     ModelGBuffer o;
     o.baseRoughness    = float4(s.base, s.roughness);
     o.normals          = float4(octEncode(s.normal), octEncode(s.geometricNormal));
@@ -645,6 +705,9 @@ struct MotionOut
     float4 position : SV_Position;
     float4 current : TEXCOORD0;
     float4 previous : TEXCOORD1;
+    float2                uv : TEXCOORD2;
+    nointerpolation uint  materialIndex : TEXCOORD3;
+    nointerpolation float winding : TEXCOORD4;
 };
 MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -665,21 +728,43 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         }
         old.position = float4(position.xyz, 1);
     }
+    uint  materialIndex = uint(max(1, current.position.w)) - 1;
+    float winding       = 1;
     current.position.w = old.position.w = 1;
     if (lightDirection.w > .5 && lightDirection.w < 1.5)
     {
+        materialIndex += uint(instances[instanceId].uv.x);
+        winding          = determinant((float3x3)instances[instanceId].world) < 0 ? -1 : 1;
         current.position = mul(instances[instanceId].world, current.position);
         old.position     = mul(instances[instanceId].world, old.position);
     }
     MotionOut o;
+    o.uv            = current.uv.xy;
+    o.materialIndex = materialIndex;
+    o.winding       = winding;
     o.current  = mul(viewProjection, current.position);
     o.previous = mul(previousViewProjection, old.position);
     o.position = o.current;
     return o;
 }
-float4 MotionPSMain(MotionOut input)
+float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
   : SV_Target
 {
+    float2 uv     = input.uv;
+    float4 factor = baseColorFactor;
+    float  info   = .125;
+    if (lightDirection.w > .5)
+    {
+        InstanceData m = instances[input.materialIndex];
+        uv             = frac(uv) * m.uv.xy + m.uv.zw;
+        factor         = m.baseColor;
+        info           = m.emissive.w;
+    }
+    float opacity = baseTexture.Sample(textureSampler, uv).a * factor.a;
+    uint  flags = uint(info), mode = flags & 3;
+    bool  front = input.winding < 0 ? !face : face;
+    if (((flags & 4) == 0 && !front) || mode == 2 || (mode == 1 && opacity < frac(info) * 4))
+        discard;
     float2 current = input.current.xy / input.current.w * float2(.5, -.5) + .5,
            old     = input.previous.xy / input.previous.w * float2(.5, -.5) + .5;
     return float4(old - current, input.current.w / 16, .125);

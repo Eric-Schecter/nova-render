@@ -326,6 +326,10 @@ namespace render
     {
         return impl_->renderer->GetPostProcessing();
     }
+    MaterialCapabilities Window::GetMaterialCapabilities() const
+    {
+        return {};
+    }
     void Window::SetRasterSettings(const RasterSettings& settings)
     {
         impl_->renderer->SetRasterSettings(settings);

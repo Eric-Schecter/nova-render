@@ -46,6 +46,7 @@ export default defineConfig({
           { text: '15 · Scene instances', link: '/examples/scene' },
           { text: '16 · Raster pipelines', link: '/examples/pipelines' },
           { text: '17 · Deferred models', link: '/examples/deferred' },
+          { text: '18 · Alpha materials', link: '/examples/material-alpha' },
         ],
       },
       {

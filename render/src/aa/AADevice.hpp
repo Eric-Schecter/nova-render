@@ -64,7 +64,10 @@ namespace render::detail
         AAModelNormal,
         AAModelPosition,
         AAModelEmission,
-        AAResourceCount = 89
+        AAOitAccum = 89,
+        AAOitReveal,
+        AARawOpaque,
+        AAResourceCount = 92
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -160,7 +163,7 @@ namespace render::detail
                 for (int i = 1; i < 4; i++)
                     used[p.target + i] = true;
             }
-            if (p.program == 0 || p.program == 10 || p.program == 16)
+            if (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
                 used[p.target + 1] = true;
             if (p.multisampled)
             {

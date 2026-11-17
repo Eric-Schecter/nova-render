@@ -208,6 +208,7 @@ namespace render
     void Renderer::LoadModel(const std::filesystem::path& path)
     {
         auto data = detail::LoadGLB(path);
+        impl_->backend->ValidateMaterialState(data.get());
         impl_->backend->LoadModel(std::move(data));
         impl_->backend->assets.modelPath = path;
     }
@@ -337,6 +338,10 @@ namespace render
     PostProcessingSettings Renderer::GetPostProcessing() const
     {
         return impl_->backend->GetPostProcessing();
+    }
+    MaterialCapabilities Renderer::GetMaterialCapabilities() const
+    {
+        return {};
     }
     void Renderer::SetRasterSettings(const RasterSettings& settings)
     {

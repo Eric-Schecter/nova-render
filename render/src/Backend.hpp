@@ -19,11 +19,22 @@ namespace render::detail
       public:
         PanelAssets assets;
         SceneData   scene;
+        void        ValidateMaterialState(const ModelData* next) const
+        {
+            if (mode != RenderMode::Raster && HasAlpha(next))
+                throw std::invalid_argument("MASK/BLEND ray tracing is not supported; select raster first");
+            if (
+              HasBlend(next)
+              && (rasterSettings.method == AAMethod::MSAA || rasterSettings.method == AAMethod::TAA || rasterSettings.split))
+                throw std::invalid_argument(
+                  "BLEND supports Off/FXAA/SMAA/SSAA without AA split; choose a compatible AA method first");
+        }
         void        SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
         {
             const auto previousMode = mode;
             auto next = scene;
             next.Update(assets, instances);
+            ValidateMaterialState(next.model.get());
             if (model != next.model)
                 LoadModel(next.model);
             scene      = std::move(next);
@@ -49,6 +60,7 @@ namespace render::detail
             {
                 auto next = scene;
                 next.SetMaterial(id, slot, value);
+                ValidateMaterialState(next.model.get());
                 LoadModel(next.model);
                 scene = std::move(next);
             }
@@ -59,6 +71,7 @@ namespace render::detail
                 auto next             = std::make_shared<ModelData>(*model);
                 next->materials[slot] = value;
                 PackMaterials(*next);
+                ValidateMaterialState(next.get());
                 auto state = animation.state;
                 LoadModel(next);
                 if (model->animation)
@@ -212,6 +225,8 @@ namespace render::detail
         }
         RendererCapabilities GetCapabilities()
         {
+            if (HasAlpha(model.get()))
+                return {false, false, "", "MASK/BLEND ray tracing is not supported; use raster"};
             if (model && model->animation)
                 return {false, false, "", "Animated models currently use raster rendering"};
             return pathSession.Capabilities(pathAPI, pathConfig);
@@ -283,6 +298,9 @@ namespace render::detail
         }
         void                   SetAntiAliasing(const AntiAliasingSettings& value)
         {
+            if (
+              HasBlend(model.get()) && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
+                throw std::invalid_argument("BLEND supports Off/FXAA/SMAA/SSAA without AA split");
             if (modelRaster.pipeline == RasterPipeline::Deferred && value.method == AAMethod::MSAA)
                 throw std::invalid_argument("Deferred MSAA is not supported");
             if (
@@ -336,6 +354,7 @@ namespace render::detail
         virtual void        WaitIdle()                              = 0;
         virtual void        LoadModel(std::shared_ptr<const ModelData> data)
         {
+            ValidateMaterialState(data.get());
             scene.active = false;
             if (data != model)
             {
@@ -520,7 +539,7 @@ namespace render::detail
             {
                 if (
                   rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled
-                  && modelRaster.pipeline == RasterPipeline::Forward)
+                  && modelRaster.pipeline == RasterPipeline::Forward && !HasBlend(model.get()))
                     return nullptr;
                 if (modelRaster.pipeline == RasterPipeline::Deferred && (!model || aaTriangle))
                     throw std::runtime_error("Deferred requires a model or scene");
@@ -541,7 +560,14 @@ namespace render::detail
                 rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
                 rasterAA.current.irradiance[8][3] = float(modelRaster.view);
                 const auto& image                 = rasterAA.Render(
-                  width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings, modelRaster);
+                  width,
+                  height,
+                  rasterSettings,
+                  ClearColorForTarget(true),
+                  aaTriangle,
+                  postSettings,
+                  modelRaster,
+                  HasBlend(model.get()));
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }

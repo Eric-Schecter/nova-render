@@ -34,7 +34,7 @@ const auto bounds = window.GetSceneAssetBounds("model");
 window.DrawFrame();
 ```
 
-Instances share resources by asset ID. `sourceSpace=true` preserves authored glTF units and origin; the default normalizes the model. Matrices are column-major and default to identity. `SetScene({}, {})` clears geometry. This API supports static opaque raster scenes; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.
+Instances share resources by asset ID. `sourceSpace=true` preserves authored glTF units and origin; the default normalizes the model. Matrices are column-major and default to identity. `SetScene({}, {})` clears geometry. This API supports static raster scenes with OPAQUE, MASK and weighted OIT BLEND materials; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.
 
 ## Camera and viewport
 
@@ -57,4 +57,6 @@ Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits c
 
 Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `SetMaterial(slot, material)` / `await setMaterial(slot, material)`. Pass the scene asset ID as the final argument to edit all its instances. Texture maps accept RGBA8 images; `LoadMaterialImage(path)` / `await loadMaterialImage(url)` decodes an image. See the materials API documentation for ranges and atlas limits.
 
-The 0.2 SDK includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. Use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. See the online [installation guide](https://eric-schecter.github.io/nova-render/guide/package.html) for release downloads.
+The SDK includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. Use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. See the online [installation guide](https://eric-schecter.github.io/nova-render/guide/package.html) for release downloads.
+
+Current source / paired local SDK: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations; published 0.7.1 packages predate these fields.

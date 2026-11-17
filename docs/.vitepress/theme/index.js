@@ -1,3 +1,4 @@
+import MaterialAlphaPlayground from './MaterialAlphaPlayground.vue'
 import PipelinePlayground from './PipelinePlayground.vue'
 import MaterialPlayground from './MaterialPlayground.vue'
 import PickingPlayground from './PickingPlayground.vue'
@@ -17,6 +18,7 @@ export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
     app.component('PipelinePlayground', PipelinePlayground)
+    app.component('MaterialAlphaPlayground', MaterialAlphaPlayground)
     app.component('MaterialPlayground', MaterialPlayground)
     app.component('PickingPlayground', PickingPlayground)
     app.component('CameraPlayground', CameraPlayground)

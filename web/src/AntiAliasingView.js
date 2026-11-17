@@ -206,6 +206,7 @@ export async function createAntiAliasingView({
       })
     }
     for (let i = 0; i < 22; i++) pipelines.push(await pipeline(i))
+    if (external) pipelines[29] = await pipeline(29)
     sceneMS = await pipeline(0, 4)
     if (shadowScene) shadowMS = await pipeline(10, 4)
     if (hdrScene) hdrMS = await pipeline(16, 4)
@@ -267,7 +268,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 89; i++)
+    for (let i = 0; i < 92; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -387,11 +388,17 @@ export async function createAntiAliasingView({
         add(-1, 21).u.splice(4, 4, 0, 0, 0, 0)
         crop(B, 21, width, height, true)
       }
+      const oit = external.alphaBlend && !debug,
+        sceneColor = oit ? 91 : 17
       if (external.raster?.pipeline === 'deferred') {
         add(-4, 85)
-        const p = add(-5, 17)
+        const p = add(-5, sceneColor)
         p.sources.splice(0, 4, 85, 86, 87, 88)
-      } else add(-1, 17).ms = effectiveMethod === 'msaa'
+      } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
+      if (oit) {
+        add(-6, 89)
+        add(29, 17).sources.splice(0, 3, 91, 89, 90)
+      }
       const scale = effectiveMethod === 'ssaa' ? 2 : 1
       crop(C, 17, width * scale, height * scale, true)
     } else if (hdrScene) {
@@ -491,6 +498,7 @@ export async function createAntiAliasingView({
     for (const p of passes) {
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
+      if (p.program === -6) used.add(p.target + 1)
       if (p.program === 17 || p.program === -4) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
       }
@@ -503,7 +511,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 89; i++) {
+    for (let i = 0; i < 92; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -598,7 +606,7 @@ export async function createAntiAliasingView({
           length:
             p.program === 17 || p.program === -4
               ? 4
-              : p.program === 0 || p.program === 10 || p.program === 16
+              : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
                 ? 2
                 : 1,
         },
@@ -610,15 +618,19 @@ export async function createAntiAliasingView({
               ].createView(),
           ...(p.ms ? { resolveTarget: textures[p.target + a].createView() } : {}),
           clearValue:
-            p.program === -4
-              ? [0, 0, 0, 0]
-              : p.program === 17 && a === 3
-                ? [1000, 1000, 0, 1]
-                : p.program === 17 && a === 2
-                  ? [0, 0, 0, 1]
-                  : p.program === -2 || p.program === -3 || a
-                    ? [0, 0, 1, 1]
-                    : p.u.slice(28, 32),
+            p.program === -6
+              ? a
+                ? [1, 1, 1, 1]
+                : [0, 0, 0, 0]
+              : p.program === -4
+                ? [0, 0, 0, 0]
+                : p.program === 17 && a === 3
+                  ? [1000, 1000, 0, 1]
+                  : p.program === 17 && a === 2
+                    ? [0, 0, 0, 1]
+                    : p.program === -2 || p.program === -3 || a
+                      ? [0, 0, 1, 1]
+                      : p.u.slice(28, 32),
           loadOp: 'clear',
           storeOp: p.ms ? 'discard' : 'store',
         }),
@@ -636,9 +648,9 @@ export async function createAntiAliasingView({
                       ? depthMS
                       : depth
                 ).createView(),
-                depthLoadOp: 'clear',
+                depthLoadOp: p.program === -5 || p.program === -6 ? 'load' : 'clear',
                 depthClearValue: 1,
-                depthStoreOp: 'discard',
+                depthStoreOp: 'store',
               },
             }
           : {}),

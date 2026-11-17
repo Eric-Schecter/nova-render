@@ -44,6 +44,22 @@ namespace render::detail
         std::array<float, 4>      material{1, 1, 1, 1}; // metallic, roughness, normal scale, AO strength
         std::array<float, 4>      emissive{0, 0, 0, 0};
     };
+    inline bool HasBlend(const ModelData* data)
+    {
+        if (data)
+            for (const auto& m : data->materials)
+                if (m.alphaMode == AlphaMode::Blend)
+                    return true;
+        return false;
+    }
+    inline bool HasAlpha(const ModelData* data)
+    {
+        if (data)
+            for (const auto& m : data->materials)
+                if (m.alphaMode != AlphaMode::Opaque)
+                    return true;
+        return false;
+    }
     struct SceneUniforms
     {
         float viewProjection[16];

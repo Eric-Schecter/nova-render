@@ -1,3 +1,4 @@
+import { decodeMaterialImage } from './MaterialImage.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 import { cameraFromOrbit, cameraBasis } from './Camera.js'
 import { readAnimation } from './AnimationData.js'
@@ -178,7 +179,9 @@ export async function loadGLB(url) {
           )
         }
         for (let i = 0; i < count; i++) {
-          const index = vertexIndex(i),
+          const index = vertexIndex(
+              det < 0 ? i - (i % 3) + (i % 3 === 1 ? 2 : i % 3 === 2 ? 1 : 0) : i,
+            ),
             pos = element(p.attributes.POSITION, index, 'VEC3', 3),
             normal =
               p.attributes.NORMAL !== undefined
@@ -231,8 +234,8 @@ export async function loadGLB(url) {
   const materials = []
   for (const material of json.materials) {
     const pbr = material.pbrMetallicRoughness || {}
-    if ((material.alphaMode || 'OPAQUE') !== 'OPAQUE')
-      throw Error('Only opaque materials are supported')
+    if (!['OPAQUE', 'MASK', 'BLEND'].includes(material.alphaMode || 'OPAQUE'))
+      throw Error('Invalid glTF alpha mode')
     const textures = [
       pbr.baseColorTexture,
       material.normalTexture,
@@ -260,31 +263,21 @@ export async function loadGLB(url) {
         const view = json.bufferViews[image.bufferView],
           offset = view.byteOffset || 0
         if (offset + view.byteLength > bin.byteLength) throw Error('Image out of bounds')
-        const bitmap = await createImageBitmap(
-          new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
-          { colorSpaceConversion: 'none', premultiplyAlpha: 'none' },
+        images.push(
+          await decodeMaterialImage(
+            new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
+          ),
         )
-        if (bitmap.width > 8192 || bitmap.height > 8192) {
-          bitmap.close()
-          throw Error('Image exceeds 8192 pixels')
-        }
-        images.push({ width: bitmap.width, height: bitmap.height, bitmap })
       }
-      for (const im of images)
-        if (im.bitmap) {
-          const canvas = new OffscreenCanvas(im.width, im.height),
-            ctx = canvas.getContext('2d')
-          ctx.drawImage(im.bitmap, 0, 0)
-          im.pixels = new Uint8Array(ctx.getImageData(0, 0, im.width, im.height).data)
-          im.bitmap.close()
-          delete im.bitmap
-        }
       materials.push(
         validateMaterial({
           name: material.name || '',
           baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
           metallic: pbr.metallicFactor ?? 1,
           roughness: pbr.roughnessFactor ?? 1,
+          alphaMode: material.alphaMode ?? 'OPAQUE',
+          alphaCutoff: material.alphaCutoff ?? 0.5,
+          doubleSided: material.doubleSided ?? false,
           normalScale: material.normalTexture?.scale ?? 1,
           occlusionStrength: material.occlusionTexture?.strength ?? 1,
           emissive: material.emissiveFactor || [0, 0, 0],

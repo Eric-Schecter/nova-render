@@ -57,6 +57,9 @@ namespace render::detail
             if (!std::isfinite(x) || x < 0 || x > max)
                 throw std::invalid_argument("Invalid material factor");
         };
+        if (unsigned(m.alphaMode) > 2)
+            throw std::invalid_argument("Invalid alpha mode");
+        range(m.alphaCutoff, 1);
         for (float x : m.baseColor)
             range(x, 1);
         range(m.roughness, 1);
@@ -131,6 +134,7 @@ namespace render::detail
             record[38] = m.normalScale;
             record[39] = m.occlusionStrength;
             std::copy(m.emissive.begin(), m.emissive.end(), record.begin() + 40);
+            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + m.alphaCutoff * .25f;
             uint32_t x = uint32_t(i) % cols * stride, y = uint32_t(i) / cols * stride;
             if (atlas)
             {

@@ -6,7 +6,7 @@ import {
 } from './RasterPipeline.js'
 export { modelRasterPipelines, gBufferViews } from './RasterPipeline.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
-import { packMaterials, validateMaterial } from './MaterialData.js'
+import { packMaterials, validateMaterial, materialCapabilities } from './MaterialData.js'
 export { loadMaterialImage } from './MaterialData.js'
 import { copyViewCamera, cameraFromOrbit, copyViewport, resolveViewport } from './Camera.js'
 import { createViewportSurface } from './ViewportSurface.js'
@@ -72,6 +72,25 @@ class Renderer {
     this.#resetAA()
     this.#parameterPanel?.refresh()
   }
+  getMaterialCapabilities() {
+    this.#check()
+    return materialCapabilities()
+  }
+  #hasBlend(data = this.#model?.data) {
+    return data?.materials?.some((m) => m.alphaMode === 'BLEND') || false
+  }
+  #hasAlpha(data = this.#model?.data) {
+    return data?.materials?.some((m) => (m.alphaMode || 'OPAQUE') !== 'OPAQUE') || false
+  }
+  #validateMaterials(data) {
+    if (this.#hasAlpha(data) && (this.#renderMode === 'ray-tracing' || this.#aoSettings.enabled))
+      throw Error('Alpha materials currently require raster rendering')
+    if (
+      this.#hasBlend(data) &&
+      (['msaa', 'taa'].includes(this.#aaSettings.method) || this.#aaSettings.split)
+    )
+      throw Error('BLEND does not support MSAA, TAA or AA split')
+  }
   #postSettings = defaultPostProcessing()
   #postRemaining = 0
   getPostProcessing() {
@@ -128,6 +147,8 @@ class Renderer {
       throw Error('Invalid AA settings')
     if (this.#rasterSettings.pipeline === 'deferred' && next.method === 'msaa')
       throw Error('Deferred MSAA is not supported')
+    if (this.#hasBlend() && (['msaa', 'taa'].includes(next.method) || next.split))
+      throw Error('BLEND does not support MSAA, TAA or AA split')
     this.#aaSettings = next
     this.#aaView?.setAntiAliasing(next)
     this.#resetAA()
@@ -140,6 +161,9 @@ class Renderer {
       const scene = {
           get raster() {
             return owner.#rasterSettings
+          },
+          get alphaBlend() {
+            return owner.#hasBlend()
           },
           get encoded() {
             return !owner.#model
@@ -286,6 +310,7 @@ class Renderer {
         throw Error('Disable ambient occlusion before setting scene instances')
       const nextScene = this.#sceneData.fork()
       const data = await nextScene.update(assets, instances)
+      this.#validateMaterials(data.model)
       this.#check()
       if (this.#sceneModel !== data.model || !this.#model) {
         const next = await createModelView(
@@ -348,6 +373,7 @@ class Renderer {
         data.materials[slot] = material
         packMaterials(data)
       }
+      this.#validateMaterials(data)
       const animationState = this.#model.animationState
       const next = await createModelView(
         this.#device,
@@ -357,6 +383,7 @@ class Renderer {
         data,
       )
       try {
+        this.#validateMaterials(next.data)
         if (this.#environment)
           await next.loadEnvironment(
             this.#environment,
@@ -394,6 +421,7 @@ class Renderer {
           url,
           this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
         )
+        this.#validateMaterials(next.data)
         if (this.#environment)
           await next.loadEnvironment(
             this.#environment,
@@ -453,6 +481,15 @@ class Renderer {
   }
   getCapabilities() {
     this.#check()
+    if (this.#hasAlpha())
+      return {
+        rayTracing: false,
+        pathTracing: false,
+        softwareRayTracing: false,
+        metropolis: false,
+        rayTracingDevice: '',
+        reason: 'Alpha materials currently require raster rendering',
+      }
     if (this.#model?.skinned)
       return {
         rayTracing: false,
@@ -994,7 +1031,8 @@ class Renderer {
         !this.#aoSettings.enabled &&
         (this.#aaSettings.method !== 'off' ||
           this.#postSettings.enabled ||
-          this.#rasterSettings.pipeline === 'deferred')
+          this.#rasterSettings.pipeline === 'deferred' ||
+          this.#hasBlend())
       )
         await this.#drawAA(viewport.width, viewport.height)
       else if (this.#model) {

@@ -34,7 +34,8 @@ namespace render::detail
           const std::array<float, 4>&   clear,
           bool                          triangle      = false,
           const PostProcessingSettings& requestedPost = {},
-          const RasterSettings&         modelSettings = {})
+          const RasterSettings&         modelSettings = {},
+          bool                          transparent   = false)
         {
             auto settings     = requestedSettings;
             auto postSettings = requestedPost;
@@ -98,15 +99,25 @@ namespace render::detail
                 add(-1, AARawBaseline)->uniforms[1] = {};
                 crop(AABaseline, AARawBaseline, w, h, true);
             }
+            const bool oit        = transparent && modelSettings.view == GBufferView::Final;
+            const int  sceneColor = oit ? AARawOpaque : AARawColor;
             if (deferred)
             {
                 add(-4, AAModelBase);
-                auto* p = add(-5, AARawColor);
+                auto* p = add(-5, sceneColor);
                 for (int i = 0; i < 4; i++)
                     p->sources[i] = AAModelBase + i;
             }
             else
-                add(-1, AARawColor)->multisampled = settings.method == AAMethod::MSAA;
+                add(-1, sceneColor)->multisampled = settings.method == AAMethod::MSAA;
+            if (oit)
+            {
+                add(-6, AAOitAccum);
+                auto* p       = add(29, AARawColor);
+                p->sources[0] = AARawOpaque;
+                p->sources[1] = AAOitAccum;
+                p->sources[2] = AAOitReveal;
+            }
             crop(
               AAColor,
               AARawColor,

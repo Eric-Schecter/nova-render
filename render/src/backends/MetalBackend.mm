@@ -192,6 +192,7 @@ namespace render::detail
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
                 [encoder setRenderPipelineState:model ? modelPipeline : pipeline];
+                [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
                 [encoder setViewport:MTLViewport{
                                        double(rectangle.x),
                                        double(rectangle.y),
@@ -288,7 +289,8 @@ namespace render::detail
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred;
+          aaDeferred, aaOit;
+        id<MTLDepthStencilState>               oitDepthState;
         id<MTLBuffer>                          aaPreviousPalette;
         id<MTLRenderPipelineState>             AAPipeline(const char* file, uint32_t samples)
         {
@@ -309,6 +311,18 @@ namespace render::detail
             if (std::string(file) == "model-gbuffer.metallib")
                 for (int i = 1; i < 4; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
+            if (std::string(file) == "model-oit.metallib")
+            {
+                desc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
+                for (int i = 0; i < 2; i++)
+                {
+                    auto a                 = desc.colorAttachments[i];
+                    a.blendingEnabled      = YES;
+                    a.sourceRGBBlendFactor = a.sourceAlphaBlendFactor = i == 0 ? MTLBlendFactorOne : MTLBlendFactorZero;
+                    a.destinationRGBBlendFactor                       = a.destinationAlphaBlendFactor =
+                      i == 0 ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
+                }
+            }
             desc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
             desc.sampleCount                     = samples;
             auto pipeline                        = [device newRenderPipelineStateWithDescriptor:desc error:&error];
@@ -318,6 +332,10 @@ namespace render::detail
         }
         void CreateRasterAADevice() override
         {
+            auto d                 = [MTLDepthStencilDescriptor new];
+            d.depthCompareFunction = MTLCompareFunctionLessEqual;
+            d.depthWriteEnabled    = NO;
+            oitDepthState          = [device newDepthStencilStateWithDescriptor:d];
             AAExternalScene external;
             external.device = (__bridge void*)device;
             external.bindGBuffer = [](void* encoder, const std::array<void*, 4>& views) {
@@ -368,9 +386,10 @@ namespace render::detail
                     [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                     return;
                 }
+                const bool oit     = pass.program == -6;
                 const bool gbuffer = pass.program == -4;
                 const bool motion = pass.program == -2;
-                if (!gbuffer && environment && environmentSettings.showBackground)
+                if (!gbuffer && !oit && environment && environmentSettings.showBackground)
                 {
                     if (motion)
                     {
@@ -389,7 +408,13 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    if (gbuffer)
+                    if (oit)
+                    {
+                        if (!aaOit)
+                            aaOit = AAPipeline("model-oit.metallib", 1);
+                        [e setRenderPipelineState:aaOit];
+                    }
+                    else if (gbuffer)
                     {
                         if (!aaGBuffer)
                             aaGBuffer = AAPipeline("model-gbuffer.metallib", 1);
@@ -407,7 +432,7 @@ namespace render::detail
                             aaModel[sample] = AAPipeline("model.metallib", sample ? 4 : 1);
                         [e setRenderPipelineState:aaModel[sample]];
                     }
-                    [e setDepthStencilState:depthState];
+                    [e setDepthStencilState:oit ? oitDepthState : depthState];
                     if (scene.active)
                     {
                         for (const auto& draw : scene.draws)

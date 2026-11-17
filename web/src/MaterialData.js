@@ -1,3 +1,4 @@
+import { decodeMaterialImage } from './MaterialImage.js'
 export const materialTextureKeys = [
   'baseColorTexture',
   'normalTexture',
@@ -15,29 +16,16 @@ const defaults = [
 export async function loadMaterialImage(url) {
   const response = await fetch(url)
   if (!response.ok) throw Error('Cannot load material image: ' + url)
-  const bitmap = await createImageBitmap(await response.blob(), {
-    colorSpaceConversion: 'none',
-    premultiplyAlpha: 'none',
-  })
-  try {
-    if (!bitmap.width || !bitmap.height || bitmap.width > 8192 || bitmap.height > 8192)
-      throw Error('Material image dimensions must be 1..8192')
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height),
-      ctx = canvas.getContext('2d')
-    ctx.drawImage(bitmap, 0, 0)
-    return {
-      width: bitmap.width,
-      height: bitmap.height,
-      pixels: new Uint8Array(ctx.getImageData(0, 0, bitmap.width, bitmap.height).data),
-    }
-  } finally {
-    bitmap.close()
-  }
+  return decodeMaterialImage(await response.blob())
 }
+
 export function validateMaterial(m) {
   if (!m || typeof m !== 'object') throw Error('Invalid material')
   const out = {
     name: m.name ?? '',
+    alphaMode: m.alphaMode ?? 'OPAQUE',
+    alphaCutoff: m.alphaCutoff ?? 0.5,
+    doubleSided: m.doubleSided ?? false,
     baseColor: m.baseColor ?? [1, 1, 1, 1],
     roughness: m.roughness ?? 1,
     metallic: m.metallic ?? 1,
@@ -45,6 +33,8 @@ export function validateMaterial(m) {
     occlusionStrength: m.occlusionStrength ?? 1,
     emissive: m.emissive ?? [0, 0, 0],
   }
+  if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean')
+    throw Error('Invalid material alpha mode or sidedness')
   if (typeof out.name !== 'string') throw Error('Material name must be a string')
   const range = (x, max) => {
     if (typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > max)
@@ -62,6 +52,7 @@ export function validateMaterial(m) {
     })
   }
   for (const [key, max] of [
+    ['alphaCutoff', 1],
     ['roughness', 1],
     ['metallic', 1],
     ['normalScale', 16],
@@ -136,6 +127,10 @@ export function packMaterials(data) {
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)
+    record[43] =
+      ['OPAQUE', 'MASK', 'BLEND'].indexOf(m.alphaMode ?? 'OPAQUE') +
+      (m.doubleSided ? 4 : 0) +
+      (m.alphaCutoff ?? 0.5) * 0.25
     record.set(
       atlas
         ? [(tile - 1) / width, (tile - 1) / height, (x + 2.5) / width, (y + 2.5) / height]
@@ -160,4 +155,23 @@ export function packMaterials(data) {
       }
   })
   return data
+}
+
+export function materialCapabilities() {
+  return {
+    opaque: true,
+    mask: true,
+    blend: true,
+    doubleSided: true,
+    maskShadows: true,
+    blendShadows: false,
+    maskRayTracing: false,
+    blendRayTracing: false,
+    rayMaterialSidedness: false,
+    alphaAwarePicking: false,
+    blendMSAA: false,
+    blendTAA: false,
+    blendAASplit: false,
+    transparency: 'weighted-blended-oit',
+  }
 }

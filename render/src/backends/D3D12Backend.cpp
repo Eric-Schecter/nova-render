@@ -374,7 +374,7 @@ namespace render::detail
 
 #include "D3D12Model.inc"
         ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred;
+          aaDeferred, aaOit;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
         ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
@@ -405,11 +405,24 @@ namespace render::detail
             info.DepthStencilState.BackFace                                   = face;
             info.SampleMask                                                   = UINT_MAX;
             info.PrimitiveTopologyType                                        = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-            info.NumRenderTargets = std::string(file) == "model-gbuffer" ? 4 : 1;
+            info.NumRenderTargets = std::string(file) == "model-gbuffer" ? 4 : std::string(file) == "model-oit" ? 2 : 1;
             for (UINT i = 1; i < info.NumRenderTargets; i++)
             {
                 info.RTVFormats[i]              = DXGI_FORMAT_R16G16B16A16_FLOAT;
                 info.BlendState.RenderTarget[i] = info.BlendState.RenderTarget[0];
+            }
+            if (std::string(file) == "model-oit")
+            {
+                info.DepthStencilState.DepthWriteMask  = D3D12_DEPTH_WRITE_MASK_ZERO;
+                info.DepthStencilState.DepthFunc       = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+                info.BlendState.IndependentBlendEnable = TRUE;
+                for (int i = 0; i < 2; i++)
+                {
+                    auto& b       = info.BlendState.RenderTarget[i];
+                    b.BlendEnable = TRUE;
+                    b.SrcBlend = b.SrcBlendAlpha = i == 0 ? D3D12_BLEND_ONE : D3D12_BLEND_ZERO;
+                    b.DestBlend = b.DestBlendAlpha = i == 0 ? D3D12_BLEND_ONE : D3D12_BLEND_INV_SRC_ALPHA;
+                }
             }
             info.RTVFormats[0]                                                = DXGI_FORMAT_R16G16B16A16_FLOAT;
             info.DSVFormat                                                    = DXGI_FORMAT_D32_FLOAT;
@@ -498,9 +511,10 @@ namespace render::detail
                     cmd->DrawInstanced(3, 1, 0, 0);
                     return;
                 }
+                const bool oit     = pass.program == -6;
                 const bool gbuffer = pass.program == -4;
                 bool motion = pass.program == -2;
-                if (!gbuffer && environment && environmentSettings.showBackground)
+                if (!gbuffer && !oit && environment && environmentSettings.showBackground)
                 {
                     auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
                     if (!pipeline)
@@ -510,12 +524,13 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    auto& pipeline = gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
+                    auto& pipeline = oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
                         pipeline = AAPipeline(
-                          gbuffer  ? "model-gbuffer"
-                          : motion ? "model-motion"
-                                   : "model",
+                          oit       ? "model-oit"
+                          : gbuffer ? "model-gbuffer"
+                          : motion  ? "model-motion"
+                                    : "model",
                           false,
                           sample ? 4 : 1);
                     cmd->SetPipelineState(pipeline.Get());

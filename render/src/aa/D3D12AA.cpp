@@ -42,7 +42,7 @@ namespace render::detail
             uint64_t                           serial = 0;
             ComPtr<ID3D12RootSignature>        root, computeRoot;
             ComPtr<ID3D12DescriptorHeap>       rtvHeap, dsvHeap, srvHeap;
-            ComPtr<ID3D12PipelineState>        pipelines[28], sceneMS, shadowMS, hdrMS, ssrMS;
+            ComPtr<ID3D12PipelineState>        pipelines[30], sceneMS, shadowMS, hdrMS, ssrMS;
             ComPtr<ID3D12Resource>             uniforms, readback;
             Texture                            textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             UINT                               rtvStride = 0, dsvStride = 0, srvStride = 0;
@@ -366,7 +366,7 @@ namespace render::detail
                 dsvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 uniforms  = Buffer(256 * 64, D3D12_HEAP_TYPE_UPLOAD);
-                for (int i = 0; i < 28; i++)
+                for (int i = 0; i < 30; i++)
                     pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, c) : Pipeline(i, 1, c);
                 sceneMS  = Pipeline(0, 4, c);
                 shadowMS = Pipeline(10, 4, c);
@@ -543,9 +543,10 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool                  nativeScene = p.program < 0;
-                    const int attachments = (p.program == 17 || p.program == 22 || p.program == -4)  ? 4
-                                            : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
-                                                                                                     : 1;
+                    const int attachments = (p.program == 17 || p.program == 22 || p.program == -4) ? 4
+                                            : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
+                                              ? 2
+                                              : 1;
                     auto&                       target      = textures[p.target];
                     D3D12_CPU_DESCRIPTOR_HANDLE targets[4];
                     for (int a = 0; a < attachments; a++)
@@ -577,6 +578,8 @@ namespace render::detail
                         }
                         if ((p.program >= 22 && p.program != 23) || p.program == -4)
                             std::fill(std::begin(colors[a]), std::end(colors[a]), 0.f);
+                        if (p.program == -6)
+                            std::fill(std::begin(colors[a]), std::end(colors[a]), a == 0 ? 0.f : 1.f);
                         commands->ClearRenderTargetView(targets[a], colors[a], 0, nullptr);
                     }
                     auto dsv = DSV(
@@ -591,7 +594,8 @@ namespace render::detail
                                   : p.multisampled                                        ? depthMS
                                                                                           : depth;
                         Transition(d, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-                        commands->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1, 0, 0, nullptr);
+                        if (p.program != -5 && p.program != -6)
+                            commands->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1, 0, 0, nullptr);
                     }
                     commands->OMSetRenderTargets(attachments, targets, FALSE, scene ? &dsv : nullptr);
                     if (nativeScene)

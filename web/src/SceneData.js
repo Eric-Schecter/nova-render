@@ -156,7 +156,12 @@ export class SceneData {
         }
         if (shadowCount * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
         this.shadowRecords = new Float32Array(shadowCount)
-        for (const m of next.values()) this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
+        for (const m of next.values()) {
+          this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
+          const offset = packed.vertices[m.first * 12 + 3] - m.data.vertices[3]
+          for (let row = m.shadowNodes; row < m.shadowData.length / 48; row++)
+            this.shadowRecords[(m.shadowFirst + row) * 48 + 43] += offset
+        }
         this.model = packed
         this.meshes = next
         this.key = key

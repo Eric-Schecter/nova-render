@@ -90,8 +90,19 @@ export class PickMesh {
     }
     if (this.nodes.length) escape(0, this.nodes.length)
     this.triangles.forEach((t, i) => {
-      for (let j = 0; j < 3; j++)
-        records.set(this.point(t, j), (this.nodes.length + i) * 48 + 32 + j * 4)
+      const row = (this.nodes.length + i) * 48
+      for (let j = 0; j < 3; j++) {
+        records.set(this.point(t, j), row + 32 + j * 4)
+        const v = (t * 3 + j) * 12
+        records[row + 43] = this.data.vertices[v + 3] - 1
+        if (j < 2) {
+          records[row + 44 + j * 2] = this.data.vertices[v + 8]
+          records[row + 45 + j * 2] = this.data.vertices[v + 9]
+        } else {
+          records[row + 16] = this.data.vertices[v + 8]
+          records[row + 21] = this.data.vertices[v + 9]
+        }
+      }
     })
     return records
   }

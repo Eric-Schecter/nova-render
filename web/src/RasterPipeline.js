@@ -33,7 +33,7 @@ export function rasterCapabilities() {
     forwardPlus: false,
     clusteredForward: false,
     deferredMSAA: false,
-    opaqueOnly: true,
+    opaqueOnly: false,
     deferredRequiresModel: true,
     debugBypassesAAAndPost: true,
     gBufferTargets: 4,

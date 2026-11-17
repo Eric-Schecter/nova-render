@@ -45,7 +45,7 @@ const bounds = renderer.getSceneAssetBounds('model')
 await renderer.drawFrame()
 ```
 
-Instances share resources by asset ID. `sourceSpace: true` retains authored glTF units and origin; the default normalizes the model. Matrices are column-major; omitted matrices use identity. `setScene([], [])` clears geometry. This API supports static opaque raster scenes; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.
+Instances share resources by asset ID. `sourceSpace: true` retains authored glTF units and origin; the default normalizes the model. Matrices are column-major; omitted matrices use identity. `setScene([], [])` clears geometry. This API supports static raster scenes with OPAQUE, MASK and weighted OIT BLEND materials; see the [scene API](https://eric-schecter.github.io/nova-render/api/scene.html) for limits.
 
 ## Camera and viewport
 
@@ -60,3 +60,5 @@ See [camera and viewport](https://eric-schecter.github.io/nova-render/api/camera
 Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits contain `id`, world `position`, unit geometric `normal` and world-space `distance`. [Picking API](https://eric-schecter.github.io/nova-render/api/picking.html).
 
 Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `SetMaterial(slot, material)` / `await setMaterial(slot, material)`. Pass the scene asset ID as the final argument to edit all its instances. Texture maps accept RGBA8 images; `LoadMaterialImage(path)` / `await loadMaterialImage(url)` decodes an image. See the materials API documentation for ranges and atlas limits.
+
+Current source / paired local SDK: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations; published 0.7.1 packages predate these fields.

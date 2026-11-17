@@ -12,7 +12,7 @@ namespace render::detail
             id<MTLDevice>              device;
             id<MTLCommandQueue>        queue;
             id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
-            id<MTLRenderPipelineState> pipelines[28], sceneMS, shadowMS, hdrMS, ssrMS;
+            id<MTLRenderPipelineState>  pipelines[30], sceneMS, shadowMS, hdrMS, ssrMS;
             id<MTLComputePipelineState> compute[2];
             id<MTLSamplerState>        linear, point;
             id<MTLDepthStencilState>   depthState;
@@ -74,7 +74,7 @@ namespace render::detail
                 if (![device supportsTextureSampleCount:4])
                     throw std::runtime_error("Metal AA requires 4x MSAA support");
                 queue = [device newCommandQueue];
-                for (int i = 0; i < 28; i++)
+                for (int i = 0; i < 30; i++)
                 {
                     const auto data =
                       LoadShader(config.shaderDirectory, ("aa-" + std::to_string(i) + ".metallib").c_str());
@@ -249,9 +249,10 @@ namespace render::detail
                                       || p.program == 17 || p.program == 22 || p.program == 23 || p.program == 27),
                                    nativeScene = p.program < 0,
                                    baseline    = p.target == AABaseline || p.target == AARawBaseline;
-                        const int attachments  = (p.program == 17 || p.program == 22 || p.program == -4)  ? 4
-                                                 : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
-                                                                                                          : 1;
+                        const int attachments =
+                          (p.program == 17 || p.program == 22 || p.program == -4)                     ? 4
+                          : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
+                                                                                                      : 1;
                         for (int a = 0; a < attachments; a++)
                         {
                             auto      c      = d.colorAttachments[a];
@@ -274,6 +275,8 @@ namespace render::detail
                                 c.clearColor = MTLClearColorMake(1000, 1000, 0, 1);
                             if ((p.program >= 22 && p.program != 23) || p.program == -4)
                                 c.clearColor = MTLClearColorMake(0, 0, 0, 0);
+                            if (p.program == -6)
+                                c.clearColor = a == 0 ? MTLClearColorMake(0, 0, 0, 0) : MTLClearColorMake(1, 1, 1, 1);
                             c.storeAction = p.multisampled ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
                             if (p.multisampled)
                                 c.resolveTexture = textures[target];
@@ -284,9 +287,10 @@ namespace render::detail
                                                             : baseline       ? depthBaseline
                                                             : p.multisampled ? depthMS
                                                                              : depth;
-                            d.depthAttachment.loadAction  = MTLLoadActionClear;
+                            d.depthAttachment.loadAction =
+                              (p.program == -5 || p.program == -6) ? MTLLoadActionLoad : MTLLoadActionClear;
                             d.depthAttachment.clearDepth  = 1;
-                            d.depthAttachment.storeAction = MTLStoreActionDontCare;
+                            d.depthAttachment.storeAction = MTLStoreActionStore;
                         }
                         auto       e  = [command renderCommandEncoderWithDescriptor:d];
                         const auto rt = textures[p.target];
@@ -300,6 +304,7 @@ namespace render::detail
                                              0,
                                              1}];
                             [e setCullMode:MTLCullModeNone];
+                            [e setFrontFacingWinding:MTLWindingCounterClockwise];
                             [e setDepthStencilState:depthState];
                             if (p.program == -5 && external.bindGBuffer)
                             {
@@ -321,6 +326,7 @@ namespace render::detail
                         const auto target = textures[p.target];
                         [e setViewport:MTLViewport{0, 0, double(target.width), double(target.height), 0, 1}];
                         [e setCullMode:MTLCullModeNone];
+                        [e setFrontFacingWinding:MTLWindingCounterClockwise];
                         [e setVertexBytes:p.uniforms.data() length:sizeof(AAUniforms) atIndex:0];
                         [e setFragmentBytes:p.uniforms.data() length:sizeof(AAUniforms) atIndex:0];
                         if (scene)

@@ -23,7 +23,7 @@ namespace render::detail
 {
     namespace
     {
-        // Opaque embedded GLBs; each primitive keeps its material slot.
+        // Embedded GLBs; each primitive keeps its material slot.
         const unsigned char* element(
           const tinygltf::Model& model, int accessorIndex, size_t index, int type, int component)
         {
@@ -158,7 +158,8 @@ namespace render::detail
                     };
                     for (size_t i = 0; i < count; ++i)
                     {
-                        const auto v = vertexIndex(i);
+                        const auto windingIndex = glm::determinant(glm::mat3(matrix))<0 ? (i-i%3+(i%3==1?2:i%3==2?1:0)) : i;
+                        const auto v = vertexIndex(windingIndex);
                         glm::vec3  localNormal;
                         if (normal >= 0)
                             localNormal = vec3(gltf, normal, v);
@@ -224,8 +225,13 @@ namespace render::detail
             slot.name       = sourceMaterial.name;
             const auto& mat = sourceMaterial;
             const auto& pbr = mat.pbrMetallicRoughness;
-            if (mat.alphaMode != "OPAQUE")
-                throw std::runtime_error("Only opaque materials are supported");
+            if (mat.alphaMode != "OPAQUE" && mat.alphaMode != "MASK" && mat.alphaMode != "BLEND")
+                throw std::runtime_error("Invalid glTF alpha mode");
+            slot.alphaMode   = mat.alphaMode == "MASK"    ? AlphaMode::Mask
+                               : mat.alphaMode == "BLEND" ? AlphaMode::Blend
+                                                          : AlphaMode::Opaque;
+            slot.alphaCutoff = float(mat.alphaCutoff);
+            slot.doubleSided = mat.doubleSided;
             std::array<float, 4> factors;
             for (int k = 0; k < 4; ++k)
                 slot.baseColor[k] = static_cast<float>(pbr.baseColorFactor[k]);

@@ -62,6 +62,7 @@ namespace render
 
         // Supply framebuffer pixels before the first frame and after size changes.
         // Zero dimensions suspend rendering. Rebuilds happen inside DrawFrame().
+        MaterialCapabilities       GetMaterialCapabilities() const;
         void                       Resize(uint32_t framebufferWidth, uint32_t framebufferHeight);
         FrameResult                DrawFrame();
         void                       WaitIdle();

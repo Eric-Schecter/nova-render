@@ -83,6 +83,8 @@ namespace render::detail
       const std::vector<SceneLight>*         collection,
       const SceneShadowSettings&             shadows)
     {
+        if (HasAlpha(model.get()))
+            throw std::invalid_argument("Alpha materials currently require raster rendering");
         ValidatePathTracing(settings);
         if (ao)
             ValidateAmbientOcclusion(*ao);

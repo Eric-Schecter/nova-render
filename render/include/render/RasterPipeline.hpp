@@ -31,7 +31,7 @@ namespace render
     {
         bool     forward = true, deferred = true, gBuffer = true;
         bool     forwardPlus = false, clusteredForward = false, deferredMSAA = false;
-        bool     opaqueOnly = true, debugBypassesAAAndPost = true;
+        bool     opaqueOnly = false, debugBypassesAAAndPost = true;
         bool     deferredRequiresModel = true;
         unsigned gBufferTargets = 4, gBufferBytesPerPixel = 32;
     };

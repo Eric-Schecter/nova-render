@@ -100,7 +100,7 @@ namespace render::detail
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
-          aaDeferred{};
+          aaDeferred{}, aaOit{};
         VkPipeline  AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
@@ -121,6 +121,8 @@ namespace render::detail
                                           : sky                               ? "SkyVSMain"
                                                                               : "VSMain");
             }
+            if (std::string(name) == "model-oit")
+                stages[1].pName = "OITPSMain";
             VkPipelineVertexInputStateCreateInfo   input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
             VkPipelineInputAssemblyStateCreateInfo assembly{
               VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -135,13 +137,25 @@ namespace render::detail
             sampling.rasterizationSamples = samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
             VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
             depth.depthTestEnable  = VK_TRUE;
-            depth.depthWriteEnable = !sky;
-            depth.depthCompareOp   = sky ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS;
+            depth.depthWriteEnable = !sky && std::string(name) != "model-oit";
+            depth.depthCompareOp   = sky                                ? VK_COMPARE_OP_ALWAYS
+                                     : std::string(name) == "model-oit" ? VK_COMPARE_OP_LESS_OR_EQUAL
+                                                                        : VK_COMPARE_OP_LESS;
             VkPipelineColorBlendAttachmentState color[4]{};
             for (auto& c : color)
                 c.colorWriteMask = 15;
+            if (std::string(name) == "model-oit")
+                for (int i = 0; i < 2; i++)
+                {
+                    auto& b               = color[i];
+                    b.blendEnable         = VK_TRUE;
+                    b.srcColorBlendFactor = b.srcAlphaBlendFactor = i == 0 ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ZERO;
+                    b.dstColorBlendFactor                         = b.dstAlphaBlendFactor =
+                      i == 0 ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                    b.colorBlendOp = b.alphaBlendOp = VK_BLEND_OP_ADD;
+                }
             VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-            blend.attachmentCount                     = std::string(name) == "model-gbuffer" ? 4 : 1;
+            blend.attachmentCount = std::string(name) == "model-gbuffer" ? 4 : std::string(name) == "model-oit" ? 2 : 1;
             blend.pAttachments                        = color;
             VkDynamicState                   states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
             VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
@@ -259,9 +273,10 @@ namespace render::detail
                     vkCmdDraw(cmd, 3, 1, 0, 0);
                     return;
                 }
+                const bool oit     = pass.program == -6;
                 const bool gbuffer = pass.program == -4;
                 const bool motion = pass.program == -2;
-                if (!gbuffer && environment && environmentSettings.showBackground)
+                if (!gbuffer && !oit && environment && environmentSettings.showBackground)
                 {
                     auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
                     if (!pipeline)
@@ -271,12 +286,13 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    auto& pipeline = gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
+                    auto& pipeline = oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
                         pipeline = AAPipeline(
-                          gbuffer  ? "model-gbuffer"
-                          : motion ? "model-motion"
-                                   : "model",
+                          oit       ? "model-oit"
+                          : gbuffer ? "model-gbuffer"
+                          : motion  ? "model-motion"
+                                    : "model",
                           false,
                           sample ? 4 : 1,
                           renderPass);
@@ -308,6 +324,7 @@ namespace render::detail
                 release(pipeline);
             for (auto& pipeline : aaTrianglePipeline)
                 release(pipeline);
+            release(aaOit);
             release(aaGBuffer);
             release(aaDeferred);
             release(aaMotion);
@@ -427,6 +444,9 @@ namespace render::detail
             VkPhysicalDeviceFeatures supported{}, features{};
             vkGetPhysicalDeviceFeatures(physical, &supported);
             features.samplerAnisotropy = supported.samplerAnisotropy;
+            if (!supported.independentBlend)
+                throw std::runtime_error("Vulkan requires independentBlend for material transparency");
+            features.independentBlend = VK_TRUE;
             VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
             info.pEnabledFeatures        = &features;
             info.queueCreateInfoCount    = 1;

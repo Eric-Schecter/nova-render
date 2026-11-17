@@ -1,8 +1,8 @@
 # Materials
 
-Available on `main` for the next SDK version; not included in v0.1.0. Use native libraries, headers and web shader assets from the same build.
+Use native libraries, headers and web shader assets from the same build.
 
-`Renderer` and `Window` expose the same opaque metallic/roughness materials as WebGPU. A GLB can contain multiple material slots; primitives keep their glTF material indices, including when one slot is shared by several primitives. Animation, AA, post-processing and single-model ray tracing use the updated materials through shared HLSL.
+`Renderer` and `Window` expose the same metallic/roughness materials as WebGPU. A GLB can contain multiple material slots; primitives keep their glTF material indices, including when one slot is shared by several primitives. Animation, AA, post-processing and single-model ray tracing use the updated materials through shared HLSL.
 
 ## Read and replace a slot
 
@@ -49,13 +49,16 @@ await renderer.setMaterial(0, sceneMaterial, 'helmet')
 ## Material fields
 
 - `name`: slot label; does not affect primitive assignment.
-- `baseColor`: linear RGBA, each component 0–1; default white. Alpha is retained as material data; these pipelines remain opaque.
+- `baseColor`: linear RGBA, each component 0–1; default white. Alpha multiplies base-color texture alpha for MASK and BLEND; OPAQUE ignores it.
+- `alphaMode`: C++ `AlphaMode::Opaque / Mask / Blend`; JavaScript `'OPAQUE' / 'MASK' / 'BLEND'`. Default OPAQUE.
+- `alphaCutoff`: 0–1, default 0.5. MASK discards pixels below this threshold before color/depth writes.
+- `doubleSided`: default false. Back faces are discarded; double-sided back faces flip both geometric and mapped normals. Mirrored instances and negative baked node transforms preserve the authored front side.
 - `roughness`, `metallic`: 0–1, both default 1. Lighting must be PBR to see their effect.
 - `normalScale`: 0–16, default 1. `occlusionStrength`: 0–1, default 1.
 - `emissive`: linear RGB, 0–65504, default black.
 - `baseColorTexture`, `normalTexture`, `metallicRoughnessTexture`, `occlusionTexture`, `emissiveTexture`: optional RGBA8 images with `width`, `height`, `pixels`. Each dimension is 1–8192. Base color and emissive maps are sRGB; other maps are linear. Metallic/roughness uses B/G channels, occlusion uses R. Missing maps use white, or a neutral tangent-space normal.
 
-Only `TEXCOORD_0` and repeat sampling are supported. Multiple slots share an atlas: tiles are capped at 2048 pixels and automatically reduced to fit the 8192-pixel / 512 MiB five-map atlas budget; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression, alpha blending and transmission texture editing are not included.
+Only `TEXCOORD_0` and repeat sampling are supported. Multiple slots share an atlas: tiles are capped at 2048 pixels and automatically reduced to fit the 8192-pixel / 512 MiB five-map atlas budget; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression and transmission texture editing are not included.
 
 ## Update behavior
 
@@ -63,8 +66,18 @@ Setters validate factors, slot IDs and image storage before replacing material d
 
 Runtime edits currently rebuild and upload the model's material resources; they are intended for inspector changes rather than per-frame material animation. Image decoding is separate from replacement; await the image helper and setter before drawing. Web URLs follow normal fetch/CORS rules.
 
-Specialized procedural laboratory views own their internal surfaces and do not expose these model slots. Scene instances retain their existing raster-only limit.
+Specialized procedural laboratory views own their internal surfaces and do not expose these model slots. Static scene instances support the same material fields.
 
 ## Live example
 
 <ClientOnly><MaterialPlayground /></ClientOnly>
+
+## Alpha rendering and capabilities
+
+Forward and Deferred use OPAQUE/MASK depth writes and a separate weighted blended OIT pass for BLEND. OIT blends without draw sorting across slots and instances; it approximates layered transparency and does not simulate glass refraction. It composites in the current working color space before enabled post-processing. G-buffer diagnostics show only opaque/masked surfaces.
+
+`GetMaterialCapabilities()` / `getMaterialCapabilities()` reports raster `opaque`, `mask`, `blend`, `doubleSided` and `maskShadows` as true. MASK shadows use factor × base-mip texture alpha. BLEND casts no scene shadow (`blendShadows: false`). MASK/BLEND ray tracing, ray material sidedness and alpha-aware picking are false; picking remains a two-sided geometry query. Loading or editing alpha materials in Ray mode, or switching such a scene to Ray, fails explicitly.
+
+BLEND supports Off, FXAA, SMAA and SSAA. `blendMSAA`, `blendTAA` and `blendAASplit` are false; incompatible setters fail before replacing state. MASK supports the normal raster AA choices; Deferred MSAA remains unavailable. `transparency` is `weighted-blended-oit`.
+
+See [Alpha material validation](../examples/material-alpha).

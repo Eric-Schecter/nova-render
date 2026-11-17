@@ -137,6 +137,7 @@ const rasterSource =
 for (const [name, vertexEntry, fragmentEntry] of [
   ['model-aa', 'VSMain', 'PSMain'],
   ['model-gbuffer', 'VSMain', 'GBufferPSMain'],
+  ['model-oit', 'VSMain', 'OITPSMain'],
   ['model-deferred', 'SkyVSMain', 'DeferredPSMain'],
   ['sky-aa', 'SkyVSMain', 'SkyPSMain'],
   ['model-motion', 'MotionVSMain', 'MotionPSMain'],
@@ -197,3 +198,15 @@ await writeFile(
 )
 
 await import('./generate-pipelines.mjs')
+
+await writeFile(
+  'docs/public/generated/aa-29.json',
+  JSON.stringify(await compile(await readFile('render/shaders/transparency.hlsl', 'utf8'))),
+)
+
+for (const name of ['Layers', 'LayersReverse', 'Mask', 'Quad', 'Back', 'Mirrored']) {
+  await writeFile(
+    `docs/public/generated/Material${name}.glb`,
+    await readFile(`assets/MaterialSample/${name}.glb`),
+  )
+}

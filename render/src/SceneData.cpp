@@ -77,10 +77,13 @@ namespace render::detail
             {
                 m.shadowFirst = uint32_t(shadow.size());
                 m.shadowNodes = m.picking->ShadowNodeCount();
+                size_t shadowRow = 0;
                 for (const auto& row : m.picking->ShadowRecords())
                 {
                     InstanceData record;
                     std::memcpy(&record, row.data(), 192);
+                    if (shadowRow++ >= m.shadowNodes)
+                        record.emissive[3] += packed->vertices[m.first].position[3] - m.data->vertices[0].position[3];
                     shadow.push_back(record);
                 }
             }

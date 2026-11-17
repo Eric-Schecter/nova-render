@@ -28,6 +28,8 @@ namespace render
     void RayTracingView::LoadModel(const std::filesystem::path& path)
     {
         auto model = detail::LoadGLB(path);
+        if (detail::HasAlpha(model.get()))
+            throw std::invalid_argument("Alpha materials currently require raster rendering");
         if (model->animation)
             throw std::invalid_argument("Offscreen ray tracing requires a static model");
         impl_->model = std::move(model);

@@ -88,9 +88,9 @@ namespace render::detail
             VkDescriptorSetLayout            setLayout{};
             VkPipelineLayout                 layout{}, computeLayout{};
             VkDescriptorSetLayout            computeSetLayout{};
-            VkPipeline                       pipelines[28]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
+            VkPipeline                       pipelines[30]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
-              surfaceMSPass{};
+              surfaceMSPass{}, externalLoadPass{}, oitPass{};
             VkSampler    linear{}, point{};
             Texture      textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             Buffer       uniforms, readback;
@@ -222,9 +222,15 @@ namespace render::detail
                 api.vkCmdClearColorImage(command, t.image, t.layout, &c, 1, &range);
                 Transition(t, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             }
-            VkRenderPass MakePass(bool scene, bool ms, bool borrowedScene = false, bool surface = false)
+            VkRenderPass MakePass(
+              bool scene,
+              bool ms,
+              bool borrowedScene = false,
+              bool surface       = false,
+              bool depthLoad     = false,
+              bool oit           = false)
             {
-                const uint32_t                       n = surface ? 4 : borrowedScene ? 1 : scene ? 2 : 1;
+                const uint32_t                       n = surface ? 4 : oit ? 2 : borrowedScene ? 1 : scene ? 2 : 1;
                 std::vector<VkAttachmentDescription> attachments;
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -252,8 +258,8 @@ namespace render::detail
                     VkAttachmentDescription a{};
                     a.format         = VK_FORMAT_D32_SFLOAT;
                     a.samples        = ms ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
-                    a.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-                    a.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                    a.loadOp         = depthLoad ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+                    a.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
                     a.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
                     a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
                     a.initialLayout = a.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -718,10 +724,12 @@ namespace render::detail
                 msPass         = MakePass(true, true);
                 postPass       = MakePass(false, false);
                 externalPass   = MakePass(true, false, true);
+                externalLoadPass = MakePass(true, false, true, false, true);
+                oitPass          = MakePass(true, false, true, false, true, true);
                 externalMSPass = MakePass(true, true, true);
                 surfacePass    = MakePass(true, false, false, true);
                 surfaceMSPass  = MakePass(true, true, false, true);
-                for (int i = 0; i < 28; i++)
+                for (int i = 0; i < 30; i++)
                     pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, config) : Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
                 shadowMS = Pipeline(10, true, config);
@@ -784,7 +792,16 @@ namespace render::detail
                     api.vkDestroyPipeline(device, hdrMS, nullptr);
                 if (shadowMS)
                     api.vkDestroyPipeline(device, shadowMS, nullptr);
-                for (auto p : {scenePass, msPass, postPass, externalPass, externalMSPass, surfacePass, surfaceMSPass})
+                for (auto p :
+                     {scenePass,
+                      msPass,
+                      postPass,
+                      externalPass,
+                      externalMSPass,
+                      surfacePass,
+                      surfaceMSPass,
+                      externalLoadPass,
+                      oitPass})
                     if (p)
                         api.vkDestroyRenderPass(device, p, nullptr);
                 for (auto s : {linear, point})
@@ -932,9 +949,10 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool               nativeScene = p.program < 0;
-                    const int                attachments = (p.program == 17 || p.program == 22 || p.program == -4)  ? 4
-                                                           : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
-                                                                                                                    : 1;
+                    const int                attachments = (p.program == 17 || p.program == 22 || p.program == -4) ? 4
+                                                           : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
+                                                             ? 2
+                                                             : 1;
                     auto&                    target      = textures[p.target];
                     std::vector<VkImageView> views;
                     for (int a = 0; a < attachments; a++)
@@ -1003,6 +1021,8 @@ namespace render::detail
                     api.vkUpdateDescriptorSets(device, 19, writes.data(), 0, nullptr);
                     VkRenderPass            renderPass = (p.program == 17 || p.program == 22 || p.program == -4)
                                                            ? (p.multisampled ? surfaceMSPass : surfacePass)
+                                                         : p.program == -6 ? oitPass
+                                                         : p.program == -5 ? externalLoadPass
                                                          : nativeScene ? (p.multisampled ? externalMSPass : externalPass)
                                                          : (p.program == 9 || p.program == 23 || p.program == 27) ? externalPass
                                                          : scene ? (p.multisampled ? msPass : scenePass)
@@ -1030,6 +1050,11 @@ namespace render::detail
                     if ((p.program >= 22 && p.program != 23) || p.program == -4)
                         for (int a = 0; a < attachments; ++a)
                             clears[a].color = {{0, 0, 0, 0}};
+                    if (p.program == -6)
+                    {
+                        clears[0].color = {{0, 0, 0, 0}};
+                        clears[1].color = {{1, 1, 1, 1}};
+                    }
                     if (scene)
                         clears[views.size() - 1].depthStencil = {1, 0};
                     VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};

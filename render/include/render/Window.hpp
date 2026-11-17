@@ -32,6 +32,7 @@ namespace render
         bool                    PollEvents(); // false after closing the window or pressing Escape.
         std::array<uint32_t, 2> GetFramebufferSize() const;
         FrameResult             DrawFrame(); // Updates framebuffer size; yields briefly if skipped.
+        MaterialCapabilities    GetMaterialCapabilities() const;
         void                    WaitIdle();
         void                    SetPostProcessing(const PostProcessingSettings& settings);
         PostProcessingSettings  GetPostProcessing() const;

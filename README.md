@@ -24,7 +24,7 @@ Release **0.7.1** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) a
 - [x] Rasterization and ray-tracing modes
 - [x] Shared HLSL → DXIL / SPIR-V / Metal / WGSL
 - [x] glTF / GLB model loading and metallic-roughness PBR
-- [x] Multiple material slots with runtime color, roughness, metallic and texture editing
+- [x] Multiple material slots with runtime PBR/texture edits, alpha cutout, weighted OIT transparency and double-sided rendering (current source)
 - [x] Perspective/orthographic cameras, full orientation and viewport rectangles
 - [x] Scene ray picking with instance filters and geometric hit normals
 - [x] Static scene instances with shared assets and original model space
@@ -32,7 +32,7 @@ Release **0.7.1** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) a
 - [x] Directional lighting, skyboxes and HDR image-based lighting
 - [x] Directional, point and spot light collections in raster and ray tracing; static instance scenes
 - [x] Vulkan compute BVH fallback when hardware ray queries are unavailable
-- [x] Scene BVH shadows for directional, point and spot lights (static opaque instances)
+- [x] Scene BVH shadows for directional, point and spot lights (static instances; alpha-tested cutouts in current source)
 - [x] Shadow map laboratory — hard shadows, PCF, PCSS
 - [x] Ambient occlusion — SSAO, HBAO, MSAO, RTAO
 - [x] Anti-aliasing — FXAA, SMAA 1x, MSAA 4x, SSAA 2×2, TAA

@@ -133,10 +133,26 @@ namespace render::detail
         if (!nodes_.empty())
             escape(0, uint32_t(nodes_.size()));
         for (size_t t = 0; t < triangles_.size(); t++)
+        {
+            auto& record = records[nodes_.size() + t];
             for (int j = 0; j < 3; j++)
+            {
+                const auto& vertex = data_->vertices[size_t(triangles_[t]) * 3 + j];
                 for (int k = 0; k < 3; k++)
-                    records[nodes_.size() + t][32 + j * 4 + k] =
-                      data_->vertices[size_t(triangles_[t]) * 3 + j].position[k];
+                    record[32 + j * 4 + k] = vertex.position[k];
+                if (j < 2)
+                {
+                    record[44 + j * 2] = vertex.uv[0];
+                    record[45 + j * 2] = vertex.uv[1];
+                }
+                else
+                {
+                    record[16] = vertex.uv[0];
+                    record[21] = vertex.uv[1];
+                }
+                record[43] = vertex.position[3] - 1;
+            }
+        }
         return records;
     }
     std::optional<MeshHit> PickMesh::Pick(const PickVector& o, const PickVector& d, double limit) const
