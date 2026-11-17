@@ -1,0 +1,603 @@
+{
+  "schemaVersion": 1,
+  "status": "reference captured; Nova hybrid rendering not implemented",
+  "reference": {
+    "repository": "https://github.com/diharaw/hybrid-rendering",
+    "commit": "090360e0b231e6df38f0c0ce0b7465c8f8485b0e",
+    "tag": "1.1.0",
+    "cameraSource": "src/common.cpp",
+    "assemblySource": "src/common.cpp:339-535",
+    "sceneDefaultsSource": "src/main.cpp:1084-1144",
+    "codeLicense": "reference.LICENSE.txt",
+    "frameworkCommit": "be5c6230ee85092cdd966056675c7f797a739ae6",
+    "meshImporter": "https://github.com/diharaw/dwSampleFramework/blob/be5c6230ee85092cdd966056675c7f797a739ae6/src/mesh.cpp"
+  },
+  "archive": {
+    "url": "https://github.com/diharaw/hybrid-rendering/releases/download/1.1.0/HybridRendering_1.1.0.zip",
+    "bytes": 205799803,
+    "sha256": "a73a1df3e6a4d8dc3eba07467e00e6e8aaf83758995486760095598f1f297f92",
+    "cache": "build/reference/hybrid-rendering/HybridRendering_1.1.0.zip",
+    "redistributeWithSDK": false,
+    "unpackedBytes": 394431478
+  },
+  "projection": {
+    "type": "perspective",
+    "verticalFovDegrees": 60,
+    "nearPlane": 1,
+    "farPlane": 1000,
+    "proposedCaptureSize": [
+      1280,
+      720
+    ]
+  },
+  "scenes": [
+    {
+      "id": "shadows-test",
+      "resources": [
+        "meshes/pillar.gltf",
+        "meshes/bunny.gltf",
+        "meshes/ground.gltf"
+      ],
+      "assembledTriangles": 147130,
+      "instances": 14,
+      "worldScale": 1,
+      "cameras": [
+        {
+          "id": "angle-1",
+          "position": [
+            -22.06146,
+            16.624475,
+            23.893597
+          ],
+          "referenceForward": [
+            0.593151,
+            -0.52176,
+            -0.613138
+          ],
+          "referenceRight": [
+            0.718724,
+            -0.0,
+            0.695295
+          ],
+          "novaOrientationXYZW": [
+            -0.251243832649062,
+            -0.3609813124800455,
+            -0.101638539067042,
+            0.8923220472297607
+          ]
+        },
+        {
+          "id": "angle-2",
+          "position": [
+            -0.337131,
+            15.421529,
+            39.524925
+          ],
+          "referenceForward": [
+            -0.006306,
+            -0.425798,
+            -0.904796
+          ],
+          "referenceRight": [
+            0.999976,
+            0.0,
+            -0.00697
+          ],
+          "novaOrientationXYZW": [
+            -0.21815206252657104,
+            0.003400798924437316,
+            0.0007603321570113921,
+            0.9759085685027515
+          ]
+        },
+        {
+          "id": "angle-3",
+          "position": [
+            9.907501,
+            8.313064,
+            -18.302629
+          ],
+          "referenceForward": [
+            -0.353051,
+            -0.351048,
+            0.867249
+          ],
+          "referenceRight": [
+            -0.926194,
+            0.0,
+            -0.377048
+          ],
+          "novaOrientationXYZW": [
+            -0.03426817939804703,
+            0.9656345457297064,
+            0.17506268000873448,
+            0.1890203006089196
+          ]
+        },
+        {
+          "id": "angle-4",
+          "position": [
+            10.431265,
+            4.4116,
+            -6.578662
+          ],
+          "referenceForward": [
+            -0.800752,
+            -0.151261,
+            0.579584
+          ],
+          "referenceRight": [
+            -0.58633,
+            0.0,
+            -0.810072
+          ],
+          "novaOrientationXYZW": [
+            -0.034495420385523064,
+            0.8880325907002505,
+            0.06755093618768056,
+            0.4534810413311621
+          ]
+        }
+      ],
+      "assembly": {
+        "pillarRowsX": [
+          -15,
+          15
+        ],
+        "pillarsPerRow": 6,
+        "pillarZ": "ground.minZ + (ground.maxZ-ground.minZ)*(i+1)/7",
+        "bunny": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ],
+          "rotationYDegrees": 135,
+          "scale": 5
+        },
+        "ground": "identity"
+      }
+    },
+    {
+      "id": "reflections-test",
+      "resources": [
+        "meshes/reflections_test.gltf"
+      ],
+      "assembledTriangles": 234124,
+      "instances": 1,
+      "worldScale": 1,
+      "cameras": [
+        {
+          "id": "angle-1",
+          "position": [
+            -42.599087,
+            5.07747,
+            3.662686
+          ],
+          "referenceForward": [
+            0.926363,
+            -0.233447,
+            -0.295558
+          ],
+          "referenceRight": [
+            0.303957,
+            -0.0,
+            0.952686
+          ],
+          "novaOrientationXYZW": [
+            -0.09490645957954809,
+            -0.5858445156447646,
+            -0.06933969970677957,
+            0.8018547084501035
+          ]
+        },
+        {
+          "id": "angle-2",
+          "position": [
+            42.569202,
+            5.680231,
+            1.135333
+          ],
+          "referenceForward": [
+            -0.956285,
+            -0.235149,
+            -0.173853
+          ],
+          "referenceRight": [
+            0.178869,
+            0.0,
+            -0.983873
+          ],
+          "novaOrientationXYZW": [
+            -0.09090689329299351,
+            0.6362463962145772,
+            0.07586999711575293,
+            0.7623451997575871
+          ]
+        },
+        {
+          "id": "angle-3",
+          "position": [
+            -0.088592,
+            18.299492,
+            31.712112
+          ],
+          "referenceForward": [
+            0.003158,
+            -0.457108,
+            -0.889406
+          ],
+          "referenceRight": [
+            0.999994,
+            -0.0,
+            0.003551
+          ],
+          "novaOrientationXYZW": [
+            -0.23514715520722254,
+            -0.0017255710000653808,
+            -0.00041754019443401115,
+            0.9719581593169843
+          ]
+        },
+        {
+          "id": "angle-4",
+          "position": [
+            -10.971692,
+            4.04,
+            -1.099626
+          ],
+          "referenceForward": [
+            -0.59359,
+            -0.287377,
+            -0.751709
+          ],
+          "referenceRight": [
+            0.784814,
+            0.0,
+            -0.619732
+          ],
+          "novaOrientationXYZW": [
+            -0.13719304215478642,
+            0.3245362326504264,
+            0.04763686985969648,
+            0.9346577082073168
+          ]
+        }
+      ]
+    },
+    {
+      "id": "global-illumination-test",
+      "resources": [
+        "meshes/global_illumination_test.gltf"
+      ],
+      "assembledTriangles": 15864,
+      "instances": 1,
+      "worldScale": 1,
+      "cameras": [
+        {
+          "id": "angle-1",
+          "position": [
+            5.589866,
+            5.565732,
+            8.097699
+          ],
+          "referenceForward": [
+            -0.747366,
+            -0.139174,
+            -0.649672
+          ],
+          "referenceRight": [
+            0.656057,
+            0.0,
+            -0.754711
+          ],
+          "novaOrientationXYZW": [
+            -0.0634760976247413,
+            0.41368421577140574,
+            0.02892781519222527,
+            0.9077440917792503
+          ]
+        },
+        {
+          "id": "angle-2",
+          "position": [
+            -8.61628,
+            4.83791,
+            9.911291
+          ],
+          "referenceForward": [
+            0.361111,
+            -0.127066,
+            -0.923825
+          ],
+          "referenceRight": [
+            0.931375,
+            -0.0,
+            0.364062
+          ],
+          "novaOrientationXYZW": [
+            -0.06256041230124072,
+            -0.1848610062857206,
+            -0.011792559396713937,
+            0.9807005346743748
+          ]
+        },
+        {
+          "id": "angle-3",
+          "position": [
+            10.316762,
+            5.566028,
+            1.504511
+          ],
+          "referenceForward": [
+            -0.994886,
+            -0.09845,
+            -0.022578
+          ],
+          "referenceRight": [
+            0.022688,
+            0.0,
+            -0.999743
+          ],
+          "novaOrientationXYZW": [
+            -0.03524278982720668,
+            0.6981897647347413,
+            0.034452077606761264,
+            0.7142142903452855
+          ]
+        },
+        {
+          "id": "angle-4",
+          "position": [
+            11.364138,
+            9.322021,
+            -6.157114
+          ],
+          "referenceForward": [
+            -0.76021,
+            -0.417866,
+            0.497463
+          ],
+          "referenceRight": [
+            -0.54756,
+            0.0,
+            -0.836766
+          ],
+          "novaOrientationXYZW": [
+            -0.10172788975158435,
+            0.8592920647668993,
+            0.1881410862400726,
+            0.4646197537166646
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pica-pica",
+      "resources": [
+        "meshes/scene.gltf"
+      ],
+      "assembledTriangles": 76274,
+      "instances": 1,
+      "worldScale": 1,
+      "cameras": [
+        {
+          "id": "angle-1",
+          "position": [
+            -2.880592,
+            12.838152,
+            28.133095
+          ],
+          "referenceForward": [
+            -0.00556,
+            -0.393157,
+            -0.919454
+          ],
+          "referenceRight": [
+            0.999982,
+            0.0,
+            -0.006047
+          ],
+          "novaOrientationXYZW": [
+            -0.20065890541734419,
+            0.002961998854411492,
+            0.0006067014293719662,
+            0.9796565021235124
+          ]
+        },
+        {
+          "id": "angle-2",
+          "position": [
+            -4.044456,
+            3.885819,
+            14.471013
+          ],
+          "referenceForward": [
+            0.725216,
+            -0.146966,
+            -0.672653
+          ],
+          "referenceRight": [
+            0.680037,
+            -0.0,
+            0.733178
+          ],
+          "novaOrientationXYZW": [
+            -0.06753260953735879,
+            -0.3988893714471924,
+            -0.029471651092961446,
+            0.9140339368849459
+          ]
+        },
+        {
+          "id": "angle-3",
+          "position": [
+            -10.408246,
+            4.111171,
+            8.519235
+          ],
+          "referenceForward": [
+            -0.739586,
+            -0.270623,
+            -0.616259
+          ],
+          "referenceRight": [
+            0.640146,
+            0.0,
+            -0.768253
+          ],
+          "novaOrientationXYZW": [
+            -0.12369461231666326,
+            0.42020239491846123,
+            0.057939198922761004,
+            0.89709121019928
+          ]
+        },
+        {
+          "id": "angle-4",
+          "position": [
+            -10.283543,
+            6.659785,
+            2.117568
+          ],
+          "referenceForward": [
+            0.787594,
+            -0.314029,
+            -0.530172
+          ],
+          "referenceRight": [
+            0.55842,
+            -0.0,
+            0.829558
+          ],
+          "novaOrientationXYZW": [
+            -0.14038795690407366,
+            -0.4639022925528299,
+            -0.07472953494408177,
+            0.8714937642505367
+          ]
+        }
+      ],
+      "assetLicense": {
+        "author": "SEED.EA",
+        "spdx": "CC-BY-NC-4.0",
+        "source": "https://sketchfab.com/models/45e26a4ea7874c15b91bd659e656e30d",
+        "provenance": "meshes/scene.gltf asset.extras"
+      }
+    },
+    {
+      "id": "sponza",
+      "resources": [
+        "meshes/sponza.obj",
+        "meshes/sponza.mtl"
+      ],
+      "assembledTriangles": 262267,
+      "instances": 1,
+      "worldScale": 0.3,
+      "cameras": [
+        {
+          "id": "angle-1",
+          "position": [
+            349.689911,
+            50.013187,
+            -47.142761
+          ],
+          "referenceForward": [
+            -0.927807,
+            -0.008728,
+            0.37296
+          ],
+          "referenceRight": [
+            -0.372974,
+            0.0,
+            -0.927842
+          ],
+          "novaOrientationXYZW": [
+            -0.002443523082464365,
+            0.8285372171562675,
+            0.0036158030078323965,
+            0.5599169893390467
+          ]
+        },
+        {
+          "id": "angle-2",
+          "position": [
+            255.940018,
+            181.126541,
+            -14.534848
+          ],
+          "referenceForward": [
+            -0.890209,
+            -0.455542,
+            -0.003118
+          ],
+          "referenceRight": [
+            0.003502,
+            0.0,
+            -0.999994
+          ],
+          "novaOrientationXYZW": [
+            -0.16595940063796116,
+            0.6862204292887576,
+            0.1653793026274163,
+            0.6886281188196656
+          ]
+        },
+        {
+          "id": "angle-3",
+          "position": [
+            25.954714,
+            36.763203,
+            153.194244
+          ],
+          "referenceForward": [
+            0.932927,
+            -0.008722,
+            -0.35996
+          ],
+          "referenceRight": [
+            0.359974,
+            -0.0,
+            0.932963
+          ],
+          "novaOrientationXYZW": [
+            -0.0035961722680889437,
+            -0.565691676749416,
+            -0.002467027876877058,
+            0.8246053044790018
+          ]
+        },
+        {
+          "id": "angle-4",
+          "position": [
+            -391.294556,
+            179.648758,
+            141.655914
+          ],
+          "referenceForward": [
+            0.723851,
+            -0.095842,
+            -0.683267
+          ],
+          "referenceRight": [
+            0.686427,
+            -0.0,
+            0.727199
+          ],
+          "novaOrientationXYZW": [
+            -0.04405498443395272,
+            -0.39550678383753823,
+            -0.01899681747828442,
+            0.9172091709150687
+          ]
+        }
+      ]
+    }
+  ],
+  "assetImportProfile": {
+    "name": "reference-import",
+    "nodeTransforms": "ignored by reference mesh importer; apply reference instance assembly separately",
+    "uvConvention": "Assimp uses FlipUVs; texture orientation still needs visual parity validation",
+    "tool": "scripts/reference/prepare_hybrid.py"
+  }
+}
