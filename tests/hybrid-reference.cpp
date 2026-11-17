@@ -21,15 +21,24 @@ int main(int argc, char** argv)
     std::cout.setf(std::ios::unitbuf);
     try
     {
-        const std::string           api    = argc > 1 ? TestAPI(argv[1]) : "metal";
-        const std::filesystem::path assets = argc > 2 ? argv[2] : "assets";
-        RendererConfig              config;
+        const std::string api = argc > 1 ? TestAPI(argv[1]) : "metal";
+        std::ifstream     source(argc > 2 ? argv[2] : "build/reference/hybrid-rendering/scenes.json");
+        auto              fixture = nlohmann::json::parse(source);
+        const bool        effects = fixture.contains("hybridEffects");
+        RendererConfig    config;
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
         config.useWarp = argc > 1 && TestUseWarp(argv[1]);
         if (!glfwInit())
             throw std::runtime_error("GLFW init");
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(160, 90, "GPU presentation validation", nullptr, nullptr);
+        float scaleX = 1, scaleY = 1;
+        glfwGetMonitorContentScale(glfwGetPrimaryMonitor(), &scaleX, &scaleY);
+        window = glfwCreateWindow(
+          int(fixture["width"].get<float>() / scaleX),
+          int(fixture["height"].get<float>() / scaleY),
+          "Reference scene validation",
+          nullptr,
+          nullptr);
         if (!window)
             throw std::runtime_error("Window init");
         std::unique_ptr<detail::Backend> backend;
@@ -54,7 +63,9 @@ int main(int argc, char** argv)
         post.autoExposure = false;
         post.toneMapping  = ToneMapping::ACES;
         backend->SetPostProcessing(post);
-        auto dir = std::filesystem::path("build/validation/hybrid-reference") / api;
+        auto dir = std::filesystem::path(
+                     effects ? "build/validation/hybrid-reference-effects" : "build/validation/hybrid-reference")
+                   / api;
         std::filesystem::create_directories(dir);
         auto draw = [&](const std::string& name) {
             glfwPollEvents();
@@ -80,8 +91,6 @@ int main(int argc, char** argv)
         };
 
 
-        std::ifstream    source(argc > 2 ? argv[2] : "build/reference/hybrid-rendering/scenes.json");
-        auto             fixture = nlohmann::json::parse(source);
         DirectionalLight light;
         light.direction = fixture["light"]["direction"].get<std::array<float, 3>>();
         light.color     = {1, 1, 1};
@@ -99,8 +108,36 @@ int main(int argc, char** argv)
         RasterSettings raster;
         raster.pipeline = RasterPipeline::Deferred;
         backend->SetRasterSettings(raster);
-        size_t captures = 0;
-        double maximum  = 0;
+        auto gpuFrame = [&] {
+            glfwPollEvents();
+            int w, h;
+            glfwGetFramebufferSize(window, &w, &h);
+            if (w != fixture["width"].get<int>() || h != fixture["height"].get<int>())
+                throw std::runtime_error("Reference framebuffer size mismatch");
+            backend->Resize(w, h);
+            const auto reads = backend->RasterReadbackCount();
+            if (backend->DrawFrame() != FrameResult::Rendered)
+                throw std::runtime_error("Skipped Hybrid frame");
+            backend->WaitIdle();
+            if (backend->RasterReadbackCount() != reads)
+                throw std::runtime_error("Automatic Hybrid readback");
+            if (backend->ValidationErrorCount())
+                throw std::runtime_error("Reference GPU validation error");
+        };
+        auto captureGPU = [&](const std::string& name) {
+            auto image = backend->CaptureRasterFrame();
+            stbi_write_png(
+              (dir / (name + ".png")).string().c_str(),
+              image.width,
+              image.height,
+              4,
+              image.pixels.data(),
+              image.width * 4);
+            return image;
+        };
+        nlohmann::json metrics  = nlohmann::json::array();
+        size_t         captures = 0;
+        double         maximum  = 0;
         for (const auto& scene : fixture["scenes"])
         {
             backend->SetRenderMode(RenderMode::Raster);
@@ -117,6 +154,7 @@ int main(int argc, char** argv)
                 triangles += size_t(d.vertexCount / 3) * d.instanceCount;
             if (triangles != scene["triangles"].get<size_t>())
                 throw std::runtime_error("Reference triangle count mismatch");
+            double sceneAO = 0, sceneReflection = 0;
             for (const auto& c : scene["cameras"])
             {
                 Camera camera;
@@ -128,7 +166,9 @@ int main(int argc, char** argv)
                 backend->SetViewCamera(camera);
                 std::string name = scene["id"].get<std::string>() + "-" + c["id"].get<std::string>();
                 backend->SetRenderMode(RenderMode::Raster);
-                hybrid.view = HybridView::Final;
+                hybrid               = HybridSettings{};
+                hybrid.shadowSamples = 1;
+                hybrid.view          = HybridView::Final;
                 backend->SetHybrid(hybrid);
                 auto baseline = draw(name + "-raster");
                 backend->SetRenderMode(RenderMode::Hybrid);
@@ -156,9 +196,90 @@ int main(int argc, char** argv)
                       "Reference direct-light parity " + name + ": " + std::to_string(difference));
                 if (backend->ValidationErrorCount())
                     throw std::runtime_error("Reference GPU validation error");
+                if (effects)
+                {
+                    const auto& settings    = fixture["hybridEffects"];
+                    hybrid.ambientOcclusion = true;
+                    hybrid.aoRadius         = settings["aoRadius"];
+                    hybrid.aoSamples        = settings["aoSamples"];
+                    backend->SetHybrid(hybrid);
+                    gpuFrame();
+                    auto ao     = captureGPU(name + "-ao");
+                    hybrid.view = HybridView::AmbientOcclusion;
+                    backend->SetHybrid(hybrid);
+                    gpuFrame();
+                    captureGPU(name + "-ao-visibility");
+                    hybrid.view              = HybridView::Final;
+                    hybrid.ambientOcclusion  = false;
+                    hybrid.reflections       = true;
+                    hybrid.reflectionSamples = settings["reflectionSamples"];
+                    backend->SetHybrid(hybrid);
+                    gpuFrame();
+                    auto reflection = captureGPU(name + "-reflections");
+                    hybrid.view     = HybridView::Reflections;
+                    backend->SetHybrid(hybrid);
+                    gpuFrame();
+                    captureGPU(name + "-reflection-visibility");
+                    hybrid.view             = HybridView::Final;
+                    hybrid.ambientOcclusion = true;
+                    backend->SetHybrid(hybrid);
+                    gpuFrame();
+                    captureGPU(name + "-combined");
+                    hybrid.temporalReconstruction = true;
+                    backend->SetHybrid(hybrid);
+                    gpuFrame();
+                    auto      first  = captureGPU(name + "-temporal-first");
+                    const int frames = settings["historyFrames"];
+                    for (int f = 1; f < frames; ++f)
+                        gpuFrame();
+                    auto resolved = captureGPU(name + "-temporal-resolved");
+                    if (backend->GetHybridHistoryFrames() != unsigned(frames))
+                        throw std::runtime_error("Reference temporal history failed");
+                    nlohmann::json metric = {
+                      {"scene", scene["id"]},
+                      {"camera", c["id"]},
+                      {"aoDifference", Difference(image, ao)},
+                      {"reflectionDifference", Difference(image, reflection)},
+                      {"temporalDifference", Difference(first, resolved)}};
+                    sceneAO         = std::max(sceneAO, Difference(image, ao));
+                    sceneReflection = std::max(sceneReflection, Difference(image, reflection));
+                    if (c["id"] == "angle-1")
+                    {
+                        hybrid.historyWeight = 0;
+                        backend->SetHybrid(hybrid);
+                        std::vector<double> reference(first.pixels.size());
+                        for (int f = 0; f < frames; ++f)
+                        {
+                            gpuFrame();
+                            auto raw = backend->CaptureRasterFrame();
+                            for (size_t i = 0; i < reference.size(); ++i)
+                                reference[i] += double(raw.pixels[i]) / frames;
+                        }
+                        auto mse = [&](const Image& im) {
+                            double sum = 0;
+                            for (size_t i = 0; i < reference.size(); ++i)
+                                sum += std::pow(im.pixels[i] - reference[i], 2);
+                            return sum / reference.size();
+                        };
+                        metric["firstMSE"]    = mse(first);
+                        metric["resolvedMSE"] = mse(resolved);
+                        if (mse(first) > .01 && mse(resolved) >= mse(first))
+                            throw std::runtime_error("Reference temporal error did not improve: " + name);
+                    }
+                    metrics.push_back(metric);
+                    std::cout << metric.dump() << '\n';
+                    captures += 7;
+                }
                 captures += 2;
                 std::cout << name << ": " << triangles << " triangles, MAE " << difference << "/255\n";
             }
+            if (effects && (sceneAO < .001 || sceneReflection < .001))
+                throw std::runtime_error("Missing scene effect: " + scene["id"].get<std::string>());
+        }
+        if (effects)
+        {
+            std::ofstream output(dir / "metrics.json");
+            output << metrics.dump(2) << '\n';
         }
         backend.reset();
         glfwDestroyWindow(window);

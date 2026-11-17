@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "Hybrid shadow stage verified on three scenes / twelve cameras; remaining effects and Pica/Sponza pending",
+  "status": "Hybrid shadows/AO/reflections/temporal verified on three scenes / twelve cameras; Pica/Sponza and reference executable radiance parity pending",
   "reference": {
     "repository": "https://github.com/diharaw/hybrid-rendering",
     "commit": "090360e0b231e6df38f0c0ce0b7465c8f8485b0e",

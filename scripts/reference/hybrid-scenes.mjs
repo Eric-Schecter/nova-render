@@ -82,15 +82,22 @@ const scenes = manifest.scenes.slice(0, 3).map((source) => {
     })),
   }
 })
-const output = join(cache, 'scenes.json')
+const effects = process.argv.includes('--effects')
+const output = join(cache, effects ? 'scenes-effects.json' : 'scenes.json')
 writeFileSync(
   output,
   JSON.stringify(
     {
       profile:
-        'reference-import; shared hard directional light, no HDR; framing/visibility baseline only',
-      width: 320,
-      height: 180,
+        'reference-import; shared hard directional light, no HDR; ' +
+        (effects
+          ? 'original geometry/materials/cameras; Hybrid effect validation, not reference radiance fidelity'
+          : 'framing/visibility baseline only'),
+      width: effects ? 640 : 320,
+      height: effects ? 360 : 180,
+      ...(effects
+        ? { hybridEffects: { aoRadius: 2, aoSamples: 4, reflectionSamples: 1, historyFrames: 16 } }
+        : {}),
       light: { direction: [-0.6, 0.9, 0.5], color: [1, 1, 1], intensity: 4 },
       scenes,
     },
