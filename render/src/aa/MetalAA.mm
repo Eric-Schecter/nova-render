@@ -13,6 +13,7 @@ namespace render::detail
             id<MTLCommandQueue>        queue;
             id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             id<MTLRenderPipelineState> pipelines[28], sceneMS, shadowMS, hdrMS, ssrMS;
+            id<MTLComputePipelineState> compute[2];
             id<MTLSamplerState>        linear, point;
             id<MTLDepthStencilState>   depthState;
             uint32_t                   width = 0, height = 0;
@@ -22,6 +23,8 @@ namespace render::detail
                 auto d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:w height:h mipmapped:NO];
                 d.storageMode = MTLStorageModePrivate;
                 d.usage       = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+                if (format == MTLPixelFormatRGBA32Float)
+                    d.usage |= MTLTextureUsageShaderWrite;
                 if (samples > 1)
                 {
                     d.textureType = MTLTextureType2DMultisample;
@@ -84,6 +87,15 @@ namespace render::detail
                     auto     lib   = [device newLibraryWithData:blob error:&error];
                     if (!lib)
                         throw std::runtime_error(error.localizedDescription.UTF8String);
+                    if (i == 25 || i == 26)
+                    {
+                        compute[i - 25] =
+                          [device newComputePipelineStateWithFunction:[lib newFunctionWithName:@"PipelineCSMain"]
+                                                                error:&error];
+                        if (!compute[i - 25])
+                            throw std::runtime_error(error.localizedDescription.UTF8String);
+                        continue;
+                    }
                     pipelines[i] = Pipeline(lib, i, 1);
                     if (i == 0)
                         sceneMS = Pipeline(lib, 0, 4);
@@ -163,7 +175,12 @@ namespace render::detail
                           uint32_t(passes.front().uniforms[8][1]),
                           passes.front().uniforms[6][3] > .5f);
                         if (!textures[i] || textures[i].width != spec.width || textures[i].height != spec.height)
-                            textures[i] = Texture(spec.width, spec.height, MTLPixelFormatRGBA16Float, spec.samples);
+                            textures[i] = Texture(
+                              spec.width,
+                              spec.height,
+                              (i == AAPipelineTiles || i == AAPipelineLists) ? MTLPixelFormatRGBA32Float
+                                                                             : MTLPixelFormatRGBA16Float,
+                              spec.samples);
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
@@ -212,6 +229,20 @@ namespace render::detail
                         }
                     for (const auto& p : passes)
                     {
+                        if (p.program == 25 || p.program == 26)
+                        {
+                            auto e = [command computeCommandEncoder];
+                            [e setComputePipelineState:compute[p.program - 25]];
+                            [e setBytes:p.uniforms.data() length:sizeof(AAUniforms) atIndex:0];
+                            [e setTexture:textures[p.sources[4]] atIndex:5];
+                            [e setTexture:textures[p.sources[5]] atIndex:6];
+                            [e setTexture:textures[p.target] atIndex:19];
+                            [e dispatchThreadgroups:MTLSizeMake(
+                                                      16, 9, p.program == 25 && p.uniforms[0][2] > 2.5f ? 16 : 1)
+                              threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+                            [e endEncoding];
+                            continue;
+                        }
                         auto       d = [MTLRenderPassDescriptor renderPassDescriptor];
                         const bool scene =
                                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16

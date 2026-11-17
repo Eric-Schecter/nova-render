@@ -104,6 +104,28 @@ int main(int argc, char** argv)
             settings.lightCount  = 128;
             settings.lightRadius = 3;
         }
+        auto camera     = view.GetCamera();
+        camera.yaw      = -65;
+        camera.pitch    = 38;
+        camera.distance = 14;
+        camera.target   = {1, 1, 1};
+        view.SetCamera(camera);
+        settings.lightCount  = 96;
+        settings.lightRadius = 2.5f;
+        settings.debug       = render::PipelineDebug::Final;
+        for (auto size : {std::array<uint32_t, 2>{16, 9}, {127, 65}, {641, 359}})
+        {
+            settings.pipeline = render::RasterPipeline::Forward;
+            view.SetSettings(settings);
+            auto reference = view.DrawFrame(size[0], size[1]);
+            for (auto pipeline : {render::RasterPipeline::ForwardPlus, render::RasterPipeline::ClusteredForward})
+            {
+                settings.pipeline = pipeline;
+                view.SetSettings(settings);
+                if (Difference(reference, view.DrawFrame(size[0], size[1])) > .15)
+                    throw std::runtime_error("Resized/camera compute parity failed");
+            }
+        }
         auto s        = view.GetSettings();
         s.lightCount  = 257;
         bool rejected = false;

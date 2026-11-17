@@ -1,5 +1,5 @@
 // Raster pipeline laboratory. One scene and lighting equation for all four paths.
-// Light lists use an RGBA16F atlas (exact integer indices <= 256), produced on GPU.
+// Compute workgroups generate deterministic compact lists in an RGBA32F storage atlas.
 cbuffer Parameters : register(b0)
 {
     float4 aa[16];
@@ -222,53 +222,97 @@ float4 PSMain(Vertex i)
       albedoBuffer.Load(int3(xy, 0)).rgb,
       materialBuffer.Load(int3(xy, 0)).xy,
       i.position.xy);
-#elif AA_PASS == 26
-    uint2 tile = uint2(i.position.xy);
-    uint2 lo   = (uint2)ceil(float2(tile) * aa[0].xy / float2(16, 9) - .5);
-    uint2 hi   = (uint2)ceil(float2(tile + 1) * aa[0].xy / float2(16, 9) - .5);
-    float zmin = Far, zmax = 0;
-    for (uint y = lo.y; y < hi.y; y++)
-        for (uint x = lo.x; x < hi.x; x++)
-        {
-            float z = depthBuffer.Load(int3(x, y, 0)).x;
-            if (z > 0)
-            {
-                zmin = min(zmin, z);
-                zmax = max(zmax, z);
-            }
-        }
-    return float4(zmin, zmax, 0, 1);
-#elif AA_PASS == 25
-    uint group = (uint)i.position.x, cell = (uint)i.position.y, tile = cell % 144, zs = cell / 144;
-    if (aa[0].z < 2.5 && zs > 0)
-        return 0;
-    float2 zr = aa[0].z > 2.5 ? Near * pow(Far / Near, float2(zs, zs + 1) / 16)
-                              : tileBuffer.Load(int3(tile % 16, tile / 16, 0)).xy;
-    if (zr.y <= 0)
-        return 0;
-    float2 lower = (float2(tile % 16, tile / 16) / float2(16, 9) * 2 - 1) * float2(aa[0].x / aa[0].y, -1) / Focal;
-    float2 upper =
-      (float2(tile % 16 + 1, tile / 16 + 1) / float2(16, 9) * 2 - 1) * float2(aa[0].x / aa[0].y, -1) / Focal;
-    float2 amin    = min(min(lower * zr.x, lower * zr.y), min(upper * zr.x, upper * zr.y));
-    float2 amax    = max(max(lower * zr.x, lower * zr.y), max(upper * zr.x, upper * zr.y));
-    uint   found   = 0;
-    float4 indices = 0;
-    for (uint id = 0; id < (uint)aa[1].x; id++)
-    {
-        float3 lp, lc;
-        light(id, lp, lc);
-        float3 v       = view(lp);
-        float3 closest = clamp(v, float3(amin, zr.x), float3(amax, zr.y));
-        if (dot(v - closest, v - closest) <= aa[1].y * aa[1].y)
-        {
-            if (group > 0 && found / 4 == group - 1)
-                indices[found % 4] = id + 1;
-            found++;
-        }
-    }
-    return group == 0 ? float4(found, 0, 0, 1) : indices;
 #else
     return 0;
+#endif
+}
+#endif
+
+#if AA_PASS == 25 || AA_PASS == 26
+// SPIR-V NonReadable (25) keeps the translated storage texture write-only in WebGPU.
+[[vk::image_format("rgba32f")]] [[vk::ext_decorate(25)]] RWTexture2D<float4> outputAtlas : register(u19);
+groupshared uint                                                             depthMins[64];
+groupshared uint                                                             depthMaxs[64];
+groupshared uint                                                             visibleLights[256];
+// One group per tile or 3D cluster. No cross-workgroup synchronization is needed.
+[numthreads(64, 1, 1)] void PipelineCSMain(uint3 group : SV_GroupID, uint lane : SV_GroupIndex) {
+#if AA_PASS == 26
+    uint2 lo        = (uint2)ceil(float2(group.xy) * aa[0].xy / float2(16, 9) - .5);
+    uint2 hi        = (uint2)ceil(float2(group.xy + 1) * aa[0].xy / float2(16, 9) - .5);
+    uint  tileWidth = hi.x - lo.x, pixels = tileWidth * (hi.y - lo.y);
+    uint  zmin = asuint(Far), zmax = 0;
+    for (uint pixel = lane; pixel < pixels; pixel += 64)
+    {
+        float z = depthBuffer.Load(int3(lo + uint2(pixel % tileWidth, pixel / tileWidth), 0)).x;
+        if (z > 0)
+        {
+            zmin = min(zmin, asuint(z));
+            zmax = max(zmax, asuint(z));
+        }
+    }
+    depthMins[lane] = zmin;
+    depthMaxs[lane] = zmax;
+    GroupMemoryBarrierWithGroupSync();
+    for (uint stride = 32; stride > 0; stride /= 2)
+    {
+        if (lane < stride)
+        {
+            depthMins[lane] = min(depthMins[lane], depthMins[lane + stride]);
+            depthMaxs[lane] = max(depthMaxs[lane], depthMaxs[lane + stride]);
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    if (lane == 0)
+        outputAtlas[group.xy] = float4(asfloat(depthMins[0]), asfloat(depthMaxs[0]), 0, 1);
+#else
+    uint   cell = group.z * 144 + group.y * 16 + group.x;
+    float2 zr =
+      aa[0].z > 2.5 ? Near * pow(Far / Near, float2(group.z, group.z + 1) / 16) : tileBuffer.Load(int3(group.xy, 0)).xy;
+    float2 lower = (float2(group.xy) / float2(16, 9) * 2 - 1) * float2(aa[0].x / aa[0].y, -1) / Focal;
+    float2 upper = (float2(group.xy + 1) / float2(16, 9) * 2 - 1) * float2(aa[0].x / aa[0].y, -1) / Focal;
+    float2 amin  = min(min(lower * zr.x, lower * zr.y), min(upper * zr.x, upper * zr.y));
+    float2 amax  = max(max(lower * zr.x, lower * zr.y), max(upper * zr.x, upper * zr.y));
+    for (uint id = lane; id < 256; id += 64)
+    {
+        uint hit = 0;
+        if (id < (uint)aa[1].x && zr.y > 0)
+        {
+            float3 lp, lc;
+            light(id, lp, lc);
+            float3 v       = view(lp);
+            float3 closest = clamp(v, float3(amin, zr.x), float3(amax, zr.y));
+            hit            = dot(v - closest, v - closest) <= aa[1].y * aa[1].y ? 1 : 0;
+        }
+        visibleLights[id] = hit;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    // Stable ascending IDs preserve floating-point light summation across all paths.
+    // Parallel intersection tests are followed by a bounded 256-entry compaction.
+    if (lane == 0)
+    {
+        uint   count  = 0;
+        float4 packed = 0;
+        for (uint id = 0; id < (uint)aa[1].x; id++)
+            if (visibleLights[id] != 0)
+            {
+                if (count < 64)
+                {
+                    packed[count % 4] = id + 1;
+                    if (count % 4 == 3)
+                    {
+                        outputAtlas[uint2(1 + count / 4, cell)] = packed;
+                        packed                                  = 0;
+                    }
+                }
+                count++;
+            }
+        if (count < 64 && count % 4 != 0)
+            outputAtlas[uint2(1 + count / 4, cell)] = packed;
+        // Clear every unused slot, including zero-light/empty-tile cases.
+        for (uint slot = 1 + (min(count, 64u) + 3) / 4; slot < 17; slot++)
+            outputAtlas[uint2(slot, cell)] = 0;
+        outputAtlas[uint2(0, cell)] = float4(count, 0, 0, 1);
+    }
 #endif
 }
 #endif

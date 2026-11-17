@@ -11,6 +11,7 @@ export async function compile(
     sky = false,
     compute = false,
     computeEntry = 'CSMain',
+    optimizeCompute = false,
     vertexEntry,
     fragmentEntry,
     maxSourceBytes = 65536,
@@ -50,7 +51,7 @@ export async function compile(
           // DXC LICM hoists storage pointers across nested MIS/BVH loops.
           // Naga cannot spill those pointers into WGSL function variables.
           ...(compute ? ['-DNOVA_WEB_BVH=1'] : []),
-          ...(compute || (model && stage === 'frag' && !sky) ? ['-Od'] : []),
+          ...((compute && !optimizeCompute) || (model && stage === 'frag' && !sky) ? ['-Od'] : []),
           ...(['DenoiseMain', 'PhotonClear', 'MLTReduce', 'AOPyramid', 'AOFilter'].includes(
             computeEntry,
           )

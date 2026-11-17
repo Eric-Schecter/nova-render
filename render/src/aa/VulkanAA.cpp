@@ -86,7 +86,8 @@ namespace render::detail
             VkCommandBuffer                  command{};
             VkDescriptorPool                 descriptorPool{};
             VkDescriptorSetLayout            setLayout{};
-            VkPipelineLayout                 layout{};
+            VkPipelineLayout                 layout{}, computeLayout{};
+            VkDescriptorSetLayout            computeSetLayout{};
             VkPipeline                       pipelines[28]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
               surfaceMSPass{};
@@ -153,6 +154,8 @@ namespace render::detail
                 d.usage                     = t.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
                                                       : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
                                       | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                if (format == VK_FORMAT_R32G32B32A32_SFLOAT)
+                    d.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
                 Check(api.vkCreateImage(device, &d, nullptr, &t.image));
                 VkMemoryRequirements m;
                 api.vkGetImageMemoryRequirements(device, t.image, &m);
@@ -277,6 +280,67 @@ namespace render::detail
                 VkRenderPass pass;
                 Check(api.vkCreateRenderPass(device, &info, nullptr, &pass));
                 return pass;
+            }
+            VkPipeline ComputePipeline(int program, const RendererConfig& config)
+            {
+                auto data = LoadShader(config.shaderDirectory, ("aa-" + std::to_string(program) + ".comp.spv").c_str());
+                VkShaderModuleCreateInfo m{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+                m.codeSize = data.size();
+                m.pCode    = reinterpret_cast<const uint32_t*>(data.data());
+                VkShaderModule module;
+                Check(api.vkCreateShaderModule(device, &m, nullptr, &module));
+                VkComputePipelineCreateInfo d{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+                d.layout       = computeLayout;
+                d.stage        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+                d.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+                d.stage.module = module;
+                d.stage.pName  = "PipelineCSMain";
+                VkPipeline result;
+                auto       status = api.vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &d, nullptr, &result);
+                api.vkDestroyShaderModule(device, module, nullptr);
+                Check(status);
+                return result;
+            }
+            void Dispatch(const AAPass& p, size_t index)
+            {
+                auto& target = textures[p.target];
+                Transition(target, VK_IMAGE_LAYOUT_GENERAL);
+                for (int slot : {4, 5})
+                    Transition(textures[p.sources[slot]], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                VkDescriptorSetAllocateInfo a{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                a.descriptorPool     = descriptorPool;
+                a.descriptorSetCount = 1;
+                a.pSetLayouts        = &computeSetLayout;
+                VkDescriptorSet set;
+                Check(api.vkAllocateDescriptorSets(device, &a, &set));
+                VkDescriptorBufferInfo ub{uniforms.buffer, index * uniformStride, sizeof(AAUniforms)};
+                VkDescriptorImageInfo  images[3] = {
+                  {VK_NULL_HANDLE, textures[p.sources[4]].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                  {VK_NULL_HANDLE, textures[p.sources[5]].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                  {VK_NULL_HANDLE, target.view, VK_IMAGE_LAYOUT_GENERAL}};
+                VkWriteDescriptorSet writes[4]{};
+                uint32_t             bindings[] = {0, 5, 6, 19};
+                for (int i = 0; i < 4; i++)
+                {
+                    auto& w           = writes[i];
+                    w                 = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    w.dstSet          = set;
+                    w.dstBinding      = bindings[i];
+                    w.descriptorCount = 1;
+                    w.descriptorType  = i == 0   ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                        : i == 3 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                                                 : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                    if (i == 0)
+                        w.pBufferInfo = &ub;
+                    else
+                        w.pImageInfo = &images[i - 1];
+                }
+                api.vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+                api.vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[p.program]);
+                api.vkCmdBindDescriptorSets(
+                  command, VK_PIPELINE_BIND_POINT_COMPUTE, computeLayout, 0, 1, &set, 0, nullptr);
+                api.vkCmdDispatch(command, 16, 9, p.program == 25 && p.uniforms[0][2] > 2.5f ? 16 : 1);
+                // A later transition issues the compute-write -> sampled-read barrier.
             }
             VkPipeline Pipeline(int program, bool ms, const RendererConfig& config)
             {
@@ -435,7 +499,9 @@ namespace render::detail
                         std::vector<VkQueueFamilyProperties> q(n);
                         instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &n, q.data());
                         for (uint32_t f = 0; f < n; f++)
-                            if (q[f].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+                            if (
+                              (q[f].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
+                              == (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
                             {
                                 physical = candidate;
                                 family   = f;
@@ -522,6 +588,9 @@ namespace render::detail
                 api.vkCreateBuffer = reinterpret_cast<PFN_vkCreateBuffer>(getDeviceProc(device, "vkCreateBuffer"));
                 api.vkCreateCommandPool =
                   reinterpret_cast<PFN_vkCreateCommandPool>(getDeviceProc(device, "vkCreateCommandPool"));
+                api.vkCreateComputePipelines =
+                  reinterpret_cast<PFN_vkCreateComputePipelines>(getDeviceProc(device, "vkCreateComputePipelines"));
+                api.vkCmdDispatch = reinterpret_cast<PFN_vkCmdDispatch>(getDeviceProc(device, "vkCmdDispatch"));
                 api.vkCreateDescriptorPool =
                   reinterpret_cast<PFN_vkCreateDescriptorPool>(getDeviceProc(device, "vkCreateDescriptorPool"));
                 api.vkCreateDescriptorSetLayout = reinterpret_cast<PFN_vkCreateDescriptorSetLayout>(
@@ -612,13 +681,30 @@ namespace render::detail
                 pl.setLayoutCount = 1;
                 pl.pSetLayouts    = &setLayout;
                 Check(api.vkCreatePipelineLayout(device, &pl, nullptr, &layout));
+                VkDescriptorSetLayoutBinding cb[4]{};
+                uint32_t                     bindingIDs[] = {0, 5, 6, 19};
+                for (int i = 0; i < 4; i++)
+                {
+                    cb[i].binding         = bindingIDs[i];
+                    cb[i].descriptorCount = 1;
+                    cb[i].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+                    cb[i].descriptorType  = i == 0   ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                            : i == 3 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                                                     : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                }
+                sl.bindingCount = 4;
+                sl.pBindings    = cb;
+                Check(api.vkCreateDescriptorSetLayout(device, &sl, nullptr, &computeSetLayout));
+                pl.pSetLayouts = &computeSetLayout;
+                Check(api.vkCreatePipelineLayout(device, &pl, nullptr, &computeLayout));
                 VkDescriptorPoolSize sizes[] = {
+                  {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 64},
                   {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 64},
                   {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024},
                   {VK_DESCRIPTOR_TYPE_SAMPLER, 128}};
                 VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
                 dp.maxSets       = 64;
-                dp.poolSizeCount = 3;
+                dp.poolSizeCount = 4;
                 dp.pPoolSizes    = sizes;
                 Check(api.vkCreateDescriptorPool(device, &dp, nullptr, &descriptorPool));
                 VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -636,7 +722,7 @@ namespace render::detail
                 surfacePass    = MakePass(true, false, false, true);
                 surfaceMSPass  = MakePass(true, true, false, true);
                 for (int i = 0; i < 28; i++)
-                    pipelines[i] = Pipeline(i, false, config);
+                    pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, config) : Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
                 shadowMS = Pipeline(10, true, config);
                 hdrMS    = Pipeline(16, true, config);
@@ -706,6 +792,10 @@ namespace render::detail
                         api.vkDestroySampler(device, s, nullptr);
                 if (descriptorPool)
                     api.vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+                if (computeLayout)
+                    api.vkDestroyPipelineLayout(device, computeLayout, nullptr);
+                if (computeSetLayout)
+                    api.vkDestroyDescriptorSetLayout(device, computeSetLayout, nullptr);
                 if (layout)
                     api.vkDestroyPipelineLayout(device, layout, nullptr);
                 if (setLayout)
@@ -779,7 +869,8 @@ namespace render::detail
                             textures[i] = MakeTexture(
                               spec.width,
                               spec.height,
-                              VK_FORMAT_R16G16B16A16_SFLOAT,
+                              (i == AAPipelineTiles || i == AAPipelineLists) ? VK_FORMAT_R32G32B32A32_SFLOAT
+                                                                             : VK_FORMAT_R16G16B16A16_SFLOAT,
                               spec.samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
                         }
                     }
@@ -832,6 +923,11 @@ namespace render::detail
                 for (size_t index = 0; index < passes.size(); index++)
                 {
                     const auto& p = passes[index];
+                    if (p.program == 25 || p.program == 26)
+                    {
+                        Dispatch(p, index);
+                        continue;
+                    }
                     bool        scene =
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);

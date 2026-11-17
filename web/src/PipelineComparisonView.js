@@ -46,13 +46,34 @@ export async function createPipelineComparisonView({
     ],
   })
   const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] })
+  const computeLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 256 },
+      },
+      ...[5, 6].map((binding) => ({
+        binding,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: 'unfilterable-float' },
+      })),
+      {
+        binding: 19,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: 'write-only', format: 'rgba32float' },
+      },
+    ],
+  })
+  const computePipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [computeLayout] })
   const pipelines = new Map()
-  const texture = (w, h, depth = false) =>
+  const texture = (w, h, depth = false, storage = false) =>
     device.createTexture({
       size: [w, h],
-      format: depth ? 'depth32float' : 'rgba16float',
+      format: depth ? 'depth32float' : storage ? 'rgba32float' : 'rgba16float',
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
+        (storage ? GPUTextureUsage.STORAGE_BINDING : 0) |
         (depth ? 0 : GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC),
     })
   let resources = [],
@@ -73,6 +94,19 @@ export async function createPipelineComparisonView({
       const response = await fetch(shaderDirectory + `aa-${pass}.json`)
       if (!response.ok) throw Error(`Missing pipeline shader ${pass}`)
       const shader = await response.json()
+      if (pass === 25 || pass === 26) {
+        pipelines.set(
+          pass,
+          await device.createComputePipelineAsync({
+            layout: computePipelineLayout,
+            compute: {
+              module: device.createShaderModule({ code: shader.compute }),
+              entryPoint: 'PipelineCSMain',
+            },
+          }),
+        )
+        continue
+      }
       pipelines.set(
         pass,
         await device.createRenderPipelineAsync({
@@ -151,6 +185,8 @@ export async function createPipelineComparisonView({
         texture(
           i === 5 ? 16 : i === 6 ? 17 : i === 7 ? 1 : w,
           i === 5 ? 9 : i === 6 ? 2304 : i === 7 ? 1 : h,
+          false,
+          i === 5 || i === 6,
         ),
       )
       depth = texture(w, h, true)
@@ -185,6 +221,27 @@ export async function createPipelineComparisonView({
     function pass(program, target) {
       const offset = index++ * 256
       device.queue.writeBuffer(uniform, offset, u)
+      if (program === 25 || program === 26) {
+        const render = commands.beginComputePass()
+        const group = device.createBindGroup({
+          layout: computeLayout,
+          entries: [
+            { binding: 0, resource: { buffer: uniform, size: 256 } },
+            { binding: 5, resource: resources[4].createView() },
+            { binding: 6, resource: resources[program === 26 ? 7 : 5].createView() },
+            { binding: 19, resource: resources[target].createView() },
+          ],
+        })
+        render.setPipeline(pipelines.get(program))
+        render.setBindGroup(0, group, [offset])
+        render.dispatchWorkgroups(
+          16,
+          9,
+          program === 25 && settings.pipeline === 'clustered-forward' ? 16 : 1,
+        )
+        render.end()
+        return
+      }
       const count = program === 22 ? 4 : 1
       const isScene = [22, 23, 27].includes(program)
       const attachments = Array.from({ length: count }, (_, a) => ({

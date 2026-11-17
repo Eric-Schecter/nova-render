@@ -3,6 +3,11 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 const dir = 'build/validation/pipelines'
 mkdirSync(dir, { recursive: true })
+for (const pass of [25, 26]) {
+  const shader = JSON.parse(readFileSync(`docs/public/generated/aa-${pass}.json`, 'utf8'))
+  if (!shader.compute?.includes('@compute') || shader.frag || shader.vert)
+    throw Error(`Pass ${pass} must contain a compute kernel, without a raster fallback`)
+}
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
@@ -83,6 +88,23 @@ try {
         )
           throw Error('Overflow fixture failed')
         view.setSettings({ lightCount: 128, lightRadius: 3 })
+      }
+      view.setSettings({ lightCount: 96, lightRadius: 2.5, debug: 'final' })
+      view.setCamera({ yaw: -65, pitch: 38, distance: 14, target: [1, 1, 1] })
+      for (const [width, height] of [
+        [16, 9],
+        [127, 65],
+        [641, 359],
+      ]) {
+        view.setSettings({ pipeline: 'forward' })
+        await view.drawFrame(width, height)
+        const reference = await pixels()
+        for (const pipeline of ['forward-plus', 'clustered-forward']) {
+          view.setSettings({ pipeline })
+          await view.drawFrame(width, height)
+          if (difference(reference, await pixels()) > 0.15)
+            throw Error(`Resized/camera compute parity failed: ${width}x${height} ${pipeline}`)
+        }
       }
       view.dispose()
       return { results, images, debugImages }

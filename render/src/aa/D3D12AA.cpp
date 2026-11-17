@@ -40,7 +40,7 @@ namespace render::detail
                 }
             } event;
             uint64_t                           serial = 0;
-            ComPtr<ID3D12RootSignature>        root;
+            ComPtr<ID3D12RootSignature>        root, computeRoot;
             ComPtr<ID3D12DescriptorHeap>       rtvHeap, dsvHeap, srvHeap;
             ComPtr<ID3D12PipelineState>        pipelines[28], sceneMS, shadowMS, hdrMS, ssrMS;
             ComPtr<ID3D12Resource>             uniforms, readback;
@@ -71,6 +71,54 @@ namespace render::detail
                   IID_PPV_ARGS(&b)));
                 return b;
             }
+            ComPtr<ID3D12PipelineState> ComputePipeline(int program, const RendererConfig& c)
+            {
+                auto data = LoadShader(c.shaderDirectory, ("aa-" + std::to_string(program) + ".comp.dxil").c_str());
+                D3D12_COMPUTE_PIPELINE_STATE_DESC d{};
+                d.pRootSignature = computeRoot.Get();
+                d.CS             = {data.data(), data.size()};
+                ComPtr<ID3D12PipelineState> result;
+                Check(device->CreateComputePipelineState(&d, IID_PPV_ARGS(&result)));
+                return result;
+            }
+            void Dispatch(const AAPass& p, size_t index)
+            {
+                auto& target = textures[p.target];
+                Transition(target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                ID3D12DescriptorHeap* heaps[] = {srvHeap.Get()};
+                commands->SetDescriptorHeaps(1, heaps);
+                auto cpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
+                cpu.ptr += index * 18 * srvStride;
+                auto gpu = srvHeap->GetGPUDescriptorHandleForHeapStart();
+                gpu.ptr += index * 18 * srvStride;
+                for (int i = 0; i < 2; i++)
+                {
+                    auto& input = textures[p.sources[4 + i]];
+                    Transition(input, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+                    srv.Format                  = input.resource->GetDesc().Format;
+                    srv.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    srv.Texture2D.MipLevels     = 1;
+                    auto slot                   = cpu;
+                    slot.ptr += i * srvStride;
+                    device->CreateShaderResourceView(input.resource.Get(), &srv, slot);
+                }
+                D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
+                uav.Format        = DXGI_FORMAT_R32G32B32A32_FLOAT;
+                uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+                auto uavCPU       = cpu;
+                uavCPU.ptr += 2 * srvStride;
+                device->CreateUnorderedAccessView(target.resource.Get(), nullptr, &uav, uavCPU);
+                auto uavGPU = gpu;
+                uavGPU.ptr += 2 * srvStride;
+                commands->SetComputeRootSignature(computeRoot.Get());
+                commands->SetPipelineState(pipelines[p.program].Get());
+                commands->SetComputeRootConstantBufferView(0, uniforms->GetGPUVirtualAddress() + index * 256);
+                commands->SetComputeRootDescriptorTable(1, gpu);
+                commands->SetComputeRootDescriptorTable(2, uavGPU);
+                commands->Dispatch(16, 9, p.program == 25 && p.uniforms[0][2] > 2.5f ? 16 : 1);
+            }
             Texture MakeTexture(uint32_t w, uint32_t h, DXGI_FORMAT format, UINT samples = 1, bool lookup = false)
             {
                 Texture t;
@@ -89,6 +137,8 @@ namespace render::detail
                 d.Flags                          = lookup    ? D3D12_RESOURCE_FLAG_NONE
                                                    : isDepth ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
                                                              : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+                if (format == DXGI_FORMAT_R32G32B32A32_FLOAT)
+                    d.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
                 D3D12_CLEAR_VALUE clear{};
                 clear.Format = format;
                 if (isDepth)
@@ -280,6 +330,27 @@ namespace render::detail
                 Check(D3D12SerializeRootSignature(&signature, D3D_ROOT_SIGNATURE_VERSION_1, &data, &error));
                 Check(
                   device->CreateRootSignature(0, data->GetBufferPointer(), data->GetBufferSize(), IID_PPV_ARGS(&root)));
+                D3D12_DESCRIPTOR_RANGE cr[2]{};
+                cr[0].RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+                cr[0].NumDescriptors     = 2;
+                cr[0].BaseShaderRegister = 5;
+                cr[1].RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+                cr[1].NumDescriptors     = 1;
+                cr[1].BaseShaderRegister = 19;
+                D3D12_ROOT_PARAMETER cp[3]{};
+                cp[0].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_CBV;
+                cp[0].Descriptor.ShaderRegister = 0;
+                for (int i = 1; i < 3; i++)
+                {
+                    cp[i].ParameterType   = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+                    cp[i].DescriptorTable = {1, &cr[i - 1]};
+                }
+                D3D12_ROOT_SIGNATURE_DESC cs{3, cp, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE};
+                data.Reset();
+                error.Reset();
+                Check(D3D12SerializeRootSignature(&cs, D3D_ROOT_SIGNATURE_VERSION_1, &data, &error));
+                Check(device->CreateRootSignature(
+                  0, data->GetBufferPointer(), data->GetBufferSize(), IID_PPV_ARGS(&computeRoot)));
                 D3D12_DESCRIPTOR_HEAP_DESC heap{};
                 heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
                 heap.NumDescriptors = AAResourceCount;
@@ -296,7 +367,7 @@ namespace render::detail
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 uniforms  = Buffer(256 * 64, D3D12_HEAP_TYPE_UPLOAD);
                 for (int i = 0; i < 28; i++)
-                    pipelines[i] = Pipeline(i, 1, c);
+                    pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, c) : Pipeline(i, 1, c);
                 sceneMS  = Pipeline(0, 4, c);
                 shadowMS = Pipeline(10, 4, c);
                 hdrMS    = Pipeline(16, 4, c);
@@ -395,8 +466,12 @@ namespace render::detail
                         if (
                           !textures[i].resource || textures[i].width != spec.width || textures[i].height != spec.height)
                         {
-                            textures[i] =
-                              MakeTexture(spec.width, spec.height, DXGI_FORMAT_R16G16B16A16_FLOAT, spec.samples);
+                            textures[i] = MakeTexture(
+                              spec.width,
+                              spec.height,
+                              (i == AAPipelineTiles || i == AAPipelineLists) ? DXGI_FORMAT_R32G32B32A32_FLOAT
+                                                                             : DXGI_FORMAT_R16G16B16A16_FLOAT,
+                              spec.samples);
                             device->CreateRenderTargetView(textures[i].resource.Get(), nullptr, RTV(i));
                             if (i == AAOutput)
                                 changed = true;
@@ -459,6 +534,11 @@ namespace render::detail
                 for (size_t index = 0; index < passes.size(); index++)
                 {
                     const auto& p = passes[index];
+                    if (p.program == 25 || p.program == 26)
+                    {
+                        Dispatch(p, index);
+                        continue;
+                    }
                     const bool  scene =
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
