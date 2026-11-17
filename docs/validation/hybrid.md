@@ -16,7 +16,7 @@ The G-buffer now stores split logarithmic view depth rather than half-float worl
 
 ## Original reference geometry and camera baseline
 
-Run `python3 scripts/reference/prepare_hybrid.py --profile reference-import`, then `node scripts/reference/hybrid-scenes.mjs`. The pinned archive and converted models remain under ignored `build/reference/hybrid-rendering`; no reference assets are bundled in the SDK or documentation example.
+Run `python3 scripts/reference/prepare_hybrid.py --profile reference-import`, then `node scripts/reference/hybrid-scenes.mjs`. The pinned archive and converted models remain under ignored `build/reference/hybrid-rendering`; reference assets remain outside the SDK. The online example prepares separate documentation-only copies.
 
 `nova_hybrid_reference_test metal` / `vulkan` and `scripts/webgpu/check-hybrid-reference.mjs` use the original Shadows, Reflections and Global Illumination scenes, all twelve pinned cameras, source-space transforms and the expected assembled triangle counts (147130 / 234124 / 15864). The profile fixes a shared hard directional light, no HDR, 320×180, 60° FOV and 1/1000 clipping.
 
@@ -55,3 +55,9 @@ The original Shadows Test, Reflections Test and Global Illumination Test now cov
 For angle 1 of each scene, compare the first and reconstructed images against the average of the same sixteen unfiltered sample phases. Native MSE changes are 372.49→65.42 (Shadows), 76.08→7.11 (Reflections) and 33.68→1.81 (Global Illumination), reductions of 82.4%, 90.7% and 94.6%; WebGPU agrees. Images were inspected for ground contact, sphere/floor reflections, room corners and residual sampling noise. Sixteen frames remain visibly noisy in glossy regions. These fixture-specific errors measure reconstruction consistency, not bias against a ground-truth path tracer.
 
 This establishes effect operation and cross-backend agreement on original geometry and cameras. It does not establish pixel fidelity to the reference executable: the profile retains a shared directional light/analytic studio environment, not the original authored lighting and DDGI. Pica Pica and Sponza conversion and the original Windows executable remain outside this validation. Raw assets and captures stay in ignored local caches and are not included in SDK packages.
+
+## Online reference scene selection
+
+Example 19 defaults to Reflections Test and also offers Shadows Test, Global Illumination Test and the procedural box. Documentation builds verify the pinned archive and prepare only the five required GLBs in a separate `hybrid-reference` public directory (about 22 MB total). Browser requests load the selected scene only; changing camera presets does not reload models. This directory is excluded from SDK/npm packaging. Sources and notices are listed in the footer credits.
+
+`scripts/webgpu/check-hybrid-page.mjs` exercises the built page, four scene choices, all twelve reference camera presets, effect controls, Raster/Hybrid switching, parameter collapse and narrow-screen overflow. Reference orbit/zoom also preserves 60° FOV and 1/1000 clipping; Reset view restores the original camera position.

@@ -98,7 +98,7 @@ await renderer.setShader(shader)
 await renderer.drawFrame()
 ```
 
-Package users need a WebGPU-capable browser and HTTPS or localhost, but no shader compilation service. To build the web examples or package from source, use Node.js 22+ and the DXC-based shader toolchain:
+Package users need a WebGPU-capable browser and HTTPS or localhost, but no shader compilation service. To build the web examples or package from source, use Node.js 22+ and the DXC-based shader toolchain. Documentation builds also use Python 3 to cache and verify the 206 MB reference archive; browsers load only the selected scene:
 
 ```sh
 npm ci

@@ -48,3 +48,9 @@ SMAA 1x/tables come from the [authors' repository](https://github.com/iryoku/sma
 ## ACES fit
 
 Example 11 uses Krzysztof Narkowicz's [ACES Filmic Tone Mapping Curve](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/), offered upstream under CC0 or MIT; this integration uses CC0. Room, light strips, objects and the post-processing pipeline are procedural project code.
+
+## Hybrid reference scenes
+
+Example 19 offers Shadows Test, Reflections Test and Global Illumination Test from [diharaw/hybrid-rendering 1.1.0](https://github.com/diharaw/hybrid-rendering/releases/tag/1.1.0), © Dihara Wijetunga. The Stanford bunny originates from Stanford University Computer Graphics Laboratory. Code license and source notices accompany the documentation assets as `hybrid-reference/REFERENCE-LICENSE.txt` and `hybrid-reference/SOURCE.txt`; model and texture authorship remains upstream.
+
+The pinned release archive is checksum-verified during documentation preparation. Conversion embeds textures and reproduces the reference importer's mesh-space convention. Original geometry, materials, instance transforms and camera presets are retained. These resources are downloaded on scene selection and are excluded from Nova SDK/npm packages.

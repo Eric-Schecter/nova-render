@@ -7,6 +7,7 @@ import json
 import posixpath
 import struct
 import zipfile
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,5 +76,19 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, default=ROOT / 'build/reference/hybrid-rendering/HybridRendering_1.1.0.zip')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/reference/hybrid-rendering/models')
     parser.add_argument('--profile', choices=('gltf', 'reference-import'), default='reference-import')
+    parser.add_argument('--download', action='store_true', help='Fetch the pinned archive when absent')
     args = parser.parse_args()
+    if args.download and not args.archive.exists():
+        manifest = json.loads((ROOT / 'tests/fixtures/hybrid-reference/manifest.json').read_text())
+        args.archive.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.archive.with_suffix('.download')
+        try:
+            with urllib.request.urlopen(manifest['archive']['url'], timeout=120) as response, temporary.open('wb') as target:
+                while block := response.read(1024 * 1024):
+                    target.write(block)
+            if temporary.stat().st_size != manifest['archive']['bytes'] or hashlib.sha256(temporary.read_bytes()).hexdigest() != manifest['archive']['sha256']:
+                raise ValueError('Downloaded reference archive does not match pinned bytes/SHA-256')
+            temporary.replace(args.archive)
+        finally:
+            temporary.unlink(missing_ok=True)
     prepare(args.archive, args.output, args.profile)

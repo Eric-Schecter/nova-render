@@ -17,6 +17,7 @@ node_modules
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 /docs/public/generated/
+/docs/public/hybrid-reference/
 
 # Machine-local editor settings, logs and secrets
 /.idea/

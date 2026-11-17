@@ -96,7 +96,38 @@ const tab = ref('example'),
   canvas = ref(null),
   message = ref('Loading model…'),
   ready = ref(false),
-  visible = ref(true)
+  visible = ref(true),
+  hybridScenes = ref([]),
+  hybridViews = ref([]),
+  hybridScene = ref('reflections-test'),
+  hybridView = ref('angle-1'),
+  sceneLoading = ref(false)
+let hybridControls
+async function changeHybridScene() {
+  sceneLoading.value = true
+  try {
+    await hybridControls.selectScene(hybridScene.value)
+    hybridViews.value = hybridControls.views
+    hybridView.value = hybridControls.view
+    message.value = ''
+  } catch (error) {
+    hybridScene.value = hybridControls.scene
+    message.value = error.message
+  } finally {
+    sceneLoading.value = false
+  }
+}
+async function changeHybridView() {
+  sceneLoading.value = true
+  try {
+    await hybridControls.selectView(hybridView.value)
+    message.value = ''
+  } catch (error) {
+    message.value = error.message
+  } finally {
+    sceneLoading.value = false
+  }
+}
 let renderer,
   disposed = false,
   drawing = false,
@@ -149,6 +180,13 @@ onMounted(async () => {
         exposure: props.comparison ? 3 : 1,
       },
       {
+        onHybridControls(controls) {
+          hybridControls = controls
+          hybridScenes.value = controls.choices
+          hybridViews.value = controls.views
+          hybridScene.value = controls.scene
+          hybridView.value = controls.view
+        },
         environmentURL: withBase('/generated/venice_sunset.bin'),
         onError(error) {
           if (!disposed) message.value = error.message
@@ -240,20 +278,83 @@ onBeforeUnmount(() => {
       :aria-hidden="!visible"
       :inert="!visible"
     >
+      <div v-if="hybrid && ready" class="scene-controls" :aria-busy="sceneLoading">
+        <label
+          >Scene
+          <select
+            v-model="hybridScene"
+            aria-label="Hybrid scene"
+            :disabled="sceneLoading"
+            @change="changeHybridScene"
+          >
+            <option v-for="scene in hybridScenes" :key="scene.id" :value="scene.id">
+              {{ scene.name }}
+            </option>
+          </select></label
+        >
+        <label
+          >Camera preset
+          <select
+            v-model="hybridView"
+            aria-label="Hybrid camera preset"
+            :disabled="sceneLoading"
+            @change="changeHybridView"
+          >
+            <option v-for="view in hybridViews" :key="view.id" :value="view.id">
+              {{ view.name }}
+            </option>
+          </select></label
+        >
+        <button :disabled="sceneLoading" @click="changeHybridView">Reset view</button>
+      </div>
       <span class="hint">Drag to orbit · Scroll to zoom</span>
       <div v-if="comparison" ref="canvas" class="comparison-host" />
       <canvas
         v-else
         ref="canvas"
         width="800"
-        height="650"
-        :aria-label="animation ? 'Skeletal animation preview' : 'Damaged Helmet preview'"
+        :height="hybrid ? 450 : 650"
+        :class="{ hybrid }"
+        :aria-label="
+          hybrid
+            ? 'Hybrid rendering preview'
+            : animation
+              ? 'Skeletal animation preview'
+              : 'Damaged Helmet preview'
+        "
       />
     </div>
   </div>
 </template>
 
 <style scoped>
+.scene-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.scene-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.scene-controls select,
+.scene-controls button {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+}
+.scene-controls :disabled {
+  opacity: 0.6;
+}
+canvas.hybrid {
+  aspect-ratio: 16/9;
+}
 .hint {
   display: block;
   font-size: 12px;

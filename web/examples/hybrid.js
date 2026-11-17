@@ -1,65 +1,42 @@
 import { createRenderer } from '../src/Nova.js'
 import { instrumentRenderer } from './PerformancePanel.js'
+import { createHybridScenes } from './HybridScenes.js'
 export async function showHybrid(
   canvas,
   modelURL,
   shaderDirectory,
   camera,
-  { onChange, onError } = {},
+  { onChange, onError, onHybridControls } = {},
 ) {
   const renderer = instrumentRenderer(await createRenderer({ canvas, shaderDirectory }), canvas)
+  let scenes
   try {
-    const world = (x, y, z, tx = 0, ty = 0, tz = 0) => [
-      x,
-      0,
-      0,
-      0,
-      0,
-      y,
-      0,
-      0,
-      0,
-      0,
-      z,
-      0,
-      tx,
-      ty,
-      tz,
-      1,
-    ]
-    await renderer.setScene(
-      [
-        { id: 'box', url: shaderDirectory + 'SceneRed.glb' },
-        { id: 'floor', url: shaderDirectory + 'SceneRed.glb' },
-      ],
-      [
-        { id: 'ground', assetId: 'floor', world: world(2, 0.06, 2, 0, -0.8) },
-        { id: 'caster', assetId: 'box', world: world(0.3, 1, 0.3) },
-      ],
-    )
-    const material = renderer.getMaterials('box')[0]
-    material.baseColor = [0.8, 0.8, 0.8, 1]
-    material.metallic = 0
-    material.roughness = 0.7
-    await renderer.setMaterial(0, material, 'box')
-    await renderer.setMaterial(0, { ...material, metallic: 0.9, roughness: 0.08 }, 'floor')
-    renderer.setLighting('pbr')
-    renderer.setDirectionalLight({ direction: [-1, 2, 1], color: [1, 1, 1], intensity: 4 })
-    renderer.setCamera({ yaw: 30, pitch: 25, distance: 5.5 })
+    renderer.setPostProcessing({
+      enabled: true,
+      bloom: false,
+      autoExposure: false,
+      toneMapping: 'aces',
+    })
     renderer.setHybrid({
       shadows: true,
-      shadowSamples: 4,
+      shadowSamples: 1,
       ambientOcclusion: true,
-      temporalReconstruction: true,
       reflections: true,
-      reflectionSamples: 4,
+      reflectionSamples: 1,
+      temporalReconstruction: true,
     })
-    renderer.setRenderMode('hybrid')
-    await renderer.drawFrame()
-    renderer.enableOrbitControls({ onChange, onError })
+    scenes = await createHybridScenes(renderer, canvas, shaderDirectory, { onChange, onError })
+    await scenes.selectScene('reflections-test')
     renderer.enableParameterPanel({ onError })
+    onHybridControls?.(scenes)
+    const dispose = renderer.dispose.bind(renderer)
+    renderer.dispose = () => {
+      scenes.dispose()
+      dispose()
+    }
     return renderer
   } catch (error) {
+    scenes?.dispose()
     renderer.dispose()
     throw error
   }

@@ -10,14 +10,15 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "shaders:webgpu": "node scripts/webgpu/generate.mjs",
-    "predocs:dev": "npm run shaders:webgpu",
-    "predocs:build": "npm run shaders:webgpu",
+    "predocs:dev": "npm run shaders:webgpu && npm run assets:hybrid-docs",
+    "predocs:build": "npm run shaders:webgpu && npm run assets:hybrid-docs",
     "check:webgpu": "node scripts/webgpu/check.mjs",
     "format:web": "prettier --write web scripts/webgpu docs/.vitepress",
     "check:format:web": "prettier --check web scripts/webgpu docs/.vitepress",
     "pack:sdk": "node scripts/packaging/sdk.mjs",
     "pack:web": "node scripts/packaging/web.mjs",
-    "pack:pair": "node scripts/packaging/pair.mjs"
+    "pack:pair": "node scripts/packaging/pair.mjs",
+    "assets:hybrid-docs": "node scripts/reference/prepare_hybrid_docs.mjs"
   },
   "devDependencies": {
     "naga-wasi-cli": "0.1.0",
