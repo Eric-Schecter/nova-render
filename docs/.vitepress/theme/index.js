@@ -1,3 +1,4 @@
+import PipelinePlayground from './PipelinePlayground.vue'
 import MaterialPlayground from './MaterialPlayground.vue'
 import PickingPlayground from './PickingPlayground.vue'
 import CameraPlayground from './CameraPlayground.vue'
@@ -15,6 +16,7 @@ import AntiAliasingPlayground from './AntiAliasingPlayground.vue'
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
+    app.component('PipelinePlayground', PipelinePlayground)
     app.component('MaterialPlayground', MaterialPlayground)
     app.component('PickingPlayground', PickingPlayground)
     app.component('CameraPlayground', CameraPlayground)

@@ -193,3 +193,5 @@ await writeFile(
   'docs/public/generated/MaterialDual.glb',
   await readFile('assets/MaterialSample/Dual.glb'),
 )
+
+await import('./generate-pipelines.mjs')

@@ -71,6 +71,39 @@ int main(int argc, char** argv)
                     throw std::runtime_error("G-buffer diagnostic parity failed");
             }
         }
+        settings.pipeline   = render::RasterPipeline::Forward;
+        settings.debug      = render::PipelineDebug::Final;
+        settings.lightCount = 128;
+        view.SetSettings(settings);
+        auto lit            = view.DrawFrame(321, 181);
+        settings.lightCount = 0;
+        view.SetSettings(settings);
+        if (Difference(lit, view.DrawFrame(321, 181)) < 2)
+            throw std::runtime_error("Lights must visibly change the image");
+        settings.lightCount = 128;
+        settings.debug      = render::PipelineDebug::LightCount;
+        view.SetSettings(settings);
+        auto allLights = view.DrawFrame(321, 181);
+        for (auto pipeline : {render::RasterPipeline::ForwardPlus, render::RasterPipeline::ClusteredForward})
+        {
+            settings.pipeline = pipeline;
+            view.SetSettings(settings);
+            if (Difference(allLights, view.DrawFrame(321, 181)) < 2)
+                throw std::runtime_error("Spatial culling must reduce candidate counts");
+            settings.debug       = render::PipelineDebug::Overflow;
+            settings.lightCount  = 256;
+            settings.lightRadius = 32;
+            view.SetSettings(settings);
+            const auto image    = view.DrawFrame(321, 181);
+            bool       overflow = false;
+            for (size_t i = 0; i < image.pixels.size(); i += 4)
+                overflow |= image.pixels[i] > 240 && image.pixels[i + 1] < 10 && image.pixels[i + 2] > 240;
+            if (!overflow)
+                throw std::runtime_error("Overflow fixture must exercise fallback");
+            settings.debug       = render::PipelineDebug::LightCount;
+            settings.lightCount  = 128;
+            settings.lightRadius = 3;
+        }
         auto s        = view.GetSettings();
         s.lightCount  = 257;
         bool rejected = false;

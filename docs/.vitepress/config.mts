@@ -44,6 +44,7 @@ export default defineConfig({
           { text: '13 · Planar reflections', link: '/examples/planar' },
           { text: '14 · Reflection probes', link: '/examples/probe' },
           { text: '15 · Scene instances', link: '/examples/scene' },
+          { text: '16 · Raster pipelines', link: '/examples/pipelines' },
         ],
       },
       {
@@ -63,6 +64,7 @@ export default defineConfig({
           { text: 'Screen-space reflections', link: '/api/ssr' },
           { text: 'Planar reflections', link: '/api/planar' },
           { text: 'Reflection probes', link: '/api/probe' },
+          { text: 'Raster pipeline laboratory', link: '/api/pipelines' },
           { text: 'Parameter panels', link: '/api/ui' },
           { text: 'Types and configuration', link: '/api/types' },
           { text: 'Backend selection', link: '/api/selection' },
