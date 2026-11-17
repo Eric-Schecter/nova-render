@@ -1,0 +1,94 @@
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <render/PipelineComparisonView.hpp>
+void Save(const render::Image& image, const std::filesystem::path& file)
+{
+    std::ofstream out(file, std::ios::binary);
+    out << "P6\n" << image.width << " " << image.height << "\n255\n";
+    for (size_t i = 0; i < image.pixels.size(); i += 4)
+        out.write(reinterpret_cast<const char*>(image.pixels.data() + i), 3);
+}
+double Difference(const render::Image& a, const render::Image& b)
+{
+    double d = 0;
+    for (size_t i = 0; i < a.pixels.size(); i++)
+        d += std::abs(int(a.pixels[i]) - int(b.pixels[i]));
+    return d / a.pixels.size();
+}
+int main(int argc, char** argv)
+{
+    try
+    {
+        std::string            api = argc > 1 ? argv[1] : "metal";
+        render::RendererConfig config;
+        config.api = api == "metal"    ? render::GraphicsAPI::Metal
+                     : api == "vulkan" ? render::GraphicsAPI::Vulkan
+                                       : render::GraphicsAPI::D3D12;
+        render::PipelineComparisonView     view(config);
+        render::PipelineComparisonSettings settings;
+        auto                               dir = std::filesystem::path("build/validation/pipelines") / api;
+        std::filesystem::create_directories(dir);
+        for (int stress = 0; stress < 3; stress++)
+        {
+            settings.lightCount  = stress == 0 ? 128 : stress == 1 ? 256 : 0;
+            settings.lightRadius = stress == 1 ? 32 : 3;
+            render::Image reference;
+            for (int mode = 0; mode < 4; mode++)
+            {
+                settings.pipeline = render::RasterPipeline(mode);
+                settings.debug    = render::PipelineDebug::Final;
+                view.SetSettings(settings);
+                auto image = view.DrawFrame(321, 181);
+                Save(image, dir / (std::to_string(stress) + "-" + std::to_string(mode) + ".ppm"));
+                if (mode == 0)
+                    reference = image;
+                else
+                {
+                    double d = Difference(image, reference);
+                    std::cout << api << " stress " << stress << " pipeline " << mode << " difference " << d << "\n";
+                    if (d > .15)
+                        throw std::runtime_error("Pipeline parity failed");
+                }
+            }
+        }
+        settings.lightCount  = 128;
+        settings.lightRadius = 3;
+        for (int debug = 1; debug < 8; debug++)
+        {
+            render::Image reference;
+            for (int mode = 0; mode < 4; mode++)
+            {
+                settings.pipeline = render::RasterPipeline(mode);
+                settings.debug    = render::PipelineDebug(debug);
+                view.SetSettings(settings);
+                auto image = view.DrawFrame(321, 181);
+                Save(image, dir / ("debug-" + std::to_string(debug) + "-" + std::to_string(mode) + ".ppm"));
+                if (mode == 0)
+                    reference = image;
+                else if (debug < 6 && Difference(reference, image) > .15)
+                    throw std::runtime_error("G-buffer diagnostic parity failed");
+            }
+        }
+        auto s        = view.GetSettings();
+        s.lightCount  = 257;
+        bool rejected = false;
+        try
+        {
+            view.SetSettings(s);
+        }
+        catch (const std::invalid_argument&)
+        {
+            rejected = true;
+        }
+        if (!rejected)
+            throw std::runtime_error("Invalid count accepted");
+        std::cout << "Pipeline image parity, diagnostics, zero lights, overflow fallback and validation passed\n";
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << "\n";
+        return 1;
+    }
+}

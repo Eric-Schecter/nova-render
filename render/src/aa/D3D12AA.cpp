@@ -42,7 +42,7 @@ namespace render::detail
             uint64_t                           serial = 0;
             ComPtr<ID3D12RootSignature>        root;
             ComPtr<ID3D12DescriptorHeap>       rtvHeap, dsvHeap, srvHeap;
-            ComPtr<ID3D12PipelineState>        pipelines[22], sceneMS, shadowMS, hdrMS, ssrMS;
+            ComPtr<ID3D12PipelineState>        pipelines[28], sceneMS, shadowMS, hdrMS, ssrMS;
             ComPtr<ID3D12Resource>             uniforms, readback;
             Texture                            textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             UINT                               rtvStride = 0, dsvStride = 0, srvStride = 0;
@@ -177,7 +177,9 @@ namespace render::detail
                 d.SampleMask            = UINT_MAX;
                 d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
                 d.SampleDesc.Count      = samples;
-                d.NumRenderTargets      = program == 17 ? 4 : (program == 0 || program == 10 || program == 16) ? 2 : 1;
+                d.NumRenderTargets      = (program == 17 || program == 22)                   ? 4
+                                          : (program == 0 || program == 10 || program == 16) ? 2
+                                                                                             : 1;
                 for (UINT i = 0; i < d.NumRenderTargets; i++)
                 {
                     d.RTVFormats[i] = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -192,10 +194,11 @@ namespace render::detail
                 d.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;
                 d.RasterizerState.DepthClipEnable   = TRUE;
                 d.RasterizerState.MultisampleEnable = samples > 1;
-                d.DepthStencilState.DepthEnable =
-                  program == 0 || program == 9 || program == 10 || program == 16 || program == 17;
+                d.DepthStencilState.DepthEnable     = program == 0 || program == 9 || program == 10 || program == 16
+                                                  || program == 17 || program == 22 || program == 23 || program == 27;
                 d.DepthStencilState.DepthWriteMask =
-                  (program == 0 || program == 9 || program == 10 || program == 16 || program == 17)
+                  (program == 0 || program == 9 || program == 10 || program == 16 || program == 17 || program == 22
+                   || program == 23 || program == 27)
                     ? D3D12_DEPTH_WRITE_MASK_ALL
                     : D3D12_DEPTH_WRITE_MASK_ZERO;
                 d.DepthStencilState.DepthFunc       = D3D12_COMPARISON_FUNC_LESS;
@@ -204,7 +207,8 @@ namespace render::detail
                   d.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
                 d.DepthStencilState.FrontFace.StencilFunc     = D3D12_COMPARISON_FUNC_ALWAYS;
                 d.DepthStencilState.BackFace                  = d.DepthStencilState.FrontFace;
-                d.DSVFormat = (program == 0 || program == 9 || program == 10 || program == 16 || program == 17)
+                d.DSVFormat = (program == 0 || program == 9 || program == 10 || program == 16 || program == 17
+                               || program == 22 || program == 23 || program == 27)
                                 ? DXGI_FORMAT_D32_FLOAT
                                 : DXGI_FORMAT_UNKNOWN;
                 ComPtr<ID3D12PipelineState> result;
@@ -291,7 +295,7 @@ namespace render::detail
                 dsvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 uniforms  = Buffer(256 * 64, D3D12_HEAP_TYPE_UPLOAD);
-                for (int i = 0; i < 22; i++)
+                for (int i = 0; i < 28; i++)
                     pipelines[i] = Pipeline(i, 1, c);
                 sceneMS  = Pipeline(0, 4, c);
                 shadowMS = Pipeline(10, 4, c);
@@ -400,7 +404,8 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                         || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         int k         = p.program == 9                                          ? 3
                                         : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -455,9 +460,10 @@ namespace render::detail
                 {
                     const auto& p = passes[index];
                     const bool  scene =
-                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17);
+                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                       || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool                  nativeScene = p.program < 0;
-                    const int                   attachments = p.program == 17 ? 4
+                    const int                   attachments = (p.program == 17 || p.program == 22) ? 4
                                                               : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
                                                                                                                        : 1;
                     auto&                       target      = textures[p.target];
@@ -489,6 +495,8 @@ namespace render::detail
                             colors[a][2]                = 0;
                             colors[a][3]                = 1;
                         }
+                        if (p.program >= 22 && p.program != 23)
+                            std::fill(std::begin(colors[a]), std::end(colors[a]), 0.f);
                         commands->ClearRenderTargetView(targets[a], colors[a], 0, nullptr);
                     }
                     auto dsv = DSV(
@@ -556,7 +564,8 @@ namespace render::detail
                         commands->RSSetViewports(1, &vp);
                         commands->RSSetScissorRects(1, &scissor);
                         commands->DrawInstanced(
-                          (p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17)
+                          (p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17 || p.program == 22
+                           || p.program == 23 || p.program == 27)
                             ? uint32_t(p.uniforms[10][2])
                           : scene ? 79 * 6
                                   : 3,

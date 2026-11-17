@@ -33,27 +33,34 @@ namespace render::detail
         AARawMultiMotion,
         AARawBaseline,
         AAShadowMap,
-        AABloomDown0     = 23,
-        AABloomUp0       = 28,
-        AALuminance0     = 32,
-        AAExposureA      = 38,
-        AAExposureB      = 39,
-        AAPostColor      = 40,
-        AAPostBaseline   = 41,
-        AASsrColor       = 42,
-        AASsrMotion      = 43,
-        AASsrNormal      = 44,
-        AASsrDepth       = 45,
-        AASsrMulti0      = 46,
-        AASsrHiZ0        = 50,
-        AASsrHit         = 62,
-        AASsrComposite   = 63,
-        AASsrEnvironment = 64,
-        AAPlanarFloor    = 65,
-        AAPlanarMirror   = 69,
-        AAProbeCubemap   = 73,
-        AAProbeData      = 77,
-        AAResourceCount  = 78
+        AABloomDown0       = 23,
+        AABloomUp0         = 28,
+        AALuminance0       = 32,
+        AAExposureA        = 38,
+        AAExposureB        = 39,
+        AAPostColor        = 40,
+        AAPostBaseline     = 41,
+        AASsrColor         = 42,
+        AASsrMotion        = 43,
+        AASsrNormal        = 44,
+        AASsrDepth         = 45,
+        AASsrMulti0        = 46,
+        AASsrHiZ0          = 50,
+        AASsrHit           = 62,
+        AASsrComposite     = 63,
+        AASsrEnvironment   = 64,
+        AAPlanarFloor      = 65,
+        AAPlanarMirror     = 69,
+        AAProbeCubemap     = 73,
+        AAProbeData        = 77,
+        AAPipelineAlbedo   = 78,
+        AAPipelineNormal   = 79,
+        AAPipelinePosition = 80,
+        AAPipelineMaterial = 81,
+        AAPipelineDepth    = 82,
+        AAPipelineTiles    = 83,
+        AAPipelineLists    = 84,
+        AAResourceCount    = 85
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -80,6 +87,12 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id == AAPipelineLists)
+            return {17, 16 * 9 * 16, 1};
+        if (id == AAPipelineTiles)
+            return {16, 9, 1};
+        if (id >= AAPipelineAlbedo)
+            return {w, h, 1};
         if (id == AAProbeData)
             return {20, 1, 1};
         if (id >= AAProbeCubemap && id < AAProbeData)
@@ -135,7 +148,7 @@ namespace render::detail
             used[p.target] = true;
             for (int source : p.sources)
                 used[source] = true;
-            if (p.program == 17)
+            if (p.program == 17 || p.program == 22)
             {
                 for (int i = 1; i < 4; i++)
                     used[p.target + i] = true;

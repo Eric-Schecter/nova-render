@@ -40,7 +40,7 @@ add_custom_command(OUTPUT "${embedded_shader_cpp}"
     DEPENDS ${SHADER_OUTPUTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake" VERBATIM)
 add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ModelData.cpp render/src/MaterialData.cpp render/src/CameraData.cpp render/src/SceneData.cpp render/src/Picking.cpp
     render/src/AnimationData.cpp render/src/ShaderData.cpp "${embedded_shader_cpp}")
-target_sources(nova_render PRIVATE render/src/ParameterPanel.cpp render/src/EnvironmentData.cpp render/src/RayTracingView.cpp render/src/path/PathTracing.cpp render/src/path/LightSampling.cpp render/src/aa/AntiAliasingView.cpp render/src/aa/ShadowView.cpp render/src/aa/PostProcessingView.cpp render/src/aa/ScreenSpaceReflectionView.cpp
+target_sources(nova_render PRIVATE render/src/aa/PipelineComparisonView.cpp render/src/ParameterPanel.cpp render/src/EnvironmentData.cpp render/src/RayTracingView.cpp render/src/path/PathTracing.cpp render/src/path/LightSampling.cpp render/src/aa/AntiAliasingView.cpp render/src/aa/ShadowView.cpp render/src/aa/PostProcessingView.cpp render/src/aa/ScreenSpaceReflectionView.cpp
     render/src/aa/PlanarReflectionView.cpp
     render/src/aa/ReflectionProbeView.cpp render/src/aa/ReflectionEnvironment.cpp render/src/TextureFiltering.cpp)
 if(NOVA_ENABLE_PATH_TRACING)
@@ -828,5 +828,26 @@ if(BUILD_TESTING AND WIN32 AND NOVA_TEST_DX12_HARDWARE)
             set_tests_properties(mlt-${api}-gpu comparison-${api}-gpu glass-${api}-gpu ao-${api}-gpu
                 PROPERTIES TIMEOUT 600 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/hardware")
         endforeach()
+    endif()
+endif()
+
+if(BUILD_TESTING)
+    add_executable(nova_pipelines_test tests/pipelines.cpp)
+    target_link_libraries(nova_pipelines_test PRIVATE Nova::Render)
+    if(APPLE)
+        add_test(NAME pipelines-metal COMMAND nova_pipelines_test metal)
+        set_tests_properties(pipelines-metal PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+    endif()
+    if(NOVA_ENABLE_VULKAN)
+        add_test(NAME pipelines-vulkan COMMAND nova_pipelines_test vulkan)
+        set_tests_properties(pipelines-vulkan PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+    endif()
+endif()
+if(NOVA_BUILD_EXAMPLES)
+    add_executable(nova_pipelines examples/pipelines/main.cpp)
+    target_link_libraries(nova_pipelines PRIVATE Nova::Render)
+    if(NOVA_ENABLE_UI)
+        target_link_libraries(nova_pipelines PRIVATE imgui::imgui)
+        target_compile_definitions(nova_pipelines PRIVATE NOVA_EXAMPLE_UI=1)
     endif()
 endif()

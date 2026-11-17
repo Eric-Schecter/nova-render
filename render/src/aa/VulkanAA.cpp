@@ -87,7 +87,7 @@ namespace render::detail
             VkDescriptorPool                 descriptorPool{};
             VkDescriptorSetLayout            setLayout{};
             VkPipelineLayout                 layout{};
-            VkPipeline                       pipelines[22]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
+            VkPipeline                       pipelines[28]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
               surfaceMSPass{};
             VkSampler    linear{}, point{};
@@ -310,14 +310,17 @@ namespace render::detail
                 VkPipelineMultisampleStateCreateInfo sampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
                 sampling.rasterizationSamples = ms ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
                 VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-                ds.depthTestEnable = ds.depthWriteEnable =
-                  program == 0 || program == 9 || program == 10 || program == 16 || program == 17;
+                ds.depthTestEnable = ds.depthWriteEnable = program == 0 || program == 9 || program == 10
+                                                           || program == 16 || program == 17 || program == 22
+                                                           || program == 23 || program == 27;
                 ds.depthCompareOp = VK_COMPARE_OP_LESS;
                 VkPipelineColorBlendAttachmentState blends[4]{};
                 for (auto& blend : blends)
                     blend.colorWriteMask = 15;
                 VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-                blend.attachmentCount = program == 17 ? 4 : (program == 0 || program == 10 || program == 16) ? 2 : 1;
+                blend.attachmentCount                       = (program == 17 || program == 22)                   ? 4
+                                                              : (program == 0 || program == 10 || program == 16) ? 2
+                                                                                                                 : 1;
                 blend.pAttachments    = blends;
                 VkDynamicState                   dynamics[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
                 VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
@@ -335,8 +338,8 @@ namespace render::detail
                 d.pColorBlendState    = &blend;
                 d.pDynamicState       = &dynamic;
                 d.layout              = layout;
-                d.renderPass          = program == 17  ? (ms ? surfaceMSPass : surfacePass)
-                                        : program == 9 ? externalPass
+                d.renderPass          = (program == 17 || program == 22) ? (ms ? surfaceMSPass : surfacePass)
+                                        : (program == 9 || program == 23 || program == 27) ? externalPass
                                         : (program == 0 || program == 10 || program == 16) ? (ms ? msPass : scenePass)
                                                                                            : postPass;
                 VkPipeline result;
@@ -632,7 +635,7 @@ namespace render::detail
                 externalMSPass = MakePass(true, true, true);
                 surfacePass    = MakePass(true, false, false, true);
                 surfaceMSPass  = MakePass(true, true, false, true);
-                for (int i = 0; i < 22; i++)
+                for (int i = 0; i < 28; i++)
                     pipelines[i] = Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
                 shadowMS = Pipeline(10, true, config);
@@ -782,7 +785,8 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                         || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         int k         = p.program == 9                                          ? 3
                                         : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -829,9 +833,10 @@ namespace render::detail
                 {
                     const auto& p = passes[index];
                     bool        scene =
-                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17);
+                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                       || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool               nativeScene = p.program < 0;
-                    const int                attachments = p.program == 17                                          ? 4
+                    const int                attachments = (p.program == 17 || p.program == 22)                     ? 4
                                                            : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
                                                                                                                     : 1;
                     auto&                    target      = textures[p.target];
@@ -900,11 +905,12 @@ namespace render::detail
                         }
                     }
                     api.vkUpdateDescriptorSets(device, 19, writes.data(), 0, nullptr);
-                    VkRenderPass renderPass = p.program == 17  ? (p.multisampled ? surfaceMSPass : surfacePass)
-                                              : nativeScene    ? (p.multisampled ? externalMSPass : externalPass)
-                                              : p.program == 9 ? externalPass
-                                              : scene          ? (p.multisampled ? msPass : scenePass)
-                                                               : postPass;
+                    VkRenderPass            renderPass = (p.program == 17 || p.program == 22)
+                                                           ? (p.multisampled ? surfaceMSPass : surfacePass)
+                                                         : nativeScene ? (p.multisampled ? externalMSPass : externalPass)
+                                                         : (p.program == 9 || p.program == 23 || p.program == 27) ? externalPass
+                                                         : scene ? (p.multisampled ? msPass : scenePass)
+                                                                 : postPass;
                     VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
                     fb.renderPass      = renderPass;
                     fb.attachmentCount = uint32_t(views.size());
@@ -925,6 +931,9 @@ namespace render::detail
                         clears[2].color = {{0, 0, 0, 1}};
                         clears[3].color = {{1000, 1000, 0, 1}};
                     }
+                    if (p.program >= 22 && p.program != 23)
+                        for (int a = 0; a < attachments; ++a)
+                            clears[a].color = {{0, 0, 0, 0}};
                     if (scene)
                         clears[views.size() - 1].depthStencil = {1, 0};
                     VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -967,7 +976,8 @@ namespace render::detail
                     api.vkCmdSetScissor(command, 0, 1, &scissor);
                     api.vkCmdDraw(
                       command,
-                      (p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17)
+                      (p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17 || p.program == 22
+                       || p.program == 23 || p.program == 27)
                         ? uint32_t(p.uniforms[10][2])
                       : scene ? 79 * 6
                               : 3,

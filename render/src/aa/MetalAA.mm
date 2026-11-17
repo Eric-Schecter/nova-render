@@ -12,7 +12,7 @@ namespace render::detail
             id<MTLDevice>              device;
             id<MTLCommandQueue>        queue;
             id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
-            id<MTLRenderPipelineState> pipelines[22], sceneMS, shadowMS, hdrMS, ssrMS;
+            id<MTLRenderPipelineState> pipelines[28], sceneMS, shadowMS, hdrMS, ssrMS;
             id<MTLSamplerState>        linear, point;
             id<MTLDepthStencilState>   depthState;
             uint32_t                   width = 0, height = 0;
@@ -39,10 +39,13 @@ namespace render::detail
                 d.fragmentFunction                = [library newFunctionWithName:@"PSMain"];
                 d.sampleCount                     = samples;
                 d.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
-                if (program == 0 || program == 10 || program == 16 || program == 17)
+                if (
+                  program == 0 || program == 10 || program == 16 || program == 17 || program == 22 || program == 23
+                  || program == 27)
                 {
-                    d.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
-                    if (program == 17)
+                    if (program != 23 && program != 27)
+                        d.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
+                    if (program == 17 || program == 22)
                     {
                         d.colorAttachments[2].pixelFormat = MTLPixelFormatRGBA16Float;
                         d.colorAttachments[3].pixelFormat = MTLPixelFormatRGBA16Float;
@@ -68,7 +71,7 @@ namespace render::detail
                 if (![device supportsTextureSampleCount:4])
                     throw std::runtime_error("Metal AA requires 4x MSAA support");
                 queue = [device newCommandQueue];
-                for (int i = 0; i < 22; i++)
+                for (int i = 0; i < 28; i++)
                 {
                     const auto data =
                       LoadShader(config.shaderDirectory, ("aa-" + std::to_string(i) + ".metallib").c_str());
@@ -164,7 +167,8 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17))
+                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                         || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         const int k       = p.program == 9                                          ? 3
                                             : (p.target == AABaseline || p.target == AARawBaseline) ? 2
@@ -211,10 +215,10 @@ namespace render::detail
                         auto       d = [MTLRenderPassDescriptor renderPassDescriptor];
                         const bool scene =
                                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16
-                                      || p.program == 17),
+                                      || p.program == 17 || p.program == 22 || p.program == 23 || p.program == 27),
                                    nativeScene = p.program < 0,
                                    baseline    = p.target == AABaseline || p.target == AARawBaseline;
-                        const int attachments  = p.program == 17                                          ? 4
+                        const int attachments  = (p.program == 17 || p.program == 22)                     ? 4
                                                  : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
                                                                                                           : 1;
                         for (int a = 0; a < attachments; a++)
@@ -237,6 +241,8 @@ namespace render::detail
                                 c.clearColor = MTLClearColorMake(0, 0, 0, 1);
                             if (p.program == 17 && a == 3)
                                 c.clearColor = MTLClearColorMake(1000, 1000, 0, 1);
+                            if (p.program >= 22 && p.program != 23)
+                                c.clearColor = MTLClearColorMake(0, 0, 0, 0);
                             c.storeAction = p.multisampled ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
                             if (p.multisampled)
                                 c.resolveTexture = textures[target];
@@ -288,7 +294,8 @@ namespace render::detail
                         [e setFragmentSamplerState:point atIndex:10];
                         [e drawPrimitives:MTLPrimitiveTypeTriangle
                               vertexStart:0
-                              vertexCount:(p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17)
+                              vertexCount:(p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                                           || p.program == 22 || p.program == 23 || p.program == 27)
                                             ? uint32_t(p.uniforms[10][2])
                                           : scene ? 79 * 6
                                                   : 3];
