@@ -5,6 +5,7 @@
 #include <functional>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <limits>
 #include <set>
 #include <stdexcept>
 namespace render::detail
@@ -272,12 +273,38 @@ namespace render::detail
         state.time = time;
         Apply();
     }
-    void AnimationPlayer::Apply()
+    AnimationState ValidateAnimationState(const std::vector<AnimationClip>& clips, const AnimationState& state)
     {
-        if (!posed)
-            return;
-        const auto& a     = *source->animation;
-        auto        nodes = a.nodes;
+        if (
+          state.clip >= clips.size() || !std::isfinite(state.time) || state.time < 0
+          || state.time > clips[state.clip].duration || !std::isfinite(state.speed) || state.speed < .1f
+          || state.speed > 4)
+            throw std::invalid_argument("Invalid animation state");
+        return state;
+    }
+    AnimationState AdvanceAnimation(const std::vector<AnimationClip>& clips, AnimationState state, float delta)
+    {
+        if (!std::isfinite(delta) || delta < 0)
+            throw std::invalid_argument("Invalid animation delta");
+        if (!state.playing || delta == 0)
+            return state;
+        double time = double(state.time) + double(delta) * state.speed;
+        if (!std::isfinite(time) || time > std::numeric_limits<float>::max())
+            throw std::invalid_argument("Animation time overflow");
+        float duration = clips.at(state.clip).duration;
+        if (state.loop)
+            time = std::fmod(time, duration);
+        else if (time >= duration)
+        {
+            time          = duration;
+            state.playing = false;
+        }
+        state.time = float(time);
+        return state;
+    }
+    std::vector<JointMatrix> EvaluateAnimation(const AnimationData& a, const AnimationState& state)
+    {
+        auto nodes = a.nodes;
         if (!a.clips.empty())
             for (const auto& track : a.tracks.at(state.clip))
             {
@@ -309,31 +336,9 @@ namespace render::detail
             ready[i]          = true;
             return world[i];
         };
-        std::vector<uint32_t> offsets;
-        size_t                count = 0;
+        size_t count = a.nodes.size();
         for (const auto& skin : a.skins)
-        {
-            offsets.push_back(uint32_t(count));
             count += skin.joints.size();
-        }
-        const auto nodeOffset = uint32_t(count);
-        count += nodes.size();
-        if (posed->skinInputs.empty())
-        {
-            posed->skinInputs.reserve(a.vertices.size());
-            for (const auto& v : a.vertices)
-            {
-                SkinInput input;
-                input.position = {v.position.x, v.position.y, v.position.z, 1};
-                input.normal   = {v.normal.x, v.normal.y, v.normal.z, 0};
-                for (int k = 0; k < 4; ++k)
-                {
-                    input.joints[k]  = v.skin >= 0 ? offsets[v.skin] + v.joints[k] : nodeOffset + uint32_t(v.node);
-                    input.weights[k] = v.skin >= 0 ? v.weights[k] : (k == 0 ? 1.f : 0.f);
-                }
-                posed->skinInputs.push_back(input);
-            }
-        }
         glm::mat4 normalize = glm::scale(glm::mat4(1), glm::vec3(a.scale));
         normalize[3]        = glm::vec4(-a.center * a.scale, 1);
         std::vector<JointMatrix> matrices;
@@ -351,7 +356,39 @@ namespace render::detail
                 append(normalize * global(skin.joints[i]) * skin.inverseBind[i]);
         for (size_t i = 0; i < nodes.size(); ++i)
             append(normalize * global(int(i)));
-        posed->jointMatrices = std::move(matrices);
+        return matrices;
+    }
+    void AnimationPlayer::Apply()
+    {
+        if (!posed)
+            return;
+        const auto&           a = *source->animation;
+        std::vector<uint32_t> offsets;
+        size_t                count = 0;
+        for (const auto& skin : a.skins)
+        {
+            offsets.push_back(uint32_t(count));
+            count += skin.joints.size();
+        }
+        const auto nodeOffset = uint32_t(count);
+        count += a.nodes.size();
+        if (posed->skinInputs.empty())
+        {
+            posed->skinInputs.reserve(a.vertices.size());
+            for (const auto& v : a.vertices)
+            {
+                SkinInput input;
+                input.position = {v.position.x, v.position.y, v.position.z, 1};
+                input.normal   = {v.normal.x, v.normal.y, v.normal.z, 0};
+                for (int k = 0; k < 4; ++k)
+                {
+                    input.joints[k]  = v.skin >= 0 ? offsets[v.skin] + v.joints[k] : nodeOffset + uint32_t(v.node);
+                    input.weights[k] = v.skin >= 0 ? v.weights[k] : (k == 0 ? 1.f : 0.f);
+                }
+                posed->skinInputs.push_back(input);
+            }
+        }
+        posed->jointMatrices = EvaluateAnimation(a, state);
         ++posed->revision;
     }
 } // namespace render::detail

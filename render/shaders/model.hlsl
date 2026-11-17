@@ -55,14 +55,16 @@ float4x4                                             jointMatrix(uint index)
     JointMatrix m = jointMatrices[index];
     return transpose(float4x4(m.c0, m.c1, m.c2, m.c3));
 }
-Vertex skinVertex(uint id)
+Vertex skinVertex(uint id, uint paletteOffset = 0, bool animate = true)
 {
     Vertex v = vertices[id];
-    if (skyParams.w > .5)
+    if (skyParams.w > .5 && animate)
     {
         SkinInput input = skinInputs[id];
-        float4x4  m     = jointMatrix(input.joints.x) * input.weights.x + jointMatrix(input.joints.y) * input.weights.y
-                     + jointMatrix(input.joints.z) * input.weights.z + jointMatrix(input.joints.w) * input.weights.w;
+        float4x4  m     = jointMatrix(paletteOffset + input.joints.x) * input.weights.x
+                     + jointMatrix(paletteOffset + input.joints.y) * input.weights.y
+                     + jointMatrix(paletteOffset + input.joints.z) * input.weights.z
+                     + jointMatrix(paletteOffset + input.joints.w) * input.weights.w;
         v.position = float4(mul(m, input.position).xyz, v.position.w);
         float3 a   = float3(m[0][0], m[1][0], m[2][0]);
         float3 b   = float3(m[0][1], m[1][1], m[2][1]);
@@ -154,8 +156,8 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
     float  u       = dot(delta, p) * inverse;
     if (u < 0 || u > 1)
         return false;
-    float3 q = cross(delta, e);
-    float  v = dot(direction, q) * inverse;
+    float3 q        = cross(delta, e);
+    float  v        = dot(direction, q) * inverse;
     float  distance = dot(f, q) * inverse;
     if (!(v >= 0 && u + v <= 1 && distance > 1e-5 && distance < maxDistance))
         return false;
@@ -190,10 +192,10 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
           float3(instances[i].normalMatrix._m01, instances[i].normalMatrix._m11, instances[i].normalMatrix._m21);
         float3 nz =
           float3(instances[i].normalMatrix._m02, instances[i].normalMatrix._m12, instances[i].normalMatrix._m22);
-        float3   delta          = origin - translation;
-        float3   localOrigin    = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
-        float3   localDirection = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
-        uint     root = header + 1 + uint(instance.uv.y), node = 0, count = uint(instance.uv.w);
+        float3 delta          = origin - translation;
+        float3 localOrigin    = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
+        float3 localDirection = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
+        uint   root = header + 1 + uint(instance.uv.y), node = 0, count = uint(instance.uv.w);
         [loop] while (node < count)
         {
             InstanceData box = instances[root + node];
@@ -288,15 +290,17 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     id += drawOffsets.x;
     instanceId += drawOffsets.y;
 #endif
-    Vertex    v = skinVertex(id);
-    uint      materialIndex = uint(max(1, v.position.w)) - 1;
-    v.position.w            = 1;
+    bool   scene         = lightDirection.w > .5 && lightDirection.w < 1.5;
+    float  palette       = scene ? instances[instanceId].normalMatrix._m03 : 1;
+    Vertex v             = skinVertex(id, uint(max(0, palette - 1)), palette > .5);
+    uint   materialIndex = uint(max(1, v.position.w)) - 1;
+    v.position.w         = 1;
     if (lightDirection.w > .5 && lightDirection.w < 1.5)
     {
         InstanceData instance = instances[instanceId];
         materialIndex += uint(instance.uv.x);
-        v.position            = mul(instance.world, v.position);
-        v.normal.xyz          = mul((float3x3)instance.normalMatrix, v.normal.xyz);
+        v.position   = mul(instance.world, v.position);
+        v.normal.xyz = mul((float3x3)instance.normalMatrix, v.normal.xyz);
     }
     VertexOut o;
     o.winding = 1;
@@ -393,8 +397,8 @@ SkyOut SkyVSMain(uint id : SV_VertexID)
     float2 positions[3] = {float2(-1, -1), float2(-1, 3), float2(3, -1)};
     float2 p            = positions[id];
     SkyOut output;
-    output.position  = float4(p, 1, 1);
-    output.uv        = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+    output.position = float4(p, 1, 1);
+    output.uv       = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     output.direction =
       cameraForward.xyz
       + (cameraUp.w < 0 ? float3(0, 0, 0) : p.x * cameraRight.w * cameraRight.xyz + p.y * cameraUp.w * cameraUp.xyz);
@@ -439,7 +443,7 @@ SurfaceData sampleSurface(VertexOut input)
     }
     float4 baseSample = baseTexture.Sample(textureSampler, uv);
     float3 base       = baseSample.rgb * baseFactor.rgb;
-    float3 n   = normalize(input.normal);
+    float3 n          = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
     if (input.generatedNormal > .5)
     {
@@ -456,23 +460,23 @@ SurfaceData sampleSurface(VertexOut input)
     float  scale   = rsqrt(max(max(dot(t, t), dot(b, b)), 0.00001));
     float3 sampled = normalTexture.Sample(textureSampler, uv).xyz * 2 - 1;
     sampled.xy *= matFactor.z;
-    n               = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
-    float4 mr       = materialTexture.Sample(textureSampler, uv);
-    float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
-    float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
+    n                    = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
+    float4      mr       = materialTexture.Sample(textureSampler, uv);
+    float       metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
+    float       ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
     SurfaceData result;
     result.useVisibility = 0;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
-    result.opacity         = baseSample.a * baseFactor.a;
-    result.alphaInfo       = alphaInfo;
-    result.position        = input.worldPosition;
-    result.normal          = n;
-    result.geometricNormal = normalize(input.normal);
-    result.base            = base;
-    result.metallic        = metallic;
-    result.roughness       = roughness;
-    result.ao              = ao;
-    result.emissive        = emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
+    result.opacity                                                                    = baseSample.a * baseFactor.a;
+    result.alphaInfo                                                                  = alphaInfo;
+    result.position                                                                   = input.worldPosition;
+    result.normal                                                                     = n;
+    result.geometricNormal                                                            = normalize(input.normal);
+    result.base                                                                       = base;
+    result.metallic                                                                   = metallic;
+    result.roughness                                                                  = roughness;
+    result.ao                                                                         = ao;
+    result.emissive = emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
     return result;
 }
 float hybridVisibility(SurfaceData s, uint index)
@@ -656,11 +660,11 @@ struct ModelGBuffer
 };
 ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 {
-    SurfaceData  s = sampleSurface(input);
+    SurfaceData s = sampleSurface(input);
     materialCoverage(s, face, input.winding, false);
     ModelGBuffer o;
-    o.baseRoughness    = float4(s.base, s.roughness);
-    o.normals          = float4(octEncode(s.normal), octEncode(s.geometricNormal));
+    o.baseRoughness = float4(s.base, s.roughness);
+    o.normals       = float4(octEncode(s.normal), octEncode(s.geometricNormal));
     // Split logarithmic view depth avoids half-float world-position quantization.
     // Both halves survive RGBA16F storage, preserving near/far scale without an extra target.
     float depth        = log2(max(1e-20, dot(s.position - eyeExposure.xyz, cameraForward.xyz)));
@@ -719,7 +723,7 @@ ModelGBuffer HybridShadowPSMain(SkyOut input)
     output.emissiveMetallic = float4(visibility[12], visibility[13], visibility[14], visibility[15]);
     return output;
 }
-float3                                   diagnosticLinear(float3 c)
+float3 diagnosticLinear(float3 c)
 {
     c = saturate(c);
     return float3(
@@ -976,9 +980,9 @@ float4 DeferredPSMain(SkyOut input)
 [[vk::binding(16, 0)]] StructuredBuffer<JointMatrix> previousJoints : register(t16);
 struct MotionOut
 {
-    float4 position : SV_Position;
-    float4 current : TEXCOORD0;
-    float4 previous : TEXCOORD1;
+    float4                position : SV_Position;
+    float4                current : TEXCOORD0;
+    float4                previous : TEXCOORD1;
     float2                uv : TEXCOORD2;
     nointerpolation uint  materialIndex : TEXCOORD3;
     nointerpolation float winding : TEXCOORD4;
@@ -991,14 +995,17 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     id += drawOffsets.x;
     instanceId += drawOffsets.y;
 #endif
-    Vertex current = skinVertex(id), old = vertices[id];
-    if (skyParams.w > .5)
+    bool   scene         = lightDirection.w > .5 && lightDirection.w < 1.5;
+    float  palette       = scene ? instances[instanceId].normalMatrix._m03 : 1;
+    uint   paletteOffset = uint(max(0, palette - 1));
+    Vertex current = skinVertex(id, paletteOffset, palette > .5), old = vertices[id];
+    if (skyParams.w > .5 && palette > .5)
     {
         SkinInput input    = skinInputs[id];
         float4    position = 0;
         [unroll] for (uint j = 0; j < 4; j++)
         {
-            JointMatrix m      = previousJoints[input.joints[j]];
+            JointMatrix m      = previousJoints[paletteOffset + input.joints[j]];
             float4x4    matrix = transpose(float4x4(m.c0, m.c1, m.c2, m.c3));
             position += mul(matrix, input.position) * input.weights[j];
         }
@@ -1018,9 +1025,9 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.uv            = current.uv.xy;
     o.materialIndex = materialIndex;
     o.winding       = winding;
-    o.current  = mul(viewProjection, current.position);
-    o.previous = mul(previousViewProjection, old.position);
-    o.position = o.current;
+    o.current       = mul(viewProjection, current.position);
+    o.previous      = mul(previousViewProjection, old.position);
+    o.position      = o.current;
     o.previousDepth = dot(old.position.xyz - previousSceneRest[0].xyz, previousSceneRest[8].xyz);
     o.identity      = float(instanceId + 1);
     return o;

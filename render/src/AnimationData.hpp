@@ -55,6 +55,9 @@ namespace render::detail
                                 uint32_t,
                                 const glm::mat4&,
                                 const glm::vec3&);
+    std::vector<JointMatrix> EvaluateAnimation(const AnimationData&, const AnimationState&);
+    AnimationState           ValidateAnimationState(const std::vector<AnimationClip>&, const AnimationState&);
+    AnimationState           AdvanceAnimation(const std::vector<AnimationClip>&, AnimationState, float);
     class AnimationPlayer
     {
       public:

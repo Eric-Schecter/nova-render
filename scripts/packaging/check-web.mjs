@@ -41,6 +41,10 @@ cpSync(
   new URL('../../assets/MaterialSample/Dual.glb', import.meta.url),
   join(work, 'models/Dual.glb'),
 )
+cpSync(
+  new URL('../../assets/SkinningRobot/SkinningRobot.glb', import.meta.url),
+  join(work, 'models', 'Animated.glb'),
+)
 const server = spawn(process.execPath, ['server.mjs'], {
   cwd: work,
   stdio: ['ignore', 'pipe', 'inherit'],

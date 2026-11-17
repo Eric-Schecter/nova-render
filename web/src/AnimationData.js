@@ -189,46 +189,7 @@ export function createAnimationPlayer(data) {
     data.jointMatrices = new Float32Array(paletteCount * 16)
   }
   function apply() {
-    if (!a) return
-    const nodes = a.nodes.map((n) => ({
-      ...n,
-      translation: [...n.translation],
-      rotation: [...n.rotation],
-      scale: [...n.scale],
-    }))
-    for (const track of a.tracks[state.clip] || []) {
-      let r = track.times.findIndex((t) => t > state.time)
-      if (r < 0) r = track.times.length - 1
-      const l = r && state.time < track.times[r] ? r - 1 : r,
-        t =
-          l === r || track.interpolation === 'STEP'
-            ? 0
-            : (state.time - track.times[l]) / (track.times[r] - track.times[l])
-      nodes[track.node][track.path] =
-        track.path === 'rotation'
-          ? slerp(track.values[l], track.values[r], t)
-          : track.values[l].map((v, k) => v + (track.values[r][k] - v) * t)
-    }
-    const world = []
-    function global(i) {
-      if (world[i]) return world[i]
-      const n = nodes[i],
-        local = nodeMatrix(n)
-      return (world[i] = n.parent >= 0 ? multiply(global(n.parent), local) : local)
-    }
-    const normalization = identity()
-    for (const i of [0, 5, 10]) normalization[i] = a.scale
-    for (let k = 0; k < 3; k++) normalization[12 + k] = -a.center[k] * a.scale
-    let index = 0
-    const append = (matrix) => {
-      const value = multiply(normalization, matrix)
-      if (!value.every(Number.isFinite)) throw Error('Non-finite joint matrix')
-      data.jointMatrices.set(value, index * 16)
-      index++
-    }
-    for (const skin of a.skins)
-      skin.joints.forEach((joint, i) => append(multiply(global(joint), skin.inverseBind[i])))
-    a.nodes.forEach((_, i) => append(global(i)))
+    if (a) data.jointMatrices.set(evaluateAnimation(data, state))
   }
   apply()
   return {
@@ -271,4 +232,51 @@ export function createAnimationPlayer(data) {
       apply()
     },
   }
+}
+
+export function evaluateAnimation(data, state) {
+  const a = data.animation
+  const count = a.nodes.length + a.skins.reduce((n, s) => n + s.joints.length, 0)
+  const matrices = new Float32Array(count * 16)
+  const nodes = a.nodes.map((n) => ({
+    ...n,
+    translation: [...n.translation],
+    rotation: [...n.rotation],
+    scale: [...n.scale],
+  }))
+  for (const track of a.tracks[state.clip] || []) {
+    let r = track.times.findIndex((t) => t > state.time)
+    if (r < 0) r = track.times.length - 1
+    const l = r && state.time < track.times[r] ? r - 1 : r,
+      t =
+        l === r || track.interpolation === 'STEP'
+          ? 0
+          : (state.time - track.times[l]) / (track.times[r] - track.times[l])
+    nodes[track.node][track.path] =
+      track.path === 'rotation'
+        ? slerp(track.values[l], track.values[r], t)
+        : track.values[l].map((v, k) => v + (track.values[r][k] - v) * t)
+  }
+  const world = []
+  function global(i) {
+    if (world[i]) return world[i]
+    const n = nodes[i],
+      local = nodeMatrix(n)
+    return (world[i] = n.parent >= 0 ? multiply(global(n.parent), local) : local)
+  }
+  const normalization = identity()
+  for (const i of [0, 5, 10]) normalization[i] = a.scale
+  for (let k = 0; k < 3; k++) normalization[12 + k] = -a.center[k] * a.scale
+  let index = 0
+  const append = (matrix) => {
+    const value = multiply(normalization, matrix)
+    if (!value.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
+      throw Error('Non-finite joint matrix')
+    matrices.set(value, index * 16)
+    index++
+  }
+  for (const skin of a.skins)
+    skin.joints.forEach((joint, i) => append(multiply(global(joint), skin.inverseBind[i])))
+  a.nodes.forEach((_, i) => append(global(i)))
+  return matrices
 }

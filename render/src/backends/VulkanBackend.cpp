@@ -101,7 +101,7 @@ namespace render::detail
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
           aaDeferred{}, aaOit{}, aaHybridShadow{};
-        VkPipeline  AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
+        VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
                        fragment = shader((std::string(name) + ".frag.spv").c_str());
@@ -161,7 +161,7 @@ namespace render::detail
                                       ? 4
                                     : std::string(name) == "model-oit" ? 2
                                                                        : 1;
-            blend.pAttachments                        = color;
+            blend.pAttachments    = color;
             VkDynamicState                   states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
             VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
             dynamic.dynamicStateCount = 2;
@@ -220,7 +220,7 @@ namespace render::detail
                   0,
                   nullptr);
             };
-            external.draw        = [this](const AAPass& pass, void* command, void* targetPass) {
+            external.draw = [this](const AAPass& pass, void* command, void* targetPass) {
                 auto      cmd        = reinterpret_cast<VkCommandBuffer>(command);
                 auto      renderPass = reinterpret_cast<VkRenderPass>(targetPass);
                 const int sample     = pass.multisampled ? 1 : 0;
@@ -283,7 +283,7 @@ namespace render::detail
                 }
                 const bool oit     = pass.program == -6;
                 const bool gbuffer = pass.program == -4;
-                const bool motion = pass.program == -2;
+                const bool motion  = pass.program == -2;
                 if (!gbuffer && !oit && environment && environmentSettings.showBackground)
                 {
                     auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
@@ -799,7 +799,7 @@ namespace render::detail
                 DrawParameterPanel();
             }
 #endif
-            if (model && model->animation)
+            if (model && !model->skinInputs.empty())
             {
                 void* mapped;
                 check(
@@ -846,8 +846,8 @@ namespace render::detail
             const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
             if (!sceneWidth || !sceneHeight)
                 return FrameResult::Skipped;
-            const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
-            const bool  gpuFrame    = path && path->pixels.empty() && rasterAA.lastGPUFrame;
+            const auto* path     = DrawPathFrame(sceneWidth, sceneHeight);
+            const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
             if (gpuFrame)
                 BindRasterGPUOutput();
             else if (path)
@@ -865,7 +865,7 @@ namespace render::detail
                 uniform.skyParams[2]      = gpuFrame ? 2.f : path ? 1.0f : 0.0f;
                 uniform.lightDirection[3] = MaterialMode();
                 ApplyRasterSettings(uniform);
-                void* mapped         = nullptr;
+                void* mapped = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));
                 vkUnmapMemory(device, modelUniform.memory);

@@ -1,4 +1,5 @@
 import { packMaterials, validateMaterial } from './MaterialData.js'
+import { createAnimationPlayer, evaluateAnimation } from './AnimationData.js'
 import { PickMesh, pickScene } from './Picking.js'
 import { loadGLB, emptyModelData, multiply } from './ModelData.js'
 const cross = (a, b) => [
@@ -29,15 +30,93 @@ export function instanceNormal(m) {
   ]
 }
 export class SceneData {
+  players = new Map()
   shadowRecords = new Float32Array(0)
   pickInstances = []
   pick(ray, active = true) {
-    return pickScene(this.meshes, this.pickInstances, ray, active)
+    if (!active || !this.players.size)
+      return pickScene(this.meshes, this.pickInstances, ray, active)
+    const meshes = new Map(this.meshes),
+      instances = this.pickInstances.map((instance) => {
+        const player = this.players.get(instance.id)
+        if (!player) return instance
+        const geometry = this.poseGeometry(instance.id)
+        player.queryPick ||= new PickMesh(geometry)
+        const key = Symbol(instance.id)
+        meshes.set(key, { picking: player.queryPick })
+        return { ...instance, assetId: key }
+      })
+    return pickScene(meshes, instances, ray, active)
+  }
+  poseGeometry(id) {
+    const p = this.players.get(id)
+    if (p.query) return p.query
+    const source = this.meshes.get(p.assetId).data,
+      vertices = source.vertices.slice(),
+      bytes = source.skinInputs
+    const values = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4),
+      joints = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
+    for (let i = 0; i < vertices.length / 12; ++i)
+      for (let axis = 0; axis < 3; ++axis) {
+        let sum = 0
+        for (let k = 0; k < 4; ++k) {
+          const at = joints[i * 16 + 8 + k] * 16,
+            weight = values[i * 16 + 12 + k]
+          sum +=
+            weight *
+            (p.palette[at + axis] * values[i * 16] +
+              p.palette[at + 4 + axis] * values[i * 16 + 1] +
+              p.palette[at + 8 + axis] * values[i * 16 + 2] +
+              p.palette[at + 12 + axis])
+        }
+        vertices[i * 12 + axis] = sum
+      }
+    return (p.query = { ...source, vertices })
+  }
+  instanceBounds(id) {
+    const instance = this.pickInstances.find((i) => i.id === id)
+    if (!instance) return null
+    const data = this.players.has(id)
+      ? this.poseGeometry(id)
+      : this.meshes.get(instance.assetId).data
+    const minimum = [Infinity, Infinity, Infinity],
+      maximum = [-Infinity, -Infinity, -Infinity],
+      m = instance.world
+    for (let i = 0; i < data.vertices.length; i += 12)
+      for (let k = 0; k < 3; ++k) {
+        const p =
+          m[k] * data.vertices[i] +
+          m[4 + k] * data.vertices[i + 1] +
+          m[8 + k] * data.vertices[i + 2] +
+          m[12 + k]
+        minimum[k] = Math.min(minimum[k], p)
+        maximum[k] = Math.max(maximum[k], p)
+      }
+    return { minimum, maximum }
   }
   sourceSpaces = new Map()
   assetBounds(id) {
     const m = this.meshes.get(id)
     if (!m) return null
+    if (m.data.animation) {
+      const minimum = [Infinity, Infinity, Infinity],
+        maximum = [-Infinity, -Infinity, -Infinity]
+      const half =
+        Math.max(...m.data.sourceMaximum.map((v, k) => v - m.data.sourceMinimum[k])) * 0.5
+      for (const [instance, p] of this.players)
+        if (p.assetId === id) {
+          const vertices = this.poseGeometry(instance).vertices
+          for (let i = 0; i < vertices.length; i += 12)
+            for (let k = 0; k < 3; ++k) {
+              let value = vertices[i + k]
+              if (this.sourceSpaces.get(id))
+                value = value * half + (m.data.sourceMinimum[k] + m.data.sourceMaximum[k]) * 0.5
+              minimum[k] = Math.min(minimum[k], value)
+              maximum[k] = Math.max(maximum[k], value)
+            }
+        }
+      return { minimum, maximum }
+    }
     let minimum = [...m.data.sourceMinimum],
       maximum = [...m.data.sourceMaximum]
     if (!this.sourceSpaces.get(id)) {
@@ -124,7 +203,7 @@ export class SceneData {
                 delete image.bitmap
               }
           }
-          if (data.animation) throw Error('Scene instances currently require static GLB models')
+          if (data.animation && !data.skinInputs) createAnimationPlayer(data)
           next.set(id, {
             data,
             url: paths.get(id),
@@ -136,11 +215,14 @@ export class SceneData {
         let vertexCount = 0
         for (const m of next.values()) vertexCount += m.data.vertices.length
         packed.vertices = new Float32Array(vertexCount)
+        if ([...next.values()].some((m) => m.data.animation))
+          packed.skinInputs = new Uint8Array((vertexCount / 12) * 64)
         let offset = 0
         for (const m of next.values()) {
           m.first = offset / 12
           m.count = m.data.vertices.length / 12
           packed.vertices.set(m.data.vertices, offset)
+          if (m.data.skinInputs) packed.skinInputs.set(m.data.skinInputs, (offset / 12) * 64)
           for (let i = offset + 3; i < offset + m.data.vertices.length; i += 12)
             packed.vertices[i] += packed.materials.length
           packed.materials.push(...m.data.materials)
@@ -183,6 +265,35 @@ export class SceneData {
         world: multiply(i.world, [half, 0, 0, 0, 0, half, 0, 0, 0, 0, half, 0, ...center, 1]),
       }
     })
+    const players = new Map()
+    let paletteCount = 0
+    for (const i of input) {
+      const data = this.meshes.get(i.assetId).data
+      if (!data.animation) continue
+      const old = this.players.get(i.id)
+      const state =
+        old && old.assetId === i.assetId && old.url === paths.get(i.assetId)
+          ? { ...old.state }
+          : { clip: 0, time: 0, speed: 1, playing: false, loop: true }
+      const palette = evaluateAnimation(data, state)
+      players.set(i.id, {
+        assetId: i.assetId,
+        url: paths.get(i.assetId),
+        state,
+        palette,
+        paletteOffset: paletteCount / 16,
+      })
+      paletteCount += palette.length
+      if (paletteCount * 4 > 64 * 1024 * 1024) throw Error('Scene animation palettes exceed 64 MiB')
+    }
+    const palette = new Float32Array(paletteCount)
+    for (const p of players.values()) palette.set(p.palette, p.paletteOffset * 16)
+    if (
+      palette.length !== (this.model.jointMatrices?.length || 0) ||
+      palette.some((v, i) => v !== this.model.jointMatrices[i])
+    )
+      this.model = { ...this.model, jointMatrices: palette }
+    this.players = players
     const instances = new Float32Array(
         input.length * 48 + (this.model.materialRecords?.length || 0),
       ),
@@ -203,6 +314,10 @@ export class SceneData {
             i.castShadow === false || instanceNormal(i.world).every((v) => v === 0) ? 0 : 1,
             m.shadowNodes,
           ]
+          if (m.data.animation) {
+            values[28] = players.get(i.id).paletteOffset + 1
+            values[46] = 0
+          }
           if (!values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
             throw Error('Instance transform overflows float32')
           instances.set(values, index * 48)
@@ -221,6 +336,80 @@ export class SceneData {
     this.pickInstances = effective.map((i) => ({ ...i, world: Array.from(i.world, Math.fround) }))
     this.sourceSpaces = spaces
     return { model: this.model, instances, draws, shadowRecords: this.shadowRecords }
+  }
+  animations(id) {
+    const mesh = this.meshes.get(id)
+    if (!mesh) throw Error('Unknown scene asset')
+    return mesh.data.animation?.clips.map((c) => ({ ...c })) || []
+  }
+  animation(id) {
+    const p = this.players.get(id)
+    if (!p) throw Error('Instance has no animation')
+    return { ...p.state }
+  }
+  setAnimation(id, value) {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Object.keys(value).some((k) => !['clip', 'time', 'speed', 'playing', 'loop'].includes(k))
+    )
+      throw Error('Invalid animation state')
+    const p = this.players.get(id)
+    if (!p) throw Error('Instance has no animation')
+    const state = { ...p.state, ...value },
+      clip = this.animations(p.assetId)[state.clip]
+    if (
+      !clip ||
+      !Number.isInteger(state.clip) ||
+      !Number.isFinite(state.time) ||
+      state.time < 0 ||
+      state.time > clip.duration ||
+      !Number.isFinite(state.speed) ||
+      state.speed < 0.1 ||
+      state.speed > 4 ||
+      typeof state.playing !== 'boolean' ||
+      typeof state.loop !== 'boolean'
+    )
+      throw Error('Invalid animation state')
+    const palette = evaluateAnimation(this.meshes.get(p.assetId).data, state)
+    this.players = new Map(this.players)
+    this.players.set(id, { ...p, state, palette, query: undefined, queryPick: undefined })
+    this.commitPalettes()
+  }
+  updateAnimations(delta) {
+    if (!Number.isFinite(delta) || !Number.isFinite(Math.fround(delta)) || delta < 0)
+      throw Error('Invalid animation delta')
+    const next = new Map()
+    for (const [id, p] of this.players) {
+      const state = { ...p.state }
+      if (state.playing && delta) {
+        let time = state.time + delta * state.speed
+        const duration = this.animations(p.assetId)[state.clip].duration
+        if (!Number.isFinite(Math.fround(time))) throw Error('Animation time overflow')
+        if (state.loop) time %= duration
+        else if (time >= duration) {
+          time = duration
+          state.playing = false
+        }
+        state.time = time
+      }
+      const palette = evaluateAnimation(this.meshes.get(p.assetId).data, state),
+        changed = palette.some((v, i) => v !== p.palette[i])
+      next.set(id, {
+        ...p,
+        state,
+        palette,
+        query: changed ? undefined : p.query,
+        queryPick: changed ? undefined : p.queryPick,
+      })
+    }
+    this.players = next
+    this.commitPalettes()
+  }
+  commitPalettes() {
+    for (const p of this.players.values())
+      this.model.jointMatrices.set(p.palette, p.paletteOffset * 16)
   }
   raySource = null
   rayCache = null
@@ -291,6 +480,7 @@ export class SceneData {
     return Object.assign(new SceneData(), this)
   }
   dispose() {
+    this.players = new Map()
     this.raySource = null
     this.rayCache = null
     this.rayKey = ''

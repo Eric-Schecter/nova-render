@@ -93,8 +93,8 @@ namespace render::detail
                 throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1.01..3");
             return std::array<float, 2>{transmission, ior};
         };
-        auto              animation     = ReadAnimationData(gltf);
-        auto              result        = std::make_shared<ModelData>();
+        auto              animation = ReadAnimationData(gltf);
+        auto              result    = std::make_shared<ModelData>();
         glm::vec3         minimum(std::numeric_limits<float>::max()), maximum(-std::numeric_limits<float>::max());
         std::vector<bool> active(gltf.nodes.size(), false);
         std::function<void(int, glm::mat4)> visit = [&](int index, glm::mat4 parent) {
@@ -376,7 +376,7 @@ namespace render::detail
         result.environmentParams[3] = environment ? float(environment->mips.size() - 1) : 0;
         result.skyParams[0]         = settings.backgroundIntensity;
         result.skyParams[1]         = settings.showBackground ? 1.0f : 0.0f;
-        result.skyParams[3]         = data.animation ? 1.0f : 0.0f;
+        result.skyParams[3]         = !data.skinInputs.empty() ? 1.0f : 0.0f;
         if (environment)
             for (int k = 0; k < 9; ++k)
                 std::copy(environment->irradiance[k].begin(), environment->irradiance[k].end(), result.irradiance[k]);

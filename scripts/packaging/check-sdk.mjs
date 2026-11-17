@@ -39,5 +39,9 @@ if (!executable) throw Error('Consumer executable missing')
 const models = join(work, 'models')
 cpSync(new URL('../../assets/SceneSample/', import.meta.url), models, { recursive: true })
 cpSync(new URL('../../assets/MaterialSample/Dual.glb', import.meta.url), join(models, 'Dual.glb'))
+cpSync(
+  new URL('../../assets/SkinningRobot/SkinningRobot.glb', import.meta.url),
+  join(models, 'Animated.glb'),
+)
 execFileSync(executable, [api, models], { stdio: 'inherit', cwd: work })
 console.log('PASS relocated SDK consumed outside repository:', work)

@@ -202,7 +202,7 @@ namespace render::detail
                 DrawParameterPanel();
             }
 #endif
-            if (model && model->animation)
+            if (model && !model->skinInputs.empty())
             {
                 void*       mapped;
                 D3D12_RANGE empty{0, 0};
@@ -231,8 +231,8 @@ namespace render::detail
             const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
             if (!sceneWidth || !sceneHeight)
                 return FrameResult::Skipped;
-            const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
-            const bool  gpuFrame    = path && path->pixels.empty() && rasterAA.lastGPUFrame;
+            const auto* path     = DrawPathFrame(sceneWidth, sceneHeight);
+            const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
             if (gpuFrame)
                 BindRasterGPUOutput();
             else if (path)
@@ -430,9 +430,9 @@ namespace render::detail
                     b.DestBlend = b.DestBlendAlpha = i == 0 ? D3D12_BLEND_ONE : D3D12_BLEND_INV_SRC_ALPHA;
                 }
             }
-            info.RTVFormats[0]                                                = DXGI_FORMAT_R16G16B16A16_FLOAT;
-            info.DSVFormat                                                    = DXGI_FORMAT_D32_FLOAT;
-            info.SampleDesc.Count                                             = samples;
+            info.RTVFormats[0]    = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            info.DSVFormat        = DXGI_FORMAT_D32_FLOAT;
+            info.SampleDesc.Count = samples;
             ComPtr<ID3D12PipelineState> result;
             checkHR(device->CreateGraphicsPipelineState(&info, IID_PPV_ARGS(&result)), "Create raster AA pipeline");
             return result;
@@ -440,7 +440,7 @@ namespace render::detail
         void CreateRasterAADevice() override
         {
             AAExternalScene external;
-            external.device = device.Get();
+            external.device      = device.Get();
             external.bindGBuffer = [this](void*, const std::array<void*, 8>& views, int program) {
                 auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
                 handle.ptr += 8 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -456,7 +456,7 @@ namespace render::detail
                     handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 }
             };
-            external.draw   = [this](const AAPass& pass, void* command, void*) {
+            external.draw = [this](const AAPass& pass, void* command, void*) {
                 auto* cmd    = static_cast<ID3D12GraphicsCommandList*>(command);
                 int   sample = pass.multisampled ? 1 : 0;
                 if (aaTriangle)
@@ -520,7 +520,7 @@ namespace render::detail
                 }
                 const bool oit     = pass.program == -6;
                 const bool gbuffer = pass.program == -4;
-                bool motion = pass.program == -2;
+                bool       motion  = pass.program == -2;
                 if (!gbuffer && !oit && environment && environmentSettings.showBackground)
                 {
                     auto& pipeline = motion ? aaSkyMotion : aaSky[sample];

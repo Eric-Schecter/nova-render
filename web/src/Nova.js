@@ -354,6 +354,8 @@ class Renderer {
         throw Error('Disable ambient occlusion before setting scene instances')
       const nextScene = this.#sceneData.fork()
       const data = await nextScene.update(assets, instances)
+      if (nextScene.players.size && this.#renderMode !== 'raster')
+        throw Error('Animated scenes require Raster mode')
       this.#validateMaterials(data.model)
       this.#check()
       if (this.#sceneModel !== data.model || !this.#model) {
@@ -437,7 +439,7 @@ class Renderer {
           next.setInstances(instances, draws, shadowRecords)
           next.setRaySource(() => sceneData.rayModel())
         }
-        if (next.skinned) next.setAnimationState(animationState)
+        if (next.skinned && next.animations.length) next.setAnimationState(animationState)
         this.#check()
       } catch (e) {
         next.dispose()
@@ -591,16 +593,23 @@ class Renderer {
     this.#pathFrame = 0
     this.#parameterPanel?.refresh()
   }
-  getAnimations() {
+  getAnimations(assetId) {
     this.#check()
+    if (assetId !== undefined) return this.#sceneData.animations(assetId)
     return this.#model?.animations || []
   }
-  getAnimationState() {
+  getAnimationState(instanceId) {
     this.#check()
+    if (instanceId !== undefined) return this.#sceneData.animation(instanceId)
     return this.#model?.animationState || { clip: 0, time: 0, speed: 1, playing: true, loop: true }
   }
-  setAnimationState(value) {
+  setAnimationState(value, state) {
     this.#check()
+    if (typeof value === 'string') {
+      this.#sceneData.setAnimation(value, state)
+      this.#resetAA()
+      return
+    }
     if (!this.#model?.animations.length) throw Error('No animation clips loaded')
     const old = this.#model.animationState
     if (
@@ -614,6 +623,36 @@ class Renderer {
     this.#animationLastTime = undefined
     this.#parameterPanel?.refresh()
     this.#continuePathTracing()
+  }
+  updateAnimations(delta) {
+    this.#check()
+    this.#sceneData.updateAnimations(delta)
+  }
+  getSceneInstanceBounds(id) {
+    this.#check()
+    return this.#sceneModel ? this.#sceneData.instanceBounds(id) : null
+  }
+  getAnimationCapabilities() {
+    this.#check()
+    const supported = this.#renderMode === 'raster'
+    return {
+      skeletal: supported,
+      nodeTRS: supported,
+      morph: false,
+      instancePlayback: supported,
+      gpuSkinning: supported,
+      manualClock: true,
+      dynamicShadows: false,
+      posedPicking: true,
+      posedBounds: true,
+      rayTracing: false,
+      hybrid: false,
+      minimumSpeed: 0.1,
+      maximumSpeed: 4,
+      reason: supported
+        ? 'Scene animation uses an explicit clock; animated shadow casting and ray modes are unavailable'
+        : 'Animation playback currently requires Raster',
+    }
   }
   updateAnimation(delta) {
     this.#check()

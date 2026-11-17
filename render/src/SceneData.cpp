@@ -17,6 +17,8 @@ namespace render::detail
     }
     void SceneData::Build(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input)
     {
+        if (!active)
+            players.clear();
         std::map<std::string, std::filesystem::path> paths;
         for (const auto& a : assets)
             if (a.id.empty() || a.path.empty() || !paths.emplace(a.id, a.path).second)
@@ -54,8 +56,12 @@ namespace render::detail
                     data = old->second.data;
                 else
                     data = LoadGLB(path);
-                if (data->animation)
-                    throw std::invalid_argument("Scene instances currently require static GLB models");
+                if (data->animation && data->skinInputs.empty())
+                {
+                    AnimationPlayer prepare;
+                    prepare.Load(data);
+                    data = prepare.Model();
+                }
                 auto picking = old != meshes.end() && old->second.data == data ? old->second.picking
                                                                                : std::make_shared<PickMesh>(data);
                 next[id]     = {data, 0, 0, 0, 0, {}, std::move(picking)};
@@ -71,12 +77,23 @@ namespace render::detail
                     packed->vertices[i].position[3] += float(offset);
                 packed->materials.insert(packed->materials.end(), m.data->materials.begin(), m.data->materials.end());
             }
+            bool animated = false;
+            for (const auto& [id, m] : next)
+                animated = animated || bool(m.data->animation);
+            if (animated)
+            {
+                packed->skinInputs.resize(packed->vertices.size());
+                for (const auto& [id, m] : next)
+                    if (m.data->animation)
+                        std::copy(
+                          m.data->skinInputs.begin(), m.data->skinInputs.end(), packed->skinInputs.begin() + m.first);
+            }
             PackMaterials(*packed);
             std::vector<InstanceData> shadow;
             for (auto& [id, m] : next)
             {
-                m.shadowFirst = uint32_t(shadow.size());
-                m.shadowNodes = m.picking->ShadowNodeCount();
+                m.shadowFirst    = uint32_t(shadow.size());
+                m.shadowNodes    = m.picking->ShadowNodeCount();
                 size_t shadowRow = 0;
                 for (const auto& row : m.picking->ShadowRecords())
                 {
@@ -90,9 +107,9 @@ namespace render::detail
             if (shadow.size() * 192ull > 64ull * 1024 * 1024)
                 throw std::runtime_error("Scene shadow BVHs exceed 64 MiB");
             shadowRecords = std::move(shadow);
-            model  = std::move(packed);
-            meshes = std::move(next);
-            key    = std::move(nextKey);
+            model         = std::move(packed);
+            meshes        = std::move(next);
+            key           = std::move(nextKey);
         }
         std::map<std::string, bool> spaces;
         for (const auto& a : assets)
@@ -112,6 +129,29 @@ namespace render::detail
                 auto world = glm::make_mat4(i.world.data()) * restore;
                 std::memcpy(i.world.data(), glm::value_ptr(world), 64);
             }
+        std::map<std::string, Player> nextPlayers;
+        size_t                        paletteCount = 0;
+        for (const auto& i : input)
+        {
+            const auto& mesh = meshes.at(i.assetId);
+            if (!mesh.data->animation)
+                continue;
+            Player player;
+            player.assetId       = i.assetId;
+            player.path          = paths.at(i.assetId);
+            player.state.playing = false;
+            auto previous        = players.find(i.id);
+            if (
+              previous != players.end() && previous->second.assetId == i.assetId
+              && previous->second.path == player.path)
+                player = previous->second;
+            player.paletteOffset = uint32_t(paletteCount);
+            player.palette       = EvaluateAnimation(*mesh.data->animation, player.state);
+            paletteCount += player.palette.size();
+            if (paletteCount * 64ull > 64ull * 1024 * 1024)
+                throw std::runtime_error("Scene animation palettes exceed 64 MiB");
+            nextPlayers.emplace(i.id, std::move(player));
+        }
         std::vector<InstanceData> gpu;
         std::vector<SceneDraw>    groups;
         for (const auto& [id, m] : meshes)
@@ -134,9 +174,11 @@ namespace render::detail
                     std::copy(m.data->baseColor.begin(), m.data->baseColor.end(), v.baseColor);
                     std::copy(m.data->material.begin(), m.data->material.end(), v.material);
                     std::copy(m.data->emissive.begin(), m.data->emissive.end(), v.emissive);
+                    if (m.data->animation)
+                        v.normal[12] = float(nextPlayers.at(i.id).paletteOffset + 1);
                     v.uv[0] = float(input.size());
                     v.uv[1] = float(m.shadowFirst);
-                    v.uv[2] = i.castShadow && std::abs(determinant) > 1e-12f ? 1.f : 0.f;
+                    v.uv[2] = !m.data->animation && i.castShadow && std::abs(determinant) > 1e-12f ? 1.f : 0.f;
                     v.uv[3] = float(m.shadowNodes);
                     for (float value : v.world)
                         if (!std::isfinite(value))
@@ -149,10 +191,27 @@ namespace render::detail
             groups.push_back({m.first, m.count, start, uint32_t(gpu.size()) - start});
         }
         pickInstances = std::move(effective);
-        instances    = std::move(gpu);
-        draws        = std::move(groups);
-        sourceSpaces = std::move(spaces);
-        active       = true;
+        std::vector<JointMatrix> nextPalette;
+        for (const auto& i : input)
+        {
+            auto p = nextPlayers.find(i.id);
+            if (p != nextPlayers.end())
+                nextPalette.insert(nextPalette.end(), p->second.palette.begin(), p->second.palette.end());
+        }
+        if (model->jointMatrices != nextPalette)
+        {
+            if (!model.unique())
+                model = std::make_shared<ModelData>(*model);
+            auto packed           = std::const_pointer_cast<ModelData>(model);
+            packed->jointMatrices = std::move(nextPalette);
+            ++packed->revision;
+        }
+        players        = std::move(nextPlayers);
+        inputSnapshot  = input;
+        instances      = std::move(gpu);
+        draws          = std::move(groups);
+        sourceSpaces   = std::move(spaces);
+        active         = true;
         assetsSnapshot = assets;
         inputSnapshot  = input;
     }
@@ -263,6 +322,7 @@ namespace render::detail
         {
             if (excluded.count(instance.id) || (!included.empty() && !included.count(instance.id)))
                 continue;
+
             const auto&      m = instance.world;
             const glm::dvec3 a(m[0], m[1], m[2]), b(m[4], m[5], m[6]), c(m[8], m[9], m[10]),
               offset(m[12], m[13], m[14]);
@@ -273,11 +333,19 @@ namespace render::detail
             auto inverse = [&](glm::dvec3 v) -> PickVector {
                 return {glm::dot(x, v) / determinant, glm::dot(y, v) / determinant, glm::dot(z, v) / determinant};
             };
-            const auto hit = meshes.at(instance.assetId)
-                               .picking->Pick(
-                                 inverse(origin - offset),
-                                 inverse(direction),
-                                 best ? best->distance : std::numeric_limits<double>::infinity());
+            auto picking = meshes.at(instance.assetId).picking;
+            auto player  = players.find(instance.id);
+            if (player != players.end())
+            {
+                auto geometry = PoseGeometry(instance.id);
+                if (!player->second.queryPick)
+                    player->second.queryPick = std::make_shared<PickMesh>(geometry);
+                picking = player->second.queryPick;
+            }
+            const auto hit = picking->Pick(
+              inverse(origin - offset),
+              inverse(direction),
+              best ? best->distance : std::numeric_limits<double>::infinity());
             if (!hit || (best && hit->distance >= best->distance))
                 continue;
             auto         n       = x * hit->normal[0] + y * hit->normal[1] + z * hit->normal[2];
@@ -299,6 +367,28 @@ namespace render::detail
         auto found = meshes.find(id);
         if (found == meshes.end())
             return {};
+        if (found->second.data->animation)
+        {
+            Bounds result;
+            result.minimum.fill(std::numeric_limits<float>::infinity());
+            result.maximum.fill(-std::numeric_limits<float>::infinity());
+            const auto& data = *found->second.data;
+            float       half = 0;
+            for (int k = 0; k < 3; ++k)
+                half = std::max(half, (data.sourceMaximum[k] - data.sourceMinimum[k]) * .5f);
+            for (const auto& [instance, p] : players)
+                if (p.assetId == id)
+                    for (const auto& v : PoseGeometry(instance)->vertices)
+                        for (int k = 0; k < 3; ++k)
+                        {
+                            float value = v.position[k];
+                            if (sourceSpaces.at(id))
+                                value = value * half + (data.sourceMinimum[k] + data.sourceMaximum[k]) * .5f;
+                            result.minimum[k] = std::min(result.minimum[k], value);
+                            result.maximum[k] = std::max(result.maximum[k], value);
+                        }
+            return result;
+        }
         const auto& d = *found->second.data;
         Bounds      out{d.sourceMinimum, d.sourceMaximum};
         if (!sourceSpaces.at(id))
@@ -314,5 +404,119 @@ namespace render::detail
             }
         }
         return out;
+    }
+} // namespace render::detail
+
+namespace render::detail
+{
+    std::vector<AnimationClip> SceneData::Animations(const std::string& id) const
+    {
+        auto m = meshes.find(id);
+        if (!active || m == meshes.end())
+            throw std::invalid_argument("Unknown scene asset");
+        return m->second.data->animation ? m->second.data->animation->clips : std::vector<AnimationClip>{};
+    }
+    AnimationState SceneData::Animation(const std::string& id) const
+    {
+        auto p = players.find(id);
+        if (!active || p == players.end())
+            throw std::invalid_argument("Instance has no animation");
+        return p->second.state;
+    }
+    void SceneData::CommitPalettes()
+    {
+        auto packed = std::const_pointer_cast<ModelData>(model);
+        packed->jointMatrices.clear();
+        for (const auto& input : inputSnapshot)
+        {
+            auto p = players.find(input.id);
+            if (p != players.end())
+                packed->jointMatrices.insert(
+                  packed->jointMatrices.end(), p->second.palette.begin(), p->second.palette.end());
+        }
+        ++packed->revision;
+    }
+    void SceneData::SetAnimation(const std::string& id, const AnimationState& state)
+    {
+        auto found = players.find(id);
+        if (!active || found == players.end())
+            throw std::invalid_argument("Instance has no animation");
+        const auto& data      = *meshes.at(found->second.assetId).data->animation;
+        auto        next      = ValidateAnimationState(data.clips, state);
+        auto        palette   = EvaluateAnimation(data, next);
+        found->second.state   = next;
+        found->second.palette = std::move(palette);
+        found->second.query.reset();
+        found->second.queryPick.reset();
+        CommitPalettes();
+    }
+    void SceneData::UpdateAnimations(float delta)
+    {
+        if (!std::isfinite(delta) || delta < 0)
+            throw std::invalid_argument("Invalid animation delta");
+        if (!active || players.empty())
+            return;
+        auto next = players;
+        for (auto& [id, p] : next)
+        {
+            const auto& data = *meshes.at(p.assetId).data->animation;
+            p.state          = AdvanceAnimation(data.clips, p.state, delta);
+            auto palette     = EvaluateAnimation(data, p.state);
+            if (palette != p.palette)
+            {
+                p.query.reset();
+                p.queryPick.reset();
+            }
+            p.palette = std::move(palette);
+        }
+        players = std::move(next);
+        CommitPalettes();
+    }
+} // namespace render::detail
+
+namespace render::detail
+{
+    std::shared_ptr<const ModelData> SceneData::PoseGeometry(const std::string& id) const
+    {
+        const auto& p = players.at(id);
+        if (p.query)
+            return p.query;
+        const auto& source = *meshes.at(p.assetId).data;
+        auto        out    = std::make_shared<ModelData>();
+        out->vertices      = source.vertices;
+        for (size_t i = 0; i < source.skinInputs.size(); ++i)
+        {
+            const auto& input = source.skinInputs[i];
+            glm::mat4   matrix(0);
+            for (int j = 0; j < 4; ++j)
+                matrix += input.weights[j] * glm::make_mat4(p.palette.at(input.joints[j]).data());
+            auto position = matrix * glm::make_vec4(input.position.data());
+            for (int k = 0; k < 3; ++k)
+                out->vertices[i].position[k] = position[k];
+        }
+        p.query = out;
+        return out;
+    }
+    std::optional<Bounds> SceneData::InstanceBounds(const std::string& id) const
+    {
+        auto input =
+          std::find_if(pickInstances.begin(), pickInstances.end(), [&](const auto& i) { return i.id == id; });
+        if (!active || input == pickInstances.end())
+            return {};
+        auto   geometry = players.count(id) ? PoseGeometry(id) : meshes.at(input->assetId).data;
+        Bounds result;
+        result.minimum.fill(std::numeric_limits<float>::infinity());
+        result.maximum.fill(-std::numeric_limits<float>::infinity());
+        auto world = glm::make_mat4(input->world.data());
+        for (const auto& v : geometry->vertices)
+        {
+            auto position = world * glm::vec4(v.position[0], v.position[1], v.position[2], 1);
+            for (int k = 0; k < 3; ++k)
+            {
+                result.minimum[k] = std::min(result.minimum[k], position[k]);
+                result.maximum[k] = std::max(result.maximum[k], position[k]);
+            }
+        }
+        return result;
     }
 } // namespace render::detail

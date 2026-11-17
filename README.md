@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.8.0** adds alpha cutout, weighted OIT transparency, per-material sidedness and formal model Deferred/G-buffer APIs. It includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
+Release **0.9.0** adds independent GPU animation for scene instances, pose picking/bounds and Hybrid rendering. It includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
 
 ## Features
 
@@ -28,7 +28,7 @@ Release **0.8.0** adds alpha cutout, weighted OIT transparency, per-material sid
 - [x] Perspective/orthographic cameras, full orientation and viewport rectangles
 - [x] Scene ray picking with instance filters and geometric hit normals
 - [x] Static scene instances with shared assets and original model space
-- [x] GPU skeletal animation
+- [x] GPU skeletal/node animation with independent scene-instance playback and posed picking/bounds
 - [x] Directional lighting, skyboxes and HDR image-based lighting
 - [x] Directional, point and spot light collections in raster and ray tracing; static instance scenes
 - [x] Vulkan compute BVH fallback when hardware ray queries are unavailable
@@ -40,7 +40,7 @@ Release **0.8.0** adds alpha cutout, weighted OIT transparency, per-material sid
 - [x] SSR with a depth pyramid and environment fallback
 - [x] Planar reflections
 - [x] Local reflection probes, box projection and smooth multi-probe blending
-- [x] Hybrid rendering — GPU BVH shadows, AO, one-bounce reflections and temporal reconstruction (current source)
+- [x] Hybrid rendering — GPU BVH shadows, AO, one-bounce reflections and temporal reconstruction (0.9.0)
 - [x] Path tracing, bidirectional path tracing, progressive photon mapping and PSSMLT
 - [x] Light importance sampling, MIS and denoising
 - [x] Orbit controls, parameter panels and performance indicators

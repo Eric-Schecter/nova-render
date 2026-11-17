@@ -419,7 +419,7 @@ export function sceneUniforms(
     settings.backgroundIntensity,
     settings.showBackground ? 1 : 0,
     0,
-    data.animation ? 1 : 0,
+    data.skinInputs?.byteLength ? 1 : 0,
     ...(environment?.irradiance || new Float32Array(36)).map((v, i) => (i === 3 ? 0 : v)),
   ])
   values[67] = near

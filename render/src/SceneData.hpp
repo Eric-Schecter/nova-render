@@ -1,4 +1,5 @@
 #pragma once
+#include "AnimationData.hpp"
 #include "ModelData.hpp"
 #include "Picking.hpp"
 #include "render/Scene.hpp"
@@ -20,6 +21,12 @@ namespace render::detail
         std::vector<Material>            GetMaterials(const std::string& id) const;
         void                             SetMaterial(const std::string& id, uint32_t slot, const Material& material);
         std::shared_ptr<const ModelData> RayModel();
+        std::optional<Bounds>            InstanceBounds(const std::string&) const;
+        bool                             HasAnimations() const { return active && !players.empty(); }
+        std::vector<AnimationClip>       Animations(const std::string& assetId) const;
+        AnimationState                   Animation(const std::string& instanceId) const;
+        void                             SetAnimation(const std::string& instanceId, const AnimationState&);
+        void                             UpdateAnimations(float delta);
         bool                             active = false;
         std::shared_ptr<const ModelData> model;
         std::vector<InstanceData>        instances;
@@ -27,14 +34,28 @@ namespace render::detail
         std::vector<SceneDraw>           draws;
         // Asset topology changes rebuild packed resources; transform updates only replace instance data.
         std::optional<SceneHit> Pick(const Ray& ray) const;
-        std::optional<Bounds> AssetBounds(const std::string& id) const;
-        void                  Update(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
+        std::optional<Bounds>   AssetBounds(const std::string& id) const;
+        void                    Update(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
 
       private:
         std::shared_ptr<const ModelData> rayModel, raySource;
         std::vector<InstanceData>        rayInstances;
-        std::vector<SceneAsset>     assetsSnapshot;
-        std::vector<SceneInstance>  inputSnapshot;
+        std::vector<SceneAsset>          assetsSnapshot;
+        std::vector<SceneInstance>       inputSnapshot;
+        struct Player
+        {
+            std::string                              assetId;
+            std::filesystem::path                    path;
+            AnimationState                           state;
+            uint32_t                                 paletteOffset = 0;
+            std::vector<JointMatrix>                 palette;
+            mutable std::shared_ptr<const ModelData> query;
+            mutable std::shared_ptr<PickMesh>        queryPick;
+        };
+        std::map<std::string, Player>    players;
+        void                             CommitPalettes();
+        std::shared_ptr<const ModelData> PoseGeometry(const std::string&) const;
+
         void Build(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
         std::map<std::string, bool> sourceSpaces;
         std::vector<SceneInstance>  pickInstances;

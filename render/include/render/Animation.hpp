@@ -9,6 +9,14 @@ namespace render
         std::string name;
         float       duration = 0;
     };
+    struct AnimationCapabilities
+    {
+        bool skeletal = true, nodeTRS = true, morph = false, instancePlayback = true, gpuSkinning = true,
+             manualClock           = true;
+        bool        dynamicShadows = false, posedPicking = true, posedBounds = true, rayTracing = false, hybrid = false;
+        float       minimumSpeed = .1f, maximumSpeed = 4.f;
+        std::string reason;
+    };
     struct AnimationState
     {
         uint32_t clip    = 0;

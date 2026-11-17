@@ -165,7 +165,7 @@ namespace render::detail
                     DrawParameterPanel();
                 }
 #endif
-                if (model && model->animation)
+                if (model && !model->skinInputs.empty())
                     std::memcpy(
                       jointPalette.contents,
                       model->jointMatrices.data(),
@@ -185,8 +185,8 @@ namespace render::detail
                 const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
                 if (!sceneWidth || !sceneHeight)
                     return FrameResult::Skipped;
-                const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
-                const bool  gpuFrame    = path && path->pixels.empty() && rasterAA.lastGPUFrame;
+                const auto* path     = DrawPathFrame(sceneWidth, sceneHeight);
+                const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
                 if (path && !gpuFrame)
                     UploadPathImage(*path);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
@@ -294,9 +294,9 @@ namespace render::detail
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
           aaDeferred, aaOit, aaHybridShadow;
-        id<MTLDepthStencilState>               oitDepthState;
-        id<MTLBuffer>                          aaPreviousPalette;
-        id<MTLRenderPipelineState>             AAPipeline(const char* file, uint32_t samples)
+        id<MTLDepthStencilState>   oitDepthState;
+        id<MTLBuffer>              aaPreviousPalette;
+        id<MTLRenderPipelineState> AAPipeline(const char* file, uint32_t samples)
         {
             const auto bytes = LoadShader(settings.shaderDirectory, file);
             NSData*    data  = [NSData dataWithBytes:bytes.data() length:bytes.size()];
@@ -327,9 +327,9 @@ namespace render::detail
                       i == 0 ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
                 }
             }
-            desc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
-            desc.sampleCount                     = samples;
-            auto pipeline                        = [device newRenderPipelineStateWithDescriptor:desc error:&error];
+            desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+            desc.sampleCount                = samples;
+            auto pipeline                   = [device newRenderPipelineStateWithDescriptor:desc error:&error];
             if (!pipeline)
                 throw metalError("Create raster AA pipeline", error);
             return pipeline;
@@ -341,13 +341,13 @@ namespace render::detail
             d.depthWriteEnabled    = NO;
             oitDepthState          = [device newDepthStencilStateWithDescriptor:d];
             AAExternalScene external;
-            external.device = (__bridge void*)device;
+            external.device      = (__bridge void*)device;
             external.bindGBuffer = [](void* encoder, const std::array<void*, 8>& views, int program) {
                 auto e = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 for (int i = 0; i < 8; i++)
                     [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:17 + i];
             };
-            external.draw   = [this](const AAPass& pass, void* encoder, void*) {
+            external.draw = [this](const AAPass& pass, void* encoder, void*) {
                 id<MTLRenderCommandEncoder> e      = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 const int                   sample = pass.multisampled ? 1 : 0;
                 if (aaTriangle)
@@ -394,7 +394,7 @@ namespace render::detail
                 }
                 const bool oit     = pass.program == -6;
                 const bool gbuffer = pass.program == -4;
-                const bool motion = pass.program == -2;
+                const bool motion  = pass.program == -2;
                 if (!gbuffer && !oit && environment && environmentSettings.showBackground)
                 {
                     if (motion)

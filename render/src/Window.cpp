@@ -156,6 +156,32 @@ namespace render
     {
         impl_->renderer->UpdateAnimation(delta);
     }
+    std::vector<AnimationClip> Window::GetAnimations(const std::string& id) const
+    {
+        return impl_->renderer->GetAnimations(id);
+    }
+    AnimationState Window::GetAnimationState(const std::string& id) const
+    {
+        return impl_->renderer->GetAnimationState(id);
+    }
+    void Window::SetAnimationState(const std::string& id, const AnimationState& value)
+    {
+        impl_->renderer->SetAnimationState(id, value);
+    }
+    void Window::UpdateAnimations(float delta)
+    {
+        impl_->renderer->UpdateAnimations(delta);
+    }
+    AnimationCapabilities Window::GetAnimationCapabilities() const
+    {
+        return impl_->renderer->GetAnimationCapabilities();
+    }
+    std::optional<Bounds> Window::GetSceneInstanceBounds(const std::string& id) const
+    {
+        return impl_->renderer->GetSceneInstanceBounds(id);
+    }
+
+
     std::optional<Bounds> Window::GetSceneAssetBounds(const std::string& id) const
     {
         return impl_->renderer->GetSceneAssetBounds(id);

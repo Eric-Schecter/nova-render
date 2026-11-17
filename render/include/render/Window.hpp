@@ -48,7 +48,13 @@ namespace render
         AnimationState             GetAnimationState() const;
         void                       SetAnimationState(const AnimationState& state);
         void                       UpdateAnimation(float deltaSeconds);
-        // Replace the static raster scene; assets are shared by ID. Empty lists clear geometry.
+        std::vector<AnimationClip> GetAnimations(const std::string& assetId) const;
+        AnimationState             GetAnimationState(const std::string& instanceId) const;
+        void                       SetAnimationState(const std::string& instanceId, const AnimationState& state);
+        void                       UpdateAnimations(float deltaSeconds);
+        AnimationCapabilities      GetAnimationCapabilities() const;
+        std::optional<Bounds>      GetSceneInstanceBounds(const std::string& instanceId) const;
+        // Replace the raster scene; assets are shared by ID. Empty lists clear geometry.
         // See Scene.hpp for coordinate spaces and matrix layout. DrawFrame submits the update.
         void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances);
         // Bounds in selected asset-local space; absent for unreferenced/inactive IDs.

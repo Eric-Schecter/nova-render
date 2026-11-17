@@ -466,7 +466,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ].indexOf(rasterSettings?.view || 'final')
         device.queue.writeBuffer(uniform, 0, currentScene)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
-        if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)
+        if (data.skinInputs?.byteLength) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         const palette = data.jointMatrices || new Float32Array(16)
         device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
       },
@@ -522,7 +522,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       triangles: data.vertices.length / 36,
       get skinned() {
-        return !!data.animation
+        return !!data.skinInputs?.byteLength
       },
       get animations() {
         return animator.clips
@@ -646,7 +646,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       draw(camera, clear, width, height, lighting, light, settings) {
         if (disposed) throw Error('Model has been disposed')
-        if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)
+        if (data.skinInputs?.byteLength) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         if (!depth || depth.width !== width || depth.height !== height) {
           depth?.destroy()
           depth = device.createTexture({

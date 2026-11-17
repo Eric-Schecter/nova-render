@@ -35,7 +35,7 @@ namespace render::detail
         HybridCapabilities GetHybridCapabilities() const
         {
             HybridCapabilities c;
-            if (model && model->animation)
+            if ((model && model->animation) || scene.HasAnimations())
             {
                 c.supported = false;
                 c.reason    = "Hybrid currently requires static geometry";
@@ -66,16 +66,20 @@ namespace render::detail
                      ? rasterAA.frames
                      : 0;
         }
-        void        ResetHybridHistory() { rasterAA.Reset(); }
-        void        SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
+        void ResetHybridHistory() { rasterAA.Reset(); }
+        void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
         {
             const auto previousMode = mode;
-            auto next = scene;
+            auto       next         = scene;
             next.Update(assets, instances);
+            if (next.HasAnimations() && mode != RenderMode::Raster)
+                throw std::invalid_argument("Animated scenes require Raster mode");
+            if (next.HasAnimations() && mode != RenderMode::Raster)
+                throw std::invalid_argument("Animated scenes require Raster");
             ValidateMaterialState(next.model.get());
             if (model != next.model)
                 LoadModel(next.model);
-            scene      = std::move(next);
+            scene = std::move(next);
             RebuildRasterInstances();
             aaTriangle = false;
             presentedImage.reset();
@@ -171,7 +175,7 @@ namespace render::detail
         void                             RebuildRasterInstances()
         {
             const bool singleHybrid = mode == RenderMode::Hybrid && !scene.active && model && !model->vertices.empty();
-            rasterInstances = scene.active ? scene.instances : std::vector<InstanceData>{};
+            rasterInstances         = scene.active ? scene.instances : std::vector<InstanceData>{};
             if (singleHybrid)
             {
                 if (singleBVHModel != model)
@@ -260,9 +264,9 @@ namespace render::detail
             rasterAA.Reset();
         }
         SceneShadowSettings GetShadows() const { return shadowSettings; }
-        FogSettings fogSettings;
-        uint32_t    rasterGlobals = 0;
-        void        SetFog(const FogSettings& value)
+        FogSettings         fogSettings;
+        uint32_t            rasterGlobals = 0;
+        void                SetFog(const FogSettings& value)
         {
             if (
               static_cast<unsigned>(value.mode) > 2 || !std::isfinite(value.nearDistance) || value.nearDistance < 0
@@ -291,7 +295,7 @@ namespace render::detail
                    : model && !model->materialRecords.empty()                                        ? 2.f
                                                                                                      : 0.f;
         }
-        void        ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
+        void ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
         {
             pathAPI    = api;
             pathConfig = config;
@@ -300,9 +304,27 @@ namespace render::detail
         {
             if (HasAlpha(model.get()))
                 return {false, false, "", "MASK/BLEND ray tracing is not supported; use raster"};
-            if (model && model->animation)
+            if ((model && model->animation) || scene.HasAnimations())
                 return {false, false, "", "Animated models currently use raster rendering"};
             return pathSession.Capabilities(pathAPI, pathConfig);
+        }
+        void SetSceneAnimation(const std::string& id, const AnimationState& value)
+        {
+            scene.SetAnimation(id, value);
+            rasterAA.Reset();
+        }
+        AnimationCapabilities GetAnimationCapabilities() const
+        {
+            AnimationCapabilities c;
+            if (mode != RenderMode::Raster)
+            {
+                c.skeletal = c.nodeTRS = c.instancePlayback = c.gpuSkinning = false;
+                c.reason = "Animation playback currently requires Raster";
+            }
+            else
+                c.reason =
+                  "Scene animation uses an explicit clock; animated shadow casting and ray modes are unavailable";
+            return c;
         }
         AnimationPlayer animation;
         void            SetAnimationState(const AnimationState& state)
@@ -344,7 +366,7 @@ namespace render::detail
             }
             if (mode != value)
             {
-                mode = value;
+                mode                     = value;
                 rasterAA.gpuPresentation = mode == RenderMode::Hybrid;
                 if (mode == RenderMode::Hybrid)
                     modelRaster.pipeline = RasterPipeline::Deferred;
@@ -387,7 +409,7 @@ namespace render::detail
             modelRaster = value;
             rasterAA.Reset();
         }
-        void                   SetAntiAliasing(const AntiAliasingSettings& value)
+        void SetAntiAliasing(const AntiAliasingSettings& value)
         {
             if (
               mode == RenderMode::Hybrid
@@ -424,7 +446,7 @@ namespace render::detail
                 throw std::runtime_error("Draw before capture");
             return rasterAA.device->Capture();
         }
-        uint32_t             GetAntiAliasingHistoryFrames() const
+        uint32_t GetAntiAliasingHistoryFrames() const
         {
             return rasterSettings.method == AAMethod::TAA && modelRaster.view == GBufferView::Final ? rasterAA.frames
                                                                                                     : 0;
@@ -468,13 +490,13 @@ namespace render::detail
                 model = animation.Model();
             }
             RebuildRasterInstances();
-            if (model && model->animation)
+            if ((model && model->animation) || scene.HasAnimations())
                 SetRenderMode(RenderMode::Raster);
         }
         virtual void LoadEnvironment(std::shared_ptr<const EnvironmentData> data)
         {
             rasterAA.Reset();
-            environment = std::move(data);
+            environment               = std::move(data);
             const bool sceneWasActive = scene.active;
             LoadModel(model ? model : EmptyModelData());
             scene.active = sceneWasActive;
@@ -592,11 +614,11 @@ namespace render::detail
             return ResolveViewport(viewport, width, height, SceneTopInset(height));
         }
 
-        void        SetDirectionalLight(const DirectionalLight& value)
+        void SetDirectionalLight(const DirectionalLight& value)
         {
             if (lightCollectionActive || std::memcmp(&directionalLight, &value, sizeof(value)) != 0)
                 rasterAA.Reset();
-            directionalLight = value;
+            directionalLight      = value;
             lightCollectionActive = false;
             lights.clear();
             RebuildRasterInstances();
@@ -637,19 +659,19 @@ namespace render::detail
 #endif
             return 0;
         }
-        AntiAliasingSettings   rasterSettings;
-        PostProcessingSettings postSettings;
+        AntiAliasingSettings             rasterSettings;
+        PostProcessingSettings           postSettings;
         std::shared_ptr<const ModelData> singleBVHModel;
         std::shared_ptr<PickMesh>        singleBVH;
-        detail::RasterAA       rasterAA;
-        bool                   aaTriangle = false;
-        std::optional<Image>   presentedImage;
-        RenderMode             mode = RenderMode::Raster;
-        PathTracingSettings    pathSettings;
-        PathSession            pathSession;
-        GraphicsAPI            pathAPI = GraphicsAPI::Auto;
-        RendererConfig         pathConfig;
-        const ModelImage*      DrawPathFrame(uint32_t width, uint32_t height)
+        detail::RasterAA                 rasterAA;
+        bool                             aaTriangle = false;
+        std::optional<Image>             presentedImage;
+        RenderMode                       mode = RenderMode::Raster;
+        PathTracingSettings              pathSettings;
+        PathSession                      pathSession;
+        GraphicsAPI                      pathAPI = GraphicsAPI::Auto;
+        RendererConfig                   pathConfig;
+        const ModelImage*                DrawPathFrame(uint32_t width, uint32_t height)
         {
             if (presentedImage)
                 return &*presentedImage;
@@ -680,7 +702,7 @@ namespace render::detail
                   hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : 0.f;
                 rasterAA.current.irradiance[6][3] =
                   mode == RenderMode::Hybrid && hybrid.temporalReconstruction ? float(rasterAA.frames + 1) : 0.f;
-                const bool debug                  = modelRaster.view != GBufferView::Final;
+                const bool debug = modelRaster.view != GBufferView::Final;
                 rasterAA.current.irradiance[0][3] =
                   !debug && !(mode == RenderMode::Hybrid && hybrid.view != HybridView::Final) && postSettings.enabled
                     ? 1.f

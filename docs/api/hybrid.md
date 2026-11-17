@@ -1,6 +1,6 @@
 # Hybrid rendering
 
-Hybrid combines raster primary visibility with GPU software-BVH secondary rays. Settings, capabilities and controls match C++ and WebGPU. Available in current source; published 0.8.0 predates Hybrid.
+Hybrid combines raster primary visibility with GPU software-BVH secondary rays. Settings, capabilities and controls match C++ and WebGPU. Available in the 0.9.0 paired SDK; published 0.8.0 predates Hybrid.
 
 ```cpp
 render::HybridSettings settings;

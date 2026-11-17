@@ -157,6 +157,21 @@ int main(int argc, char** argv)
                 std::cout << "PASS installed ray API: " << capabilities.rayTracingDevice
                           << "; software=" << capabilities.softwareRayTracing << std::endl;
             }
+            window.SetScene({{"rig", models / "Animated.glb"}}, {{"a", "rig"}, {"b", "rig"}});
+            const auto clips = window.GetAnimations("rig");
+            if (clips.size() < 2 || !window.GetAnimationCapabilities().instancePlayback)
+                throw std::runtime_error("Installed scene animation capabilities failed");
+            auto state    = window.GetAnimationState("b");
+            state.clip    = 1;
+            state.playing = true;
+            window.SetAnimationState("b", state);
+            window.UpdateAnimations(.1f);
+            if (
+              window.GetAnimationState("a").time != 0 || window.GetAnimationState("b").time <= 0
+              || !window.GetSceneInstanceBounds("b"))
+                throw std::runtime_error("Installed independent animation API failed");
+            window.DrawFrame();
+            window.WaitIdle();
             window.SetScene({}, {});
             if (window.PickScene(ray))
                 throw std::runtime_error("Installed picking clear failed");

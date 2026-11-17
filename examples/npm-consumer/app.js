@@ -97,6 +97,27 @@ window.validation = (async () => {
   )
     throw Error('Installed ray scene lights failed')
   renderer.setRenderMode('raster')
+  await renderer.setScene(
+    [{ id: 'rig', url: '/models/Animated.glb' }],
+    [
+      { id: 'a', assetId: 'rig' },
+      { id: 'b', assetId: 'rig' },
+    ],
+  )
+  if (
+    renderer.getAnimations('rig').length < 2 ||
+    !renderer.getAnimationCapabilities().instancePlayback
+  )
+    throw Error('Installed scene animation capabilities failed')
+  renderer.setAnimationState('b', { clip: 1, time: 0, playing: true })
+  renderer.updateAnimations(0.1)
+  if (
+    renderer.getAnimationState('a').time !== 0 ||
+    renderer.getAnimationState('b').time <= 0 ||
+    !renderer.getSceneInstanceBounds('b')
+  )
+    throw Error('Installed independent animation API failed')
+  await renderer.drawFrame()
   renderer.setViewCamera({
     projection: 'orthographic',
     orthographicHeight: 5,
