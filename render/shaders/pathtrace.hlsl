@@ -204,6 +204,8 @@ static RayQuery<RAY_FLAG_NONE> query;
 #endif
 bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit, bool shadowOnly = false)
 {
+    // Hardware queries require TMax >= TMin, including sources inside the bias region.
+    if (maxDistance <= .0005) { hit.distance=0;hit.primitive=0;hit.bary=0;return false; }
 #ifdef NOVA_WEB_BVH
     hit.distance  = maxDistance;
     hit.primitive = 0;
