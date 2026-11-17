@@ -267,8 +267,14 @@ namespace render::detail
                     int aoSamples = int(hybrid.aoSamples);
                     if (ImGui::SliderInt("AO rays/pixel", &aoSamples, 1, 32))
                         hybrid.aoSamples = uint32_t(aoSamples);
+                    ImGui::Checkbox("Hybrid reflections", &hybrid.reflections);
+                    ImGui::SliderFloat("Reflection distance", &hybrid.reflectionDistance, .1f, 1000.f);
+                    ImGui::SliderFloat("Reflection strength", &hybrid.reflectionStrength, 0, 1);
+                    int reflectionSamples = int(hybrid.reflectionSamples);
+                    if (ImGui::SliderInt("Reflection rays/pixel", &reflectionSamples, 1, 16))
+                        hybrid.reflectionSamples = uint32_t(reflectionSamples);
                     int view = int(hybrid.view);
-                    if (ImGui::Combo("Hybrid view", &view, "Final\0Shadows\0Ambient occlusion\0"))
+                    if (ImGui::Combo("Hybrid view", &view, "Final\0Shadows\0Ambient occlusion\0Reflections\0"))
                         hybrid.view = HybridView(view);
                     if (hybrid.view == HybridView::Shadows)
                     {

@@ -278,9 +278,18 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           hybrid?.ambientOcclusion ? hybrid.aoRadius : 0,
           hybrid?.aoSamples || 4,
           hybrid?.aoStrength ?? 1,
-          ['final', 'shadows', 'ambient-occlusion'].indexOf(hybrid?.view),
+          ['final', 'shadows', 'ambient-occlusion', 'reflections'].indexOf(hybrid?.view),
         ],
         0,
+      )
+      record.set(
+        [
+          hybrid?.reflections ? hybrid.reflectionDistance : 0,
+          hybrid?.reflectionSamples || 1,
+          hybrid?.reflectionStrength ?? 1,
+          0,
+        ],
+        4,
       )
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)

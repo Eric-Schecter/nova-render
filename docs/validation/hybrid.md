@@ -31,3 +31,7 @@ The native Hybrid example rendered three frames on Metal and Vulkan with zero va
 ## Hybrid ambient occlusion
 
 Shared HLSL traces cosine-weighted, finite-distance hemisphere rays from the reconstructed primary surface. AO multiplies ambient lighting only; direct-light visibility remains independent. Both APIs and parameter panels expose the master, radius, strength, sample count and visibility diagnostic. Metal, Vulkan and WebGPU pass contact-AO on/off and diagnostic captures together with the earlier multi-light shadow checks; native/Web maximum MAE remains below 0.015/255.
+
+## Hybrid reflections
+
+Nearest-hit BVH traversal evaluates one-bounce GGX specular rays, opaque/MASK coverage, material textures, direct light and secondary shadows. Misses sample the environment; BLEND remains the OIT overlay. Both APIs expose enable, maximum distance, strength, samples and a reflection-only diagnostic. A low-roughness metallic floor reflects the raised box; Metal/Vulkan/WebGPU captures and native/Web parity pass below 0.015/255. Secondary hits currently use geometric normals, with no secondary normal mapping or recursive reflection.

@@ -85,7 +85,7 @@ int main(int argc, char** argv)
         auto caps = backend->GetHybridCapabilities();
         if (
           !caps.supported || !caps.shadows || !caps.softwareRayTracing || caps.hardwareRayTracing
-          || !caps.ambientOcclusion || caps.reflections || caps.globalIllumination)
+          || !caps.ambientOcclusion || !caps.reflections || caps.globalIllumination)
             throw std::runtime_error("Incorrect Hybrid capabilities");
         auto capture = [&](const std::string& name) {
             glfwPollEvents();
@@ -213,6 +213,23 @@ int main(int argc, char** argv)
         settings.view = HybridView::AmbientOcclusion;
         backend->SetHybrid(settings);
         capture("ao-visibility");
+        settings.view             = HybridView::Final;
+        settings.ambientOcclusion = false;
+        settings.reflections      = false;
+        material.metallic         = .9f;
+        material.roughness        = .08f;
+        backend->SetMaterial(0, material, "box");
+        backend->SetHybrid(settings);
+        auto reflectionOff         = capture("reflection-off");
+        settings.reflections       = true;
+        settings.reflectionSamples = 4;
+        backend->SetHybrid(settings);
+        auto reflection = capture("reflection-final");
+        if (Difference(reflectionOff, reflection) < .05)
+            throw std::runtime_error("Missing Hybrid reflection");
+        settings.view = HybridView::Reflections;
+        backend->SetHybrid(settings);
+        capture("reflection-only");
         backend.reset();
         glfwDestroyWindow(window);
         glfwTerminate();

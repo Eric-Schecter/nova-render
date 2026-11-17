@@ -11,13 +11,17 @@ int main(int argc, char** argv)
             return render::Matrix4{x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, tx, ty, tz, 1};
         };
         window.SetScene(
-          {{"box", options.modelPath}},
-          {{"ground", "box", matrix(2, .06f, 2, 0, -.8f, 0)}, {"caster", "box", matrix(.3f, 1, .3f, 0, 0, 0)}});
+          {{"box", options.modelPath}, {"floor", options.modelPath}},
+          {{"ground", "floor", matrix(2, .06f, 2, 0, -.8f, 0)}, {"caster", "box", matrix(.3f, 1, .3f, 0, 0, 0)}});
         auto material      = window.GetMaterials("box").at(0);
         material.baseColor = {.8f, .8f, .8f, 1};
         material.metallic  = 0;
         material.roughness = .7f;
         window.SetMaterial(0, material, "box");
+        auto floor      = material;
+        floor.metallic  = .9f;
+        floor.roughness = .08f;
+        window.SetMaterial(0, floor, "floor");
         window.SetLighting(render::LightingMode::PBR);
         render::DirectionalLight light;
         light.direction = {-1, 2, 1};
@@ -30,6 +34,8 @@ int main(int argc, char** argv)
         window.SetCamera(camera);
         render::HybridSettings hybrid;
         hybrid.ambientOcclusion = true;
+        hybrid.reflections       = true;
+        hybrid.reflectionSamples = 4;
         window.SetHybrid(hybrid);
         window.SetRenderMode(render::RenderMode::Hybrid);
         window.EnableOrbitControls();

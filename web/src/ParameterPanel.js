@@ -383,15 +383,65 @@ export function attachParameterPanel(
         slider(renderer, 'hybrid_aoSamples', 'AO rays/pixel', 'AO rays per pixel', 1, 32, 1, (v) =>
           adapter.setHybrid({ aoSamples: v }),
         )
+        const reflectionRow = document.createElement('label'),
+          reflectionToggle = document.createElement('input')
+        reflectionRow.textContent = 'Hybrid reflections'
+        reflectionToggle.type = 'checkbox'
+        reflectionToggle.setAttribute('aria-label', 'Hybrid reflections')
+        reflectionToggle.checked = h.reflections
+        reflectionToggle.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ reflections: reflectionToggle.checked })),
+          { signal: fieldEvents.signal },
+        )
+        reflectionRow.prepend(reflectionToggle)
+        renderer.append(reflectionRow)
+        fields.set('hybrid_reflections', { input: reflectionToggle })
+        slider(
+          renderer,
+          'hybrid_reflectionDistance',
+          'Reflection distance',
+          'Reflection distance',
+          0.1,
+          1000,
+          0.1,
+          (v) => adapter.setHybrid({ reflectionDistance: v }),
+        )
+        slider(
+          renderer,
+          'hybrid_reflectionStrength',
+          'Reflection strength',
+          'Reflection strength',
+          0,
+          1,
+          0.05,
+          (v) => adapter.setHybrid({ reflectionStrength: v }),
+        )
+        slider(
+          renderer,
+          'hybrid_reflectionSamples',
+          'Reflection rays/pixel',
+          'Reflection rays per pixel',
+          1,
+          16,
+          1,
+          (v) => adapter.setHybrid({ reflectionSamples: v }),
+        )
         const viewRow = document.createElement('label'),
           view = document.createElement('select')
         viewRow.textContent = 'Hybrid view'
         view.setAttribute('aria-label', 'Hybrid view')
-        for (const value of ['final', 'shadows', 'ambient-occlusion']) {
+        for (const value of ['final', 'shadows', 'ambient-occlusion', 'reflections']) {
           const option = document.createElement('option')
           option.value = value
           option.textContent =
-            value === 'final' ? 'Final' : value === 'shadows' ? 'Shadows' : 'Ambient occlusion'
+            value === 'final'
+              ? 'Final'
+              : value === 'shadows'
+                ? 'Shadows'
+                : value === 'ambient-occlusion'
+                  ? 'Ambient occlusion'
+                  : 'Reflections'
           view.append(option)
         }
         view.value = h.view

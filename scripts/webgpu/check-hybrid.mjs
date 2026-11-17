@@ -153,7 +153,7 @@ try {
       caps.shadows &&
       caps.softwareRayTracing &&
       !caps.hardwareRayTracing &&
-      !caps.reflections &&
+      caps.reflections &&
       !caps.globalIllumination &&
       invalid === 3 &&
       r.getRenderMode() === 'hybrid'
@@ -174,9 +174,22 @@ try {
   if (diff(ao, shadow) < 0.05) throw Error('Missing Hybrid AO')
   await page.evaluate(() => r.setHybrid({ view: 'ambient-occlusion' }))
   await capture('ao-visibility')
+  await page.evaluate(async () => {
+    r.setHybrid({ view: 'final', ambientOcclusion: false, reflections: false })
+    await r.setMaterial(0, { ...r.getMaterials('box')[0], metallic: 0.9, roughness: 0.08 }, 'box')
+  })
+  const reflectionOff = await capture('reflection-off')
+  await page.evaluate(() => r.setHybrid({ reflections: true, reflectionSamples: 4 }))
+  const reflection = await capture('reflection-final')
+  if (diff(reflection, reflectionOff) < 0.05) throw Error('Missing Hybrid reflections')
+  await page.evaluate(() => r.setHybrid({ view: 'reflections' }))
+  await capture('reflection-only')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
+      'reflection-off',
+      'reflection-final',
+      'reflection-only',
       'ao-final',
       'ao-visibility',
       'single-off',

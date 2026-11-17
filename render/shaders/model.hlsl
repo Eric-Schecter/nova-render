@@ -482,17 +482,12 @@ float hybridVisibility(SurfaceData s, uint index)
            : index < 12 ? s.visibility2[index - 8]
                         : s.visibility3[min(index - 12, 3)];
 }
-float4 shadeSurface(SurfaceData s)
+float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection)
 {
     float3 base = s.base;
     if (emissiveFactor.w < .5)
-    {
-#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
-        base = encodeDisplayRGB(base);
-#endif
-        return float4(applyFog(base, s.position), 1);
-    }
-    float3 n = s.normal, v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
+        return base;
+    float3 n = s.normal, v = viewDirection;
     float  metallic = s.metallic, roughness = s.roughness, ao = s.ao;
     bool   collection = false;
     uint   header     = 0;
@@ -562,17 +557,37 @@ float4 shadeSurface(SurfaceData s)
         float3 prefiltered =
           environmentTexture.SampleLevel(textureSampler, reflected, roughness * environmentParams.w).rgb;
         float2 brdf    = environmentBRDF(roughness, saturate(dot(n, v)));
-        float3 ambient = (1 - f) * (1 - metallic) * base * diffuseEnvironment(n) + prefiltered * (f0 * brdf.x + brdf.y);
-        color += ambient * environmentParams.z * ao;
+        float3 ambient = (1 - f) * (1 - metallic) * base * diffuseEnvironment(n) * environmentParams.z
+                         + lerp(prefiltered * (f0 * brdf.x + brdf.y) * environmentParams.z, raySpecular, reflectionMix);
+        color += ambient * ao;
     }
     else
     {
         if (!collection)
             color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
-        color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
+        color += (base * (1 - metallic) * studio(n, 1) * 0.4
+                  + lerp(studio(reflect(-v, n), roughness) * f, raySpecular, reflectionMix))
+                 * ao;
     }
     color += s.emissive;
-    return float4(applyFog(displayRadiance(color), s.position), 1);
+    return color;
+}
+float4 shadeSurface(SurfaceData s)
+{
+    float3 base = s.base;
+    if (emissiveFactor.w < .5)
+    {
+#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
+        base = encodeDisplayRGB(base);
+#endif
+        return float4(applyFog(base, s.position), 1);
+    }
+    return float4(
+      applyFog(
+        displayRadiance(
+          surfaceRadiance(s, 0, 0, cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position))),
+        s.position),
+      1);
 }
 
 void materialCoverage(inout SurfaceData s, bool face, float winding, bool transparent)
@@ -735,6 +750,125 @@ float hybridAO(float3 position, float3 normal)
     }
     return pow(saturate(visible / max(1, samples)), strength);
 }
+// Nearest-hit traversal uses world-distance parameters even for scaled instances.
+// BLEND is excluded, MASK and sidedness use the same coverage as shadow rays.
+bool hybridNearest(
+  uint        header,
+  float3      origin,
+  float3      direction,
+  inout float distance,
+  out uint    hitInstance,
+  out uint    hitTriangle,
+  out float2  hitBary)
+{
+    bool found  = false;
+    hitInstance = hitTriangle = 0;
+    hitBary                   = 0;
+    [loop] for (uint i = 0; i < uint(instances[header].emissive.x); ++i)
+    {
+        float3 translation = float3(instances[i].world._m03, instances[i].world._m13, instances[i].world._m23);
+        float3 nx =
+          float3(instances[i].normalMatrix._m00, instances[i].normalMatrix._m10, instances[i].normalMatrix._m20);
+        float3 ny =
+          float3(instances[i].normalMatrix._m01, instances[i].normalMatrix._m11, instances[i].normalMatrix._m21);
+        float3 nz =
+          float3(instances[i].normalMatrix._m02, instances[i].normalMatrix._m12, instances[i].normalMatrix._m22);
+        float3 delta = origin - translation;
+        float3 o     = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
+        float3 d     = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
+        uint   root = header + 1 + uint(instances[i].uv.y), node = 0, count = uint(instances[i].uv.w);
+        [loop] while (node < count)
+        {
+            InstanceData box = instances[root + node];
+            if (!shadowBox(box.baseColor.xyz, box.material.xyz, o, d, distance))
+            {
+                node = uint(box.baseColor.w);
+                continue;
+            }
+            uint triangles = uint(box.uv.w);
+            if (triangles == 0)
+            {
+                node = uint(box.uv.x);
+                continue;
+            }
+            [loop] for (uint t = 0; t < triangles; ++t)
+            {
+                uint         index = root + uint(box.uv.z) + t;
+                InstanceData tri   = instances[index];
+                if (!shadowTriangle(tri, o, d, distance, uint(instances[i].uv.x)))
+                    continue;
+                float3 e = tri.material.xyz - tri.baseColor.xyz, f = tri.emissive.xyz - tri.baseColor.xyz;
+                float3 p = cross(d, f), q = cross(o - tri.baseColor.xyz, e);
+                float  inverse = 1 / dot(e, p);
+                distance       = dot(f, q) * inverse;
+                hitBary        = float2(dot(o - tri.baseColor.xyz, p), dot(d, q)) * inverse;
+                hitInstance    = i;
+                hitTriangle    = index;
+                found          = true;
+            }
+            node = uint(box.baseColor.w);
+        }
+    }
+    return found;
+}
+float3 hybridReflection(SurfaceData primary)
+{
+    uint   header      = uint(irradiance[3].w) - 1;
+    float  maxDistance = instances[header].world._m01;
+    uint   samples     = uint(instances[header].world._m11);
+    float3 n = primary.normal, v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - primary.position);
+    float3 tangent   = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
+           bitangent = cross(n, tangent);
+    float  nv = max(.001, dot(n, v)), rough = max(.02, primary.roughness), a = rough * rough;
+    float3 sum = 0;
+    [loop] for (uint j = 0; j < samples; ++j)
+    {
+        float  u = (j + .5) / samples, phi = j * 2.39996323;
+        float  cosTheta = sqrt((1 - u) / (1 + (a * a - 1) * u)), sinTheta = sqrt(max(0, 1 - cosTheta * cosTheta));
+        float3 h   = normalize(tangent * (sinTheta * cos(phi)) + bitangent * (sinTheta * sin(phi)) + n * cosTheta);
+        float3 ray = reflect(-v, h);
+        float  nl = dot(n, ray), nh = max(.001, dot(n, h)), vh = max(0, dot(v, h));
+        if (nl <= 0)
+            continue;
+        float  distance = maxDistance;
+        uint   instance, hitTri;
+        float2 bary;
+        float3 origin = primary.position + primary.geometricNormal * max(1e-4, instances[header].uv.x);
+        float3 radiance;
+        if (hybridNearest(header, origin, ray, distance, instance, hitTri, bary))
+        {
+            InstanceData tri = instances[hitTri];
+            InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
+            float2       uv  = tri.uv.xy * (1 - bary.x - bary.y) + tri.uv.zw * bary.x
+                        + float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]) * bary.y;
+            uv                 = frac(uv) * mat.uv.xy + mat.uv.zw;
+            float3 localNormal = cross(tri.material.xyz - tri.baseColor.xyz, tri.emissive.xyz - tri.baseColor.xyz);
+            float3 worldNormal = normalize(mul((float3x3)instances[instance].normalMatrix, localNormal));
+            if (dot(worldNormal, ray) > 0)
+                worldNormal = -worldNormal;
+            SurfaceData hit = (SurfaceData)0;
+            hit.position    = origin + ray * distance;
+            hit.normal = hit.geometricNormal = worldNormal;
+            hit.base                         = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb;
+            float4 mr                        = materialTexture.SampleLevel(textureSampler, uv, 0);
+            hit.metallic                     = saturate(mr.b * mat.material.x);
+            hit.roughness                    = clamp(mr.g * mat.material.y, .04, 1);
+            hit.ao                           = 1;
+            hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
+            radiance     = surfaceRadiance(hit, 0, 0, -ray);
+        }
+        else
+            radiance =
+              cameraForward.w > .5
+                ? environmentTexture.SampleLevel(textureSampler, environmentDirection(ray), 0).rgb * environmentParams.z
+                : studio(ray, 0);
+        float k = pow(rough + 1, 2) / 8;
+        float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
+        sum += radiance * fresnel(vh, lerp(.04.xxx, primary.base, primary.metallic)) * (g * vh / (nv * nh));
+    }
+    return sum / max(1, samples);
+}
+
 float4 DeferredPSMain(SkyOut input)
   : SV_Target
 {
@@ -779,9 +913,25 @@ float4 DeferredPSMain(SkyOut input)
     if (s.useVisibility)
     {
         float ao = hybridAO(s.position, s.geometricNormal);
-        if (irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m30 > 1.5)
+        if (irradiance[3].w > .5 && abs(instances[uint(irradiance[3].w) - 1].world._m30 - 2) < .1)
             return float4(diagnosticLinear(ao.xxx), 1);
         s.ao *= ao;
+    }
+    if (s.useVisibility && irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m01 > 0)
+    {
+        float3 reflection = hybridReflection(s);
+        if (instances[uint(irradiance[3].w) - 1].world._m30 > 2.5)
+            return float4(displayRadiance(reflection), 1);
+        if (debug == 0)
+            return float4(
+              applyFog(
+                displayRadiance(surfaceRadiance(
+                  s,
+                  reflection,
+                  instances[uint(irradiance[3].w) - 1].world._m21,
+                  cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position))),
+                s.position),
+              1);
     }
     if (debug == 0)
         return shadeSurface(s);

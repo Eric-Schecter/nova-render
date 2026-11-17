@@ -3,6 +3,10 @@ export const defaultHybrid = () => ({
   shadowSamples: 4,
   view: 'final',
   shadowLight: 0,
+  reflections: false,
+  reflectionDistance: 1000,
+  reflectionStrength: 1,
+  reflectionSamples: 1,
   ambientOcclusion: false,
   aoRadius: 1,
   aoStrength: 1,
@@ -19,6 +23,10 @@ export function copyHybrid(value) {
           'shadowSamples',
           'view',
           'shadowLight',
+          'reflections',
+          'reflectionDistance',
+          'reflectionStrength',
+          'reflectionSamples',
           'ambientOcclusion',
           'aoRadius',
           'aoStrength',
@@ -33,7 +41,7 @@ export function copyHybrid(value) {
     !Number.isInteger(s.shadowSamples) ||
     s.shadowSamples < 1 ||
     s.shadowSamples > 16 ||
-    !['final', 'shadows', 'ambient-occlusion'].includes(s.view) ||
+    !['final', 'shadows', 'ambient-occlusion', 'reflections'].includes(s.view) ||
     !Number.isInteger(s.shadowLight) ||
     s.shadowLight < 0 ||
     s.shadowLight > 15 ||
@@ -46,7 +54,17 @@ export function copyHybrid(value) {
     s.aoStrength > 4 ||
     !Number.isInteger(s.aoSamples) ||
     s.aoSamples < 1 ||
-    s.aoSamples > 32
+    s.aoSamples > 32 ||
+    typeof s.reflections !== 'boolean' ||
+    !Number.isFinite(s.reflectionDistance) ||
+    s.reflectionDistance <= 0 ||
+    s.reflectionDistance > 100000 ||
+    !Number.isFinite(s.reflectionStrength) ||
+    s.reflectionStrength < 0 ||
+    s.reflectionStrength > 1 ||
+    !Number.isInteger(s.reflectionSamples) ||
+    s.reflectionSamples < 1 ||
+    s.reflectionSamples > 16
   )
     throw Error('Invalid Hybrid settings')
   return s
@@ -59,7 +77,7 @@ export function hybridCapabilities(animated = false) {
     softwareRayTracing: true,
     hardwareRayTracing: false,
     ambientOcclusion: true,
-    reflections: false,
+    reflections: true,
     globalIllumination: false,
     temporalReconstruction: false,
     animatedGeometry: false,

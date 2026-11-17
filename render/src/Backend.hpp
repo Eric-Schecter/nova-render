@@ -45,10 +45,13 @@ namespace render::detail
         void SetHybrid(const HybridSettings& value)
         {
             if (
-              value.shadowSamples < 1 || value.shadowSamples > 16 || unsigned(value.view) > 2 || value.shadowLight > 15
+              value.shadowSamples < 1 || value.shadowSamples > 16 || unsigned(value.view) > 3 || value.shadowLight > 15
               || !std::isfinite(value.aoRadius) || value.aoRadius <= 0 || value.aoRadius > 10000
               || !std::isfinite(value.aoStrength) || value.aoStrength < 0 || value.aoStrength > 4 || value.aoSamples < 1
-              || value.aoSamples > 32)
+              || value.aoSamples > 32 || !std::isfinite(value.reflectionDistance) || value.reflectionDistance <= 0
+              || value.reflectionDistance > 100000 || !std::isfinite(value.reflectionStrength)
+              || value.reflectionStrength < 0 || value.reflectionStrength > 1 || value.reflectionSamples < 1
+              || value.reflectionSamples > 16)
                 throw std::invalid_argument("Invalid Hybrid settings");
             hybrid = value;
             RebuildRasterInstances();
@@ -198,6 +201,9 @@ namespace render::detail
             globals.world[1]     = float(hybrid.aoSamples);
             globals.world[2]     = hybrid.aoStrength;
             globals.world[3]     = float(hybrid.view);
+            globals.world[4]     = hybrid.reflections ? hybrid.reflectionDistance : 0;
+            globals.world[5]     = float(hybrid.reflectionSamples);
+            globals.world[6]     = hybrid.reflectionStrength;
             rasterInstances.push_back(globals);
             if (scene.active)
                 rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
@@ -741,7 +747,10 @@ namespace render::detail
               || previousHybrid.view != hybrid.view || previousHybrid.shadowLight != hybrid.shadowLight
               || previousHybrid.ambientOcclusion != hybrid.ambientOcclusion
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
-              || previousHybrid.aoSamples != hybrid.aoSamples)
+              || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
+              || previousHybrid.reflectionDistance != hybrid.reflectionDistance
+              || previousHybrid.reflectionStrength != hybrid.reflectionStrength
+              || previousHybrid.reflectionSamples != hybrid.reflectionSamples)
             {
                 RebuildRasterInstances();
                 rasterAA.Reset();
