@@ -133,6 +133,36 @@ int main(int argc, char** argv)
         }
         Require(
           rejected && backend->GetShadows().samples == settings.samples, "Invalid shadow settings replaced state");
+        // Every collection directional light must use its own direction and cast flag.
+        backend->ConfigurePathTracing(config.api, config);
+        SceneLight sun;
+        sun.id             = "sun";
+        sun.direction      = {-1, 2, 1};
+        sun.intensity      = 8;
+        sun.shadowSoftness = 0;
+        backend->SetLights({sun});
+        draw();
+        const auto collectionOff = backend->GetRasterAAImage();
+        sun.castShadow           = true;
+        backend->SetLights({sun});
+        draw();
+        const auto collectionHard = backend->GetRasterAAImage();
+        Require(collectionHard.pixels != collectionOff.pixels, "Collection directional shadow missing");
+        auto fill      = sun;
+        fill.id        = "fill";
+        fill.direction = {1, 2, 1};
+        fill.color     = {.2f, .6f, 1};
+        backend->SetLights({sun, fill});
+        draw();
+        const auto twoShadows = backend->GetRasterAAImage();
+        fill.castShadow       = false;
+        backend->SetLights({sun, fill});
+        draw();
+        Require(twoShadows.pixels != backend->GetRasterAAImage().pixels, "Second light shadow cast flag ignored");
+        Require(
+          backend->GetLightingCapabilities().directionalShadows && !backend->GetLightingCapabilities().pointShadows
+            && !backend->GetLightingCapabilities().spotShadows,
+          "Shadow capability mismatch");
         backend.reset();
         glfwDestroyWindow(window);
         window = nullptr;

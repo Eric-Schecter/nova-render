@@ -72,13 +72,15 @@ namespace render::detail
         LightingCapabilities    GetLightingCapabilities() const
         {
             LightingCapabilities c;
-            if (pathAPI == GraphicsAPI::Metal && mode == RenderMode::Raster)
+            if (
+              mode == RenderMode::Raster
+              && (pathAPI == GraphicsAPI::Metal || pathAPI == GraphicsAPI::Vulkan || pathAPI == GraphicsAPI::D3D12))
             {
                 c.directional = c.point = c.spot = c.directionalShadows = true;
                 c.maxLights                                             = 16;
             }
             else
-                c.reason = "Light collections currently require Metal raster rendering";
+                c.reason = "Light collections require raster rendering on Metal, Vulkan or DX12";
             return c;
         }
         void SetLights(const std::vector<SceneLight>& values)

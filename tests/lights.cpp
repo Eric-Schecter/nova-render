@@ -71,7 +71,7 @@ int main(int argc, char** argv)
             material[i].roughness = .8f;
             backend->SetMaterial(i, material[i], "");
         }
-        Require(backend->GetLightingCapabilities().maxLights == 16, "Missing Metal light capabilities");
+        Require(backend->GetLightingCapabilities().maxLights == 16, "Missing raster light capabilities");
         std::vector<SceneLight> lights(6);
         lights[0].id             = "d1";
         lights[0].direction      = {-1, 1, 2};
@@ -108,7 +108,7 @@ int main(int argc, char** argv)
             auto im = backend->GetRasterAAImage();
             std::filesystem::create_directories("validation/lights");
             stbi_write_png(
-              ("validation/lights/metal-" + name + ".png").c_str(),
+              ("validation/lights/" + api + (config.useWarp ? "-warp-" : "-") + name + ".png").c_str(),
               im.width,
               im.height,
               4,
@@ -195,7 +195,7 @@ int main(int argc, char** argv)
         glfwDestroyWindow(window);
         window = nullptr;
         glfwTerminate();
-        std::cout << "PASS Metal six-light accumulation, types, range, cone, validation and capabilities\n";
+        std::cout << "PASS " << api << " six-light accumulation, types, range, cone, validation and capabilities\n";
         return 0;
     }
     catch (const std::exception& e)

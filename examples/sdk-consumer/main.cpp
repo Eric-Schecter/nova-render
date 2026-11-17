@@ -61,7 +61,7 @@ int main(int argc, char** argv)
             if (!window.GetShadows().enabled || window.GetFog().mode != render::FogMode::Off)
                 throw std::runtime_error("Installed atmosphere API failed");
             window.SetScene(assets, instances);
-            if (renderer.api == render::GraphicsAPI::Metal)
+            if (window.GetLightingCapabilities().maxLights > 0)
             {
                 const auto caps = window.GetLightingCapabilities();
                 if (!caps.point || !caps.spot || caps.maxLights != 16 || caps.pointShadows || caps.spotShadows)
