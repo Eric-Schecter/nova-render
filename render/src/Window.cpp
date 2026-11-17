@@ -374,6 +374,15 @@ namespace render
     {
         return impl_->renderer->GetHybrid();
     }
+    uint32_t Window::GetHybridHistoryFrames() const
+    {
+        return impl_->renderer->GetHybridHistoryFrames();
+    }
+    void Window::ResetHybridHistory()
+    {
+        impl_->renderer->ResetHybridHistory();
+    }
+
     HybridCapabilities Window::GetHybridCapabilities() const
     {
         return impl_->renderer->GetHybridCapabilities();

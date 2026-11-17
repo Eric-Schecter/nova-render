@@ -59,7 +59,7 @@ namespace example
                 if (target.GetRenderMode() == render::RenderMode::Hybrid)
                 {
                     method      = "Hybrid";
-                    accumulated = 0;
+                    accumulated = target.GetHybridHistoryFrames();
                 }
                 float inset = 0;
 #ifdef NOVA_EXAMPLE_UI

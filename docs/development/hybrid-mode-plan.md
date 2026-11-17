@@ -1,6 +1,6 @@
 # Hybrid mode: reference audit and implementation plan
 
-Status: GPU texture presentation and the Hybrid per-light shadow stage are implemented in current source and validated on Metal, MoltenVK and WebGPU. Published 0.8.0 predates Hybrid. AO, ray-traced reflections, DDGI and temporal reconstruction remain subsequent stages; complete reference fidelity is not yet claimed.
+Status: GPU texture presentation, per-light shadows, AO, one-bounce reflections and combined-color temporal reconstruction are implemented in current source and validated on Metal, MoltenVK and WebGPU. Published 0.8.0 predates Hybrid. DDGI, animated-instance motion and per-effect variance-guided spatial filtering remain subsequent stages; complete reference fidelity is not yet claimed.
 
 ## Reference strategy
 

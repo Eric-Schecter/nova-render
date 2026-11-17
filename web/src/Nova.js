@@ -58,6 +58,20 @@ class Renderer {
     this.#check()
     return { ...this.#hybrid }
   }
+  getHybridHistoryFrames() {
+    this.#check()
+    return this.#renderMode === 'hybrid' &&
+      this.#hybrid.temporalReconstruction &&
+      this.#hybrid.view === 'final' &&
+      this.#rasterSettings.view === 'final'
+      ? this.#aaView?.getHistoryFrames() || 0
+      : 0
+  }
+  resetHybridHistory() {
+    this.#check()
+    this.#resetAA()
+    this.#continuePathTracing()
+  }
   setHybrid(value) {
     this.#check()
     this.#hybrid = copyHybrid({ ...this.#hybrid, ...value })
@@ -134,10 +148,13 @@ class Renderer {
   }
   #taaActive() {
     return (
-      this.#renderMode === 'raster' &&
+      (this.#renderMode === 'raster' ||
+        (this.#renderMode === 'hybrid' &&
+          this.#hybrid.temporalReconstruction &&
+          this.#hybrid.view === 'final')) &&
       !this.#aoSettings.enabled &&
       this.#rasterSettings.view === 'final' &&
-      this.#aaSettings.method === 'taa' &&
+      (this.#aaSettings.method === 'taa' || this.#renderMode === 'hybrid') &&
       this.#aaRemaining > 0
     )
   }
@@ -830,8 +847,25 @@ class Renderer {
     const camera = copyViewCamera({ ...this.getViewCamera(), ...value })
     this.disableOrbitControls()
     if (this.#viewCamera && JSON.stringify(this.#viewCamera) === JSON.stringify(camera)) return
+    const old = this.getViewCamera(),
+      distanceSquared = old.position.reduce((sum, v, i) => sum + (v - camera.position[i]) ** 2, 0),
+      orientationDot = old.orientation.reduce((sum, v, i) => sum + v * camera.orientation[i], 0)
+    const preserve =
+      this.#renderMode === 'hybrid' &&
+      this.#hybrid.temporalReconstruction &&
+      [
+        'projection',
+        'verticalFov',
+        'orthographicHeight',
+        'nearPlane',
+        'farPlane',
+        'exposure',
+      ].every((k) => old[k] === camera[k]) &&
+      distanceSquared <= 4 &&
+      Math.abs(orientationDot) > 0.98480775
     this.#viewCamera = camera
-    this.#resetAA()
+    if (!preserve) this.#resetAA()
+    this.#aaRemaining = 32
     this.resetAccumulation()
   }
   getViewport() {

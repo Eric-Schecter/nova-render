@@ -62,6 +62,8 @@ namespace render
         RendererCapabilities    GetCapabilities() const;
         void                    SetHybrid(const HybridSettings& settings);
         HybridSettings          GetHybrid() const;
+        uint32_t                GetHybridHistoryFrames() const;
+        void                    ResetHybridHistory();
         HybridCapabilities      GetHybridCapabilities() const;
         void                    SetRenderMode(RenderMode mode);
         RenderMode              GetRenderMode() const;

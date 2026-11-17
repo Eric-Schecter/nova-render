@@ -71,7 +71,13 @@ namespace render::detail
         AAHybridShadow1,
         AAHybridShadow2,
         AAHybridShadow3,
-        AAResourceCount = 96
+        AAHybridPreviousNormal = 96,
+        AAHybridPreviousDepth,
+        AAHybridCurrentNormal,
+        AAHybridCurrentDepth,
+        AAHybridOitAccum,
+        AAHybridOitReveal,
+        AAResourceCount = 102
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -99,6 +105,8 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id >= AAHybridPreviousNormal)
+            return {w, h, 1};
         if (id >= AAModelBase)
             return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};
         if (id == AAPipelineLists)

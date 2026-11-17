@@ -4,6 +4,50 @@ import { join, resolve } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 const exec = promisify(execFile)
+// Scalarize model storage without loop transforms that produce WGSL pointer spills.
+const modelWGSLPasses = [
+  'wrap-opkill',
+  'eliminate-dead-branches',
+  'merge-return',
+  'inline-entry-points-exhaustive',
+  'eliminate-dead-functions',
+  'eliminate-dead-code-aggressive',
+  'private-to-local',
+  'eliminate-local-single-block',
+  'eliminate-local-single-store',
+  'eliminate-dead-code-aggressive',
+  'scalar-replacement=0',
+  'convert-local-access-chains',
+  'eliminate-local-single-block',
+  'eliminate-local-single-store',
+  'eliminate-dead-code-aggressive',
+  'ssa-rewrite',
+  'eliminate-dead-code-aggressive',
+  'ccp',
+  'eliminate-dead-code-aggressive',
+  'eliminate-dead-branches',
+  'combine-access-chains',
+  'simplify-instructions',
+  'scalar-replacement=0',
+  'convert-local-access-chains',
+  'eliminate-local-single-block',
+  'eliminate-local-single-store',
+  'eliminate-dead-code-aggressive',
+  'ssa-rewrite',
+  'eliminate-dead-code-aggressive',
+  'vector-dce',
+  'eliminate-dead-inserts',
+  'eliminate-dead-branches',
+  'simplify-instructions',
+  'if-conversion',
+  'copy-propagate-arrays',
+  'reduce-load-size',
+  'eliminate-dead-code-aggressive',
+  'merge-blocks',
+  'eliminate-dead-branches',
+  'merge-blocks',
+  'simplify-instructions',
+]
 export async function compile(
   source,
   {
@@ -52,6 +96,10 @@ export async function compile(
           // DXC LICM hoists storage pointers across nested MIS/BVH loops.
           // Naga cannot spill those pointers into WGSL function variables.
           ...(compute ? ['-DNOVA_WEB_BVH=1'] : []),
+          // Preserve storage-matrix inlining without LICM's non-storable pointer spills.
+          ...(model && optimizeModel && fragmentEntry === 'DeferredPSMain' && stage === 'frag'
+            ? ['-Oconfig=' + modelWGSLPasses.map((pass) => '--' + pass).join(',')]
+            : []),
           ...((compute && !optimizeCompute) || (model && stage === 'frag' && !sky && !optimizeModel)
             ? ['-Od']
             : []),

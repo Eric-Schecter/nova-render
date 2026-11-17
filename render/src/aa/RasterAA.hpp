@@ -2,6 +2,7 @@
 #include "AADevice.hpp"
 #include "ModelData.hpp"
 #include "PostProcessing.hpp"
+#include "render/Hybrid.hpp"
 namespace render::detail
 {
     class RasterAA
@@ -33,12 +34,13 @@ namespace render::detail
           uint32_t                      h,
           const AntiAliasingSettings&   requestedSettings,
           const std::array<float, 4>&   clear,
-          bool                          triangle      = false,
-          const PostProcessingSettings& requestedPost = {},
-          const RasterSettings&         modelSettings = {},
-          bool                          transparent   = false,
-          bool                          hybrid        = false,
-          bool                          hybridDebug   = false)
+          bool                          triangle       = false,
+          const PostProcessingSettings& requestedPost  = {},
+          const RasterSettings&         modelSettings  = {},
+          bool                          transparent    = false,
+          bool                          hybrid         = false,
+          bool                          hybridDebug    = false,
+          const HybridSettings&         hybridSettings = {})
         {
             auto settings     = requestedSettings;
             auto postSettings = requestedPost;
@@ -48,6 +50,8 @@ namespace render::detail
                 settings.split       = false;
                 postSettings.enabled = false;
             }
+            const bool reconstruct = hybrid && hybridSettings.temporalReconstruction && !hybridDebug
+                                     && modelSettings.view == GBufferView::Final;
             const bool deferred = modelSettings.pipeline == RasterPipeline::Deferred;
             if (w != width || h != height)
             {
@@ -125,6 +129,9 @@ namespace render::detail
             if (oit)
             {
                 add(-6, AAOitAccum);
+            }
+            if (oit && !reconstruct)
+            {
                 auto* p       = add(29, AARawColor);
                 p->sources[0] = AARawOpaque;
                 p->sources[1] = AAOitAccum;
@@ -132,7 +139,7 @@ namespace render::detail
             }
             crop(
               AAColor,
-              AARawColor,
+              oit && reconstruct ? AARawOpaque : AARawColor,
               w * (settings.method == AAMethod::SSAA ? 2 : 1),
               h * (settings.method == AAMethod::SSAA ? 2 : 1),
               true);
@@ -148,6 +155,39 @@ namespace render::detail
                 p->sources[4]                    = AAMotion;
                 p->sources[5]                    = AAPrevMotion;
                 add(1, AAPrevMotion)->sources[0] = AAMotion;
+            }
+            if (reconstruct)
+            {
+                add(-2, AARawMotion);
+                const uint32_t scale = settings.method == AAMethod::SSAA ? 2 : 1;
+                crop(AAMotion, AARawMotion, w * scale, h * scale, false);
+                crop(AAHybridCurrentNormal, AAModelNormal, w * scale, h * scale, false);
+                crop(AAHybridCurrentDepth, AAModelPosition, w * scale, h * scale, false);
+                filtered                                   = frames % 2 ? AAHistoryB : AAHistoryA;
+                auto* p                                    = add(7, filtered);
+                p->sources[0]                              = AAColor;
+                p->sources[1]                              = AAHybridCurrentNormal;
+                p->sources[2]                              = AAHybridPreviousNormal;
+                p->sources[3]                              = frames % 2 ? AAHistoryA : AAHistoryB;
+                p->sources[4]                              = AAMotion;
+                p->sources[5]                              = AAPrevMotion;
+                p->sources[6]                              = AAHybridCurrentDepth;
+                p->sources[7]                              = AAHybridPreviousDepth;
+                p->uniforms[6][3]                          = 2;
+                p->uniforms[3][1]                          = hybridSettings.historyWeight;
+                add(1, AAPrevMotion)->sources[0]           = AAMotion;
+                add(1, AAHybridPreviousNormal)->sources[0] = AAHybridCurrentNormal;
+                add(1, AAHybridPreviousDepth)->sources[0]  = AAHybridCurrentDepth;
+                if (oit)
+                {
+                    crop(AAHybridOitAccum, AAOitAccum, w * scale, h * scale, false);
+                    crop(AAHybridOitReveal, AAOitReveal, w * scale, h * scale, false);
+                    auto* composite       = add(29, AAColor);
+                    composite->sources[0] = filtered;
+                    composite->sources[1] = AAHybridOitAccum;
+                    composite->sources[2] = AAHybridOitReveal;
+                    filtered              = AAColor;
+                }
             }
             const auto post = AppendPostProcessing(
               passes, filtered, settings.split ? AABaseline : AADummy, w, h, postSettings, postState, u);

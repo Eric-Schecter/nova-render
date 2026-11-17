@@ -173,13 +173,13 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
     }
     return true;
 }
-bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistance)
+bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistance, bool shadowOnly = true)
 {
     InstanceData settings = instances[header];
     [loop] for (uint i = 0; i < uint(settings.emissive.x); i++)
     {
         InstanceData instance = instances[i];
-        if (instance.uv.z < .5)
+        if (shadowOnly && instance.uv.z < .5)
             continue;
         // Explicit BVH transform components; the Web visibility kernel is optimized
         // to inline matrix storage access before SPIR-V/WGSL lowering.
@@ -235,7 +235,7 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
     [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
     {
         float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * softness * .006;
-        float  angle  = float(sampleIndex) * 2.39996323;
+        float  angle  = float(sampleIndex) * 2.39996323 + max(0, irradiance[6].w - 1) * 2.39996323;
         float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
         visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray, 1e30) ? 0 : 1;
     }
@@ -265,7 +265,7 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
     {
         // Deterministic disk around the source, radius in world units.
         float  radius         = count == 1 ? 0 : sqrt((float(i) + .5) / count) * softness * .006;
-        float  angle          = float(i) * 2.39996323;
+        float  angle          = float(i) * 2.39996323 + max(0, irradiance[6].w - 1) * 2.39996323;
         float3 sampleDelta    = delta + radius * (cos(angle) * tangent + sin(angle) * bitangent);
         float  sampleDistance = length(sampleDelta);
         visible += sceneOccluded(header, origin, sampleDelta / sampleDistance, max(0, sampleDistance - 1e-5)) ? 0 : 1;
@@ -728,7 +728,7 @@ float3                                   diagnosticLinear(float3 c)
       c.z <= .04045 ? c.z / 12.92 : pow((c.z + .055) / 1.055, 2.4));
 }
 // Cosine-weighted finite hemisphere visibility. AO only attenuates indirect lighting.
-float hybridAO(float3 position, float3 normal)
+float hybridAO(float3 position, float3 normal, float rotation)
 {
     if (irradiance[3].w < .5)
         return 1;
@@ -744,9 +744,9 @@ float hybridAO(float3 position, float3 normal)
     float3 origin    = position + normal * max(1e-4, instances[header].uv.x);
     [loop] for (uint i = 0; i < samples; ++i)
     {
-        float  r = sqrt((i + .5) / samples), phi = i * 2.39996323;
+        float  r = sqrt((i + .5) / samples), phi = i * 2.39996323 + rotation;
         float3 direction = tangent * (r * cos(phi)) + bitangent * (r * sin(phi)) + normal * sqrt(1 - r * r);
-        visible += sceneOccluded(header, origin, direction, radius) ? 0 : 1;
+        visible += sceneOccluded(header, origin, direction, radius, false) ? 0 : 1;
     }
     return pow(saturate(visible / max(1, samples)), strength);
 }
@@ -811,7 +811,16 @@ bool hybridNearest(
     }
     return found;
 }
-float3 hybridReflection(SurfaceData primary)
+float hybridRotation(uint2 pixel)
+{
+    if (irradiance[6].w < .5)
+        return 0;
+    uint seed = pixel.x * 1973u + pixel.y * 9277u + uint(irradiance[6].w) * 26699u;
+    seed      = (seed ^ (seed >> 16)) * 2246822519u;
+    seed ^= seed >> 13;
+    return (seed & 65535u) * (6.28318530718 / 65536.0);
+}
+float3 hybridReflection(SurfaceData primary, float rotation)
 {
     uint   header      = uint(irradiance[3].w) - 1;
     float  maxDistance = instances[header].world._m01;
@@ -823,7 +832,7 @@ float3 hybridReflection(SurfaceData primary)
     float3 sum = 0;
     [loop] for (uint j = 0; j < samples; ++j)
     {
-        float  u = (j + .5) / samples, phi = j * 2.39996323;
+        float  u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
         float  cosTheta = sqrt((1 - u) / (1 + (a * a - 1) * u)), sinTheta = sqrt(max(0, 1 - cosTheta * cosTheta));
         float3 h   = normalize(tangent * (sinTheta * cos(phi)) + bitangent * (sinTheta * sin(phi)) + n * cosTheta);
         float3 ray = reflect(-v, h);
@@ -912,14 +921,14 @@ float4 DeferredPSMain(SkyOut input)
     s.metallic        = emission.w;
     if (s.useVisibility)
     {
-        float ao = hybridAO(s.position, s.geometricNormal);
+        float ao = hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
         if (irradiance[3].w > .5 && abs(instances[uint(irradiance[3].w) - 1].world._m30 - 2) < .1)
             return float4(diagnosticLinear(ao.xxx), 1);
         s.ao *= ao;
     }
     if (s.useVisibility && irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m01 > 0)
     {
-        float3 reflection = hybridReflection(s);
+        float3 reflection = hybridReflection(s, hybridRotation(uint2(input.position.xy)));
         if (instances[uint(irradiance[3].w) - 1].world._m30 > 2.5)
             return float4(displayRadiance(reflection), 1);
         if (debug == 0)
@@ -973,6 +982,8 @@ struct MotionOut
     float2                uv : TEXCOORD2;
     nointerpolation uint  materialIndex : TEXCOORD3;
     nointerpolation float winding : TEXCOORD4;
+    float                 previousDepth : TEXCOORD5;
+    nointerpolation float identity : TEXCOORD6;
 };
 MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -1010,6 +1021,8 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.current  = mul(viewProjection, current.position);
     o.previous = mul(previousViewProjection, old.position);
     o.position = o.current;
+    o.previousDepth = dot(old.position.xyz - previousSceneRest[0].xyz, previousSceneRest[8].xyz);
+    o.identity      = float(instanceId + 1);
     return o;
 }
 float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
@@ -1032,6 +1045,8 @@ float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
         discard;
     float2 current = input.current.xy / input.current.w * float2(.5, -.5) + .5,
            old     = input.previous.xy / input.previous.w * float2(.5, -.5) + .5;
+    if (irradiance[1].w > .5)
+        return float4(old - current, log2(max(1e-20, input.previousDepth)), input.identity);
     return float4(old - current, input.current.w / 16, .125);
 }
 float4 SkyMotionPSMain(SkyOut input)
@@ -1039,5 +1054,5 @@ float4 SkyMotionPSMain(SkyOut input)
 {
     float4 previous = mul(previousViewProjection, float4(input.direction, 0));
     float2 uv       = previous.xy / max(previous.w, .00001) * float2(.5, -.5) + .5;
-    return float4(uv - input.uv, 1, 1);
+    return float4(uv - input.uv, irradiance[1].w > .5 ? 0 : 1, irradiance[1].w > .5 ? 0 : 1);
 }

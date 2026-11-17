@@ -50,6 +50,7 @@ export async function showHybrid(
       shadows: true,
       shadowSamples: 4,
       ambientOcclusion: true,
+      temporalReconstruction: true,
       reflections: true,
       reflectionSamples: 4,
     })

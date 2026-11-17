@@ -427,6 +427,30 @@ export function attachParameterPanel(
           1,
           (v) => adapter.setHybrid({ reflectionSamples: v }),
         )
+        const temporalRow = document.createElement('label'),
+          temporalToggle = document.createElement('input')
+        temporalRow.textContent = 'Hybrid temporal reconstruction'
+        temporalToggle.type = 'checkbox'
+        temporalToggle.setAttribute('aria-label', 'Hybrid temporal reconstruction')
+        temporalToggle.checked = h.temporalReconstruction
+        temporalToggle.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ temporalReconstruction: temporalToggle.checked })),
+          { signal: fieldEvents.signal },
+        )
+        temporalRow.prepend(temporalToggle)
+        renderer.append(temporalRow)
+        fields.set('hybrid_temporalReconstruction', { input: temporalToggle })
+        slider(
+          renderer,
+          'hybrid_historyWeight',
+          'History weight',
+          'Hybrid history weight',
+          0,
+          0.98,
+          0.01,
+          (v) => adapter.setHybrid({ historyWeight: v }),
+        )
         const viewRow = document.createElement('label'),
           view = document.createElement('select')
         viewRow.textContent = 'Hybrid view'

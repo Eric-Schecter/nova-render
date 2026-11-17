@@ -268,7 +268,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 96; i++)
+    for (let i = 0; i < 102; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -287,6 +287,7 @@ export async function createAntiAliasingView({
     const debug =
       (external?.raster?.view && external.raster.view !== 'final') ||
       (external?.hybrid && external.hybrid.view !== 'final')
+    const reconstruct = !!external?.hybrid?.temporalReconstruction && !debug
     const effectiveMethod = debug ? 'off' : settings.method
     const taa = effectiveMethod === 'taa',
       jitter = taa
@@ -404,10 +405,10 @@ export async function createAntiAliasingView({
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
         add(-6, 89)
-        add(29, 17).sources.splice(0, 3, 91, 89, 90)
+        if (!reconstruct) add(29, 17).sources.splice(0, 3, 91, 89, 90)
       }
       const scale = effectiveMethod === 'ssaa' ? 2 : 1
-      crop(C, 17, width * scale, height * scale, true)
+      crop(C, external.alphaBlend && reconstruct ? 91 : 17, width * scale, height * scale, true)
     } else if (hdrScene) {
       if (settings.split && !debug) {
         const p = add(16, B)
@@ -446,6 +447,27 @@ export async function createAntiAliasingView({
       p.sources[4] = M
       p.sources[5] = PM
       add(1, PM).sources[0] = M
+    }
+    if (reconstruct) {
+      add(-2, 18)
+      const scale = effectiveMethod === 'ssaa' ? 2 : 1
+      crop(M, 18, width * scale, height * scale, false)
+      crop(98, 86, width * scale, height * scale, false)
+      crop(99, 87, width * scale, height * scale, false)
+      filtered = frames % 2 ? HB : HA
+      const p = add(7, filtered)
+      p.sources.splice(0, 8, C, 98, 96, frames % 2 ? HA : HB, M, PM, 99, 97)
+      p.u[27] = 2
+      p.u[13] = external.hybrid.historyWeight
+      add(1, PM).sources[0] = M
+      add(1, 96).sources[0] = 98
+      add(1, 97).sources[0] = 99
+      if (external.alphaBlend) {
+        crop(100, 89, width * scale, height * scale, false)
+        crop(101, 90, width * scale, height * scale, false)
+        add(29, C).sources.splice(0, 3, filtered, 100, 101)
+        filtered = C
+      }
     }
     const baselineSource =
       (!shadowScene && !hdrScene && !reflectionScene) || settings.split ? B : DUMMY
@@ -518,7 +540,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 96; i++) {
+    for (let i = 0; i < 102; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -538,10 +560,14 @@ export async function createAntiAliasingView({
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
-      if (i >= 85) {
+      if (i >= 85 && i < 96) {
         const scale = superSample ? 2 : 1
         tw = w * scale + 2
         th = h * scale + 2
+      }
+      if (i >= 96) {
+        tw = w
+        th = h
       }
       if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
         textures[i].destroy()
@@ -555,7 +581,12 @@ export async function createAntiAliasingView({
           [MC, MM, 19, 20, 46, 47, 48, 49].includes(i) ? 4 : 1,
         )
     }
-    const raw = textures[reflectionScene ? 42 : external ? 17 : C]
+    // With temporal OIT, only the opaque raw target is retained by the graph.
+    const raw = reflectionScene
+      ? textures[42]
+      : external
+        ? textures[17] || textures[91]
+        : textures[C]
     if (!depth || depth.width !== raw.width || depth.height !== raw.height) {
       depth?.destroy()
       depth = texture(raw.width, raw.height, 'depth32float')
@@ -874,7 +905,8 @@ export async function createAntiAliasingView({
       if (Math.abs(value - time) > 0.25) reset()
       time = value
     },
-    getHistoryFrames: () => (settings.method === 'taa' ? frames : 0),
+    getHistoryFrames: () =>
+      settings.method === 'taa' || external?.hybrid?.temporalReconstruction ? frames : 0,
     resetHistory() {
       check()
       reset()

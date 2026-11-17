@@ -40,6 +40,7 @@ Release **0.8.0** adds alpha cutout, weighted OIT transparency, per-material sid
 - [x] SSR with a depth pyramid and environment fallback
 - [x] Planar reflections
 - [x] Local reflection probes, box projection and smooth multi-probe blending
+- [x] Hybrid rendering — GPU BVH shadows, AO, one-bounce reflections and temporal reconstruction (current source)
 - [x] Path tracing, bidirectional path tracing, progressive photon mapping and PSSMLT
 - [x] Light importance sampling, MIS and denoising
 - [x] Orbit controls, parameter panels and performance indicators

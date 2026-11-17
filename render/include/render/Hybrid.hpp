@@ -21,6 +21,8 @@ namespace render
         bool       reflections        = false;
         float      reflectionDistance = 1000.f, reflectionStrength = 1.f;
         uint32_t   reflectionSamples = 1;
+        bool       temporalReconstruction = false;
+        float      historyWeight          = .9f;
         uint32_t   aoSamples = 4;
     };
     struct HybridCapabilities
@@ -28,7 +30,7 @@ namespace render
         bool        supported = true, rasterPrimaryVisibility = true, shadows = true;
         bool        softwareRayTracing = true, hardwareRayTracing = false;
         bool        ambientOcclusion = true, reflections = true, globalIllumination = false;
-        bool        temporalReconstruction = false, animatedGeometry = false, taa = false, splitAA = false;
+        bool        temporalReconstruction = true, animatedGeometry = false, taa = false, splitAA = false;
         bool        gpuPresentation = true, alphaMask = true, alphaBlend = true;
         std::string execution = "fragment-bvh", reason;
     };

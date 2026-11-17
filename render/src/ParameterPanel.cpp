@@ -273,6 +273,8 @@ namespace render::detail
                     int reflectionSamples = int(hybrid.reflectionSamples);
                     if (ImGui::SliderInt("Reflection rays/pixel", &reflectionSamples, 1, 16))
                         hybrid.reflectionSamples = uint32_t(reflectionSamples);
+                    ImGui::Checkbox("Hybrid temporal reconstruction", &hybrid.temporalReconstruction);
+                    ImGui::SliderFloat("Hybrid history weight", &hybrid.historyWeight, 0, .98f);
                     int view = int(hybrid.view);
                     if (ImGui::Combo("Hybrid view", &view, "Final\0Shadows\0Ambient occlusion\0Reflections\0"))
                         hybrid.view = HybridView(view);

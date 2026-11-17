@@ -86,9 +86,11 @@ export function instrumentRenderer(renderer, canvas) {
         !visible() ? 'paused' : !active ? 'idle' : ray ? 'accumulating' : 'rendering',
       ),
       accumulatedFrames:
-        renderer.getRenderMode() !== 'ray-tracing'
-          ? renderer.getAntiAliasingHistoryFrames()
-          : renderer.getAccumulatedSamples(),
+        renderer.getRenderMode() === 'hybrid'
+          ? renderer.getHybridHistoryFrames()
+          : renderer.getRenderMode() !== 'ray-tracing'
+            ? renderer.getAntiAliasingHistoryFrames()
+            : renderer.getAccumulatedSamples(),
     }
   }
   const panel = attachPerformanceBar(host, () => renderer.getPerformanceStats())

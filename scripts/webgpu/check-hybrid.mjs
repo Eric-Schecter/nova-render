@@ -1,5 +1,6 @@
 import { chromium } from 'playwright'
 import { mkdirSync, readFileSync } from 'node:fs'
+import { decode as decodePNG } from './Screenshot.mjs'
 const dir = 'build/validation/hybrid-shadow/web'
 mkdirSync(dir, { recursive: true })
 const browser = await chromium.launch({
@@ -28,17 +29,15 @@ try {
     r.setRenderMode('hybrid')
     r.setHybrid({ shadows: false })
   })
-  const decode = async (bytes) =>
-    page.evaluate(async (base64) => {
-      const b = await createImageBitmap(
-        new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))]),
-      )
-      const c = new OffscreenCanvas(b.width, b.height),
-        ctx = c.getContext('2d')
-      ctx.drawImage(b, 0, 0)
-      b.close()
-      return [...ctx.getImageData(0, 0, c.width, c.height).data]
-    }, bytes.toString('base64'))
+  const decode = (bytes) => {
+    const image = decodePNG(bytes),
+      pixels = new Uint8Array(image.width * image.height * 4)
+    for (let i = 0; i < image.width * image.height; ++i) {
+      pixels.set(image.pixels.subarray(i * image.channels, i * image.channels + 3), i * 4)
+      pixels[i * 4 + 3] = image.channels === 4 ? image.pixels[i * 4 + 3] : 255
+    }
+    return pixels
+  }
   const capture = async (name) => {
     await page.evaluate(() => r.drawFrame())
     return decode(await page.locator('canvas').screenshot({ path: `${dir}/${name}.png` }))
@@ -184,9 +183,95 @@ try {
   if (diff(reflection, reflectionOff) < 0.05) throw Error('Missing Hybrid reflections')
   await page.evaluate(() => r.setHybrid({ view: 'reflections' }))
   await capture('reflection-only')
+  await page.evaluate(() =>
+    r.setHybrid({
+      view: 'final',
+      ambientOcclusion: true,
+      aoSamples: 4,
+      reflectionSamples: 1,
+      temporalReconstruction: true,
+    }),
+  )
+  await page.evaluate(() => r.setHybrid({ historyWeight: 0 }))
+  let reference
+  for (let f = 1; f <= 16; ++f) {
+    const raw = await capture('temporal-raw-' + f)
+    reference ||= new Float64Array(raw.length)
+    for (let i = 0; i < raw.length; ++i) reference[i] += raw[i] / 16
+  }
+  await page.evaluate(() => r.setHybrid({ historyWeight: 0.9 }))
+  const first = await capture('temporal-first')
+  let resolved
+  for (let f = 2; f <= 16; ++f) resolved = await capture('temporal-' + f)
+  if (
+    (await page.evaluate(() => r.getHybridHistoryFrames())) !== 16 ||
+    diff(first, resolved) < 0.01
+  )
+    throw Error('Missing Hybrid temporal history')
+  const mse = (a) => a.reduce((sum, v, i) => sum + (v - reference[i]) ** 2, 0) / a.length
+  console.log('Temporal reference MSE: first=' + mse(first) + '; resolved=' + mse(resolved))
+  if (mse(resolved) >= mse(first))
+    throw Error('Temporal reconstruction did not reduce reference error')
+  await page.evaluate(() => r.setCamera({ yaw: 32 }))
+  await capture('temporal-motion')
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 17)
+    throw Error('Small movement lost history')
+  await page.evaluate(() => r.setCamera({ yaw: 72 }))
+  const cut = await capture('temporal-cut')
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 1)
+    throw Error('Camera cut retained history')
+  await page.evaluate(() => r.resetHybridHistory())
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 0)
+    throw Error('Explicit reset failed')
+  const reset = await capture('temporal-reset')
+  if (diff(cut, reset) > 0.01) throw Error('Reset reused stale history')
+  await page.evaluate(() => {
+    const c = r.getViewCamera()
+    c.position[0] += 0.1
+    r.setViewCamera(c)
+  })
+  await capture('temporal-full-camera')
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 2)
+    throw Error('Full camera movement lost history')
+  await page.evaluate(() => r.setViewCamera({ verticalFov: r.getViewCamera().verticalFov + 1 }))
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 0)
+    throw Error('Lens change retained history')
+  await page.evaluate(() => r.setAntiAliasing({ method: 'ssaa' }))
+  for (let f = 0; f < 4; ++f) await capture('temporal-ssaa')
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 4)
+    throw Error('Hybrid SSAA history failed')
+  await page.evaluate(async () => {
+    r.setAntiAliasing({ method: 'off' })
+    r.setHybrid({
+      shadows: true,
+      view: 'final',
+      ambientOcclusion: false,
+      reflections: false,
+      temporalReconstruction: false,
+    })
+    await r.loadModel(
+      '/@fs/Users/eric/Documents/repos/renderer/nova-v2/assets/MaterialSample/Layers.glb',
+    )
+    r.setLighting('unlit')
+    r.setCamera({ yaw: 0, pitch: 0, distance: 3.6, target: [0, 0, 0], exposure: 1 })
+  })
+  const alphaBase = await capture('temporal-alpha-base')
+  await page.evaluate(() => r.setHybrid({ temporalReconstruction: true }))
+  let alphaResolved
+  for (let f = 0; f < 4; ++f) alphaResolved = await capture('temporal-alpha')
+  if (diff(alphaBase, alphaResolved) > 0.05) throw Error('Temporal OIT changed transparency')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
+      'temporal-ssaa',
+      'temporal-alpha-base',
+      'temporal-alpha',
+      'temporal-first',
+      'temporal-16',
+      'temporal-motion',
+      'temporal-cut',
+      'temporal-reset',
+      'temporal-full-camera',
       'reflection-off',
       'reflection-final',
       'reflection-only',

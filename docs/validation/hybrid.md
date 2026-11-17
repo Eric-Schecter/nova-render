@@ -8,7 +8,7 @@ Native AA/deferred devices expose their owned output texture to the model presen
 
 ## Hybrid per-light shadows
 
-Current source exposes Hybrid as the third mode, with shared HLSL, paired settings/capabilities, static-model and instance BVHs, per-light directional/point/spot visibility, MASK coverage, OIT overlays and GPU presentation. The visibility kernel uses GPU fragment-shader BVH traversal; it does not claim hardware ray queries. AO, reflections, DDGI and temporal reconstruction remain unavailable.
+Current source exposes Hybrid as the third mode, with shared HLSL, paired settings/capabilities, static-model and instance BVHs, per-light directional/point/spot visibility, MASK coverage, OIT overlays and GPU presentation. The visibility kernel uses GPU fragment-shader BVH traversal; it does not claim hardware ray queries. AO, reflections and temporal reconstruction are validated in the following stages; DDGI remains unavailable.
 
 `nova_hybrid_test` and `scripts/webgpu/check-hybrid.mjs` cover single-model traversal, five independent light slots, visibility diagnostics, AA restrictions, zero automatic native readbacks and Raster/Hybrid lighting parity. Metal, Vulkan and WebGPU agree within 0.015/255 maximum mean absolute channel error for these captures.
 
@@ -35,3 +35,13 @@ Shared HLSL traces cosine-weighted, finite-distance hemisphere rays from the rec
 ## Hybrid reflections
 
 Nearest-hit BVH traversal evaluates one-bounce GGX specular rays, opaque/MASK coverage, material textures, direct light and secondary shadows. Misses sample the environment; BLEND remains the OIT overlay. Both APIs expose enable, maximum distance, strength, samples and a reflection-only diagnostic. A low-roughness metallic floor reflects the raised box; Metal/Vulkan/WebGPU captures and native/Web parity pass below 0.015/255. Secondary hits currently use geometric normals, with no secondary normal mapping or recursive reflection.
+
+## Hybrid temporal reconstruction
+
+The opaque color history is reconstructed before post processing and final AA, using camera motion, expected previous view depth, split-depth history, oct-normal rejection, instance identity and a 3×3 neighborhood clamp. History weight decreases with screen-space motion. AO/reflection sample rotations vary by pixel and frame; soft-shadow disks rotate by frame. OIT is composited after opaque reconstruction and never fed back into history.
+
+The paired Hybrid tests cover sixteen frames, orbit motion, full-camera translation, camera cuts, FOV changes, explicit resets, SSAA and BLEND overlays. Against the mean of the same sixteen unfiltered samples, the native fixture MSE decreases from 6.587 to 0.482 (about 93%); WebGPU gives 6.584 to 0.482. These are fixture-specific 8-bit capture errors, not a general convergence or physical-accuracy guarantee. Animated geometry remains rejected, and scene/material/light edits invalidate history instead of providing moving-instance vectors. The implementation reconstructs combined color; per-effect moments/variance filtering and DDGI are separate future work.
+
+The Web deferred kernel uses an explicit SPIR-V optimization sequence: storage matrices are inlined and scalarized, while loop transformations that introduce non-storable pointer spills are excluded. Both Naga validation and transformed-instance native/Web capture parity guard this compiler boundary.
+
+Final regression: all 103 native CTest cases passed on Metal/Vulkan. Six targeted Hybrid/deferred/alpha tests were repeated after the inactive-diagnostic mode-switch fix. Chrome WebGPU passed the Hybrid convergence/motion/reset, SSAA and temporal-OIT combinations, plus the existing deferred, alpha-material and multi-light shadow suites. The Hybrid capture set remains within 0.015/255 native/Web MAE. Both native example backends rendered sixteen frames with zero validation errors; built documentation controls and desktop/narrow-screen previews were exercised in Chrome. Windows runtime validation remains deferred.

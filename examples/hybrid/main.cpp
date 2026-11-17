@@ -36,6 +36,7 @@ int main(int argc, char** argv)
         hybrid.ambientOcclusion = true;
         hybrid.reflections       = true;
         hybrid.reflectionSamples = 4;
+        hybrid.temporalReconstruction = true;
         window.SetHybrid(hybrid);
         window.SetRenderMode(render::RenderMode::Hybrid);
         window.EnableOrbitControls();

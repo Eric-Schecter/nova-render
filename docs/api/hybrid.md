@@ -1,31 +1,40 @@
 # Hybrid rendering
 
-Available in the current source; published 0.8.0 packages predate this mode. Use matched headers, libraries and shader assets from one build.
-
-C++: `SetRenderMode(RenderMode::Hybrid)`, `SetHybrid(settings)`, `GetHybrid()`, `GetHybridCapabilities()` on Renderer / Window. Web: `setRenderMode('hybrid')`, `setHybrid(settings)`, `getHybrid()`, `getHybridCapabilities()`.
-
-The first implementation uses raster primary visibility, a four-target material G-buffer, a separate per-light visibility pass and deferred PBR composition. Native frames sample GPU output directly; explicit validation captures can read back separately. The visibility pass runs the shared HLSL BVH in fragment shaders and reports `execution: 'fragment-bvh'`, `softwareRayTracing: true`, `hardwareRayTracing: false`. This is not yet shared hardware-query traversal or asynchronous frames in flight.
+Hybrid combines raster primary visibility with GPU software-BVH secondary rays. Settings, capabilities and controls match C++ and WebGPU. Available in current source; published 0.8.0 predates Hybrid.
 
 ```cpp
-render::HybridSettings hybrid;
-hybrid.shadows = true;
-hybrid.shadowSamples = 4;
-window.SetHybrid(hybrid);
+render::HybridSettings settings;
+settings.ambientOcclusion = true;
+settings.reflections = true;
+settings.temporalReconstruction = true;
+window.SetHybrid(settings);
 window.SetRenderMode(render::RenderMode::Hybrid);
 ```
 
 ```js
-renderer.setHybrid({ shadows: true, shadowSamples: 4 })
+renderer.setHybrid({
+  ambientOcclusion: true,
+  reflections: true,
+  temporalReconstruction: true,
+})
 renderer.setRenderMode('hybrid')
 ```
 
-Settings:
+Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settings; `GetHybridCapabilities()` / `getHybridCapabilities()` reports supported features. Invalid changes preserve the last valid state.
 
-- `shadows`: default true; Hybrid's shadow master. Per-light `castShadow`, softness and instance shadow flags remain effective. Raster's separate shadow master does not disable Hybrid shadows.
-- `shadowSamples`: integer 1–16, default 4. A zero-softness light uses one hard visibility ray. Soft lights use the requested deterministic disk samples and the existing softness units; there is no temporal accumulation yet.
-- `view`: C++ `HybridView::Final / Shadows`, Web `'final' / 'shadows'`. Shadows displays visibility for one active light and bypasses AA/post processing.
-- `shadowLight`: integer 0–15, default 0; index in the enabled-light collection. Without a collection, index 0 is the legacy directional light. Unused slots are fully visible.
+## Settings
 
-Capabilities report `shadows`, `rasterPrimaryVisibility`, `gpuPresentation`, `alphaMask` and `alphaBlend` as supported. Static models and instances are supported; animated geometry is rejected. MASK uses alpha-tested visibility. BLEND remains a raster OIT overlay and casts no shadow; it does not become ray-traced glass.
+- Shadows: `shadows` defaults to true; `shadowSamples` is 1–16, default 4. Per-light softness and shadow flags apply independently. Zero softness uses one hard ray. Raster's shadow master does not disable Hybrid shadows.
+- AO: `ambientOcclusion` defaults to false; `aoRadius` is (0, 10000], `aoSamples` is 1–32 (default 4), `aoStrength` is 0–4 (default 1). Finite-distance cosine-weighted rays affect ambient lighting only.
+- Reflections: `reflections` defaults to false; `reflectionDistance` is (0, 100000], `reflectionSamples` is 1–16 (default 1), `reflectionStrength` is 0–1 (default 1). One-bounce GGX rays shade nearest hits and use the environment on misses, replacing environment-only specular.
+- History: `temporalReconstruction` defaults to false; `historyWeight` is 0–0.98 (default 0.9). Reprojection uses depth, normal and instance rejection, neighborhood clamping and motion-dependent weighting before post processing and final AA. Transparent OIT overlays are composited afterward.
 
-Ambient occlusion is supported. `ambientOcclusion` defaults to false; `aoRadius` is a finite world-space distance (0, 10000], `aoSamples` is 1–32 and `aoStrength` is 0–4. The cosine-weighted hemisphere visibility affects ambient lighting only. `view: 'ambient-occlusion'` / `HybridView::AmbientOcclusion` displays visibility. `reflections` enables one-bounce GGX-sampled nearest-hit reflections (default false); `reflectionDistance` is (0, 100000], `reflectionSamples` is 1–16, and `reflectionStrength` blends 0–1 with environment-only specular. Hits use material base color, metallic/roughness and emissive textures plus geometric normals and direct lighting; misses use the environment. Secondary normal maps, transparent refraction and recursive reflection are not supported. Inspect `view: 'reflections'` / `HybridView::Reflections`. Global illumination and temporal reconstruction are currently false. MSAA, TAA and AA split are rejected; Off, FXAA, SMAA and SSAA are supported. Entering Hybrid selects Deferred; switching the raster pipeline to Forward while Hybrid is active is rejected. Settings validation and incompatible mode changes preserve the last valid state.
+`view` selects `Final`, `Shadows`, `AmbientOcclusion` or `Reflections` in C++; Web uses `'final'`, `'shadows'`, `'ambient-occlusion'`, `'reflections'`. Diagnostics bypass AA/post. `shadowLight` selects active-light index 0–15; unused slots are fully visible.
+
+## History and limits
+
+`GetHybridHistoryFrames()` / `getHybridHistoryFrames()` reports history frames. `ResetHybridHistory()` / `resetHybridHistory()` clears them. Smooth camera movement preserves history; cuts (>20° or >2 world units), lens/exposure, scene/material/light, viewport and size changes reset it.
+
+Hybrid selects Deferred. Off, FXAA, SMAA and SSAA work; MSAA, TAA and AA split are rejected. Static instances and MASK coverage are supported. BLEND remains OIT, without shadow casting or ray-traced glass. Secondary reflection hits use material textures and geometric normals, without secondary normal mapping or recursive reflection.
+
+Animated geometry, moving-instance motion vectors, DDGI and hardware ray queries remain unsupported. Scene edits conservatively reset history. Reconstruction uses combined color, without per-effect variance-guided spatial filtering.

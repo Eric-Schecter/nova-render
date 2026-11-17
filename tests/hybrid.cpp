@@ -202,6 +202,12 @@ int main(int argc, char** argv)
         auto raster = draw("raster-shadow");
         if (Difference(sceneShadow, raster) > .2)
             throw std::runtime_error("Hybrid/Raster light composition mismatch");
+        settings.view = HybridView::AmbientOcclusion;
+        backend->SetHybrid(settings);
+        auto retainedView = draw("raster-retained-hybrid-view");
+        if (Difference(raster, retainedView) > .01)
+            throw std::runtime_error("Inactive Hybrid diagnostic changed Raster output");
+        settings.view = HybridView::Final;
         backend->SetRenderMode(RenderMode::Hybrid);
         settings.ambientOcclusion = true;
         settings.aoRadius         = 2;
@@ -230,6 +236,99 @@ int main(int argc, char** argv)
         settings.view = HybridView::Reflections;
         backend->SetHybrid(settings);
         capture("reflection-only");
+        settings.view                   = HybridView::Final;
+        settings.ambientOcclusion       = true;
+        settings.aoSamples              = 4;
+        settings.reflectionSamples      = 1;
+        settings.temporalReconstruction = true;
+        backend->SetHybrid(settings);
+        settings.historyWeight = 0;
+        backend->SetHybrid(settings);
+        std::vector<double> reference;
+        for (int f = 1; f <= 16; ++f)
+        {
+            auto raw = capture("temporal-raw-" + std::to_string(f));
+            if (reference.empty())
+                reference.resize(raw.pixels.size());
+            for (size_t i = 0; i < reference.size(); ++i)
+                reference[i] += double(raw.pixels[i]) / 16;
+        }
+        settings.historyWeight = .9f;
+        backend->SetHybrid(settings);
+        auto  first = capture("temporal-first");
+        Image resolved;
+        for (int f = 2; f <= 16; ++f)
+            resolved = capture("temporal-" + std::to_string(f));
+        if (backend->GetHybridHistoryFrames() != 16 || Difference(first, resolved) < .01)
+            throw std::runtime_error("Missing Hybrid temporal history");
+        auto mse = [&](const Image& im) {
+            double sum = 0;
+            for (size_t i = 0; i < reference.size(); ++i)
+                sum += (im.pixels[i] - reference[i]) * (im.pixels[i] - reference[i]);
+            return sum / reference.size();
+        };
+        std::cout << "Temporal reference MSE: first=" << mse(first) << "; resolved=" << mse(resolved) << '\n';
+        if (mse(resolved) >= mse(first))
+            throw std::runtime_error("Temporal reconstruction did not reduce reference error");
+        camera.yaw += 2;
+        backend->SetCamera(camera);
+        capture("temporal-motion");
+        if (backend->GetHybridHistoryFrames() != 17)
+            throw std::runtime_error("Small movement lost history");
+        camera.yaw += 40;
+        backend->SetCamera(camera);
+        auto cut = capture("temporal-cut");
+        if (backend->GetHybridHistoryFrames() != 1)
+            throw std::runtime_error("Camera cut retained history");
+        backend->ResetHybridHistory();
+        if (backend->GetHybridHistoryFrames() != 0)
+            throw std::runtime_error("Explicit reset failed");
+        auto reset = capture("temporal-reset");
+        if (Difference(cut, reset) > .01)
+            throw std::runtime_error("Reset reused stale history");
+        auto full = backend->GetViewCamera();
+        full.position[0] += .1f;
+        backend->SetViewCamera(full);
+        capture("temporal-full-camera");
+        if (backend->GetHybridHistoryFrames() != 2)
+            throw std::runtime_error("Full camera movement lost history");
+        full.verticalFov += 1;
+        backend->SetViewCamera(full);
+        if (backend->GetHybridHistoryFrames() != 0)
+            throw std::runtime_error("Lens change retained history");
+        settings.historyWeight = 2;
+        bool invalidHybrid     = false;
+        try
+        {
+            backend->SetHybrid(settings);
+        }
+        catch (const std::invalid_argument&)
+        {
+            invalidHybrid = true;
+        }
+        if (!invalidHybrid || backend->GetHybrid().historyWeight != .9f)
+            throw std::runtime_error("Invalid Hybrid history mutated settings");
+        aa.method = AAMethod::SSAA;
+        backend->SetAntiAliasing(aa);
+        for (int f = 0; f < 4; ++f)
+            capture("temporal-ssaa");
+        if (backend->GetHybridHistoryFrames() != 4)
+            throw std::runtime_error("Hybrid SSAA history failed");
+        aa.method = AAMethod::Off;
+        backend->SetAntiAliasing(aa);
+        HybridSettings alphaSettings;
+        backend->SetHybrid(alphaSettings);
+        backend->LoadModel(detail::LoadGLB(assets / "MaterialSample/Layers.glb"));
+        backend->SetLighting(LightingMode::Unlit);
+        backend->SetCamera(OrbitCamera{});
+        auto alphaBase                       = capture("temporal-alpha-base");
+        alphaSettings.temporalReconstruction = true;
+        backend->SetHybrid(alphaSettings);
+        Image alphaResolved;
+        for (int f = 0; f < 4; ++f)
+            alphaResolved = capture("temporal-alpha");
+        if (Difference(alphaBase, alphaResolved) > .05)
+            throw std::runtime_error("Temporal OIT changed transparency");
         backend.reset();
         glfwDestroyWindow(window);
         glfwTerminate();

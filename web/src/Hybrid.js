@@ -3,6 +3,8 @@ export const defaultHybrid = () => ({
   shadowSamples: 4,
   view: 'final',
   shadowLight: 0,
+  temporalReconstruction: false,
+  historyWeight: 0.9,
   reflections: false,
   reflectionDistance: 1000,
   reflectionStrength: 1,
@@ -23,6 +25,8 @@ export function copyHybrid(value) {
           'shadowSamples',
           'view',
           'shadowLight',
+          'temporalReconstruction',
+          'historyWeight',
           'reflections',
           'reflectionDistance',
           'reflectionStrength',
@@ -64,7 +68,11 @@ export function copyHybrid(value) {
     s.reflectionStrength > 1 ||
     !Number.isInteger(s.reflectionSamples) ||
     s.reflectionSamples < 1 ||
-    s.reflectionSamples > 16
+    s.reflectionSamples > 16 ||
+    typeof s.temporalReconstruction !== 'boolean' ||
+    !Number.isFinite(s.historyWeight) ||
+    s.historyWeight < 0 ||
+    s.historyWeight > 0.98
   )
     throw Error('Invalid Hybrid settings')
   return s
@@ -79,7 +87,7 @@ export function hybridCapabilities(animated = false) {
     ambientOcclusion: true,
     reflections: true,
     globalIllumination: false,
-    temporalReconstruction: false,
+    temporalReconstruction: true,
     animatedGeometry: false,
     taa: false,
     splitAA: false,

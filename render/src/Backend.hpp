@@ -51,13 +51,22 @@ namespace render::detail
               || value.aoSamples > 32 || !std::isfinite(value.reflectionDistance) || value.reflectionDistance <= 0
               || value.reflectionDistance > 100000 || !std::isfinite(value.reflectionStrength)
               || value.reflectionStrength < 0 || value.reflectionStrength > 1 || value.reflectionSamples < 1
-              || value.reflectionSamples > 16)
+              || value.reflectionSamples > 16 || !std::isfinite(value.historyWeight) || value.historyWeight < 0
+              || value.historyWeight > .98f)
                 throw std::invalid_argument("Invalid Hybrid settings");
             hybrid = value;
             RebuildRasterInstances();
             rasterAA.Reset();
         }
         HybridSettings GetHybrid() const { return hybrid; }
+        uint32_t       GetHybridHistoryFrames() const
+        {
+            return mode == RenderMode::Hybrid && hybrid.temporalReconstruction && hybrid.view == HybridView::Final
+                       && modelRaster.view == GBufferView::Final
+                     ? rasterAA.frames
+                     : 0;
+        }
+        void        ResetHybridHistory() { rasterAA.Reset(); }
         void        SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
         {
             const auto previousMode = mode;
@@ -534,8 +543,20 @@ namespace render::detail
             const auto next = ValidateViewCamera(value);
             if (viewCamera && SameCamera(*viewCamera, next))
                 return;
+            const auto old             = GetViewCamera();
+            float      distanceSquared = 0, orientationDot = 0;
+            for (unsigned i = 0; i < 3; ++i)
+                distanceSquared += (old.position[i] - next.position[i]) * (old.position[i] - next.position[i]);
+            for (unsigned i = 0; i < 4; ++i)
+                orientationDot += old.orientation[i] * next.orientation[i];
+            const bool preserve =
+              mode == RenderMode::Hybrid && hybrid.temporalReconstruction && old.projection == next.projection
+              && old.verticalFov == next.verticalFov && old.orthographicHeight == next.orthographicHeight
+              && old.nearPlane == next.nearPlane && old.farPlane == next.farPlane && old.exposure == next.exposure
+              && distanceSquared <= 4 && std::abs(orientationDot) > .98480775f;
             viewCamera = next;
-            rasterAA.Reset();
+            if (!preserve)
+                rasterAA.Reset();
             pathSession.Reset();
         }
         void SetViewport(const std::optional<Viewport>& value)
@@ -657,6 +678,8 @@ namespace render::detail
                 rasterAA.current.irradiance[4][3] = hybrid.shadows ? 1.f : 0.f;
                 rasterAA.current.irradiance[5][3] =
                   hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : 0.f;
+                rasterAA.current.irradiance[6][3] =
+                  mode == RenderMode::Hybrid && hybrid.temporalReconstruction ? float(rasterAA.frames + 1) : 0.f;
                 const bool debug                  = modelRaster.view != GBufferView::Final;
                 rasterAA.current.irradiance[0][3] =
                   !debug && !(mode == RenderMode::Hybrid && hybrid.view != HybridView::Final) && postSettings.enabled
@@ -674,7 +697,8 @@ namespace render::detail
                   modelRaster,
                   HasBlend(model.get()),
                   mode == RenderMode::Hybrid,
-                  hybrid.view != HybridView::Final);
+                  mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,
+                  hybrid);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }
@@ -750,7 +774,9 @@ namespace render::detail
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
               || previousHybrid.reflectionDistance != hybrid.reflectionDistance
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
-              || previousHybrid.reflectionSamples != hybrid.reflectionSamples)
+              || previousHybrid.reflectionSamples != hybrid.reflectionSamples
+              || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
+              || previousHybrid.historyWeight != hybrid.historyWeight)
             {
                 RebuildRasterInstances();
                 rasterAA.Reset();

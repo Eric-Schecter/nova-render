@@ -208,6 +208,39 @@ float4 PSMain(Varying i)
     SMAANeighborhoodBlendingVS(uv, offset);
     return SMAANeighborhoodBlendingPS(uv, offset, colorTex, weightTex);
 #elif AA_PASS == 7
+    // Hybrid history is reconstructed before post processing and final AA.
+    // Current/old oct normals, split-log depth and motion identity reject disocclusions.
+    if (aa[6].w > 1.5)
+    {
+        float4 current = colorTex.SampleLevel(PointSampler, uv, 0), motion = motionTex.SampleLevel(PointSampler, uv, 0);
+        float2 prevUV = uv + motion.xy;
+        if (aa[3].x < .5 || motion.w < .5 || any(prevUV < 0) || any(prevUV > 1))
+            return current;
+        float4 oldMotion = oldMotionTex.SampleLevel(PointSampler, prevUV, 0);
+        float2 depth     = searchTex.SampleLevel(PointSampler, prevUV, 0).xy;
+        float  expected = exp2(motion.z), previous = exp2(depth.x + depth.y);
+        if (abs(previous - expected) > max(.002, .02 * expected) || abs(oldMotion.w - motion.w) > .25)
+            return current;
+        float2 cn = edgeTex.SampleLevel(PointSampler, uv, 0).xy * 2 - 1,
+               pn = weightTex.SampleLevel(PointSampler, prevUV, 0).xy * 2 - 1;
+        float3 n = float3(cn, 1 - abs(cn.x) - abs(cn.y)), p = float3(pn, 1 - abs(pn.x) - abs(pn.y));
+        if (n.z < 0)
+            n.xy = (1 - abs(n.yx)) * float2(n.x >= 0 ? 1 : -1, n.y >= 0 ? 1 : -1);
+        if (p.z < 0)
+            p.xy = (1 - abs(p.yx)) * float2(p.x >= 0 ? 1 : -1, p.y >= 0 ? 1 : -1);
+        if (dot(normalize(n), normalize(p)) < .9)
+            return current;
+        float3 lo = current.rgb, hi = current.rgb;
+        [unroll] for (int y = -1; y <= 1; ++y)[unroll] for (int x = -1; x <= 1; ++x)
+        {
+            float3 c = colorTex.SampleLevel(PointSampler, uv + float2(x, y) * texel, 0).rgb;
+            lo       = min(lo, c);
+            hi       = max(hi, c);
+        }
+        float3 history = clamp(historyTex.SampleLevel(LinearSampler, prevUV, 0).rgb, lo, hi);
+        float  weight  = aa[3].y * saturate(1 - length(motion.xy * aa[0].xy) / 64);
+        return float4(lerp(current.rgb, history, weight), current.a);
+    }
     float4 current = colorTex.SampleLevel(PointSampler, uv, 0), m = motionTex.SampleLevel(PointSampler, uv, 0);
     float2 prevUV = uv + m.xy + (aa[1].zw - aa[1].xy) / aa[0].xy;
     if (aa[3].x < .5 || any(prevUV < 0) || any(prevUV > 1))
