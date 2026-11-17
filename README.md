@@ -20,6 +20,7 @@ Release **0.7.1** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) a
 ## Features
 
 - [x] Standalone Forward, Deferred, Forward+ and Clustered Forward laboratory with surface diagnostics
+- [x] Model Forward / Deferred rendering, shared material G-buffer and diagnostics
 - [x] Rasterization and ray-tracing modes
 - [x] Shared HLSL → DXIL / SPIR-V / Metal / WGSL
 - [x] glTF / GLB model loading and metallic-roughness PBR

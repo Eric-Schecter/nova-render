@@ -136,6 +136,8 @@ const rasterSource =
   '#define NOVA_RASTER_AA 1\n' + (await readFile('render/shaders/model.hlsl', 'utf8'))
 for (const [name, vertexEntry, fragmentEntry] of [
   ['model-aa', 'VSMain', 'PSMain'],
+  ['model-gbuffer', 'VSMain', 'GBufferPSMain'],
+  ['model-deferred', 'SkyVSMain', 'DeferredPSMain'],
   ['sky-aa', 'SkyVSMain', 'SkyPSMain'],
   ['model-motion', 'MotionVSMain', 'MotionPSMain'],
   ['sky-motion', 'SkyVSMain', 'SkyMotionPSMain'],

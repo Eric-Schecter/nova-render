@@ -7,6 +7,7 @@ Native headers live in `render/include/render`; the browser module exports corre
 - [Nova Render Web](./web): WebGPU lifecycle and shader loading.
 - [Types and configuration](./types), [backend selection](./selection).
 - [Models and cameras](./model), [skeletal animation](./animation), [environment lighting](./environment).
+- [Model Forward / Deferred and G-buffer](./raster).
 - [Render modes and integrators](./render-mode), [ambient occlusion](./ambient-occlusion).
 - [Anti-aliasing](./antialiasing), [shadows](./shadows), [post-processing](./postprocessing).
 - [Screen-space reflections](./ssr), [planar reflections](./planar), [reflection probes](./probe).

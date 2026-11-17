@@ -2,6 +2,9 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
 import HlslEditor from './HlslEditor.vue'
+import { showDeferred } from '../../../web/examples/deferred.js'
+import deferredJS from '../../../web/examples/deferred.js?raw'
+import deferredCPP from '../../../examples/deferred/main.cpp?raw'
 import { showAO } from '../../../web/examples/ao.js'
 import aoJS from '../../../web/examples/ao.js?raw'
 import aoCPP from '../../../examples/ao/main.cpp?raw'
@@ -26,6 +29,7 @@ import helmetJS from '../../../web/examples/helmet.js?raw'
 import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
 const props = defineProps({
+  deferred: Boolean,
   lighting: Boolean,
   environment: Boolean,
   animation: Boolean,
@@ -33,45 +37,51 @@ const props = defineProps({
   weekend: Boolean,
   ao: Boolean,
 })
-const jsSource = props.ao
-  ? aoJS
-  : props.weekend
-    ? weekendJS
-    : props.comparison
-      ? comparisonJS
-      : props.animation
-        ? animationJS
-        : props.environment
-          ? environmentJS
-          : props.lighting
-            ? lightingJS
-            : helmetJS
-const cppSource = props.ao
-  ? aoCPP
-  : props.weekend
-    ? environmentCPP
-    : props.comparison
-      ? comparisonCPP
-      : props.animation
-        ? animationCPP
-        : props.environment
-          ? environmentCPP
-          : props.lighting
-            ? lightingCPP
-            : helmetCPP
-const showExample = props.ao
-  ? showAO
-  : props.weekend
-    ? showWeekend
-    : props.comparison
-      ? showComparison
-      : props.animation
-        ? showAnimation
-        : props.environment
-          ? showEnvironment
-          : props.lighting
-            ? showLighting
-            : showHelmet
+const jsSource = props.deferred
+  ? deferredJS
+  : props.ao
+    ? aoJS
+    : props.weekend
+      ? weekendJS
+      : props.comparison
+        ? comparisonJS
+        : props.animation
+          ? animationJS
+          : props.environment
+            ? environmentJS
+            : props.lighting
+              ? lightingJS
+              : helmetJS
+const cppSource = props.deferred
+  ? deferredCPP
+  : props.ao
+    ? aoCPP
+    : props.weekend
+      ? environmentCPP
+      : props.comparison
+        ? comparisonCPP
+        : props.animation
+          ? animationCPP
+          : props.environment
+            ? environmentCPP
+            : props.lighting
+              ? lightingCPP
+              : helmetCPP
+const showExample = props.deferred
+  ? showDeferred
+  : props.ao
+    ? showAO
+    : props.weekend
+      ? showWeekend
+      : props.comparison
+        ? showComparison
+        : props.animation
+          ? showAnimation
+          : props.environment
+            ? showEnvironment
+            : props.lighting
+              ? showLighting
+              : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('Loading model…'),
@@ -162,17 +172,19 @@ onBeforeUnmount(() => {
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
       <strong>{{
-        ao
-          ? 'Ambient occlusion'
-          : comparison
-            ? 'Integrator comparison'
-            : animation
-              ? 'Skeletal animation'
-              : environment
-                ? 'Skybox and environment lighting'
-                : lighting
-                  ? 'PBR lighting'
-                  : 'Model loading'
+        deferred
+          ? 'Deferred model rendering'
+          : ao
+            ? 'Ambient occlusion'
+            : comparison
+              ? 'Integrator comparison'
+              : animation
+                ? 'Skeletal animation'
+                : environment
+                  ? 'Skybox and environment lighting'
+                  : lighting
+                    ? 'PBR lighting'
+                    : 'Model loading'
       }}</strong>
       <div>
         <button

@@ -175,8 +175,23 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 14, resource: { buffer: instanceBuffer } },
         ],
       })
+    const gBufferLayout = device.createBindGroupLayout({
+      entries: [17, 18, 19, 20].map((binding) => ({
+        binding,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float' },
+      })),
+    })
     let bindGroup = group(cube, backgroundCube)
-    async function pipelineFor(shader, sky = false, samples = 1, motion = false, aa = false) {
+    async function pipelineFor(
+      shader,
+      sky = false,
+      samples = 1,
+      motion = false,
+      aa = false,
+      gbuffer = false,
+      deferred = false,
+    ) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
       for (const module of [vertex, fragment]) {
@@ -185,28 +200,44 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (errors.length) throw Error(errors.map((e) => e.message).join('\n'))
       }
       return device.createRenderPipelineAsync({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        layout: device.createPipelineLayout({
+          bindGroupLayouts: deferred ? [layout, gBufferLayout] : [layout],
+        }),
         vertex: {
           module: vertex,
-          entryPoint: motion ? (sky ? 'SkyVSMain' : 'MotionVSMain') : sky ? 'SkyVSMain' : 'VSMain',
+          entryPoint: deferred
+            ? 'SkyVSMain'
+            : motion
+              ? sky
+                ? 'SkyVSMain'
+                : 'MotionVSMain'
+              : sky
+                ? 'SkyVSMain'
+                : 'VSMain',
         },
         fragment: {
           module: fragment,
-          entryPoint: motion
-            ? sky
-              ? 'SkyMotionPSMain'
-              : 'MotionPSMain'
-            : sky
-              ? 'SkyPSMain'
-              : 'PSMain',
-          targets: [{ format: aa ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat() }],
+          entryPoint: deferred
+            ? 'DeferredPSMain'
+            : gbuffer
+              ? 'GBufferPSMain'
+              : motion
+                ? sky
+                  ? 'SkyMotionPSMain'
+                  : 'MotionPSMain'
+                : sky
+                  ? 'SkyPSMain'
+                  : 'PSMain',
+          targets: Array.from({ length: gbuffer ? 4 : 1 }, () => ({
+            format: aa ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat(),
+          })),
         },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
         multisample: { count: samples },
         depthStencil: {
           format: 'depth32float',
-          depthWriteEnabled: !sky,
-          depthCompare: sky ? 'always' : 'less',
+          depthWriteEnabled: !sky && !deferred,
+          depthCompare: sky || deferred ? 'always' : 'less',
         },
       })
     }
@@ -269,11 +300,28 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     uploadInstances(data.materialRecords || new Float32Array(0), null)
     return {
       data,
-      async prepareAA(camera, width, height, lighting, light, settings, frames, postSettings) {
+      async prepareAA(
+        camera,
+        width,
+        height,
+        lighting,
+        light,
+        settings,
+        frames,
+        postSettings,
+        rasterSettings,
+      ) {
         if (!aaPipelines) {
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
           const packages = await Promise.all(
-            ['model-aa', 'sky-aa', 'model-motion', 'sky-motion'].map(async (n) => {
+            [
+              'model-aa',
+              'sky-aa',
+              'model-motion',
+              'sky-motion',
+              'model-gbuffer',
+              'model-deferred',
+            ].map(async (n) => {
               const r = await fetch(dir + n + '.json')
               if (!r.ok) throw Error('Missing raster AA shader ' + n)
               return r.json()
@@ -284,6 +332,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             aaPipelines['model' + count] = await pipelineFor(packages[0], false, count, false, true)
             aaPipelines['sky' + count] = await pipelineFor(packages[1], true, count, false, true)
           }
+          aaPipelines.gbuffer = await pipelineFor(packages[4], false, 1, false, true, true)
+          aaPipelines.deferred = await pipelineFor(packages[5], false, 1, false, true, false, true)
           aaPipelines.motion = await pipelineFor(packages[2], false, 1, true, true)
           aaPipelines.skyMotion = await pipelineFor(packages[3], true, 1, true, true)
         }
@@ -298,21 +348,62 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         )
         currentScene[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
         currentScene[75] = rasterGlobals + 1
-        currentScene[63] = postSettings?.enabled ? 1 : 0
+        currentScene[63] =
+          rasterSettings?.view && rasterSettings.view !== 'final'
+            ? 0
+            : postSettings?.enabled
+              ? 1
+              : 0
+        currentScene[91] = rasterSettings?.debugRange || 20
+        currentScene[95] = [
+          'final',
+          'base-color',
+          'world-normal',
+          'geometric-normal',
+          'linear-depth',
+          'roughness',
+          'metallic',
+          'occlusion',
+          'emissive',
+          'world-position',
+        ].indexOf(rasterSettings?.view || 'final')
         device.queue.writeBuffer(uniform, 0, currentScene)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
         if (data.animation) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         const palette = data.jointMatrices || new Float32Array(16)
         device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
       },
-      drawAA(pass, motion, count, settings) {
+      drawAA(pass, motion, count, settings, program, gbuffers) {
+        if (program === -5) {
+          pass.setBindGroup(0, bindGroup)
+          pass.setBindGroup(
+            1,
+            device.createBindGroup({
+              layout: gBufferLayout,
+              entries: [17, 18, 19, 20].map((binding, i) => ({
+                binding,
+                resource: gbuffers[i].createView(),
+              })),
+            }),
+          )
+          pass.setPipeline(aaPipelines.deferred)
+          pass.draw(3)
+          return
+        }
+        const gbuffer = program === -4
         pass.setBindGroup(0, bindGroup)
-        if (environment && settings.showBackground) {
+        if (!gbuffer && environment && settings.showBackground) {
           pass.setPipeline(motion ? aaPipelines.skyMotion : aaPipelines['sky' + count])
           pass.draw(3)
         }
         if (data.vertices.length) {
-          pass.setPipeline(motion ? aaPipelines.motion : aaPipelines['model' + count])
+          pass.setPipeline(
+            gbuffer
+              ? aaPipelines.gbuffer
+              : motion
+                ? aaPipelines.motion
+                : aaPipelines['model' + count],
+          )
           if (sceneDraws !== null) {
             for (const draw of sceneDraws)
               if (draw.instanceCount)

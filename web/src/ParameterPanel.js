@@ -1,3 +1,4 @@
+import { gBufferViews } from './RasterPipeline.js'
 // Optional single-view DOM overlay.
 const dark = [0.025, 0.035, 0.055, 1]
 const light = [0.8, 0.85, 0.95, 1]
@@ -211,6 +212,61 @@ export function attachParameterPanel(
     fieldEvents = new AbortController()
     body.replaceChildren()
     fields.clear()
+    if (adapter.getRasterSettings && current.camera) {
+      const renderer = group('Raster pipeline')
+      for (const [key, label, values, labels] of [
+        ['pipeline', 'Raster pipeline', ['forward', 'deferred'], ['Forward', 'Deferred']],
+        [
+          'view',
+          'G-buffer view',
+          gBufferViews,
+          [
+            'Final lighting',
+            'Base color',
+            'World normal',
+            'Geometric normal',
+            'Linear depth',
+            'Roughness',
+            'Metallic',
+            'Occlusion',
+            'Emissive',
+            'World position',
+          ],
+        ],
+      ]) {
+        const field = document.createElement('label'),
+          input = document.createElement('select')
+        field.textContent = label
+        input.setAttribute('aria-label', label)
+        values.forEach((v, i) => {
+          const o = document.createElement('option')
+          o.value = v
+          o.textContent = labels[i]
+          input.append(o)
+        })
+        input.addEventListener(
+          'change',
+          () =>
+            change(() =>
+              adapter.setRasterSettings(
+                key === 'pipeline'
+                  ? { pipeline: input.value, view: 'final' }
+                  : { view: input.value },
+              ),
+            ),
+          { signal: fieldEvents.signal },
+        )
+        field.append(input)
+        renderer.append(field)
+        fields.set('raster_' + key, { input })
+      }
+      slider(renderer, 'raster_debugRange', 'Debug range', 'Debug range', 0.1, 200, 0.1, (v) =>
+        adapter.setRasterSettings({ debugRange: v }),
+      )
+      const note = document.createElement('small')
+      note.textContent = 'Deferred: no MSAA. Diagnostics bypass AA and post-processing.'
+      renderer.append(note)
+    }
     if (adapter.getAntiAliasing) {
       const renderer = group('Anti-aliasing'),
         label = document.createElement('label'),
@@ -575,8 +631,29 @@ export function attachParameterPanel(
     }
     const assets = adapter.getAssets()
     for (const [key, field] of fields) {
+      if (key.startsWith('raster_')) {
+        const keyName = key.slice(7),
+          raster = adapter.getRasterSettings()
+        field.input.value = raster[keyName]
+        if (keyName === 'debugRange') {
+          field.output.textContent = Number(raster.debugRange).toFixed(1)
+          field.input.closest('label').style.display = raster.view === 'final' ? 'none' : ''
+        }
+        field.input.disabled =
+          adapter.getRenderMode() !== 'raster' ||
+          !!adapter.getAmbientOcclusion?.().enabled ||
+          (keyName === 'view' && raster.pipeline !== 'deferred')
+        if (keyName === 'pipeline')
+          for (const option of field.input.options)
+            option.disabled =
+              option.value === 'deferred' && adapter.getAntiAliasing().method === 'msaa'
+        continue
+      }
       if (key === 'aaMethod') {
         field.input.value = adapter.getAntiAliasing().method
+        for (const option of field.input.options)
+          option.disabled =
+            option.value === 'msaa' && adapter.getRasterSettings?.().pipeline === 'deferred'
         field.input.disabled =
           adapter.getRenderMode() !== 'raster' || !!adapter.getAmbientOcclusion?.().enabled
         field.input.title = field.input.disabled

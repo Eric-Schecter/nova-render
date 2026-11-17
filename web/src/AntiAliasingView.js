@@ -261,13 +261,13 @@ export async function createAntiAliasingView({
     previousJitter = [0, 0]
   }
   function resize(w, h) {
-    const ss = settings.method === 'ssaa'
+    const ss = settings.method === 'ssaa' && (!external?.raster || external.raster.view === 'final')
     if (w === width && h === height && ss === superSample) return
     width = w
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 78; i++)
+    for (let i = 0; i < 89; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -283,7 +283,9 @@ export async function createAntiAliasingView({
     context.configure({ device, format, alphaMode: 'opaque' })
   }
   function plan() {
-    const taa = settings.method === 'taa',
+    const debug = external?.raster?.view && external.raster.view !== 'final'
+    const effectiveMethod = debug ? 'off' : settings.method
+    const taa = effectiveMethod === 'taa',
       jitter = taa
         ? [halton((frames % 8) + 1, 2) - 0.5, halton((frames % 8) + 1, 3) - 0.5]
         : [0, 0],
@@ -293,7 +295,7 @@ export async function createAntiAliasingView({
       width,
       height,
       time,
-      names.indexOf(settings.method),
+      names.indexOf(effectiveMethod),
       ...jitter,
       ...previousJitter,
       camera.yaw * rad,
@@ -303,7 +305,7 @@ export async function createAntiAliasingView({
       frames ? 1 : 0,
       settings.historyWeight,
       settings.zoom,
-      settings.split ? 1 : 0,
+      settings.split && !debug ? 1 : 0,
       camera.distance,
       prev.distance,
       camera.pitch * rad,
@@ -342,7 +344,7 @@ export async function createAntiAliasingView({
       u.splice(28, 4, 0.002, 0.003, 0.005, 1)
     }
     if (reflectionScene)
-      packReflectionUniforms(u, reflections, width, height, settings.method === 'ssaa')
+      packReflectionUniforms(u, reflections, width, height, effectiveMethod === 'ssaa')
     if (planarScene) packPlanarUniforms(u, planar)
     if (probeScene) packProbeUniforms(u, probe)
     if (postSettings.enabled || hdrScene || reflectionScene) u[26] = 1
@@ -365,7 +367,7 @@ export async function createAntiAliasingView({
         u,
         probe,
         probeRevision.map((v, i) => v !== probeCaptured[i]),
-        settings.method === 'msaa',
+        effectiveMethod === 'msaa',
         taa,
         settings.split,
       )
@@ -374,43 +376,47 @@ export async function createAntiAliasingView({
         passes,
         u,
         planarScene ? planar : reflections,
-        settings.method === 'msaa',
+        effectiveMethod === 'msaa',
         taa,
         settings.split,
       )
     } else if (external) {
       u[26] = external.encoded ? 2 : 1
       u.splice(28, 4, ...external.clear())
-      if (settings.split) {
+      if (settings.split && !debug) {
         add(-1, 21).u.splice(4, 4, 0, 0, 0, 0)
         crop(B, 21, width, height, true)
       }
-      add(-1, 17).ms = settings.method === 'msaa'
-      const scale = settings.method === 'ssaa' ? 2 : 1
+      if (external.raster?.pipeline === 'deferred') {
+        add(-4, 85)
+        const p = add(-5, 17)
+        p.sources.splice(0, 4, 85, 86, 87, 88)
+      } else add(-1, 17).ms = effectiveMethod === 'msaa'
+      const scale = effectiveMethod === 'ssaa' ? 2 : 1
       crop(C, 17, width * scale, height * scale, true)
     } else if (hdrScene) {
-      if (settings.split) {
+      if (settings.split && !debug) {
         const p = add(16, B)
         p.u.splice(4, 4, 0, 0, 0, 0)
       }
-      add(16, C).ms = settings.method === 'msaa'
+      add(16, C).ms = effectiveMethod === 'msaa'
     } else if (shadowScene) {
       const shadowed = shadowSettings.method !== 'off'
       if (shadowed) add(9, 22).u.splice(28, 4, 1, 0, 0, 1)
-      if (settings.split) {
+      if (settings.split && !debug) {
         const p = add(10, B)
         p.u.splice(4, 4, 0, 0, 0, 0)
         if (shadowed) p.sources[0] = 22
       }
       const p = add(10, C)
-      p.ms = settings.method === 'msaa'
+      p.ms = effectiveMethod === 'msaa'
       if (shadowed) p.sources[0] = 22
     } else {
       add(0, B).u.splice(4, 4, 0, 0, 0, 0)
-      add(0, C).ms = settings.method === 'msaa'
+      add(0, C).ms = effectiveMethod === 'msaa'
     }
     let filtered = C
-    if (!external && !reflectionScene && settings.method === 'ssaa') {
+    if (!external && !reflectionScene && effectiveMethod === 'ssaa') {
       add(1, F).sources[0] = C
       filtered = F
     }
@@ -435,7 +441,8 @@ export async function createAntiAliasingView({
       baselineSource,
       width,
       height,
-      (reflectionScene && reflectionDebugModes.indexOf(reflections.debug) >= 2) ||
+      debug ||
+        (reflectionScene && reflectionDebugModes.indexOf(reflections.debug) >= 2) ||
         (probeScene && probe.debug === 'influence')
         ? { ...postSettings, enabled: false }
         : postSettings,
@@ -443,11 +450,11 @@ export async function createAntiAliasingView({
       u,
     )
     filtered = post.color
-    if (settings.method === 'fxaa') {
+    if (effectiveMethod === 'fxaa') {
       add(2, F).sources[0] = filtered
       filtered = F
     }
-    if (settings.method === 'smaa') {
+    if (effectiveMethod === 'smaa') {
       add(3, G).sources[0] = filtered
       add(4, E).sources[0] = G
       const p = add(5, W)
@@ -484,7 +491,7 @@ export async function createAntiAliasingView({
     for (const p of passes) {
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
-      if (p.program === 17) {
+      if (p.program === 17 || p.program === -4) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
       }
       if (p.program === 0 || p.program === 10 || p.program === 16) used.add(p.target + 1)
@@ -496,7 +503,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 78; i++) {
+    for (let i = 0; i < 89; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -516,6 +523,11 @@ export async function createAntiAliasingView({
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
+      if (i >= 85) {
+        const scale = superSample ? 2 : 1
+        tw = w * scale + 2
+        th = h * scale + 2
+      }
       if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
         textures[i].destroy()
         textures[i] = undefined
@@ -584,7 +596,11 @@ export async function createAntiAliasingView({
       const colorAttachments = Array.from(
         {
           length:
-            p.program === 17 ? 4 : p.program === 0 || p.program === 10 || p.program === 16 ? 2 : 1,
+            p.program === 17 || p.program === -4
+              ? 4
+              : p.program === 0 || p.program === 10 || p.program === 16
+                ? 2
+                : 1,
         },
         (_, a) => ({
           view: present
@@ -594,13 +610,15 @@ export async function createAntiAliasingView({
               ].createView(),
           ...(p.ms ? { resolveTarget: textures[p.target + a].createView() } : {}),
           clearValue:
-            p.program === 17 && a === 3
-              ? [1000, 1000, 0, 1]
-              : p.program === 17 && a === 2
-                ? [0, 0, 0, 1]
-                : p.program < -1 || a
-                  ? [0, 0, 1, 1]
-                  : p.u.slice(28, 32),
+            p.program === -4
+              ? [0, 0, 0, 0]
+              : p.program === 17 && a === 3
+                ? [1000, 1000, 0, 1]
+                : p.program === 17 && a === 2
+                  ? [0, 0, 0, 1]
+                  : p.program === -2 || p.program === -3 || a
+                    ? [0, 0, 1, 1]
+                    : p.u.slice(28, 32),
           loadOp: 'clear',
           storeOp: p.ms ? 'discard' : 'store',
         }),
@@ -627,7 +645,14 @@ export async function createAntiAliasingView({
       })
       if (native) {
         pass.setViewport(1 + p.u[4], 1 + p.u[5], target.width - 2, target.height - 2, 0, 1)
-        if (p.program !== -3) external.draw(pass, p.program === -2, p.ms ? 4 : 1)
+        if (p.program !== -3)
+          external.draw(
+            pass,
+            p.program === -2,
+            p.ms ? 4 : 1,
+            p.program,
+            p.program === -5 ? p.sources.slice(0, 4).map((i) => textures[i]) : null,
+          )
         pass.end()
         return
       }

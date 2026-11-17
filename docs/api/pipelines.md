@@ -2,7 +2,7 @@
 
 This API is available in the current source checkout; the published 0.7.1 packages predate it.
 
-`PipelineComparisonView` / `createPipelineComparisonView` renders a shared procedural scene. These pipeline choices belong to this independent view; global `RenderMode` remains Raster / RayTracing.
+`PipelineComparisonView` / `createPipelineComparisonView` renders a shared procedural scene. This four-pipeline laboratory is independent of the [formal model Forward/Deferred API](raster). These pipeline choices belong to this independent view; global `RenderMode` remains Raster / RayTracing.
 
 ```cpp
 #include <render/PipelineComparisonView.hpp>

@@ -1,3 +1,10 @@
+import {
+  defaultRasterSettings,
+  copyRasterSettings,
+  rasterCapabilities,
+  gBufferViews,
+} from './RasterPipeline.js'
+export { modelRasterPipelines, gBufferViews } from './RasterPipeline.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 export { loadMaterialImage } from './MaterialData.js'
@@ -45,6 +52,26 @@ class Renderer {
   #triangleShader
   #triangleAA = {}
   #aaView
+  #rasterSettings = defaultRasterSettings()
+  getRasterSettings() {
+    this.#check()
+    return { ...this.#rasterSettings }
+  }
+  getRasterCapabilities() {
+    this.#check()
+    return rasterCapabilities()
+  }
+  setRasterSettings(value) {
+    this.#check()
+    const next = copyRasterSettings({ ...this.#rasterSettings, ...value })
+    if (next.pipeline === 'deferred' && this.#aaSettings.method === 'msaa')
+      throw Error('Deferred MSAA is not supported')
+    if (next.pipeline === 'deferred' && this.#aoSettings.enabled)
+      throw Error('Deferred cannot use the separate BVH AO preview path')
+    this.#rasterSettings = next
+    this.#resetAA()
+    this.#parameterPanel?.refresh()
+  }
   #postSettings = defaultPostProcessing()
   #postRemaining = 0
   getPostProcessing() {
@@ -70,6 +97,7 @@ class Renderer {
     return (
       this.#renderMode === 'raster' &&
       !this.#aoSettings.enabled &&
+      this.#rasterSettings.view === 'final' &&
       this.#aaSettings.method === 'taa' &&
       this.#aaRemaining > 0
     )
@@ -79,7 +107,9 @@ class Renderer {
     return { ...this.#aaSettings }
   }
   getAntiAliasingHistoryFrames() {
-    return this.#aaView?.getHistoryFrames() || 0
+    return this.#aaSettings.method === 'taa' && this.#rasterSettings.view === 'final'
+      ? this.#aaView?.getHistoryFrames() || 0
+      : 0
   }
   setAntiAliasing(value) {
     this.#check()
@@ -96,14 +126,21 @@ class Renderer {
       typeof next.textureFiltering !== 'boolean'
     )
       throw Error('Invalid AA settings')
+    if (this.#rasterSettings.pipeline === 'deferred' && next.method === 'msaa')
+      throw Error('Deferred MSAA is not supported')
     this.#aaSettings = next
     this.#aaView?.setAntiAliasing(next)
     this.#resetAA()
     this.#parameterPanel?.refresh()
   }
   async #drawAA(width, height) {
+    if (!this.#model && this.#rasterSettings.pipeline === 'deferred')
+      throw Error('Deferred requires a model or scene')
     if (!this.#aaView) {
       const scene = {
+          get raster() {
+            return owner.#rasterSettings
+          },
           get encoded() {
             return !owner.#model
           },
@@ -122,6 +159,7 @@ class Renderer {
                 this.#environmentSettings,
                 frames,
                 this.#postSettings,
+                this.#rasterSettings,
               )
             else if (!this.#triangleAA[settings.method === 'msaa' ? 4 : 1]) {
               const count = settings.method === 'msaa' ? 4 : 1,
@@ -147,8 +185,9 @@ class Renderer {
               })
             }
           },
-          draw: (pass, motion, count) => {
-            if (this.#model) this.#model.drawAA(pass, motion, count, this.#environmentSettings)
+          draw: (pass, motion, count, program, gbuffers) => {
+            if (this.#model)
+              this.#model.drawAA(pass, motion, count, this.#environmentSettings, program, gbuffers)
             else {
               pass.setPipeline(this.#triangleAA[count])
               pass.draw(3)
@@ -491,6 +530,8 @@ class Renderer {
   setAmbientOcclusion(value) {
     this.#check()
     const next = copyAmbientOcclusion(value)
+    if (next.enabled && this.#rasterSettings.pipeline === 'deferred')
+      throw Error('Deferred cannot use the separate BVH AO preview path')
     if (next.enabled && !this.getCapabilities().rayTracing)
       throw Error(this.getCapabilities().reason)
     this.#resetAA()
@@ -557,7 +598,7 @@ class Renderer {
         !this.#aoSettings.enabled &&
         !this.#animationPlaying() &&
         !this.#taaActive() &&
-        this.#postRemaining <= 0) ||
+        (this.#postRemaining <= 0 || this.#rasterSettings.view !== 'final')) ||
       this.#pathFrame
     )
       return
@@ -569,7 +610,7 @@ class Renderer {
           !this.#aoSettings.enabled &&
           !this.#animationPlaying() &&
           !this.#taaActive() &&
-          this.#postRemaining <= 0)
+          (this.#postRemaining <= 0 || this.#rasterSettings.view !== 'final'))
       )
         return
       const rect = this.#canvas.getBoundingClientRect()
@@ -667,7 +708,12 @@ class Renderer {
       collectionLightSubpaths: supported && this.#renderMode !== 'raster',
       collectionPhotonEmission: supported && this.#renderMode !== 'raster',
       sourceLightTypes: supported && this.#renderMode !== 'raster' ? ['point', 'spot'] : [],
-      estimator: this.#renderMode === 'raster' ? 'raster-pbr' : 'camera-and-source-paths',
+      estimator:
+        this.#renderMode === 'raster'
+          ? this.#rasterSettings.pipeline === 'deferred'
+            ? 'deferred-pbr'
+            : 'raster-pbr'
+          : 'camera-and-source-paths',
       reason: supported ? '' : 'Current device or scene does not support ray tracing',
     }
   }
@@ -748,6 +794,8 @@ class Renderer {
     const panel = attachParameterPanel(
       this.#canvas,
       {
+        getRasterSettings: () => this.getRasterSettings(),
+        setRasterSettings: (value) => this.setRasterSettings(value),
         getAntiAliasing: () => this.getAntiAliasing(),
         setAntiAliasing: (value) => this.setAntiAliasing(value),
         getAmbientOcclusion: () => this.getAmbientOcclusion(),
@@ -944,7 +992,9 @@ class Renderer {
       if (
         this.#renderMode === 'raster' &&
         !this.#aoSettings.enabled &&
-        (this.#aaSettings.method !== 'off' || this.#postSettings.enabled)
+        (this.#aaSettings.method !== 'off' ||
+          this.#postSettings.enabled ||
+          this.#rasterSettings.pipeline === 'deferred')
       )
         await this.#drawAA(viewport.width, viewport.height)
       else if (this.#model) {
