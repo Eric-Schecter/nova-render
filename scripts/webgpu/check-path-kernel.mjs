@@ -20,7 +20,7 @@ const browser = await chromium.launch({
 })
 try {
   const page = await browser.newPage()
-  await page.goto('http://127.0.0.1:5173/')
+  await page.goto(process.env.NOVA_TEST_URL || 'http://127.0.0.1:5173/')
   const result = await page.evaluate(
     async ({ probe, moduleBase }) => {
       const { buildBVH } = await import(moduleBase + '/BVH.js'),
@@ -43,7 +43,7 @@ try {
         ])
         data.baseColor = [1, 0, 0, 1]
         const bvh = buildBVH(data.vertices)
-        const params = new Float32Array(128)
+        const params = new Float32Array(388)
         const words = new Uint32Array(params.buffer)
         words[102] = bvh.count
         const rays = [

@@ -272,11 +272,11 @@ class Renderer {
         this.#sceneModel = data.model
       }
       this.#model.setInstances(data.instances, data.draws, data.shadowRecords)
+      this.#model.setRaySource(() => nextScene.rayModel())
       this.#sceneData = nextScene
       this.#modelURL = undefined
       this.#animationLastTime = undefined
       this.#resetAA()
-      this.#renderMode = 'raster'
       this.#parameterPanel?.refresh()
     })
   }
@@ -323,7 +323,10 @@ class Renderer {
             this.#environment,
             this.#shaderDirectory.replace(/\/?$/, '/') + 'skybox.json',
           )
-        if (sceneData) next.setInstances(instances, draws, shadowRecords)
+        if (sceneData) {
+          next.setInstances(instances, draws, shadowRecords)
+          next.setRaySource(() => sceneData.rayModel())
+        }
         if (next.skinned) next.setAnimationState(animationState)
         this.#check()
       } catch (e) {
@@ -411,15 +414,6 @@ class Renderer {
   }
   getCapabilities() {
     this.#check()
-    if (this.#sceneModel)
-      return {
-        rayTracing: false,
-        pathTracing: false,
-        softwareRayTracing: false,
-        metropolis: false,
-        rayTracingDevice: '',
-        reason: 'Scene instances currently use raster rendering',
-      }
     if (this.#model?.skinned)
       return {
         rayTracing: false,
@@ -450,12 +444,9 @@ class Renderer {
     if (mode === 'path-tracing') mode = 'ray-tracing'
     if (!['raster', 'ray-tracing'].includes(mode)) throw Error('Invalid render mode')
     if (mode !== 'raster') {
-      if (this.#lights !== null)
-        throw Error(
-          'Light collections currently support raster mode only; restore the legacy directional light first',
-        )
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
-      if (!this.#model?.triangles) throw Error('Path tracing requires a loaded model')
+      if (!this.#sceneModel && !this.#model?.triangles)
+        throw Error('Path tracing requires a loaded model')
     }
     if (mode === this.#renderMode) return
     this.#resetAA()
@@ -663,7 +654,7 @@ class Renderer {
   }
   getLightingCapabilities() {
     this.#check()
-    const supported = this.#renderMode === 'raster'
+    const supported = this.#renderMode === 'raster' || this.getCapabilities().pathTracing
     return {
       directional: supported,
       point: supported,
@@ -672,8 +663,11 @@ class Renderer {
       directionalShadows: supported,
       pointShadows: supported,
       spotShadows: supported,
-      shadowRequiresScene: true,
-      reason: supported ? '' : 'Light collections currently require WebGPU raster rendering',
+      shadowRequiresScene: this.#renderMode === 'raster',
+      collectionLightSubpaths: false,
+      collectionPhotonEmission: false,
+      estimator: this.#renderMode === 'raster' ? 'raster-pbr' : 'camera-path-nee',
+      reason: supported ? '' : 'Current device or scene does not support ray tracing',
     }
   }
   setDirectionalLight(light) {
@@ -932,7 +926,11 @@ class Renderer {
     const viewport = resolveViewport(this.#viewport, width, height)
     if (!viewport.width || !viewport.height) return 'skipped'
     this.#surfaceFrame =
-      viewport.x !== 0 || viewport.y !== 0 || viewport.width !== width || viewport.height !== height
+      this.#renderMode === 'ray-tracing' ||
+      viewport.x !== 0 ||
+      viewport.y !== 0 ||
+      viewport.width !== width ||
+      viewport.height !== height
     if (this.#surfaceFrame) {
       if (!this.#surface)
         this.#surface = await createViewportSurface(this.#device, this.#shaderDirectory)
@@ -960,6 +958,8 @@ class Renderer {
             this.#environmentSettings,
             this.#pathSettings,
             this.#aoSettings,
+            this.#lights,
+            this.#shadowSettings,
           )
         else
           this.#model.draw(

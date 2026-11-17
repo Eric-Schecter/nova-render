@@ -1,3 +1,4 @@
+import { lightRecords } from './Lighting.js'
 import { copyAmbientOcclusion } from './AmbientOcclusion.js'
 import { buildLightSampling } from './LightSampling.js'
 import { buildBVH } from './BVH.js'
@@ -96,7 +97,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const bvh = buildBVH(data.vertices)
     const nodes = buffer(bvh.nodes),
       vertices = buffer(bvh.vertices),
-      params = buffer(new Uint8Array(512))
+      params = buffer(new Uint8Array(1552))
     const metadata = [],
       images = []
     const materialHeader = new Float32Array((data.materialRecords?.length || 0) / 3)
@@ -267,6 +268,8 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
         settings,
         path,
         ao,
+        collection = null,
+        shadows = { enabled: false, bias: 0.002 },
       ) {
         if (disposed) throw Error('Path view disposed')
         validatePathTracing(path)
@@ -284,7 +287,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
             ? (14 * w * h +
                 16 +
                 (path.mltBootstrapSamples ?? 262144) * 2 +
-                Math.min(1024, w * h) * 168) *
+                Math.min(1024, w * h) * 200) *
               4
             : w * h * 16 +
               (path.integrator === 'photon-mapping'
@@ -317,7 +320,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           computeGroup = undefined
         }
         updateEnvironment(environment)
-        const values = new Float32Array(128),
+        const values = new Float32Array(388),
           words = new Uint32Array(values.buffer)
         values.set(
           sceneUniforms(
@@ -330,6 +333,15 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
             settings,
           ),
         )
+        if (collection !== null) {
+          const records = lightRecords(collection)
+          words[128] = 1
+          words[129] = records.length / 48
+          words[130] = shadows.enabled ? 1 : 0
+          values[131] = shadows.bias
+          for (let i = 0; i < records.length / 48; i++)
+            values.set(records.subarray(i * 48 + 32, i * 48 + 48), 132 + i * 16)
+        }
         words.set([0, w, h, path.maxBounces], 96)
         words.set(
           [

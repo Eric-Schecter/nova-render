@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -346,6 +348,9 @@ namespace render::detail
     {
         class VulkanPath final : public PathDevice
         {
+            bool                       software = false;
+            Buffer                     bvhBuffer{};
+            uint32_t                   bvhCount = 0;
             RendererConfig             config;
             std::unique_ptr<Context>   context;
             VkCommandBuffer            cmd{};
@@ -413,6 +418,8 @@ namespace render::detail
                 std::vector<VkPhysicalDevice> devices(count);
                 Check(c.api.vkEnumeratePhysicalDevices(c.instance, &count, devices.data()));
                 bool needsVectorWorkaround = false;
+                VkPhysicalDevice fallback              = VK_NULL_HANDLE;
+                software                               = false;
                 for (auto device : devices)
                 {
                     VkPhysicalDeviceProperties props;
@@ -435,6 +442,8 @@ namespace render::detail
                                            && Has(es, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME)
                                            && as.accelerationStructure && query.rayQuery && v12.bufferDeviceAddress;
                     bool usable = supported;
+                    if (!supported && !fallback && props.limits.maxPerStageDescriptorStorageBuffers >= 8)
+                        fallback = device;
 #if defined(__aarch64__)
                     const bool oldLavapipe = props.deviceType==VK_PHYSICAL_DEVICE_TYPE_CPU && std::strstr(props.deviceName,"llvmpipe") &&
                         (VK_VERSION_MAJOR(props.driverVersion)<26 || (VK_VERSION_MAJOR(props.driverVersion)==26 && VK_VERSION_MINOR(props.driverVersion)<3));
@@ -444,11 +453,18 @@ namespace render::detail
                     if (oldLavapipe && (std::strstr(props.deviceName, "128 bits") || !cacheDisabled))
                     {
                         usable                = false;
+                        if (fallback == device)
+                            fallback = VK_NULL_HANDLE;
                         needsVectorWorkaround = true;
                     }
 #endif
                     if (usable && !c.physical)
                         c.physical = device;
+                }
+                if (!c.physical && fallback)
+                {
+                    c.physical = fallback;
+                    software   = true;
                 }
                 if (!c.physical)
                     throw std::runtime_error(
@@ -483,11 +499,21 @@ namespace render::detail
                   VK_KHR_RAY_QUERY_EXTENSION_NAME,
                   VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
                 VkDeviceCreateInfo device{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-                device.pNext                   = &v12;
+                device.pNext                   = software ? nullptr : &v12;
                 device.queueCreateInfoCount    = 1;
                 device.pQueueCreateInfos       = &queue;
-                device.enabledExtensionCount   = 3;
-                device.ppEnabledExtensionNames = required;
+                std::vector<const char*> enabled;
+                if (!software)
+                    enabled.assign(required, required + 3);
+                uint32_t extensionCount = 0;
+                c.api.vkEnumerateDeviceExtensionProperties(c.physical, nullptr, &extensionCount, nullptr);
+                std::vector<VkExtensionProperties> deviceExtensions(extensionCount);
+                c.api.vkEnumerateDeviceExtensionProperties(
+                  c.physical, nullptr, &extensionCount, deviceExtensions.data());
+                if (Has(deviceExtensions, "VK_KHR_portability_subset"))
+                    enabled.push_back("VK_KHR_portability_subset");
+                device.enabledExtensionCount   = uint32_t(enabled.size());
+                device.ppEnabledExtensionNames = enabled.data();
                 Check(c.api.vkCreateDevice(c.physical, &device, nullptr, &c.device));
 
                 c.api.vkGetDeviceQueue(c.device, family, 0, &c.queue);
@@ -505,7 +531,7 @@ namespace render::detail
                 VkPhysicalDeviceProperties props;
                 c.api.vkGetPhysicalDeviceProperties(c.physical, &props);
                 capabilities.pathTracing        = true;
-                capabilities.softwareRayTracing = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
+                capabilities.softwareRayTracing = software || props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
                 capabilities.rayTracingDevice   = props.deviceName;
                 VkDescriptorSetLayoutBinding bindings[8]{};
                 for (uint32_t i = 0; i < 8; ++i)
@@ -513,8 +539,8 @@ namespace render::detail
                     bindings[i].binding         = i;
                     bindings[i].descriptorCount = 1;
                     bindings[i].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
-                    bindings[i].descriptorType =
-                      i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+                    bindings[i].descriptorType  = (i || software) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                                                  : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
                 }
                 VkDescriptorSetLayoutCreateInfo layout{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
                 layout.bindingCount = 8;
@@ -524,15 +550,23 @@ namespace render::detail
                   {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7}};
                 VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
                 dp.maxSets       = 1;
-                dp.poolSizeCount = 2;
-                dp.pPoolSizes    = sizes;
+                if (software)
+                    sizes[1].descriptorCount = 8;
+                dp.poolSizeCount = software ? 1 : 2;
+                dp.pPoolSizes    = software ? &sizes[1] : sizes;
                 Check(c.api.vkCreateDescriptorPool(c.device, &dp, nullptr, &c.descriptors));
                 VkDescriptorSetAllocateInfo allocSet{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
                 allocSet.descriptorPool     = c.descriptors;
                 allocSet.descriptorSetCount = 1;
                 allocSet.pSetLayouts        = &c.layout;
                 Check(c.api.vkAllocateDescriptorSets(c.device, &allocSet, &set));
-                const auto            bytes = LoadShader(config.shaderDirectory, "pathtrace.compute.spv");
+                auto load = [&](const char* file) {
+                    std::string name = file;
+                    if (software)
+                        name.insert(name.find(".compute.spv"), "-bvh");
+                    return LoadShader(config.shaderDirectory, name.c_str());
+                };
+                const auto            bytes = load("pathtrace.compute.spv");
                 std::vector<uint32_t> code(bytes.size() / 4);
                 std::memcpy(code.data(), bytes.data(), bytes.size());
                 VkShaderModuleCreateInfo module{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -550,7 +584,7 @@ namespace render::detail
                 pipeline.stage.module = c.shader;
                 pipeline.stage.pName  = "CSMain";
                 Check(c.api.vkCreateComputePipelines(c.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &c.pipeline));
-                const auto            filterBytes = LoadShader(config.shaderDirectory, "denoise.compute.spv");
+                const auto            filterBytes = load("denoise.compute.spv");
                 std::vector<uint32_t> filterCode(filterBytes.size() / 4);
                 std::memcpy(filterCode.data(), filterBytes.data(), filterBytes.size());
                 module.codeSize = filterBytes.size();
@@ -564,7 +598,7 @@ namespace render::detail
                 const char* entries[] = {"PhotonClear", "PhotonMain"};
                 for (size_t i = 0; i < 2; i++)
                 {
-                    const auto            bytes = LoadShader(config.shaderDirectory, files[i]);
+                    const auto            bytes = load(files[i]);
                     std::vector<uint32_t> code(bytes.size() / 4);
                     std::memcpy(code.data(), bytes.data(), bytes.size());
                     module.codeSize = bytes.size();
@@ -580,7 +614,7 @@ namespace render::detail
                 const char* mltEntries[] = {"MLTBootstrap", "MLTReduce", "MLTMutate"};
                 for (size_t i = 0; i < 3; i++)
                 {
-                    const auto            bytes = LoadShader(config.shaderDirectory, mltFiles[i]);
+                    const auto            bytes = load(mltFiles[i]);
                     std::vector<uint32_t> code(bytes.size() / 4);
                     std::memcpy(code.data(), bytes.data(), bytes.size());
                     module.codeSize = bytes.size();
@@ -596,7 +630,7 @@ namespace render::detail
                 const char* aoEntries[] = {"AOPrepare", "AOPyramid", "AOMain", "AOFilter"};
                 for (size_t i = 0; i < 4; i++)
                 {
-                    const auto            bytes = LoadShader(config.shaderDirectory, aoFiles[i]);
+                    const auto            bytes = load(aoFiles[i]);
                     std::vector<uint32_t> code(bytes.size() / 4);
                     std::memcpy(code.data(), bytes.data(), bytes.size());
                     module.codeSize = bytes.size();
@@ -644,9 +678,21 @@ namespace render::detail
             }
             void SetScene(const PathScene& scene) override
             {
-                context.reset();
-                Init();
                 auto& c = *context;
+                Check(c.api.vkQueueWaitIdle(c.queue));
+                Check(c.api.vkResetCommandBuffer(cmd, 0));
+                for (auto structure : c.structures)
+                    c.api.vkDestroyAccelerationStructureKHR(c.device, structure, nullptr);
+                c.structures.clear();
+                for (const auto& buffer : c.buffers)
+                {
+                    c.api.vkDestroyBuffer(c.device, buffer.handle, nullptr);
+                    c.api.vkFreeMemory(c.device, buffer.memory, nullptr);
+                }
+                c.buffers.clear();
+                tlas      = {};
+                bvhBuffer = {};
+                bvhCount  = 0;
                 width = height = 0;
                 data           = {};
                 VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -656,8 +702,7 @@ namespace render::detail
                 auto vertex = c.MakeBuffer(
                   scene.model.vertices.size() * sizeof(ModelVertex),
                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-                    | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
-                    | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                    | (software ? 0u : VkBufferUsageFlags(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)),
                   true,
                   scene.model.vertices.data());
                 data[1] = vertex;
@@ -665,112 +710,178 @@ namespace render::detail
                   c.MakeBuffer(scene.texels.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, scene.texels.data());
                 data[3] = c.MakeBuffer(
                   scene.sky.pixels.size() * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, scene.sky.pixels.data());
-                std::vector<uint32_t> indices(scene.model.vertices.size());
-                std::iota(indices.begin(), indices.end(), 0u);
-                auto index = c.MakeBuffer(
-                  indices.size() * 4,
-                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
-                    | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                  true,
-                  indices.data());
-                VkAccelerationStructureGeometryKHR geometry{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-                geometry.geometryType  = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-                geometry.flags         = VK_GEOMETRY_OPAQUE_BIT_KHR;
-                auto& triangles        = geometry.geometry.triangles;
-                triangles.sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-                triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-                triangles.vertexStride = sizeof(ModelVertex);
-                triangles.maxVertex    = uint32_t(scene.model.vertices.size() - 1);
-                triangles.vertexData.deviceAddress = vertex.address;
-                triangles.indexType                = VK_INDEX_TYPE_UINT32;
-                triangles.indexData.deviceAddress  = index.address;
-                const uint32_t primitiveCount      = uint32_t(scene.model.vertices.size() / 3);
-                auto           sizes               = [&](VkAccelerationStructureBuildGeometryInfoKHR& build) {
-                    VkAccelerationStructureBuildSizesInfoKHR result{
-                      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
-                    const uint32_t count =
-                      build.type == VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR ? 1 : primitiveCount;
-                    c.api.vkGetAccelerationStructureBuildSizesKHR(
-                      c.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &count, &result);
-                    return result;
-                };
-                VkAccelerationStructureBuildGeometryInfoKHR bottom{
-                  VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
-                bottom.type          = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-                bottom.mode          = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-                bottom.geometryCount = 1;
-                bottom.pGeometries   = &geometry;
-                auto bottomSize      = sizes(bottom);
-                auto blas            = c.MakeAS(bottom.type, bottomSize.accelerationStructureSize);
-                VkAccelerationStructureDeviceAddressInfoKHR address{
-                  VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR};
-                address.accelerationStructure = blas;
-                VkAccelerationStructureInstanceKHR instanceData{};
-                instanceData.transform.matrix[0][0]   = instanceData.transform.matrix[1][1] =
-                  instanceData.transform.matrix[2][2] = 1;
-                instanceData.mask                     = 255;
-                instanceData.accelerationStructureReference =
-                  c.api.vkGetAccelerationStructureDeviceAddressKHR(c.device, &address);
-                auto instances = c.MakeBuffer(
-                  sizeof(instanceData),
-                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
-                    | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                  true,
-                  &instanceData);
-                VkAccelerationStructureGeometryKHR instanceGeometry{
-                  VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-                instanceGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-                instanceGeometry.geometry.instances.sType =
-                  VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-                instanceGeometry.geometry.instances.data.deviceAddress = instances.address;
-                auto top                                               = bottom;
-                top.type                                               = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-                top.pGeometries                                        = &instanceGeometry;
-                auto topSize                                           = sizes(top);
-                tlas = c.MakeAS(top.type, topSize.accelerationStructureSize);
-                VkPhysicalDeviceAccelerationStructurePropertiesKHR properties{
-                  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
-                VkPhysicalDeviceProperties2 properties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-                properties2.pNext = &properties;
-                c.api.vkGetPhysicalDeviceProperties2(c.physical, &properties2);
-                const VkDeviceSize alignment = properties.minAccelerationStructureScratchOffsetAlignment;
-                auto               scratch   = c.MakeBuffer(
-                  std::max(bottomSize.buildScratchSize, topSize.buildScratchSize) + alignment,
-                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-                const auto scratchAddress = (scratch.address + alignment - 1) & ~(alignment - 1);
-                auto       barrier        = [&](VkPipelineStageFlags destination) {
-                    VkMemoryBarrier b{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-                    b.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-                    b.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-                    if (destination & VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR)
-                        b.dstAccessMask |= VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-                    c.api.vkCmdPipelineBarrier(
-                      cmd,
-                      VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                      destination,
-                      0,
-                      1,
-                      &b,
-                      0,
-                      nullptr,
-                      0,
-                      nullptr);
-                };
-                VkAccelerationStructureBuildRangeInfoKHR range{};
-                range.primitiveCount             = primitiveCount;
-                const auto* rangePtr             = &range;
-                bottom.dstAccelerationStructure  = blas;
-                bottom.scratchData.deviceAddress = scratchAddress;
-                c.api.vkCmdBuildAccelerationStructuresKHR(cmd, 1, &bottom, &rangePtr);
-                barrier(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+                if (software)
+                {
+                    // Leaves retain original primitive indices, so emitter CDFs and material slots remain unchanged.
+                    struct Node
+                    {
+                        float    low[3];
+                        uint32_t escape;
+                        float    high[3];
+                        uint32_t first;
+                        uint32_t count, pad[3];
+                    };
+                    static_assert(sizeof(Node) == 48, "Path BVH layout");
+                    std::vector<uint32_t> triangles(scene.model.vertices.size() / 3);
+                    std::iota(triangles.begin(), triangles.end(), 0u);
+                    std::vector<Node>                   nodes;
+                    std::function<void(size_t, size_t)> split = [&](size_t first, size_t end) {
+                        Node n{};
+                        for (int k = 0; k < 3; k++)
+                        {
+                            n.low[k]  = std::numeric_limits<float>::infinity();
+                            n.high[k] = -n.low[k];
+                        }
+                        for (size_t i = first; i < end; i++)
+                            for (int v = 0; v < 3; v++)
+                                for (int k = 0; k < 3; k++)
+                                {
+                                    float p   = scene.model.vertices[triangles[i] * 3 + v].position[k];
+                                    n.low[k]  = std::min(n.low[k], p);
+                                    n.high[k] = std::max(n.high[k], p);
+                                }
+                        const auto index = nodes.size();
+                        nodes.push_back(n);
+                        if (end - first == 1)
+                        {
+                            nodes[index].first = triangles[first];
+                            nodes[index].count = 1;
+                        }
+                        else
+                        {
+                            int axis = 0;
+                            for (int k = 1; k < 3; k++)
+                                if (n.high[k] - n.low[k] > n.high[axis] - n.low[axis])
+                                    axis = k;
+                            size_t middle = (first + end) / 2;
+                            auto   center = [&](uint32_t t) {
+                                float c = 0;
+                                for (int v = 0; v < 3; v++)
+                                    c += scene.model.vertices[t * 3 + v].position[axis];
+                                return c;
+                            };
+                            std::nth_element(
+                              triangles.begin() + first,
+                              triangles.begin() + middle,
+                              triangles.begin() + end,
+                              [&](uint32_t a, uint32_t b) { return center(a) < center(b); });
+                            split(first, middle);
+                            split(middle, end);
+                        }
+                        nodes[index].escape = uint32_t(nodes.size());
+                    };
+                    split(0, triangles.size());
+                    bvhCount = uint32_t(nodes.size());
+                    bvhBuffer =
+                      c.MakeBuffer(nodes.size() * sizeof(Node), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, nodes.data());
+                }
+                else
+                {
+                    std::vector<uint32_t> indices(scene.model.vertices.size());
+                    std::iota(indices.begin(), indices.end(), 0u);
+                    auto index = c.MakeBuffer(
+                      indices.size() * 4,
+                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+                        | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      true,
+                      indices.data());
+                    VkAccelerationStructureGeometryKHR geometry{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
+                    geometry.geometryType  = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+                    geometry.flags         = VK_GEOMETRY_OPAQUE_BIT_KHR;
+                    auto& triangles        = geometry.geometry.triangles;
+                    triangles.sType        = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+                    triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+                    triangles.vertexStride = sizeof(ModelVertex);
+                    triangles.maxVertex    = uint32_t(scene.model.vertices.size() - 1);
+                    triangles.vertexData.deviceAddress = vertex.address;
+                    triangles.indexType                = VK_INDEX_TYPE_UINT32;
+                    triangles.indexData.deviceAddress  = index.address;
+                    const uint32_t primitiveCount      = uint32_t(scene.model.vertices.size() / 3);
+                    auto           sizes               = [&](VkAccelerationStructureBuildGeometryInfoKHR& build) {
+                        VkAccelerationStructureBuildSizesInfoKHR result{
+                          VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
+                        const uint32_t count =
+                          build.type == VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR ? 1 : primitiveCount;
+                        c.api.vkGetAccelerationStructureBuildSizesKHR(
+                          c.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &count, &result);
+                        return result;
+                    };
+                    VkAccelerationStructureBuildGeometryInfoKHR bottom{
+                      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
+                    bottom.type          = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+                    bottom.mode          = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+                    bottom.geometryCount = 1;
+                    bottom.pGeometries   = &geometry;
+                    auto bottomSize      = sizes(bottom);
+                    auto blas            = c.MakeAS(bottom.type, bottomSize.accelerationStructureSize);
+                    VkAccelerationStructureDeviceAddressInfoKHR address{
+                      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR};
+                    address.accelerationStructure = blas;
+                    VkAccelerationStructureInstanceKHR instanceData{};
+                    instanceData.transform.matrix[0][0]   = instanceData.transform.matrix[1][1] =
+                      instanceData.transform.matrix[2][2] = 1;
+                    instanceData.mask                     = 255;
+                    instanceData.accelerationStructureReference =
+                      c.api.vkGetAccelerationStructureDeviceAddressKHR(c.device, &address);
+                    auto instances = c.MakeBuffer(
+                      sizeof(instanceData),
+                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+                        | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      true,
+                      &instanceData);
+                    VkAccelerationStructureGeometryKHR instanceGeometry{
+                      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
+                    instanceGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+                    instanceGeometry.geometry.instances.sType =
+                      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+                    instanceGeometry.geometry.instances.data.deviceAddress = instances.address;
+                    auto top                                               = bottom;
+                    top.type        = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+                    top.pGeometries = &instanceGeometry;
+                    auto topSize    = sizes(top);
+                    tlas            = c.MakeAS(top.type, topSize.accelerationStructureSize);
+                    VkPhysicalDeviceAccelerationStructurePropertiesKHR properties{
+                      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+                    VkPhysicalDeviceProperties2 properties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+                    properties2.pNext = &properties;
+                    c.api.vkGetPhysicalDeviceProperties2(c.physical, &properties2);
+                    const VkDeviceSize alignment = properties.minAccelerationStructureScratchOffsetAlignment;
+                    auto               scratch   = c.MakeBuffer(
+                      std::max(bottomSize.buildScratchSize, topSize.buildScratchSize) + alignment,
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+                    const auto scratchAddress = (scratch.address + alignment - 1) & ~(alignment - 1);
+                    auto       barrier        = [&](VkPipelineStageFlags destination) {
+                        VkMemoryBarrier b{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+                        b.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+                        b.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+                        if (destination & VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR)
+                            b.dstAccessMask |= VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+                        c.api.vkCmdPipelineBarrier(
+                          cmd,
+                          VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                          destination,
+                          0,
+                          1,
+                          &b,
+                          0,
+                          nullptr,
+                          0,
+                          nullptr);
+                    };
+                    VkAccelerationStructureBuildRangeInfoKHR range{};
+                    range.primitiveCount             = primitiveCount;
+                    const auto* rangePtr             = &range;
+                    bottom.dstAccelerationStructure  = blas;
+                    bottom.scratchData.deviceAddress = scratchAddress;
+                    c.api.vkCmdBuildAccelerationStructuresKHR(cmd, 1, &bottom, &rangePtr);
+                    barrier(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
-                range.primitiveCount          = 1;
-                top.dstAccelerationStructure  = tlas;
-                top.scratchData.deviceAddress = scratchAddress;
-                c.api.vkCmdBuildAccelerationStructuresKHR(cmd, 1, &top, &rangePtr);
-                barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-
+                    range.primitiveCount          = 1;
+                    top.dstAccelerationStructure  = tlas;
+                    top.scratchData.deviceAddress = scratchAddress;
+                    c.api.vkCmdBuildAccelerationStructuresKHR(cmd, 1, &top, &rangePtr);
+                    barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+                }
                 Submit();
             }
             std::vector<unsigned char> Trace(const PathUniforms& uniforms) override
@@ -794,7 +905,7 @@ namespace render::detail
                   VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
                 writeAS.accelerationStructureCount = 1;
                 writeAS.pAccelerationStructures    = &tlas;
-                VkDescriptorBufferInfo infos[7]{};
+                VkDescriptorBufferInfo infos[8]{};
                 VkWriteDescriptorSet   writes[8]{};
                 for (uint32_t i = 0; i < 8; ++i)
                 {
@@ -803,20 +914,23 @@ namespace render::detail
                     w.dstSet          = set;
                     w.dstBinding      = i;
                     w.descriptorCount = 1;
-                    w.descriptorType =
-                      i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-                    if (!i)
+                    w.descriptorType  = (i || software) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                                        : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+                    if (!i && !software)
                         w.pNext = &writeAS;
                     else
                     {
-                        infos[i - 1]  = {data[i - 1].handle, 0, VK_WHOLE_SIZE};
-                        w.pBufferInfo = &infos[i - 1];
+                        infos[i]      = {i ? data[i - 1].handle : bvhBuffer.handle, 0, VK_WHOLE_SIZE};
+                        w.pBufferInfo = &infos[i];
                     }
                 }
                 c.api.vkUpdateDescriptorSets(c.device, 8, writes, 0, nullptr);
                 void* mapped;
                 Check(c.api.vkMapMemory(c.device, data[0].memory, 0, sizeof(uniforms), 0, &mapped));
-                std::memcpy(mapped, &uniforms, sizeof(uniforms));
+                auto parameters = uniforms;
+                if (software)
+                    parameters.options[2] = bvhCount;
+                std::memcpy(mapped, &parameters, sizeof(parameters));
                 c.api.vkUnmapMemory(c.device, data[0].memory);
                 Check(c.api.vkResetCommandBuffer(cmd, 0));
                 VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};

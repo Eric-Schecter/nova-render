@@ -58,7 +58,7 @@ try {
         mltBootstrapSamples: 4096,
         integrator: 'mlt',
       }
-      const cdfParams = new Float32Array(128),
+      const cdfParams = new Float32Array(388),
         cdfWords = new Uint32Array(cdfParams.buffer),
         cdfWork = new Uint32Array(600),
         cdfFloats = new Float32Array(cdfWork.buffer)

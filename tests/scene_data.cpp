@@ -51,6 +51,35 @@ int main(int argc, char** argv)
         Require(
           std::abs(scene.instances[1].normal[0] + .25f) < 1e-6f && scene.instances[1].normal[5] == 1,
           "Mirrored/nonuniform normal matrix is incorrect");
+        auto ray = scene.RayModel();
+        Require(ray->vertices.size() == 108, "Ray scene lost instance geometry");
+        Require(scene.RayModel() == ray, "Unchanged ray scene rebuilt");
+        size_t at = 0;
+        for (const auto& group : scene.draws)
+            for (uint32_t i = 0; i < group.instanceCount; i++)
+            {
+                const auto& row = scene.instances[group.firstInstance + i];
+                for (uint32_t j = 0; j < group.vertexCount; j++, at++)
+                {
+                    const auto& v = scene.model->vertices[group.firstVertex + j];
+                    for (int k = 0; k < 3; k++)
+                    {
+                        const float expected = row.world[k] * v.position[0] + row.world[4 + k] * v.position[1]
+                                               + row.world[8 + k] * v.position[2] + row.world[12 + k];
+                        Require(
+                          std::abs(ray->vertices[at].position[k] - expected) < 1e-5,
+                          "Ray world-space composition mismatch");
+                    }
+                    Require(ray->vertices[at].position[3] == v.position[3], "Ray material slot changed");
+                }
+            }
+        instances[1].castShadow = false;
+        scene.Update(assets, instances);
+        Require(scene.RayModel() != ray, "Ray cast edit reused stale model");
+        bool noCast = false;
+        for (const auto& v : scene.RayModel()->vertices)
+            noCast |= v.uv[2] < 0;
+        Require(noCast, "Ray caster flag lost");
         auto reject = [&](const std::vector<render::SceneAsset>& a, const std::vector<render::SceneInstance>& i) {
             const auto old      = scene.model;
             bool       rejected = false;

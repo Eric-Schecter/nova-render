@@ -201,7 +201,7 @@ try {
     await r.setScene(sourceAssets, moved)
     await r.drawFrame()
     require(requests() === 2, 'Transform update reloaded models')
-    require(!r.getCapabilities().rayTracing, 'Scene exposed single-model ray tracing')
+    require(r.getCapabilities().rayTracing, 'Scene ray capability missing')
     let failures = 0
     for (const [a, i] of [
       [assets, [instances[0], instances[0]]],

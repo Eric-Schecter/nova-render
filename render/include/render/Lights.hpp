@@ -35,6 +35,9 @@ namespace render
         unsigned    maxLights          = 0;
         bool        directionalShadows = false, pointShadows = false, spotShadows = false;
         bool        shadowRequiresScene = true;
+        // Analytic collections use camera-path NEE in ray modes, not source subpaths or photon emission.
+        bool        collectionLightSubpaths = false, collectionPhotonEmission = false;
+        std::string estimator;
         std::string reason;
     };
     inline std::vector<SceneLight> ValidateSceneLights(const std::vector<SceneLight>& input)

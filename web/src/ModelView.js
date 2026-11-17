@@ -108,6 +108,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         'Nova previous palette',
       )
     let lastScene, lastPalette, currentScene, aaPipelines
+    let rayProvider, pathData
     const layout = device.createBindGroupLayout({
       entries: [
         {
@@ -350,20 +351,38 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       resetAccumulation() {
         pathView?.reset()
       },
-      async drawPath(camera, clear, width, height, lighting, light, settings, path, ao) {
+      setRaySource(provider) {
+        rayProvider = provider
+      },
+      async drawPath(
+        camera,
+        clear,
+        width,
+        height,
+        lighting,
+        light,
+        settings,
+        path,
+        ao,
+        collection = null,
+        shadows = undefined,
+      ) {
         if (disposed) throw Error('Model has been disposed')
-        if (!data.vertices.length) throw Error('Path tracing requires a loaded model')
-        if (!pathView) {
+        const source = rayProvider ? rayProvider() : data
+        if (!source.vertices.length) throw Error('Path tracing requires a loaded model')
+        if (!pathView || pathData !== source) {
           const next = await createPathView(
             device,
-            data,
+            source,
             shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1),
           )
           if (disposed) {
             next.dispose()
             throw Error('Model has been disposed')
           }
+          pathView?.dispose()
           pathView = next
+          pathData = source
         }
         pathView.draw(
           context,
@@ -377,6 +396,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           settings,
           path,
           ao,
+          collection,
+          shadows,
         )
       },
       async loadEnvironment(next, skyURL) {

@@ -13,8 +13,10 @@ namespace render::detail
         std::array<uint32_t, 4>                options{}; // samples per frame, environment face size
         std::array<float, 4>                   clear{};
         std::array<std::array<uint32_t, 4>, 5> images{}; // texel offset, width, height
+        std::array<uint32_t, 4> lightInfo{};             // explicit collection, count, shadow master, world bias bits
+        std::array<std::array<std::array<float, 4>, 4>, 16> lights{};
     };
-    static_assert(sizeof(PathUniforms) == 512, "HLSL path parameter layout");
+    static_assert(sizeof(PathUniforms) == 1552, "HLSL path parameter layout");
     inline size_t PathScratchBytes(const PathUniforms& p)
     {
         if (p.options[3] & 64u)
@@ -24,7 +26,7 @@ namespace render::detail
             uint32_t bootstrap;
             std::memcpy(&bootstrap, &p.clear[3], 4);
             const size_t pixels = size_t(p.frame[1]) * p.frame[2];
-            return (14 * pixels + 16 + size_t(bootstrap) * 2 + std::min(size_t(1024), pixels) * 168) * 4;
+            return (14 * pixels + 16 + size_t(bootstrap) * 2 + std::min(size_t(1024), pixels) * 200) * 4;
         }
         return size_t(p.frame[1]) * p.frame[2] * 16
                + ((p.options[3] & 16u) ? (size_t(32768) + size_t(p.images[2][3]) * p.frame[3] * 16) * 4 : 0);
@@ -37,7 +39,7 @@ namespace render::detail
         std::array<std::array<uint32_t, 4>, 5> images{};
     };
     // Append to material texels: 8-word header, emitter CDF records, primitive PMFs, cubemap CDF.
-    // images[0].w points at the header; bindings and the 512-byte shader parameter layout stay fixed.
+    // images[0].w points at the header; bindings and the legacy 512-byte parameter prefix stay fixed.
     void PrepareLightSampling(PathScene&, bool hdr);
     class PathDevice
     {
@@ -69,7 +71,9 @@ namespace render::detail
              const std::array<float, 4>&     clear,
              uint32_t                        width,
              uint32_t                        height,
-             const AmbientOcclusionSettings* ao = nullptr);
+             const AmbientOcclusionSettings* ao      = nullptr,
+             const std::vector<SceneLight>*  lights  = nullptr,
+             const SceneShadowSettings&      shadows = {});
         void     Reset() { samples = 0; }
         uint32_t Samples() const { return samples; }
 

@@ -53,6 +53,14 @@ foreach(_kernel IN ITEMS pathtrace denoise photon-clear photon-trace mlt-bootstr
             list(APPEND SHADER_OUTPUTS "${_path_spv}")
         endif()
     endif()
+    if(NOVA_ENABLE_VULKAN)
+        set(_path_bvh "${SHADER_OUTPUT_DIR}/${_kernel}-bvh.compute.spv")
+        add_custom_command(OUTPUT "${_path_bvh}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.1 -DNOVA_WEB_BVH=1 -T cs_6_0 -E ${_entry} ${_path_defines} "${_path_source}" -Fo "${_path_bvh}"
+            DEPENDS "${_path_source}" "${PROJECT_SOURCE_DIR}/render/shaders/pathtrace.hlsl" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${_path_bvh}")
+        list(APPEND _all_path_outputs "${_path_bvh}")
+    endif()
     if(APPLE)
         set(_path_metal "${SHADER_OUTPUT_DIR}/${_kernel}.metallib")
         add_custom_command(OUTPUT "${_path_metal}"

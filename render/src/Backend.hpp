@@ -21,6 +21,7 @@ namespace render::detail
         SceneData   scene;
         void        SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
         {
+            const auto previousMode = mode;
             auto next = scene;
             next.Update(assets, instances);
             if (model != next.model)
@@ -31,7 +32,7 @@ namespace render::detail
             presentedImage.reset();
             pathSession.Reset();
             rasterAA.Reset();
-            mode = RenderMode::Raster;
+            mode = previousMode;
         }
         std::vector<Material> GetMaterials(const std::string& id) const
         {
@@ -72,15 +73,15 @@ namespace render::detail
         LightingCapabilities    GetLightingCapabilities() const
         {
             LightingCapabilities c;
-            if (
-              mode == RenderMode::Raster
-              && (pathAPI == GraphicsAPI::Metal || pathAPI == GraphicsAPI::Vulkan || pathAPI == GraphicsAPI::D3D12))
+            if ((pathAPI == GraphicsAPI::Metal || pathAPI == GraphicsAPI::Vulkan || pathAPI == GraphicsAPI::D3D12))
             {
                 c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
-                c.maxLights                                             = 16;
+                c.maxLights                                                                              = 16;
+                c.shadowRequiresScene = mode == RenderMode::Raster;
+                c.estimator           = mode == RenderMode::Raster ? "raster-pbr" : "camera-path-nee";
             }
             else
-                c.reason = "Light collections require raster rendering on Metal, Vulkan or DX12";
+                c.reason = "Light collections require Metal, Vulkan or DX12";
             return c;
         }
         void SetLights(const std::vector<SceneLight>& values)
@@ -204,8 +205,6 @@ namespace render::detail
         }
         RendererCapabilities GetCapabilities()
         {
-            if (scene.active)
-                return {false, false, "", "Scene instances currently use raster rendering"};
             if (model && model->animation)
                 return {false, false, "", "Animated models currently use raster rendering"};
             return pathSession.Capabilities(pathAPI, pathConfig);
@@ -228,12 +227,9 @@ namespace render::detail
         {
             if (value != RenderMode::Raster && value != RenderMode::PathTracing)
                 throw std::invalid_argument("Invalid render mode");
-            if (value != RenderMode::Raster && lightCollectionActive)
-                throw std::runtime_error(
-                  "Light collections currently support raster mode only; restore the legacy directional light first");
             if (value != RenderMode::Raster)
             {
-                if (!model || model->vertices.empty())
+                if (!scene.active && (!model || model->vertices.empty()))
                     throw std::invalid_argument("Load a model before path tracing");
                 const auto caps = GetCapabilities();
                 if (!caps.pathTracing)
@@ -524,8 +520,18 @@ namespace render::detail
               directionalLight,
               environment.get(),
               environmentSettings);
+            auto rayModel = scene.active ? scene.RayModel() : model;
             return &pathSession.Render(
-              model, environment, uniform, pathSettings, ClearColorForTarget(true), width, height);
+              rayModel,
+              environment,
+              uniform,
+              pathSettings,
+              ClearColorForTarget(true),
+              width,
+              height,
+              nullptr,
+              lightCollectionActive ? &lights : nullptr,
+              shadowSettings);
         }
 
         virtual void         CreateRasterAADevice() { throw std::runtime_error("Raster AA backend not implemented"); }

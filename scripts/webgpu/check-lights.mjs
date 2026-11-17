@@ -127,13 +127,13 @@ try {
     const copy = renderer.getLights()
     copy[0].color[0] = 0
     if (renderer.getLights()[0].color[0] !== 1) throw Error('Leaking mutable lights')
-    let rejected = false
-    try {
-      renderer.setRenderMode('ray-tracing')
-    } catch {
-      rejected = true
-    }
-    if (!rejected || renderer.getRenderMode() !== 'raster') throw Error('Unsupported mode accepted')
+    renderer.setRenderMode('ray-tracing')
+    if (
+      !renderer.getLightingCapabilities().point ||
+      renderer.getLightingCapabilities().shadowRequiresScene
+    )
+      throw Error('Ray light capability mismatch')
+    renderer.setRenderMode('raster')
     renderer.setLights(lights.map((l) => ({ ...l, enabled: false })))
     await renderer.drawFrame()
   })

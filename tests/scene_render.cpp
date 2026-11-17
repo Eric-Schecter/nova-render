@@ -124,8 +124,34 @@ int main(int argc, char** argv)
         const auto source = inspect();
         if (source.pixels != normalized.pixels)
             throw std::runtime_error("Source-space equivalent transforms changed rendering");
-        if (backend->GetCapabilities().rayTracing)
-            throw std::runtime_error("Scene incorrectly advertises single-model ray tracing");
+        backend->ConfigurePathTracing(config.api, config);
+        if (!backend->GetCapabilities().rayTracing)
+            throw std::runtime_error("Scene ray tracing unavailable");
+        render::SceneLight sun;
+        sun.id        = "scene-sun";
+        sun.direction = {0, 0, 1};
+        sun.intensity = 4;
+        backend->SetLights({sun});
+        render::PathTracingSettings tracing;
+        tracing.resolutionScale = .25f;
+        tracing.maxBounces      = 1;
+        backend->SetPathTracing(tracing);
+        backend->SetRenderMode(render::RenderMode::RayTracing);
+        draw();
+        draw();
+        if (backend->GetAccumulatedSamples() != 2)
+            throw std::runtime_error("Scene ray accumulation failed");
+        instances[0].world[12] += .2f;
+        backend->SetScene(models, instances);
+        if (backend->GetRenderMode() != render::RenderMode::RayTracing)
+            throw std::runtime_error("Scene edit lost ray mode");
+        draw();
+        auto mat      = backend->GetMaterials("red")[0];
+        mat.baseColor = {0, 1, 0, 1};
+        backend->SetMaterial(0, mat, "red");
+        draw();
+        backend->SetRenderMode(render::RenderMode::Raster);
+        backend->SetDirectionalLight({});
         backend->SetScene({}, {});
         draw();
         inspect(true);

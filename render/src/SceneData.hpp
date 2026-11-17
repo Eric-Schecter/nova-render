@@ -19,6 +19,7 @@ namespace render::detail
       public:
         std::vector<Material>            GetMaterials(const std::string& id) const;
         void                             SetMaterial(const std::string& id, uint32_t slot, const Material& material);
+        std::shared_ptr<const ModelData> RayModel();
         bool                             active = false;
         std::shared_ptr<const ModelData> model;
         std::vector<InstanceData>        instances;
@@ -30,6 +31,8 @@ namespace render::detail
         void                  Update(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);
 
       private:
+        std::shared_ptr<const ModelData> rayModel, raySource;
+        std::vector<InstanceData>        rayInstances;
         std::vector<SceneAsset>     assetsSnapshot;
         std::vector<SceneInstance>  inputSnapshot;
         void Build(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input);

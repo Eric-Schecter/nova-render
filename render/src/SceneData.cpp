@@ -154,6 +154,63 @@ namespace render::detail
         inputSnapshot  = input;
     }
 
+    std::shared_ptr<const ModelData> SceneData::RayModel()
+    {
+        if (
+          rayModel && raySource == model && rayInstances.size() == instances.size()
+          && (instances.empty() || std::memcmp(rayInstances.data(), instances.data(), instances.size() * sizeof(InstanceData)) == 0))
+            return rayModel;
+        auto baked = std::make_shared<ModelData>(*model);
+        baked->vertices.clear();
+        size_t count = 0;
+        for (const auto& d : draws)
+        {
+            if (d.vertexCount && d.instanceCount > (128ull * 1024 * 1024 / sizeof(ModelVertex) - count) / d.vertexCount)
+                throw std::runtime_error("Ray scene geometry exceeds 128 MiB");
+            count += size_t(d.vertexCount) * d.instanceCount;
+        }
+        baked->vertices.reserve(count);
+        for (const auto& d : draws)
+            for (uint32_t i = 0; i < d.instanceCount; i++)
+            {
+                const auto& instance = instances[d.firstInstance + i];
+                auto        world    = glm::make_mat4(instance.world);
+                auto        normal   = glm::mat3(glm::make_mat4(instance.normal));
+                if (std::abs(glm::determinant(glm::mat3(world))) < 1e-12f)
+                    continue;
+                for (uint32_t j = 0; j < d.vertexCount; j++)
+                {
+                    auto v = model->vertices[d.firstVertex + j];
+                    auto p = world * glm::vec4(v.position[0], v.position[1], v.position[2], 1);
+                    auto n = normal * glm::vec3(v.normal[0], v.normal[1], v.normal[2]);
+                    for (int k = 0; k < 3; k++)
+                    {
+                        if (!std::isfinite(p[k]) || !std::isfinite(n[k]))
+                            throw std::runtime_error("Ray scene transform overflows float32");
+                        v.position[k] = p[k];
+                    }
+                    float length = glm::length(n);
+                    if (length > 0)
+                        n /= length;
+                    for (int k = 0; k < 3; k++)
+                        v.normal[k] = n[k];
+                    // Path shaders reserve uv.z < 0 for noncasting instances; primary/transport rays still see them.
+                    v.uv[2] = instance.uv[2] > .5f ? 0.f : -1.f;
+                    baked->vertices.push_back(v);
+                }
+            }
+        if (baked->vertices.empty())
+        {
+            ModelVertex dummy{};
+            dummy.position[3] = 1;
+            dummy.normal[1]   = 1;
+            baked->vertices.assign(3, dummy);
+        }
+        rayModel     = baked;
+        raySource    = model;
+        rayInstances = instances;
+        return rayModel;
+    }
     std::vector<Material> SceneData::GetMaterials(const std::string& id) const
     {
         auto m = meshes.find(id);

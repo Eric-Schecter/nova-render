@@ -160,16 +160,13 @@ int main(int argc, char** argv)
           backend->GetLights()[0].castShadow && backend->GetLightingCapabilities().pointShadows
             && backend->GetLightingCapabilities().spotShadows,
           "Local shadow capability mismatch");
-        rejected = false;
-        try
-        {
-            backend->SetRenderMode(RenderMode::RayTracing);
-        }
-        catch (const std::runtime_error&)
-        {
-            rejected = true;
-        }
-        Require(rejected && backend->GetRenderMode() == RenderMode::Raster, "Unsupported mode accepted");
+        backend->SetRenderMode(RenderMode::RayTracing);
+        Require(
+          backend->GetLightingCapabilities().point && !backend->GetLightingCapabilities().shadowRequiresScene,
+          "Ray lighting capability mismatch");
+        backend->SetLights(lights);
+        draw();
+        backend->SetRenderMode(RenderMode::Raster);
         auto disabled = lights;
         for (auto& light : disabled)
             light.enabled = false;

@@ -67,7 +67,8 @@ namespace render::detail
             }
         }
         capabilities.rayTracing = capabilities.pathTracing;
-        capabilities.metropolis = capabilities.pathTracing && !capabilities.softwareRayTracing;
+        capabilities.metropolis =
+          capabilities.pathTracing && (api != GraphicsAPI::D3D12 || !capabilities.softwareRayTracing);
         return capabilities;
     }
     const ModelImage& PathSession::Render(
@@ -78,7 +79,9 @@ namespace render::detail
       const std::array<float, 4>&            clear,
       uint32_t                               width,
       uint32_t                               height,
-      const AmbientOcclusionSettings*        ao)
+      const AmbientOcclusionSettings*        ao,
+      const std::vector<SceneLight>*         collection,
+      const SceneShadowSettings&             shadows)
     {
         ValidatePathTracing(settings);
         if (ao)
@@ -112,6 +115,26 @@ namespace render::detail
             samples            = 0;
         }
         PathUniforms params{};
+        if (collection)
+        {
+            const auto lights   = ValidateSceneLights(*collection);
+            params.lightInfo[0] = 1;
+            params.lightInfo[2] = shadows.enabled ? 1u : 0u;
+            std::memcpy(&params.lightInfo[3], &shadows.bias, 4);
+            for (const auto& light : lights)
+                if (light.enabled)
+                {
+                    auto& r = params.lights[params.lightInfo[1]++];
+                    r[0]    = {light.color[0], light.color[1], light.color[2], light.intensity};
+                    r[1]    = {light.position[0], light.position[1], light.position[2], light.range};
+                    r[2]    = {light.direction[0], light.direction[1], light.direction[2], float(light.type)};
+                    r[3]    = {
+                      std::cos(light.innerConeAngle),
+                      std::cos(light.outerConeAngle),
+                      light.castShadow ? 1.f : 0.f,
+                      light.shadowSoftness};
+                }
+        }
         params.scene  = scene;
         params.images = imageInfo;
         params.clear  = clear;

@@ -35,7 +35,7 @@ uint                                             randomBits(inout uint state)
 // well-defined across all path-length changes (maximum 8 bounces).
 static uint       mltMode = 0, mltDimension = 0, mltSeed = 0, mltAddress = 0;
 static bool       mltLarge       = false;
-static const uint MLT_DIMENSIONS = 160, MLT_MAX_CHAINS = 1024;
+static const uint MLT_DIMENSIONS = 192, MLT_MAX_CHAINS = 1024;
 uint              mltHash(uint value)
 {
     value ^= value >> 16;
@@ -202,7 +202,7 @@ struct Hit
 // reserving a traversal object for every inlined eye/light/shadow call site.
 static RayQuery<RAY_FLAG_NONE> query;
 #endif
-bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit)
+bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit, bool shadowOnly = false)
 {
 #ifdef NOVA_WEB_BVH
     hit.distance  = maxDistance;
@@ -242,6 +242,8 @@ bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit)
         for (uint i = 0; i < node.metadata.x; ++i)
         {
             uint   primitive = node.first + i;
+            if (shadowOnly && vertices[primitive * 3].uv.z < 0)
+                continue;
             float3 a         = vertices[primitive * 3].position.xyz;
             float3 e1        = vertices[primitive * 3 + 1].position.xyz - a;
             float3 e2        = vertices[primitive * 3 + 2].position.xyz - a;
@@ -276,9 +278,13 @@ bool traceRay(float3 origin, float3 direction, float maxDistance, out Hit hit)
     // initializer; older DXIL validators otherwise retain a stale DXR flag.
     RayQuery<RAY_FLAG_NONE> query;
 #endif
-    query.TraceRayInline(scene, RAY_FLAG_NONE, 255, ray);
+    query.TraceRayInline(scene, shadowOnly ? RAY_FLAG_FORCE_NON_OPAQUE : RAY_FLAG_NONE, 255, ray);
     while (query.Proceed())
     {
+        if (
+          shadowOnly && query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE
+          && vertices[query.CandidatePrimitiveIndex() * 3].uv.z >= 0)
+            query.CommitNonOpaqueTriangleHit();
     }
     bool found    = query.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
     hit.distance  = found ? query.CommittedRayT() : 0;
@@ -686,6 +692,78 @@ float3 pathOrigin(PathVertex p, float3 direction)
 {
     return p.position + p.geometric * (dot(p.geometric, direction) < 0 ? -.0006 : .0006);
 }
+// Explicit analytic lights use camera-path next-event estimation in every integrator.
+// They are delta lights (not visible emitter geometry); visibility softness is a filter.
+float3 analyticLights(PathVertex surface, float3 v, inout uint state)
+{
+    uint4  info = asuint(parameters[32]);
+    float3 n, geometric;
+    pathFrame(surface, v, n, geometric);
+    float3 sum = 0;
+    // Share one disk sample across lights: correlated but unbiased visibility,
+    // bounded to two additional primary dimensions per scattering vertex.
+    float radiusSample = 0, angleSample = 0;
+    if (info.z != 0 && info.y > 0)
+    {
+        radiusSample = sqrt(random(state));
+        angleSample  = random(state) * 2 * PI;
+    }
+    [loop] for (uint i = 0; i < info.y; ++i)
+    {
+        uint   at    = 33 + 4 * i;
+        float4 color = parameters[at], positionRange = parameters[at + 1], directionType = parameters[at + 2],
+               options = parameters[at + 3];
+        if (color.w <= 0)
+            continue;
+        uint   type        = uint(directionType.w);
+        float3 l           = directionType.xyz;
+        float  attenuation = 1, maxDistance = 1e30;
+        if (type != 0)
+        {
+            float3 delta           = positionRange.xyz - surface.position;
+            float  distanceSquared = dot(delta, delta), distance = sqrt(distanceSquared);
+            l           = distance > 1e-6 ? delta / distance : float3(0, 1, 0);
+            attenuation = 1 / max(distanceSquared, .01);
+            if (positionRange.w > 0)
+                attenuation *= pow(saturate(1 - pow(distance / positionRange.w, 4)), 2);
+            if (type == 2)
+            {
+                float cone = dot(-l, directionType.xyz);
+                attenuation *=
+                  options.x > options.y + 1e-6 ? smoothstep(options.y, options.x, cone) : step(options.y, cone);
+            }
+            maxDistance = distance;
+        }
+        if (attenuation <= 0 || dot(n, l) <= 0 || dot(geometric, l) <= 0)
+            continue;
+        bool visible = true;
+        if (info.z != 0 && options.z > .5)
+        {
+            float3 origin = surface.position + geometric * asfloat(info.w), ray = l;
+            float3 axis = abs(l.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), t = normalize(cross(l, axis)),
+                   b      = cross(l, t);
+            float3 offset = 0;
+            if (options.w > 0)
+            {
+                float r = radiusSample * options.w * .006;
+                offset  = r * (cos(angleSample) * t + sin(angleSample) * b);
+            }
+            if (type == 0)
+                ray = normalize(l + offset);
+            else
+            {
+                float3 delta = positionRange.xyz + offset - origin;
+                maxDistance  = length(delta);
+                ray          = maxDistance > 1e-6 ? delta / maxDistance : l;
+            }
+            Hit blocker;
+            visible = maxDistance <= 1e-5 || !traceRay(origin, ray, max(0, maxDistance - 1e-5), blocker, true);
+        }
+        if (visible)
+            sum += pathF(surface, v, l) * abs(dot(surface.geometric, l)) * color.rgb * color.w * attenuation;
+    }
+    return sum;
+}
 float3 path(float3 origin, float3 direction, inout uint state, uint bounces, bool emitters = true, uint minScatters = 0)
 {
     float3 sum = 0, weight = 1;
@@ -713,16 +791,22 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
         sum +=
           (emitters && depth >= minScatters ? 1 : 0) * weight * surface.emission
           * (useMIS && depth > 0 ? misWeight(previousPdf, emitterPdf(hit.primitive, origin, surface.position)) : 1);
-        if (depth == bounces || (!emitters && parameters[13].z <= 0 && parameters[9].w <= 0))
+        if (
+          depth == bounces
+          || (!emitters && parameters[13].z <= 0 && parameters[9].w <= 0 && asuint(parameters[32]).x == 0))
             break;
         float3 v = -direction, n, geometric;
         pathFrame(surface, v, n, geometric);
         float  metal = surface.metal, roughness = surface.roughness;
         float3 position = origin + direction * hit.distance, light = parameters[8].xyz;
-        if (depth + 1 >= minScatters && parameters[9].w > 0 && dot(n, light) > 0 && dot(geometric, light) > 0)
+        if (depth + 1 >= minScatters && asuint(parameters[32]).x != 0)
+            sum += weight * analyticLights(surface, v, state);
+        if (
+          asuint(parameters[32]).x == 0 && depth + 1 >= minScatters && parameters[9].w > 0 && dot(n, light) > 0
+          && dot(geometric, light) > 0)
         {
             Hit shadow;
-            if (!trace(position + geometric * .001, light, shadow))
+            if (!traceRay(position + geometric * .001, light, 10000, shadow, true))
                 sum += weight * pathF(surface, v, light) * abs(dot(surface.geometric, light)) * parameters[9].rgb
                        * parameters[9].w;
         }
@@ -734,7 +818,7 @@ float3 path(float3 origin, float3 direction, inout uint state, uint bounces, boo
             if (sampleLight(position, state, l, radiance, pdf, maxDistance, emitters))
             {
                 Hit shadow;
-                if (!traceRay(pathOrigin(surface, l), l, maxDistance, shadow))
+                if (!traceRay(pathOrigin(surface, l), l, maxDistance, shadow, true))
                     sum += weight * pathF(surface, v, l) * abs(dot(surface.geometric, l)) * radiance / pdf
                            * misWeight(pdf, pathPdf(surface, v, l));
             }
@@ -925,7 +1009,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
                 continue;
             float3 start = pathOrigin(eyeVertices[e], d), end = pathOrigin(lightVertices[l], -d), segment = end - start;
             Hit    shadow;
-            if (traceRay(start, normalize(segment), length(segment) - .0006, shadow))
+            if (traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
                 continue;
             float geometry =
               abs(dot(eyeVertices[e].geometric, d)) * abs(dot(lightVertices[l].geometric, -d)) / distance2;
@@ -1099,7 +1183,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         {
             float3 start = pathOrigin(p, l), segment = pathOrigin(light, -l) - start;
             Hit    shadow;
-            if (!traceRay(start, normalize(segment), length(segment) - .0006, shadow))
+            if (!traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
                 result += beta * f * abs(dot(p.geometric, l)) * light.emission / pdf
                           * (gather ? 1 : misWeight(pdf, pathPdf(p, v, l)));
         }

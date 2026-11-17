@@ -217,6 +217,54 @@ export class SceneData {
     this.sourceSpaces = spaces
     return { model: this.model, instances, draws, shadowRecords: this.shadowRecords }
   }
+  raySource = null
+  rayCache = null
+  rayKey = ''
+  rayModel() {
+    const key = JSON.stringify(
+      this.pickInstances.map((i) => [i.assetId, i.world, i.castShadow !== false]),
+    )
+    if (this.rayCache && this.raySource === this.model && this.rayKey === key) return this.rayCache
+    let count = 0
+    for (const i of this.pickInstances) {
+      const m = this.meshes.get(i.assetId)
+      count += m.count
+    }
+    if (count * 48 > 128 * 1024 * 1024) throw Error('Ray scene geometry exceeds 128 MiB')
+    const vertices = new Float32Array(Math.max(36, count * 12))
+    let offset = 0
+    for (const i of this.pickInstances) {
+      const mesh = this.meshes.get(i.assetId),
+        w = i.world,
+        n = instanceNormal(w)
+      if (n.every((v) => v === 0)) continue
+      for (let j = 0; j < mesh.count; j++) {
+        const at = (mesh.first + j) * 12,
+          v = this.model.vertices.subarray(at, at + 12)
+        vertices.set(v, offset)
+        for (let k = 0; k < 3; k++)
+          vertices[offset + k] = w[k] * v[0] + w[4 + k] * v[1] + w[8 + k] * v[2] + w[12 + k]
+        const normal = [0, 1, 2].map((k) => n[k] * v[4] + n[4 + k] * v[5] + n[8 + k] * v[6]),
+          length = Math.hypot(...normal)
+        for (let k = 0; k < 3; k++) vertices[offset + 4 + k] = length ? normal[k] / length : 0
+        vertices[offset + 10] = i.castShadow === false ? -1 : 0
+        offset += 12
+      }
+    }
+    if (!offset) {
+      offset = 36
+      for (let i = 0; i < 3; i++) {
+        vertices[i * 12 + 3] = 1
+        vertices[i * 12 + 5] = 1
+      }
+    }
+    const packed = vertices.slice(0, offset)
+    if (!packed.every(Number.isFinite)) throw Error('Ray scene transform overflows float32')
+    this.raySource = this.model
+    this.rayKey = key
+    this.rayCache = { ...this.model, vertices: packed }
+    return this.rayCache
+  }
   getMaterials(id) {
     const m = this.meshes.get(id)
     if (!m) throw Error('Unknown scene asset')
