@@ -286,6 +286,9 @@ export class SceneData {
     return Object.assign(new SceneData(), this)
   }
   dispose() {
+    this.raySource = null
+    this.rayCache = null
+    this.rayKey = ''
     this.shadowRecords = new Float32Array(0)
     this.pickInstances = []
     for (const m of this.meshes.values()) m.data.images.forEach((i) => i.bitmap?.close())

@@ -957,7 +957,9 @@ class Renderer {
             this.#directionalLight,
             this.#environmentSettings,
             this.#pathSettings,
-            this.#aoSettings,
+            this.#renderMode === 'ray-tracing'
+              ? { ...this.#aoSettings, enabled: false }
+              : this.#aoSettings,
             this.#lights,
             this.#shadowSettings,
           )

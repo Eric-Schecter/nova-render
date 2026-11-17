@@ -81,6 +81,19 @@ window.validation = (async () => {
   if (renderer.getSceneAssetBounds('box') !== null) throw Error('Installed scene clear failed')
   await renderer.setScene(assets, instances)
   await renderer.drawFrame()
+  renderer.setContinuousRendering(false)
+  await renderer.waitIdle()
+  if (!renderer.getCapabilities().rayTracing) throw Error('Installed scene ray capability missing')
+  renderer.setRayTracing({ ...renderer.getRayTracing(), maxBounces: 1, resolutionScale: 0.25 })
+  renderer.setRenderMode('ray-tracing')
+  await renderer.drawFrame()
+  await renderer.drawFrame()
+  if (
+    renderer.getAccumulatedSamples() !== 2 ||
+    renderer.getLightingCapabilities().estimator !== 'camera-path-nee'
+  )
+    throw Error('Installed ray scene lights failed')
+  renderer.setRenderMode('raster')
   renderer.setViewCamera({
     projection: 'orthographic',
     orthographicHeight: 5,

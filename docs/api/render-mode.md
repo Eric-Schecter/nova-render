@@ -43,9 +43,9 @@ Model, lighting and environment examples support these flags. Use `--api dx12` o
 
 ## Backends and scope
 
-DX12 uses DXR 1.1 inline queries; Vulkan uses acceleration structures/ray-query extensions; Metal uses native acceleration structures/ray queries. DXC compiles HLSL to DXIL/SPIR-V, SPIRV-Cross produces Metal. Disable native tracing with `NOVA_ENABLE_PATH_TRACING=OFF`.
+DX12 uses DXR 1.1 inline queries; Vulkan prefers acceleration structures/ray-query extensions, with a compute-BVH fallback when unavailable; Metal uses native acceleration structures/ray queries. DXC compiles HLSL to DXIL/SPIR-V, SPIRV-Cross produces Metal. Disable native tracing with `NOVA_ENABLE_PATH_TRACING=OFF`.
 
-Supports static models, limited rough glass, base-color/normal/metallic-roughness/emission maps, directional shadows, HDR environments, bounces and progressive accumulation. Core factors/atlases must be shared between supported material variants. Path radiance is clamped to 64 to limit fireflies. No absorption, dispersion, nested media or ray-traced skinning.
+Supports static models and instance scenes, directional/point/spot light collections, limited rough glass, base-color/normal/metallic-roughness/emission maps, directional shadows, HDR environments, bounces and progressive accumulation. Core factors/atlases must be shared between supported material variants. Path radiance is clamped to 64 to limit fireflies. No absorption, dispersion, nested media or ray-traced skinning.
 
 Native tracing currently reads results back to CPU and uploads for display, adding transfer/synchronization overhead. Browser compute/display stays on GPU.
 

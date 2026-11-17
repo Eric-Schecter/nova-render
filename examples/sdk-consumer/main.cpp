@@ -112,6 +112,21 @@ int main(int argc, char** argv)
             instances[1].world[12] = 1;
             window.SetScene(assets, instances);
             window.DrawFrame();
+            if (window.GetCapabilities().rayTracing)
+            {
+                render::RayTracingSettings tracing;
+                tracing.maxBounces      = 1;
+                tracing.resolutionScale = .25f;
+                window.SetRayTracing(tracing);
+                window.SetRenderMode(render::RenderMode::RayTracing);
+                window.DrawFrame();
+                window.DrawFrame();
+                if (
+                  window.GetAccumulatedSamples() != 2
+                  || window.GetLightingCapabilities().estimator != "camera-path-nee")
+                    throw std::runtime_error("Installed scene ray lights failed");
+                window.SetRenderMode(render::RenderMode::Raster);
+            }
             render::RayTracingView rayView(renderer);
             const auto             capabilities = rayView.GetCapabilities();
             if (capabilities.pathTracing)

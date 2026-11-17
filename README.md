@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.5.0** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support Metal, Vulkan, DX12 and WebGPU raster; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
+Release **0.6.0** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
 
 ## Features
 
@@ -28,7 +28,8 @@ Release **0.5.0** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) a
 - [x] Static scene instances with shared assets and original model space
 - [x] GPU skeletal animation
 - [x] Directional lighting, skyboxes and HDR image-based lighting
-- [x] Point lights, spot lights and up to 16 simultaneous lights (Metal / Vulkan / DX12 / WebGPU raster; DX12 runtime pending)
+- [x] Directional, point and spot light collections in raster and ray tracing; static instance scenes
+- [x] Vulkan compute BVH fallback when hardware ray queries are unavailable
 - [x] Scene BVH shadows for directional, point and spot lights (static opaque instances)
 - [x] Shadow map laboratory — hard shadows, PCF, PCSS
 - [x] Ambient occlusion — SSAO, HBAO, MSAO, RTAO
@@ -50,7 +51,7 @@ Some effects currently use dedicated example scenes rather than arbitrary models
 
 ## Native: use and build
 
-Download the [0.5.0 SDK](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.5.0), verify it against the release `SHA256SUMS`, extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
+Download the [0.6.0 SDK](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.6.0), verify it against the release `SHA256SUMS`, extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
 
 ```cmake
 find_package(Nova CONFIG REQUIRED)
@@ -82,7 +83,7 @@ See [build requirements](docs/guide/quick-start.md) and [SDK integration](docs/g
 Install the precompiled package and copy its runtime assets into your application's public directory:
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.5.0/nova-render-web-0.5.0.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.6.0/nova-render-web-0.6.0.tgz
 npx nova-web-assets --out public/nova
 ```
 
