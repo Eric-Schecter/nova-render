@@ -28,7 +28,9 @@ int main(int argc, char** argv)
         camera.pitch    = 25;
         camera.distance = 5.5f;
         window.SetCamera(camera);
-        window.SetHybrid({});
+        render::HybridSettings hybrid;
+        hybrid.ambientOcclusion = true;
+        window.SetHybrid(hybrid);
         window.SetRenderMode(render::RenderMode::Hybrid);
         window.EnableOrbitControls();
         example::PerformancePanel    performance;

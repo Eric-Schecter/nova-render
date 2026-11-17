@@ -45,9 +45,13 @@ namespace render::detail
         void SetHybrid(const HybridSettings& value)
         {
             if (
-              value.shadowSamples < 1 || value.shadowSamples > 16 || unsigned(value.view) > 1 || value.shadowLight > 15)
+              value.shadowSamples < 1 || value.shadowSamples > 16 || unsigned(value.view) > 2 || value.shadowLight > 15
+              || !std::isfinite(value.aoRadius) || value.aoRadius <= 0 || value.aoRadius > 10000
+              || !std::isfinite(value.aoStrength) || value.aoStrength < 0 || value.aoStrength > 4 || value.aoSamples < 1
+              || value.aoSamples > 32)
                 throw std::invalid_argument("Invalid Hybrid settings");
             hybrid = value;
+            RebuildRasterInstances();
             rasterAA.Reset();
         }
         HybridSettings GetHybrid() const { return hybrid; }
@@ -190,6 +194,10 @@ namespace render::detail
             globals.emissive[2]  = shadowSettings.softness;
             globals.emissive[3]  = float(shadowSettings.samples);
             globals.uv[0]        = shadowSettings.bias;
+            globals.world[0]     = hybrid.ambientOcclusion ? hybrid.aoRadius : 0;
+            globals.world[1]     = float(hybrid.aoSamples);
+            globals.world[2]     = hybrid.aoStrength;
+            globals.world[3]     = float(hybrid.view);
             rasterInstances.push_back(globals);
             if (scene.active)
                 rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
@@ -645,7 +653,7 @@ namespace render::detail
                   hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : 0.f;
                 const bool debug                  = modelRaster.view != GBufferView::Final;
                 rasterAA.current.irradiance[0][3] =
-                  !debug && !(mode == RenderMode::Hybrid && hybrid.view == HybridView::Shadows) && postSettings.enabled
+                  !debug && !(mode == RenderMode::Hybrid && hybrid.view != HybridView::Final) && postSettings.enabled
                     ? 1.f
                     : 0.f;
                 rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
@@ -660,7 +668,7 @@ namespace render::detail
                   modelRaster,
                   HasBlend(model.get()),
                   mode == RenderMode::Hybrid,
-                  hybrid.view == HybridView::Shadows);
+                  hybrid.view != HybridView::Final);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }
@@ -730,8 +738,14 @@ namespace render::detail
               GetHybridCapabilities());
             if (
               previousHybrid.shadows != hybrid.shadows || previousHybrid.shadowSamples != hybrid.shadowSamples
-              || previousHybrid.view != hybrid.view || previousHybrid.shadowLight != hybrid.shadowLight)
+              || previousHybrid.view != hybrid.view || previousHybrid.shadowLight != hybrid.shadowLight
+              || previousHybrid.ambientOcclusion != hybrid.ambientOcclusion
+              || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
+              || previousHybrid.aoSamples != hybrid.aoSamples)
+            {
+                RebuildRasterInstances();
                 rasterAA.Reset();
+            }
             if (
               oldCamera.yaw != camera.yaw || oldCamera.pitch != camera.pitch || oldCamera.distance != camera.distance
               || oldCamera.target != camera.target || oldCamera.exposure != camera.exposure)

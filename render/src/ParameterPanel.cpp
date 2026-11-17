@@ -261,8 +261,14 @@ namespace render::detail
                     int samples = int(hybrid.shadowSamples);
                     if (ImGui::SliderInt("Shadow rays/pixel/light", &samples, 1, 16))
                         hybrid.shadowSamples = uint32_t(samples);
+                    ImGui::Checkbox("Hybrid ambient occlusion", &hybrid.ambientOcclusion);
+                    ImGui::SliderFloat("AO radius", &hybrid.aoRadius, .01f, 10.f);
+                    ImGui::SliderFloat("AO strength", &hybrid.aoStrength, 0, 4);
+                    int aoSamples = int(hybrid.aoSamples);
+                    if (ImGui::SliderInt("AO rays/pixel", &aoSamples, 1, 32))
+                        hybrid.aoSamples = uint32_t(aoSamples);
                     int view = int(hybrid.view);
-                    if (ImGui::Combo("Hybrid view", &view, "Final\0Shadows\0"))
+                    if (ImGui::Combo("Hybrid view", &view, "Final\0Shadows\0Ambient occlusion\0"))
                         hybrid.view = HybridView(view);
                     if (hybrid.view == HybridView::Shadows)
                     {

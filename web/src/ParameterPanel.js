@@ -360,14 +360,38 @@ export function attachParameterPanel(
           1,
           (v) => adapter.setHybrid({ shadowSamples: v }),
         )
+        const aoRow = document.createElement('label'),
+          aoToggle = document.createElement('input')
+        aoRow.textContent = 'Hybrid ambient occlusion'
+        aoToggle.type = 'checkbox'
+        aoToggle.setAttribute('aria-label', 'Hybrid ambient occlusion')
+        aoToggle.checked = h.ambientOcclusion
+        aoToggle.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ ambientOcclusion: aoToggle.checked })),
+          { signal: fieldEvents.signal },
+        )
+        aoRow.prepend(aoToggle)
+        renderer.append(aoRow)
+        fields.set('hybrid_ambientOcclusion', { input: aoToggle })
+        slider(renderer, 'hybrid_aoRadius', 'AO radius', 'AO radius', 0.01, 10, 0.01, (v) =>
+          adapter.setHybrid({ aoRadius: v }),
+        )
+        slider(renderer, 'hybrid_aoStrength', 'AO strength', 'AO strength', 0, 4, 0.05, (v) =>
+          adapter.setHybrid({ aoStrength: v }),
+        )
+        slider(renderer, 'hybrid_aoSamples', 'AO rays/pixel', 'AO rays per pixel', 1, 32, 1, (v) =>
+          adapter.setHybrid({ aoSamples: v }),
+        )
         const viewRow = document.createElement('label'),
           view = document.createElement('select')
         viewRow.textContent = 'Hybrid view'
         view.setAttribute('aria-label', 'Hybrid view')
-        for (const value of ['final', 'shadows']) {
+        for (const value of ['final', 'shadows', 'ambient-occlusion']) {
           const option = document.createElement('option')
           option.value = value
-          option.textContent = value === 'final' ? 'Final' : 'Shadows'
+          option.textContent =
+            value === 'final' ? 'Final' : value === 'shadows' ? 'Shadows' : 'Ambient occlusion'
           view.append(option)
         }
         view.value = h.view
@@ -701,7 +725,7 @@ export function attachParameterPanel(
       if (key.startsWith('hybrid_')) {
         const name = key.slice(7),
           value = adapter.getHybrid()[name]
-        if (name === 'shadows') field.input.checked = value
+        if (typeof value === 'boolean') field.input.checked = value
         else field.input.value = value
         if (field.output) field.output.textContent = String(value)
         if (name === 'shadowLight')

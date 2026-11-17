@@ -286,7 +286,7 @@ export async function createAntiAliasingView({
   function plan() {
     const debug =
       (external?.raster?.view && external.raster.view !== 'final') ||
-      external?.hybrid?.view === 'shadows'
+      (external?.hybrid && external.hybrid.view !== 'final')
     const effectiveMethod = debug ? 'off' : settings.method
     const taa = effectiveMethod === 'taa',
       jitter = taa

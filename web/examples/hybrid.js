@@ -42,7 +42,7 @@ export async function showHybrid(
     renderer.setLighting('pbr')
     renderer.setDirectionalLight({ direction: [-1, 2, 1], color: [1, 1, 1], intensity: 4 })
     renderer.setCamera({ yaw: 30, pitch: 25, distance: 5.5 })
-    renderer.setHybrid({ shadows: true, shadowSamples: 4 })
+    renderer.setHybrid({ shadows: true, shadowSamples: 4, ambientOcclusion: true })
     renderer.setRenderMode('hybrid')
     await renderer.drawFrame()
     renderer.enableOrbitControls({ onChange, onError })

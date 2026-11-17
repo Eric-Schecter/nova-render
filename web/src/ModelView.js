@@ -273,6 +273,15 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     let encodedLights = new Float32Array(0)
     function writeGlobals() {
       const record = new Float32Array(48)
+      record.set(
+        [
+          hybrid?.ambientOcclusion ? hybrid.aoRadius : 0,
+          hybrid?.aoSamples || 4,
+          hybrid?.aoStrength ?? 1,
+          ['final', 'shadows', 'ambient-occlusion'].indexOf(hybrid?.view),
+        ],
+        0,
+      )
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
       record.set(
@@ -331,6 +340,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       data,
       setHybrid(settings) {
         hybrid = settings
+        writeGlobals()
         if (sceneDraws !== null) return
         if (settings && !singleHybrid) {
           singleBVH ||= new PickMesh(data)
@@ -424,7 +434,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         currentScene[79] = hybrid?.shadows ? 1 : 0
         currentScene[83] = hybrid?.view === 'shadows' ? hybrid.shadowLight + 1 : 0
         currentScene[63] =
-          (rasterSettings?.view && rasterSettings.view !== 'final') || hybrid?.view === 'shadows'
+          (rasterSettings?.view && rasterSettings.view !== 'final') ||
+          (hybrid && hybrid.view !== 'final')
             ? 0
             : postSettings?.enabled
               ? 1

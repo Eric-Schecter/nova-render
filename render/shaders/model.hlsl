@@ -712,6 +712,29 @@ float3                                   diagnosticLinear(float3 c)
       c.y <= .04045 ? c.y / 12.92 : pow((c.y + .055) / 1.055, 2.4),
       c.z <= .04045 ? c.z / 12.92 : pow((c.z + .055) / 1.055, 2.4));
 }
+// Cosine-weighted finite hemisphere visibility. AO only attenuates indirect lighting.
+float hybridAO(float3 position, float3 normal)
+{
+    if (irradiance[3].w < .5)
+        return 1;
+    uint  header = uint(irradiance[3].w) - 1;
+    float radius = instances[header].world._m00;
+    if (radius <= 0)
+        return 1;
+    uint   samples   = uint(instances[header].world._m10);
+    float  strength  = instances[header].world._m20;
+    float3 tangent   = normalize(cross(abs(normal.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), normal));
+    float3 bitangent = cross(normal, tangent);
+    float  visible   = 0;
+    float3 origin    = position + normal * max(1e-4, instances[header].uv.x);
+    [loop] for (uint i = 0; i < samples; ++i)
+    {
+        float  r = sqrt((i + .5) / samples), phi = i * 2.39996323;
+        float3 direction = tangent * (r * cos(phi)) + bitangent * (r * sin(phi)) + normal * sqrt(1 - r * r);
+        visible += sceneOccluded(header, origin, direction, radius) ? 0 : 1;
+    }
+    return pow(saturate(visible / max(1, samples)), strength);
+}
 float4 DeferredPSMain(SkyOut input)
   : SV_Target
 {
@@ -753,6 +776,13 @@ float4 DeferredPSMain(SkyOut input)
     s.ao              = pos.z;
     s.emissive        = emission.rgb;
     s.metallic        = emission.w;
+    if (s.useVisibility)
+    {
+        float ao = hybridAO(s.position, s.geometricNormal);
+        if (irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m30 > 1.5)
+            return float4(diagnosticLinear(ao.xxx), 1);
+        s.ao *= ao;
+    }
     if (debug == 0)
         return shadeSurface(s);
     float3 value = 0;

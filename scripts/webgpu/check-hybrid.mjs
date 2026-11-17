@@ -166,9 +166,19 @@ try {
   })
   const raster = await capture('raster-shadow')
   if (diff(raster, shadow) > 0.2) throw Error('Hybrid/Raster lighting parity')
+  await page.evaluate(() => {
+    r.setRenderMode('hybrid')
+    r.setHybrid({ ambientOcclusion: true, aoRadius: 2, aoSamples: 16 })
+  })
+  const ao = await capture('ao-final')
+  if (diff(ao, shadow) < 0.05) throw Error('Missing Hybrid AO')
+  await page.evaluate(() => r.setHybrid({ view: 'ambient-occlusion' }))
+  await capture('ao-visibility')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
+      'ao-final',
+      'ao-visibility',
       'single-off',
       'single-shadow',
       'scene-off',

@@ -27,3 +27,7 @@ The 72 captures across three backends establish framing and direct-light/shadow 
 The 103-test native suite passed on Metal and Vulkan/MoltenVK (102 initial passes; the comparison test was updated to use an undefined enum value after Hybrid became mode 2, rebuilt and passed on rerun). WebGPU alpha-material/OIT and multi-instance light-shadow regressions passed. The six affected model/Hybrid entries also compile to DXIL; this is compilation coverage only, not Windows execution.
 
 The native Hybrid example rendered three frames on Metal and Vulkan with zero validation errors. The built VitePress example was exercised in Chrome WebGPU: Raster/Hybrid panel rebuilding, shadow master, visibility view and AA restrictions passed. Desktop and narrow-screen screenshots are retained under `build/validation/hybrid-shadow`; the local preview serves the current build.
+
+## Hybrid ambient occlusion
+
+Shared HLSL traces cosine-weighted, finite-distance hemisphere rays from the reconstructed primary surface. AO multiplies ambient lighting only; direct-light visibility remains independent. Both APIs and parameter panels expose the master, radius, strength, sample count and visibility diagnostic. Metal, Vulkan and WebGPU pass contact-AO on/off and diagnostic captures together with the earlier multi-light shadow checks; native/Web maximum MAE remains below 0.015/255.

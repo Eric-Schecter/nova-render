@@ -150,7 +150,7 @@ for (const [name, vertexEntry, fragmentEntry] of [
     model: true,
     vertexEntry,
     fragmentEntry,
-    optimizeModel: name === 'model-hybrid-shadow',
+    optimizeModel: ['model-hybrid-shadow', 'model-deferred'].includes(name),
   })
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
 }

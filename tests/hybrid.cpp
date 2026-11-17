@@ -85,7 +85,7 @@ int main(int argc, char** argv)
         auto caps = backend->GetHybridCapabilities();
         if (
           !caps.supported || !caps.shadows || !caps.softwareRayTracing || caps.hardwareRayTracing
-          || caps.ambientOcclusion || caps.reflections || caps.globalIllumination)
+          || !caps.ambientOcclusion || caps.reflections || caps.globalIllumination)
             throw std::runtime_error("Incorrect Hybrid capabilities");
         auto capture = [&](const std::string& name) {
             glfwPollEvents();
@@ -202,6 +202,17 @@ int main(int argc, char** argv)
         auto raster = draw("raster-shadow");
         if (Difference(sceneShadow, raster) > .2)
             throw std::runtime_error("Hybrid/Raster light composition mismatch");
+        backend->SetRenderMode(RenderMode::Hybrid);
+        settings.ambientOcclusion = true;
+        settings.aoRadius         = 2;
+        settings.aoSamples        = 16;
+        backend->SetHybrid(settings);
+        auto ao = capture("ao-final");
+        if (Difference(sceneShadow, ao) < .05)
+            throw std::runtime_error("Missing Hybrid AO");
+        settings.view = HybridView::AmbientOcclusion;
+        backend->SetHybrid(settings);
+        capture("ao-visibility");
         backend.reset();
         glfwDestroyWindow(window);
         glfwTerminate();
