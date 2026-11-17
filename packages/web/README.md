@@ -3,7 +3,7 @@
 Install the precompiled release archive, then copy its runtime assets:
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.7.1/nova-render-web-0.7.1.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.8.0/nova-render-web-0.8.0.tgz
 npx nova-web-assets --out public/nova
 ```
 
@@ -61,4 +61,4 @@ Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits c
 
 Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `SetMaterial(slot, material)` / `await setMaterial(slot, material)`. Pass the scene asset ID as the final argument to edit all its instances. Texture maps accept RGBA8 images; `LoadMaterialImage(path)` / `await loadMaterialImage(url)` decodes an image. See the materials API documentation for ranges and atlas limits.
 
-Current source / paired local SDK: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations; published 0.7.1 packages predate these fields.
+SDK 0.8.0: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations.

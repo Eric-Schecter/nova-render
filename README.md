@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.7.1** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
+Release **0.8.0** adds alpha cutout, weighted OIT transparency, per-material sidedness and formal model Deferred/G-buffer APIs. It includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
 
 ## Features
 
@@ -24,7 +24,7 @@ Release **0.7.1** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) a
 - [x] Rasterization and ray-tracing modes
 - [x] Shared HLSL → DXIL / SPIR-V / Metal / WGSL
 - [x] glTF / GLB model loading and metallic-roughness PBR
-- [x] Multiple material slots with runtime PBR/texture edits, alpha cutout, weighted OIT transparency and double-sided rendering (current source)
+- [x] Multiple material slots with runtime PBR/texture edits, alpha cutout, weighted OIT transparency and double-sided rendering
 - [x] Perspective/orthographic cameras, full orientation and viewport rectangles
 - [x] Scene ray picking with instance filters and geometric hit normals
 - [x] Static scene instances with shared assets and original model space
@@ -32,7 +32,7 @@ Release **0.7.1** includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) a
 - [x] Directional lighting, skyboxes and HDR image-based lighting
 - [x] Directional, point and spot light collections in raster and ray tracing; static instance scenes
 - [x] Vulkan compute BVH fallback when hardware ray queries are unavailable
-- [x] Scene BVH shadows for directional, point and spot lights (static instances; alpha-tested cutouts in current source)
+- [x] Scene BVH shadows for directional, point and spot lights (static instances; alpha-tested cutouts)
 - [x] Shadow map laboratory — hard shadows, PCF, PCSS
 - [x] Ambient occlusion — SSAO, HBAO, MSAO, RTAO
 - [x] Anti-aliasing — FXAA, SMAA 1x, MSAA 4x, SSAA 2×2, TAA
@@ -53,7 +53,7 @@ Some effects currently use dedicated example scenes rather than arbitrary models
 
 ## Native: use and build
 
-Download the [0.7.1 SDK](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.7.1), verify it against the release `SHA256SUMS`, extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
+Download the [0.8.0 SDK](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.8.0), verify it against the release `SHA256SUMS`, extract it, and set `CMAKE_PREFIX_PATH` to its directory. Link it from your CMake application:
 
 ```cmake
 find_package(Nova CONFIG REQUIRED)
@@ -85,7 +85,7 @@ See [build requirements](docs/guide/quick-start.md) and [SDK integration](docs/g
 Install the precompiled package and copy its runtime assets into your application's public directory:
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.7.1/nova-render-web-0.7.1.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.8.0/nova-render-web-0.8.0.tgz
 npx nova-web-assets --out public/nova
 ```
 

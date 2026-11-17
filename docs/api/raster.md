@@ -1,6 +1,6 @@
 # Model raster pipelines
 
-Available in the current source checkout; published 0.7.1 packages predate this API. `Renderer` and `Window` expose the same C++ settings; the browser renderer uses matching lower-camel-case methods.
+Available in SDK 0.8.0. `Renderer` and `Window` expose the same C++ settings; the browser renderer uses matching lower-camel-case methods.
 
 ```cpp
 render::Window window;
