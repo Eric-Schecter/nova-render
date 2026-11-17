@@ -1,14 +1,8 @@
 #pragma once
+#include "RasterPipeline.hpp"
 #include "Renderer.hpp"
 namespace render
 {
-    enum class RasterPipeline
-    {
-        Forward,
-        Deferred,
-        ForwardPlus,
-        ClusteredForward
-    };
     enum class PipelineDebug
     {
         Final,

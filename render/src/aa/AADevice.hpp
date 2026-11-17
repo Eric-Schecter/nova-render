@@ -60,7 +60,11 @@ namespace render::detail
         AAPipelineDepth    = 82,
         AAPipelineTiles    = 83,
         AAPipelineLists    = 84,
-        AAResourceCount    = 85
+        AAModelBase        = 85,
+        AAModelNormal,
+        AAModelPosition,
+        AAModelEmission,
+        AAResourceCount = 89
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -79,6 +83,7 @@ namespace render::detail
         void*                                            device      = nullptr;
         uint32_t                                         queueFamily = 0;
         std::function<void(const AAPass&, void*, void*)> draw;
+        std::function<void(void*, const std::array<void*, 4>&)> bindGBuffer;
     };
     struct AASpec
     {
@@ -87,6 +92,8 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id >= AAModelBase)
+            return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};
         if (id == AAPipelineLists)
             return {17, 16 * 9 * 16, 1};
         if (id == AAPipelineTiles)
@@ -148,7 +155,7 @@ namespace render::detail
             used[p.target] = true;
             for (int source : p.sources)
                 used[source] = true;
-            if (p.program == 17 || p.program == 22)
+            if (p.program == 17 || p.program == 22 || p.program == -4)
             {
                 for (int i = 1; i < 4; i++)
                     used[p.target + i] = true;

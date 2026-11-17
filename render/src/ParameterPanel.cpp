@@ -116,7 +116,8 @@ namespace render::detail
       uint32_t                          samples,
       const std::vector<AnimationClip>& clips,
       AnimationState&                   animation,
-      AntiAliasingSettings&             aa)
+      AntiAliasingSettings&             aa,
+      RasterSettings&                   raster)
     {
         Activate();
         ImGui_ImplGlfw_NewFrame();
@@ -147,9 +148,52 @@ namespace render::detail
         if (open)
         {
             ImGui::BeginDisabled(mode != RenderMode::Raster);
-            int method = int(aa.method);
-            if (ImGui::Combo("Anti-aliasing", &method, "Off\0FXAA\0SMAA 1x\0MSAA 4x\0SSAA 2x2\0TAA\0"))
-                aa.method = AAMethod(method);
+            const char* aaNames[] = {"Off", "FXAA", "SMAA 1x", "MSAA 4x", "SSAA 2x2", "TAA"};
+            if (ImGui::BeginCombo("Anti-aliasing", aaNames[unsigned(aa.method)]))
+            {
+                for (int i = 0; i < 6; i++)
+                {
+                    ImGui::BeginDisabled(i == 3 && raster.pipeline == RasterPipeline::Deferred);
+                    if (ImGui::Selectable(aaNames[i], unsigned(aa.method) == unsigned(i)))
+                        aa.method = AAMethod(i);
+                    ImGui::EndDisabled();
+                }
+                ImGui::EndCombo();
+            }
+            if (model)
+            {
+                const char* pipelines[] = {"Forward", "Deferred"};
+                if (ImGui::BeginCombo("Raster pipeline", pipelines[unsigned(raster.pipeline)]))
+                {
+                    for (int i = 0; i < 2; i++)
+                    {
+                        ImGui::BeginDisabled(i == 1 && aa.method == AAMethod::MSAA);
+                        if (ImGui::Selectable(pipelines[i], unsigned(raster.pipeline) == unsigned(i)))
+                        {
+                            raster.pipeline = RasterPipeline(i);
+                            raster.view     = GBufferView::Final;
+                        }
+                        ImGui::EndDisabled();
+                    }
+                    ImGui::EndCombo();
+                }
+                if (raster.pipeline == RasterPipeline::Deferred)
+                {
+                    int view = int(raster.view);
+                    if (ImGui::Combo(
+                          "G-buffer view",
+                          &view,
+                          "Final lighting\0Base color\0World normal\0Geometric normal\0Linear "
+                          "depth\0Roughness\0Metallic\0Occlusion\0Emissive\0World position\0"))
+                        raster.view = GBufferView(view);
+                    if (raster.view != GBufferView::Final)
+                    {
+                        ImGui::TextWrapped("Diagnostic: AA and post-processing bypassed");
+                        ImGui::SliderFloat("Debug range", &raster.debugRange, .1f, 200);
+                    }
+                    ImGui::TextDisabled("Deferred MSAA is not supported");
+                }
+            }
             ImGui::EndDisabled();
             auto chooseAsset = [](
                                  const char*                           label,

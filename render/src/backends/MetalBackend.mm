@@ -287,7 +287,8 @@ namespace render::detail
         id<MTLBuffer>                          skinInputs, jointPalette;
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
-        id<MTLRenderPipelineState>             aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion;
+        id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
+          aaDeferred;
         id<MTLBuffer>                          aaPreviousPalette;
         id<MTLRenderPipelineState>             AAPipeline(const char* file, uint32_t samples)
         {
@@ -305,6 +306,9 @@ namespace render::detail
             desc.vertexFunction                  = [library newFunctionWithName:@"vertexMain"];
             desc.fragmentFunction                = [library newFunctionWithName:@"fragmentMain"];
             desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
+            if (std::string(file) == "model-gbuffer.metallib")
+                for (int i = 1; i < 4; i++)
+                    desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
             desc.depthAttachmentPixelFormat      = MTLPixelFormatDepth32Float;
             desc.sampleCount                     = samples;
             auto pipeline                        = [device newRenderPipelineStateWithDescriptor:desc error:&error];
@@ -316,6 +320,11 @@ namespace render::detail
         {
             AAExternalScene external;
             external.device = (__bridge void*)device;
+            external.bindGBuffer = [](void* encoder, const std::array<void*, 4>& views) {
+                auto e = (__bridge id<MTLRenderCommandEncoder>)encoder;
+                for (int i = 0; i < 4; i++)
+                    [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:17 + i];
+            };
             external.draw   = [this](const AAPass& pass, void* encoder, void*) {
                 id<MTLRenderCommandEncoder> e      = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 const int                   sample = pass.multisampled ? 1 : 0;
@@ -350,8 +359,18 @@ namespace render::detail
                 [e setFragmentTexture:environmentTexture atIndex:8];
                 [e setFragmentTexture:backgroundTexture atIndex:9];
                 [e setFragmentSamplerState:modelSampler atIndex:7];
+                if (pass.program == -5)
+                {
+                    if (!aaDeferred)
+                        aaDeferred = AAPipeline("model-deferred.metallib", 1);
+                    [e setRenderPipelineState:aaDeferred];
+                    [e setDepthStencilState:skyDepthState];
+                    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+                    return;
+                }
+                const bool gbuffer = pass.program == -4;
                 const bool motion = pass.program == -2;
-                if (environment && environmentSettings.showBackground)
+                if (!gbuffer && environment && environmentSettings.showBackground)
                 {
                     if (motion)
                     {
@@ -370,7 +389,13 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    if (motion)
+                    if (gbuffer)
+                    {
+                        if (!aaGBuffer)
+                            aaGBuffer = AAPipeline("model-gbuffer.metallib", 1);
+                        [e setRenderPipelineState:aaGBuffer];
+                    }
+                    else if (motion)
                     {
                         if (!aaMotion)
                             aaMotion = AAPipeline("model-motion.metallib", 1);

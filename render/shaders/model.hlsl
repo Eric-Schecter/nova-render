@@ -385,8 +385,12 @@ float4 SkyPSMain(SkyOut input)
     float3 color     = backgroundTexture.Sample(textureSampler, direction).rgb * skyParams.x;
     return float4(displayRadiance(color), 1);
 }
-float4 PSMain(VertexOut input)
-  : SV_Target
+struct SurfaceData
+{
+    float3 position, normal, geometricNormal, base, emissive;
+    float  metallic, roughness, ao;
+};
+SurfaceData sampleSurface(VertexOut input)
 {
     float2 uv         = input.uv;
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
@@ -399,14 +403,6 @@ float4 PSMain(VertexOut input)
         emissionFactor.rgb    = instance.emissive.rgb;
     }
     float3 base = baseTexture.Sample(textureSampler, uv).rgb * baseFactor.rgb;
-    if (emissiveFactor.w < 0.5)
-    {
-        // Base color only: no lighting, AO, emissive, exposure or tone mapping.
-#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
-        base = encodeDisplayRGB(base);
-#endif
-        return float4(applyFog(base, input.worldPosition), 1);
-    }
     float3 n   = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
     if (input.generatedNormal > .5)
@@ -425,10 +421,32 @@ float4 PSMain(VertexOut input)
     float3 sampled = normalTexture.Sample(textureSampler, uv).xyz * 2 - 1;
     sampled.xy *= matFactor.z;
     n               = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
-    float3 v        = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - input.worldPosition);
     float4 mr       = materialTexture.Sample(textureSampler, uv);
     float  metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
     float  ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
+    SurfaceData result;
+    result.position        = input.worldPosition;
+    result.normal          = n;
+    result.geometricNormal = normalize(input.normal);
+    result.base            = base;
+    result.metallic        = metallic;
+    result.roughness       = roughness;
+    result.ao              = ao;
+    result.emissive        = emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
+    return result;
+}
+float4 shadeSurface(SurfaceData s)
+{
+    float3 base = s.base;
+    if (emissiveFactor.w < .5)
+    {
+#if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
+        base = encodeDisplayRGB(base);
+#endif
+        return float4(applyFog(base, s.position), 1);
+    }
+    float3 n = s.normal, v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
+    float  metallic = s.metallic, roughness = s.roughness, ao = s.ao;
     bool   collection = false;
     uint   header     = 0;
     if (irradiance[3].w > .5)
@@ -448,7 +466,7 @@ float4 PSMain(VertexOut input)
             float        attenuation = 1;
             if (type != 0)
             {
-                float3 delta           = source.material.xyz - input.worldPosition;
+                float3 delta           = source.material.xyz - s.position;
                 float  distanceSquared = dot(delta, delta);
                 float  distance        = sqrt(distanceSquared);
                 l                      = distance > .000001 ? delta / distance : float3(0, 1, 0);
@@ -466,9 +484,9 @@ float4 PSMain(VertexOut input)
                 continue;
             float visibility = 1;
             if (source.uv.z > .5)
-                visibility =
-                  type == 0 ? sceneVisibility(input.worldPosition, input.normal, l, source.uv.w)
-                            : localLightVisibility(input.worldPosition, input.normal, source.material.xyz, source.uv.w);
+                visibility = type == 0
+                               ? sceneVisibility(s.position, s.geometricNormal, l, source.uv.w)
+                               : localLightVisibility(s.position, s.geometricNormal, source.material.xyz, source.uv.w);
             color += directLight(
               n, v, l, base, metallic, roughness, source.baseColor.rgb * source.baseColor.w * attenuation * visibility);
         }
@@ -483,8 +501,8 @@ float4 PSMain(VertexOut input)
           roughness,
           lightColorIntensity.rgb * lightColorIntensity.w
             * sceneVisibility(
-              input.worldPosition,
-              input.normal,
+              s.position,
+              s.geometricNormal,
               lightDirection.xyz,
               irradiance[3].w > .5 ? instances[uint(irradiance[3].w) - 1].emissive.z : 0));
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
@@ -504,8 +522,115 @@ float4 PSMain(VertexOut input)
             color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
         color += (base * (1 - metallic) * studio(n, 1) * 0.4 + studio(reflect(-v, n), roughness) * f) * ao;
     }
-    color += emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
-    return float4(applyFog(displayRadiance(color), input.worldPosition), 1);
+    color += s.emissive;
+    return float4(applyFog(displayRadiance(color), s.position), 1);
+}
+
+float4 PSMain(VertexOut input)
+  : SV_Target
+{
+    return shadeSurface(sampleSurface(input));
+}
+
+// Four 8-byte targets fit WebGPU's baseline 32-byte attachment budget.
+// Both normals use octahedral encoding; roughness > 0 marks a covered pixel.
+float2 octEncode(float3 n)
+{
+    n /= max(abs(n.x) + abs(n.y) + abs(n.z), 1e-8);
+    float2 r = n.xy;
+    if (n.z < 0)
+        r = (1 - abs(r.yx)) * float2(r.x >= 0 ? 1 : -1, r.y >= 0 ? 1 : -1);
+    return r;
+}
+float3 octDecode(float2 e)
+{
+    float3 n = float3(e, 1 - abs(e.x) - abs(e.y));
+    float  t = saturate(-n.z);
+    n.xy += float2(n.x >= 0 ? -t : t, n.y >= 0 ? -t : t);
+    return normalize(n);
+}
+struct ModelGBuffer
+{
+    float4 baseRoughness : SV_Target0;
+    float4 normals : SV_Target1;
+    float4 positionAO : SV_Target2;
+    float4 emissiveMetallic : SV_Target3;
+};
+ModelGBuffer GBufferPSMain(VertexOut input)
+{
+    SurfaceData  s = sampleSurface(input);
+    ModelGBuffer o;
+    o.baseRoughness    = float4(s.base, s.roughness);
+    o.normals          = float4(octEncode(s.normal), octEncode(s.geometricNormal));
+    o.positionAO       = float4(s.position - eyeExposure.xyz, s.ao);
+    o.emissiveMetallic = float4(s.emissive, s.metallic);
+    return o;
+}
+[[vk::binding(17, 1)]] Texture2D<float4> gBase : register(t17);
+[[vk::binding(18, 1)]] Texture2D<float4> gNormals : register(t18);
+[[vk::binding(19, 1)]] Texture2D<float4> gPosition : register(t19);
+[[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
+float3                                   diagnosticLinear(float3 c)
+{
+    c = saturate(c);
+    return float3(
+      c.x <= .04045 ? c.x / 12.92 : pow((c.x + .055) / 1.055, 2.4),
+      c.y <= .04045 ? c.y / 12.92 : pow((c.y + .055) / 1.055, 2.4),
+      c.z <= .04045 ? c.z / 12.92 : pow((c.z + .055) / 1.055, 2.4));
+}
+float4 DeferredPSMain(SkyOut input)
+  : SV_Target
+{
+    float3 backgroundDirection = environmentDirection(normalize(input.direction));
+    float3 backgroundDX = ddx(backgroundDirection), backgroundDY = ddy(backgroundDirection);
+    int3   pixel = int3(int2(input.position.xy), 0);
+    float4 base  = gBase.Load(pixel);
+    uint   debug = uint(irradiance[8].w);
+    if (base.w <= 0)
+    {
+        if (debug != 0)
+            return float4(0, 0, 0, 1);
+        if (cameraForward.w > .5 && skyParams.y > .5)
+            return float4(
+              displayRadiance(
+                backgroundTexture.SampleGrad(textureSampler, backgroundDirection, backgroundDX, backgroundDY).rgb
+                * skyParams.x),
+              1);
+        discard;
+    }
+    float4      normals = gNormals.Load(pixel), pos = gPosition.Load(pixel), emission = gEmission.Load(pixel);
+    SurfaceData s;
+    s.base            = base.rgb;
+    s.roughness       = base.w;
+    s.normal          = octDecode(normals.xy);
+    s.geometricNormal = octDecode(normals.zw);
+    s.position        = pos.xyz + eyeExposure.xyz;
+    s.ao              = pos.w;
+    s.emissive        = emission.rgb;
+    s.metallic        = emission.w;
+    if (debug == 0)
+        return shadeSurface(s);
+    float3 value = 0;
+    float  range = max(.001, irradiance[7].w);
+    if (debug == 1)
+        value = s.base;
+    if (debug == 2)
+        value = s.normal * .5 + .5;
+    if (debug == 3)
+        value = s.geometricNormal * .5 + .5;
+    if (debug == 4)
+        value = (max(0, dot(s.position - eyeExposure.xyz, cameraForward.xyz)) / range).xxx;
+    if (debug == 5)
+        value = s.roughness.xxx;
+    if (debug == 6)
+        value = s.metallic.xxx;
+    if (debug == 7)
+        value = s.ao.xxx;
+    if (debug == 8)
+        value = s.emissive;
+    if (debug == 9)
+        value = s.position / range * .5 + .5;
+    return float4(diagnosticLinear(value), 1);
 }
 
 // TAA uses the previous camera and skin palette, not a screen-space history blend.

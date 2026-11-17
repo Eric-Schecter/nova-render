@@ -249,7 +249,7 @@ namespace render::detail
                                       || p.program == 17 || p.program == 22 || p.program == 23 || p.program == 27),
                                    nativeScene = p.program < 0,
                                    baseline    = p.target == AABaseline || p.target == AARawBaseline;
-                        const int attachments  = (p.program == 17 || p.program == 22)                     ? 4
+                        const int attachments  = (p.program == 17 || p.program == 22 || p.program == -4)  ? 4
                                                  : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
                                                                                                           : 1;
                         for (int a = 0; a < attachments; a++)
@@ -272,7 +272,7 @@ namespace render::detail
                                 c.clearColor = MTLClearColorMake(0, 0, 0, 1);
                             if (p.program == 17 && a == 3)
                                 c.clearColor = MTLClearColorMake(1000, 1000, 0, 1);
-                            if (p.program >= 22 && p.program != 23)
+                            if ((p.program >= 22 && p.program != 23) || p.program == -4)
                                 c.clearColor = MTLClearColorMake(0, 0, 0, 0);
                             c.storeAction = p.multisampled ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
                             if (p.multisampled)
@@ -301,6 +301,13 @@ namespace render::detail
                                              1}];
                             [e setCullMode:MTLCullModeNone];
                             [e setDepthStencilState:depthState];
+                            if (p.program == -5 && external.bindGBuffer)
+                            {
+                                std::array<void*, 4> views{};
+                                for (int i = 0; i < 4; i++)
+                                    views[i] = (__bridge void*)textures[p.sources[i]];
+                                external.bindGBuffer((__bridge void*)e, views);
+                            }
                             if (p.program != -3)
                                 external.draw(p, (__bridge void*)e, nullptr);
                             [e endEncoding];

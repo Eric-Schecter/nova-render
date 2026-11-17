@@ -373,7 +373,8 @@ namespace render::detail
         ComPtr<ID3D12PipelineState>       pipeline;
 
 #include "D3D12Model.inc"
-        ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion;
+        ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
+          aaDeferred;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
         ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
@@ -404,7 +405,12 @@ namespace render::detail
             info.DepthStencilState.BackFace                                   = face;
             info.SampleMask                                                   = UINT_MAX;
             info.PrimitiveTopologyType                                        = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-            info.NumRenderTargets                                             = 1;
+            info.NumRenderTargets = std::string(file) == "model-gbuffer" ? 4 : 1;
+            for (UINT i = 1; i < info.NumRenderTargets; i++)
+            {
+                info.RTVFormats[i]              = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                info.BlendState.RenderTarget[i] = info.BlendState.RenderTarget[0];
+            }
             info.RTVFormats[0]                                                = DXGI_FORMAT_R16G16B16A16_FLOAT;
             info.DSVFormat                                                    = DXGI_FORMAT_D32_FLOAT;
             info.SampleDesc.Count                                             = samples;
@@ -416,6 +422,21 @@ namespace render::detail
         {
             AAExternalScene external;
             external.device = device.Get();
+            external.bindGBuffer = [this](void*, const std::array<void*, 4>& views) {
+                auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
+                handle.ptr += 8 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                for (int i = 0; i < 4; i++)
+                {
+                    auto*                           image = static_cast<ID3D12Resource*>(views[i]);
+                    D3D12_SHADER_RESOURCE_VIEW_DESC d{};
+                    d.Format                  = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                    d.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    d.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    d.Texture2D.MipLevels     = 1;
+                    device->CreateShaderResourceView(image, &d, handle);
+                    handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                }
+            };
             external.draw   = [this](const AAPass& pass, void* command, void*) {
                 auto* cmd    = static_cast<ID3D12GraphicsCommandList*>(command);
                 int   sample = pass.multisampled ? 1 : 0;
@@ -466,8 +487,20 @@ namespace render::detail
                 cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                if (pass.program == -5)
+                {
+                    if (!aaDeferred)
+                        aaDeferred = AAPipeline("model-deferred", true, 1);
+                    auto h = modelHeap->GetGPUDescriptorHandleForHeapStart();
+                    h.ptr += 8 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                    cmd->SetGraphicsRootDescriptorTable(9, h);
+                    cmd->SetPipelineState(aaDeferred.Get());
+                    cmd->DrawInstanced(3, 1, 0, 0);
+                    return;
+                }
+                const bool gbuffer = pass.program == -4;
                 bool motion = pass.program == -2;
-                if (environment && environmentSettings.showBackground)
+                if (!gbuffer && environment && environmentSettings.showBackground)
                 {
                     auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
                     if (!pipeline)
@@ -477,9 +510,14 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    auto& pipeline = motion ? aaMotion : aaModel[sample];
+                    auto& pipeline = gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
-                        pipeline = AAPipeline(motion ? "model-motion" : "model", false, sample ? 4 : 1);
+                        pipeline = AAPipeline(
+                          gbuffer  ? "model-gbuffer"
+                          : motion ? "model-motion"
+                                   : "model",
+                          false,
+                          sample ? 4 : 1);
                     cmd->SetPipelineState(pipeline.Get());
                     if (scene.active)
                     {

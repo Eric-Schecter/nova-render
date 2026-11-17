@@ -326,6 +326,18 @@ namespace render
     {
         return impl_->renderer->GetPostProcessing();
     }
+    void Window::SetRasterSettings(const RasterSettings& settings)
+    {
+        impl_->renderer->SetRasterSettings(settings);
+    }
+    RasterSettings Window::GetRasterSettings() const
+    {
+        return impl_->renderer->GetRasterSettings();
+    }
+    RasterCapabilities Window::GetRasterCapabilities() const
+    {
+        return impl_->renderer->GetRasterCapabilities();
+    }
     void Window::SetAntiAliasing(const AntiAliasingSettings& settings)
     {
         impl_->renderer->SetAntiAliasing(settings);

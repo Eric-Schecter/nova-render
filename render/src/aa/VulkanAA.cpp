@@ -932,7 +932,7 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool               nativeScene = p.program < 0;
-                    const int                attachments = (p.program == 17 || p.program == 22)                     ? 4
+                    const int                attachments = (p.program == 17 || p.program == 22 || p.program == -4)  ? 4
                                                            : (p.program == 0 || p.program == 10 || p.program == 16) ? 2
                                                                                                                     : 1;
                     auto&                    target      = textures[p.target];
@@ -1001,7 +1001,7 @@ namespace render::detail
                         }
                     }
                     api.vkUpdateDescriptorSets(device, 19, writes.data(), 0, nullptr);
-                    VkRenderPass            renderPass = (p.program == 17 || p.program == 22)
+                    VkRenderPass            renderPass = (p.program == 17 || p.program == 22 || p.program == -4)
                                                            ? (p.multisampled ? surfaceMSPass : surfacePass)
                                                          : nativeScene ? (p.multisampled ? externalMSPass : externalPass)
                                                          : (p.program == 9 || p.program == 23 || p.program == 27) ? externalPass
@@ -1027,7 +1027,7 @@ namespace render::detail
                         clears[2].color = {{0, 0, 0, 1}};
                         clears[3].color = {{1000, 1000, 0, 1}};
                     }
-                    if (p.program >= 22 && p.program != 23)
+                    if ((p.program >= 22 && p.program != 23) || p.program == -4)
                         for (int a = 0; a < attachments; ++a)
                             clears[a].color = {{0, 0, 0, 0}};
                     if (scene)
@@ -1051,6 +1051,13 @@ namespace render::detail
                         VkRect2D scissor{{0, 0}, {target.width, target.height}};
                         api.vkCmdSetViewport(command, 0, 1, &viewport);
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
+                        if (p.program == -5 && external.bindGBuffer)
+                        {
+                            std::array<void*, 4> views{};
+                            for (int i = 0; i < 4; i++)
+                                views[i] = reinterpret_cast<void*>(textures[p.sources[i]].view);
+                            external.bindGBuffer(command, views);
+                        }
                         if (p.program != -3)
                             external.draw(p, reinterpret_cast<void*>(command), reinterpret_cast<void*>(renderPass));
                         api.vkCmdEndRenderPass(command);

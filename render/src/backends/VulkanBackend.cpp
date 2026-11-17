@@ -99,7 +99,8 @@ namespace render::detail
 #include "VulkanModel.inc"
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
-        VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{};
+        VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
+          aaDeferred{};
         VkPipeline  AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
@@ -110,13 +111,15 @@ namespace render::detail
                 stages[i]        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
                 stages[i].stage  = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
                 stages[i].module = i ? fragment : vertex;
-                stages[i].pName  = i ? (std::string(name) == "model-motion" ? "MotionPSMain"
-                                        : std::string(name) == "sky-motion" ? "SkyMotionPSMain"
-                                        : sky                               ? "SkyPSMain"
-                                                                            : "PSMain")
-                                     : (std::string(name) == "model-motion" ? "MotionVSMain"
-                                        : sky                               ? "SkyVSMain"
-                                                                            : "VSMain");
+                stages[i].pName  = std::string(name) == "model-gbuffer"    ? (i ? "GBufferPSMain" : "VSMain")
+                                   : std::string(name) == "model-deferred" ? (i ? "DeferredPSMain" : "SkyVSMain")
+                                   : i ? (std::string(name) == "model-motion" ? "MotionPSMain"
+                                          : std::string(name) == "sky-motion" ? "SkyMotionPSMain"
+                                          : sky                               ? "SkyPSMain"
+                                                                              : "PSMain")
+                                       : (std::string(name) == "model-motion" ? "MotionVSMain"
+                                          : sky                               ? "SkyVSMain"
+                                                                              : "VSMain");
             }
             VkPipelineVertexInputStateCreateInfo   input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
             VkPipelineInputAssemblyStateCreateInfo assembly{
@@ -134,11 +137,12 @@ namespace render::detail
             depth.depthTestEnable  = VK_TRUE;
             depth.depthWriteEnable = !sky;
             depth.depthCompareOp   = sky ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS;
-            VkPipelineColorBlendAttachmentState color{};
-            color.colorWriteMask = 15;
+            VkPipelineColorBlendAttachmentState color[4]{};
+            for (auto& c : color)
+                c.colorWriteMask = 15;
             VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-            blend.attachmentCount                     = 1;
-            blend.pAttachments                        = &color;
+            blend.attachmentCount                     = std::string(name) == "model-gbuffer" ? 4 : 1;
+            blend.pAttachments                        = color;
             VkDynamicState                   states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
             VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
             dynamic.dynamicStateCount = 2;
@@ -170,6 +174,32 @@ namespace render::detail
             external.physical    = reinterpret_cast<void*>(physical);
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
+            external.bindGBuffer = [this](void* command, const std::array<void*, 4>& views) {
+                VkDescriptorImageInfo images[4]{};
+                VkWriteDescriptorSet  writes[4]{};
+                for (int i = 0; i < 4; i++)
+                {
+                    images[i].imageView   = reinterpret_cast<VkImageView>(views[i]);
+                    images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    auto& w               = writes[i];
+                    w                     = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    w.dstSet              = gBufferSet;
+                    w.dstBinding          = 17 + i;
+                    w.descriptorCount     = 1;
+                    w.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                    w.pImageInfo          = &images[i];
+                }
+                vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+                vkCmdBindDescriptorSets(
+                  reinterpret_cast<VkCommandBuffer>(command),
+                  VK_PIPELINE_BIND_POINT_GRAPHICS,
+                  layout,
+                  1,
+                  1,
+                  &gBufferSet,
+                  0,
+                  nullptr);
+            };
             external.draw        = [this](const AAPass& pass, void* command, void* targetPass) {
                 auto      cmd        = reinterpret_cast<VkCommandBuffer>(command);
                 auto      renderPass = reinterpret_cast<VkRenderPass>(targetPass);
@@ -218,11 +248,20 @@ namespace render::detail
                     w.descriptorType  = i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                     w.pBufferInfo     = &buffers[i];
                 }
-                if (pass.target == AARawBaseline || (pass.target == AARawColor && !rasterSettings.split))
+                if (pass.program!=-5 && (pass.target == AARawBaseline || ((pass.target == AARawColor || pass.program==-4) && !rasterSettings.split)))
                     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
+                if (pass.program == -5)
+                {
+                    if (!aaDeferred)
+                        aaDeferred = AAPipeline("model-deferred", true, 1, renderPass);
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, aaDeferred);
+                    vkCmdDraw(cmd, 3, 1, 0, 0);
+                    return;
+                }
+                const bool gbuffer = pass.program == -4;
                 const bool motion = pass.program == -2;
-                if (environment && environmentSettings.showBackground)
+                if (!gbuffer && environment && environmentSettings.showBackground)
                 {
                     auto& pipeline = motion ? aaSkyMotion : aaSky[sample];
                     if (!pipeline)
@@ -232,9 +271,15 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    auto& pipeline = motion ? aaMotion : aaModel[sample];
+                    auto& pipeline = gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
-                        pipeline = AAPipeline(motion ? "model-motion" : "model", false, sample ? 4 : 1, renderPass);
+                        pipeline = AAPipeline(
+                          gbuffer  ? "model-gbuffer"
+                          : motion ? "model-motion"
+                                   : "model",
+                          false,
+                          sample ? 4 : 1,
+                          renderPass);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                     if (scene.active)
                     {
@@ -263,6 +308,8 @@ namespace render::detail
                 release(pipeline);
             for (auto& pipeline : aaTrianglePipeline)
                 release(pipeline);
+            release(aaGBuffer);
+            release(aaDeferred);
             release(aaMotion);
             release(aaSkyMotion);
             destroyModelBuffer(aaPreviousUniform);
@@ -564,10 +611,11 @@ namespace render::detail
             rp.pDependencies   = &dep;
             check(vkCreateRenderPass(device, &rp, nullptr, &renderPass), "Create render pass");
             VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+            VkDescriptorSetLayout      modelLayouts[] = {modelSetLayout, gBufferSetLayout};
             if (model)
             {
-                pl.setLayoutCount = 1;
-                pl.pSetLayouts    = &modelSetLayout;
+                pl.setLayoutCount = 2;
+                pl.pSetLayouts    = modelLayouts;
             }
             check(vkCreatePipelineLayout(device, &pl, nullptr, &layout), "Create pipeline layout");
             VkShaderModule vert = VK_NULL_HANDLE, frag = VK_NULL_HANDLE;

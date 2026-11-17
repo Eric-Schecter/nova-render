@@ -15,9 +15,9 @@ std::array<ModelTexture, 5> modelTextures;
 ModelTexture                modelDepth, environmentCube, backgroundCube, pathDisplay;
 uint32_t                    pathWidth = 0, pathHeight = 0;
 VkSampler                   modelSampler   = VK_NULL_HANDLE;
-VkDescriptorSetLayout       modelSetLayout = VK_NULL_HANDLE;
+VkDescriptorSetLayout       modelSetLayout = VK_NULL_HANDLE, gBufferSetLayout = VK_NULL_HANDLE;
 VkDescriptorPool            modelPool      = VK_NULL_HANDLE;
-VkDescriptorSet             modelSet       = VK_NULL_HANDLE;
+VkDescriptorSet             modelSet       = VK_NULL_HANDLE, gBufferSet = VK_NULL_HANDLE;
 bool                        modelReady     = false;
 uint32_t                    memoryType(uint32_t bits, VkMemoryPropertyFlags flags)
 {
@@ -309,13 +309,17 @@ void uploadModel()
     layoutInfo.bindingCount = 16;
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
+    VkDescriptorSetLayoutBinding gBindings[4]{};
+    for(int i=0;i<4;i++)gBindings[i]={uint32_t(17+i),VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr};
+    layoutInfo.bindingCount=4;layoutInfo.pBindings=gBindings;
+    check(vkCreateDescriptorSetLayout(device,&layoutInfo,nullptr,&gBufferSetLayout),"Create G-buffer descriptor layout");
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 12},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    poolInfo.maxSets       = 1;
+    poolInfo.maxSets       = 2;
     poolInfo.poolSizeCount = 4;
     poolInfo.pPoolSizes    = sizes;
     check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &modelPool), "Create model descriptor pool");
@@ -324,6 +328,7 @@ void uploadModel()
     alloc.descriptorSetCount = 1;
     alloc.pSetLayouts        = &modelSetLayout;
     check(vkAllocateDescriptorSets(device, &alloc, &modelSet), "Allocate model descriptors");
+    alloc.pSetLayouts=&gBufferSetLayout;check(vkAllocateDescriptorSets(device,&alloc,&gBufferSet),"Allocate G-buffer descriptors");
     VkDescriptorBufferInfo bufferInfo[] = {
       {modelUniform.buffer, 0, sizeof(SceneUniforms)},
       {modelVertices.buffer, 0, VK_WHOLE_SIZE},
@@ -382,6 +387,7 @@ void destroyModel()
         vkDestroyDescriptorSetLayout(device, modelSetLayout, nullptr);
     }
     modelSetLayout = VK_NULL_HANDLE;
+    if(gBufferSetLayout)vkDestroyDescriptorSetLayout(device,gBufferSetLayout,nullptr);gBufferSetLayout=VK_NULL_HANDLE;gBufferSet=VK_NULL_HANDLE;
     if (modelSampler)
     {
         vkDestroySampler(device, modelSampler, nullptr);

@@ -122,7 +122,7 @@ void UploadModel()
     modelUniform = uploadBuffer(512);
     D3D12_DESCRIPTOR_HEAP_DESC heap{};
     heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    heap.NumDescriptors = 8;
+    heap.NumDescriptors = 12;
     heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     checkHR(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&modelHeap)), "Create model texture heap");
     checkHR(allocator->Reset(), "Reset model allocator");
@@ -219,7 +219,9 @@ void UploadModel()
     range.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors     = 8;
     range.BaseShaderRegister = 1;
-    D3D12_ROOT_PARAMETER params[9]{};
+    D3D12_ROOT_PARAMETER params[10]{};
+    D3D12_DESCRIPTOR_RANGE gRange{};gRange.RangeType=D3D12_DESCRIPTOR_RANGE_TYPE_SRV;gRange.NumDescriptors=4;gRange.BaseShaderRegister=17;
+    params[9].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[9].DescriptorTable={1,&gRange};params[9].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     params[5].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_SRV;
     params[5].Descriptor.ShaderRegister           = 11;
     params[5].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
@@ -257,7 +259,7 @@ void UploadModel()
     sampler.MaxLOD                                         = D3D12_FLOAT32_MAX;
     sampler.ShaderVisibility                               = D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-    rootDesc.NumParameters     = 9;
+    rootDesc.NumParameters     = 10;
     rootDesc.pParameters       = params;
     rootDesc.NumStaticSamplers = 1;
     rootDesc.pStaticSamplers   = &sampler;

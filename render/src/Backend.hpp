@@ -78,7 +78,9 @@ namespace render::detail
                 c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
                 c.maxLights                                                                              = 16;
                 c.shadowRequiresScene = mode == RenderMode::Raster;
-                c.estimator           = mode == RenderMode::Raster ? "raster-pbr" : "camera-and-source-paths";
+                c.estimator           = mode == RenderMode::Raster
+                                          ? (modelRaster.pipeline == RasterPipeline::Deferred ? "deferred-pbr" : "raster-pbr")
+                                          : "camera-and-source-paths";
                 if (mode != RenderMode::Raster)
                 {
                     c.collectionLightSubpaths = c.collectionPhotonEmission = true;
@@ -263,8 +265,26 @@ namespace render::detail
             }
         }
         PostProcessingSettings GetPostProcessing() const { return postSettings; }
+        RasterSettings         modelRaster;
+        RasterCapabilities     GetRasterCapabilities() const { return {}; }
+        RasterSettings         GetRasterSettings() const { return modelRaster; }
+        void                   SetRasterSettings(const RasterSettings& value)
+        {
+            if (
+              unsigned(value.pipeline) > 1 || unsigned(value.view) > 9 || !std::isfinite(value.debugRange)
+              || value.debugRange <= 0 || value.debugRange > 1000000)
+                throw std::invalid_argument("Invalid model raster settings; only Forward and Deferred are supported");
+            if (value.pipeline == RasterPipeline::Forward && value.view != GBufferView::Final)
+                throw std::invalid_argument("G-buffer views require Deferred");
+            if (value.pipeline == RasterPipeline::Deferred && rasterSettings.method == AAMethod::MSAA)
+                throw std::invalid_argument("Deferred MSAA requires per-sample lighting and is not supported");
+            modelRaster = value;
+            rasterAA.Reset();
+        }
         void                   SetAntiAliasing(const AntiAliasingSettings& value)
         {
+            if (modelRaster.pipeline == RasterPipeline::Deferred && value.method == AAMethod::MSAA)
+                throw std::invalid_argument("Deferred MSAA is not supported");
             if (
               static_cast<unsigned>(value.method) > 5 || !std::isfinite(value.historyWeight) || value.historyWeight < 0
               || value.historyWeight > .98f || !std::isfinite(value.zoom) || value.zoom < 1 || value.zoom > 8)
@@ -284,7 +304,8 @@ namespace render::detail
         const Image&         GetRasterAAImage() const { return rasterAA.image; }
         uint32_t             GetAntiAliasingHistoryFrames() const
         {
-            return rasterSettings.method == AAMethod::TAA ? rasterAA.frames : 0;
+            return rasterSettings.method == AAMethod::TAA && modelRaster.view == GBufferView::Final ? rasterAA.frames
+                                                                                                    : 0;
         }
 
         void SetPathTracing(const PathTracingSettings& value)
@@ -497,8 +518,12 @@ namespace render::detail
                 return &*presentedImage;
             if (mode == RenderMode::Raster)
             {
-                if (rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled)
+                if (
+                  rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled
+                  && modelRaster.pipeline == RasterPipeline::Forward)
                     return nullptr;
+                if (modelRaster.pipeline == RasterPipeline::Deferred && (!model || aaTriangle))
+                    throw std::runtime_error("Deferred requires a model or scene");
                 if (!rasterAA.device)
                     CreateRasterAADevice();
                 rasterAA.current = MakeSceneUniforms(
@@ -511,9 +536,12 @@ namespace render::detail
                   environmentSettings);
                 rasterAA.current.lightDirection[3] = MaterialMode();
                 ApplyRasterSettings(rasterAA.current);
-                rasterAA.current.irradiance[0][3] = postSettings.enabled ? 1.f : 0.f;
-                const auto& image =
-                  rasterAA.Render(width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings);
+                const bool debug                  = modelRaster.view != GBufferView::Final;
+                rasterAA.current.irradiance[0][3] = !debug && postSettings.enabled ? 1.f : 0.f;
+                rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
+                rasterAA.current.irradiance[8][3] = float(modelRaster.view);
+                const auto& image                 = rasterAA.Render(
+                  width, height, rasterSettings, ClearColorForTarget(true), aaTriangle, postSettings, modelRaster);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }
@@ -556,6 +584,7 @@ namespace render::detail
         {
             const auto previous       = animation.state;
             const auto previousAA     = rasterSettings;
+            const auto previousRaster = modelRaster;
             const auto oldClear       = clearColor;
             const auto oldCamera      = camera;
             const auto oldLight       = directionalLight;
@@ -575,7 +604,8 @@ namespace render::detail
               pathSession.Samples(),
               animation.Clips(),
               animation.state,
-              rasterSettings);
+              rasterSettings,
+              modelRaster);
             if (
               oldCamera.yaw != camera.yaw || oldCamera.pitch != camera.pitch || oldCamera.distance != camera.distance
               || oldCamera.target != camera.target || oldCamera.exposure != camera.exposure)
@@ -586,6 +616,10 @@ namespace render::detail
             }
             if (lightCollectionActive)
                 directionalLight = oldLight;
+            if (
+              previousRaster.pipeline != modelRaster.pipeline || previousRaster.view != modelRaster.view
+              || previousRaster.debugRange != modelRaster.debugRange)
+                rasterAA.Reset();
             const auto nextAA = rasterSettings;
             rasterSettings    = previousAA;
             if (nextAA.method != previousAA.method)

@@ -338,6 +338,18 @@ namespace render
     {
         return impl_->backend->GetPostProcessing();
     }
+    void Renderer::SetRasterSettings(const RasterSettings& settings)
+    {
+        impl_->backend->SetRasterSettings(settings);
+    }
+    RasterSettings Renderer::GetRasterSettings() const
+    {
+        return impl_->backend->GetRasterSettings();
+    }
+    RasterCapabilities Renderer::GetRasterCapabilities() const
+    {
+        return impl_->backend->GetRasterCapabilities();
+    }
     void Renderer::SetAntiAliasing(const AntiAliasingSettings& settings)
     {
         impl_->backend->SetAntiAliasing(settings);

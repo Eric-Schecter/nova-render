@@ -30,11 +30,21 @@ namespace render::detail
         const Image& Render(
           uint32_t                      w,
           uint32_t                      h,
-          const AntiAliasingSettings&   settings,
+          const AntiAliasingSettings&   requestedSettings,
           const std::array<float, 4>&   clear,
-          bool                          triangle     = false,
-          const PostProcessingSettings& postSettings = {})
+          bool                          triangle      = false,
+          const PostProcessingSettings& requestedPost = {},
+          const RasterSettings&         modelSettings = {})
         {
+            auto settings     = requestedSettings;
+            auto postSettings = requestedPost;
+            if (modelSettings.view != GBufferView::Final)
+            {
+                settings.method      = AAMethod::Off;
+                settings.split       = false;
+                postSettings.enabled = false;
+            }
+            const bool deferred = modelSettings.pipeline == RasterPipeline::Deferred;
             if (w != width || h != height)
             {
                 width  = w;
@@ -88,7 +98,15 @@ namespace render::detail
                 add(-1, AARawBaseline)->uniforms[1] = {};
                 crop(AABaseline, AARawBaseline, w, h, true);
             }
-            add(-1, AARawColor)->multisampled = settings.method == AAMethod::MSAA;
+            if (deferred)
+            {
+                add(-4, AAModelBase);
+                auto* p = add(-5, AARawColor);
+                for (int i = 0; i < 4; i++)
+                    p->sources[i] = AAModelBase + i;
+            }
+            else
+                add(-1, AARawColor)->multisampled = settings.method == AAMethod::MSAA;
             crop(
               AAColor,
               AARawColor,

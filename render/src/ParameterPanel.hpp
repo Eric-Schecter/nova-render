@@ -3,6 +3,7 @@
 #include "render/AntiAliasing.hpp"
 #include "render/Model.hpp"
 #include "render/ParameterPanel.hpp"
+#include "render/RasterPipeline.hpp"
 #include "render/RenderMode.hpp"
 #include <array>
 #include <optional>
@@ -49,7 +50,8 @@ namespace render::detail
           uint32_t                          samples,
           const std::vector<AnimationClip>& clips,
           AnimationState&                   animation,
-          AntiAliasingSettings&             aa);
+          AntiAliasingSettings&             aa,
+          RasterSettings&                   raster);
         bool WantsMouse() const;
         bool WantsKeyboard() const;
 

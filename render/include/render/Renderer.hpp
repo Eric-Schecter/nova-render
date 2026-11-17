@@ -8,6 +8,7 @@
 #include "Model.hpp"
 #include "ParameterPanel.hpp"
 #include "PostProcessing.hpp"
+#include "RasterPipeline.hpp"
 #include "RenderMode.hpp"
 #include "Scene.hpp"
 #include "SceneShadows.hpp"
@@ -66,6 +67,9 @@ namespace render
         void                       WaitIdle();
         void                       SetPostProcessing(const PostProcessingSettings& settings);
         PostProcessingSettings     GetPostProcessing() const;
+        void                       SetRasterSettings(const RasterSettings& settings);
+        RasterSettings             GetRasterSettings() const;
+        RasterCapabilities         GetRasterCapabilities() const;
         void                       SetAntiAliasing(const AntiAliasingSettings& settings);
         AntiAliasingSettings       GetAntiAliasing() const;
         uint32_t                   GetAntiAliasingHistoryFrames() const;
@@ -77,49 +81,49 @@ namespace render
         // See Scene.hpp for coordinate spaces and matrix layout. DrawFrame submits the update.
         void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances);
         // Bounds in selected asset-local space; absent for unreferenced/inactive IDs.
-        std::optional<Bounds>      GetSceneAssetBounds(const std::string& assetId) const;
+        std::optional<Bounds> GetSceneAssetBounds(const std::string& assetId) const;
         // Synchronous CPU query of the last committed SetScene state; nullopt on miss.
-        std::optional<SceneHit>    PickScene(const Ray& ray) const;
-        std::vector<Material>      GetMaterials(const std::string& assetId = {}) const;
-        void SetMaterial(uint32_t slot, const Material& material, const std::string& assetId = {});
-        void                       LoadModel(const std::filesystem::path& glbPath);
-        RendererCapabilities       GetCapabilities() const;
-        void                       SetRenderMode(RenderMode mode);
-        RenderMode                 GetRenderMode() const;
-        void                       SetPathTracing(const PathTracingSettings& settings);
-        PathTracingSettings        GetPathTracing() const;
-        void                       SetRayTracing(const RayTracingSettings& settings) { SetPathTracing(settings); }
-        RayTracingSettings         GetRayTracing() const { return GetPathTracing(); }
-        void                       ResetAccumulation();
-        uint32_t                   GetAccumulatedSamples() const;
-        void                       PresentImage(const Image& image);
-        void                       ClearImage();
-        void                       SetShadows(const SceneShadowSettings& settings);
-        SceneShadowSettings        GetShadows() const;
-        void                       SetFog(const FogSettings& settings);
-        FogSettings                GetFog() const;
-        void                       LoadEnvironment(const std::filesystem::path& path);
-        void                       SetEnvironment(const EnvironmentSettings& settings);
-        EnvironmentSettings        GetEnvironment() const;
-        void                       SetDirectionalLight(const DirectionalLight& light);
-        DirectionalLight           GetDirectionalLight() const;
-        void                       SetLights(const std::vector<SceneLight>& lights);
-        std::vector<SceneLight>    GetLights() const;
-        LightingCapabilities       GetLightingCapabilities() const;
-        void                       SetLighting(LightingMode mode);
+        std::optional<SceneHit> PickScene(const Ray& ray) const;
+        std::vector<Material>   GetMaterials(const std::string& assetId = {}) const;
+        void                    SetMaterial(uint32_t slot, const Material& material, const std::string& assetId = {});
+        void                    LoadModel(const std::filesystem::path& glbPath);
+        RendererCapabilities    GetCapabilities() const;
+        void                    SetRenderMode(RenderMode mode);
+        RenderMode              GetRenderMode() const;
+        void                    SetPathTracing(const PathTracingSettings& settings);
+        PathTracingSettings     GetPathTracing() const;
+        void                    SetRayTracing(const RayTracingSettings& settings) { SetPathTracing(settings); }
+        RayTracingSettings      GetRayTracing() const { return GetPathTracing(); }
+        void                    ResetAccumulation();
+        uint32_t                GetAccumulatedSamples() const;
+        void                    PresentImage(const Image& image);
+        void                    ClearImage();
+        void                    SetShadows(const SceneShadowSettings& settings);
+        SceneShadowSettings     GetShadows() const;
+        void                    SetFog(const FogSettings& settings);
+        FogSettings             GetFog() const;
+        void                    LoadEnvironment(const std::filesystem::path& path);
+        void                    SetEnvironment(const EnvironmentSettings& settings);
+        EnvironmentSettings     GetEnvironment() const;
+        void                    SetDirectionalLight(const DirectionalLight& light);
+        DirectionalLight        GetDirectionalLight() const;
+        void                    SetLights(const std::vector<SceneLight>& lights);
+        std::vector<SceneLight> GetLights() const;
+        LightingCapabilities    GetLightingCapabilities() const;
+        void                    SetLighting(LightingMode mode);
         // Returns false if UI was disabled at build time. Disabled by default.
-        bool                 EnableParameterPanel(bool enabled = true);
-        bool                 EnableParameterPanel(const ParameterPanelConfig& config);
-        void                 SetClearColor(const std::array<float, 4>& color);
-        std::array<float, 4> GetClearColor() const;
+        bool                    EnableParameterPanel(bool enabled = true);
+        bool                    EnableParameterPanel(const ParameterPanelConfig& config);
+        void                    SetClearColor(const std::array<float, 4>& color);
+        std::array<float, 4>    GetClearColor() const;
         void                    SetViewCamera(const Camera& camera);
         Camera                  GetViewCamera() const;
         void                    SetViewport(const std::optional<Viewport>& viewport);
         std::optional<Viewport> GetViewport() const;
-        void                 SetCamera(const OrbitCamera& camera);
-        OrbitCamera          GetCamera() const;
-        GraphicsAPI          GetAPI() const;
-        uint32_t             ValidationErrorCount() const;
+        void                    SetCamera(const OrbitCamera& camera);
+        OrbitCamera             GetCamera() const;
+        GraphicsAPI             GetAPI() const;
+        uint32_t                ValidationErrorCount() const;
 
       private:
         friend class Window;
