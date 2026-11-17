@@ -11,13 +11,16 @@ point.color = {1, .7f, .4f};
 point.intensity = 8;
 point.range = 10;
 window.SetLighting(render::LightingMode::PBR);
+point.castShadow = true;
+window.SetShadows({true});
 window.SetLights({point});
 ```
 
 ```js
 renderer.setLighting('pbr')
+renderer.setShadows({ enabled: true, samples: 8 })
 renderer.setLights([
-  { id: 'key', type: 'point', position: [1, 2, 3], color: [1, .7, .4], intensity: 8, range: 10 },
+  { id: 'key', type: 'point', position: [1, 2, 3], color: [1, .7, .4], intensity: 8, range: 10, castShadow: true },
   { id: 'rim', type: 'spot', position: [-2, 3, 0], direction: [0, -1, 0],
     innerConeAngle: .35, outerConeAngle: .6, intensity: 12 },
 ])
@@ -39,10 +42,12 @@ Invalid values, duplicate IDs and excess counts throw before replacing the previ
 
 This release supports up to **16 total lights**, in any combination, on **Metal, Vulkan, DX12 and WebGPU raster** paths. The limit includes disabled entries. `directional`, `point`, `spot` and `maxLights` describe collection support for the current backend and mode. Ray tracing retains its legacy single directional light; collection setters throw in that mode. Switching to ray tracing while a collection is active throws; restore the legacy light first.
 
-`directionalShadows` is true on supported raster backends. Shadows require opaque static `SetScene` geometry and the global shadow switch (`shadowRequiresScene` is true). Every enabled directional light can cast its own BVH shadow with its own direction/softness. `pointShadows` and `spotShadows` are false: setting their `castShadow` to true is rejected, including disabled entries. No point/spot shadow fallback is fabricated.
+`directionalShadows`, `pointShadows` and `spotShadows` are true on supported raster backends. Shadows require opaque static `SetScene` geometry and the global shadow switch (`shadowRequiresScene` is true). Every enabled light with `castShadow: true` casts its own BVH shadow. Point/spot rays end at the light source, so objects behind the source do not occlude it. Range and spot-cone attenuation are applied before shadow visibility.
+
+Zero `shadowSoftness` uses one hard visibility ray. Positive values use the global sample count (1–16): directional sources retain a disk radius of `softness * .006` radians; point/spot sources use a disk centered at the light position with radius `softness * .006` **world units**. This is a visibility filter; attenuation and cone evaluation use the central source and it is not a full area-emitter model. Changing light type preserves the numeric setting but changes its units. The global bias is in world units, including under nonuniform instance scale. No transparent/alpha-tested or animated-caster shadows are provided by this static-scene path.
 
 `SetDirectionalLight` / `setDirectionalLight` exits collection mode and restores the compatible single-light rendering path. `GetLights` then reports one `__directional` entry. Built-in parameter panels do not overwrite application-owned collections; edit collections through the API or your application UI.
 
-## 0.4.0 validation
+## 0.5.0 validation
 
-Metal and Vulkan (MoltenVK on macOS) pass the same six-light pixel tests, independent directional-shadow tests, and relocated SDK consumer checks. WebGPU passes the matching six-light tests. DX12 uses the same HLSL and existing instance-buffer upload path; its vertex/fragment shaders compile to DXIL. Windows hardware/WARP runtime and native SDK validation are **deferred** because the validation host is unavailable. No Windows SDK is published in 0.4.0; do not treat shader compilation as a successful DX12 rendering test. Ray tracing collection support and point/spot shadows remain unsupported.
+Metal and Vulkan (MoltenVK on macOS) pass matching hard/soft point/spot shadow tests, global and per-caster switches, caster movement, behind-source rejection, range/cone exclusion and mixed-light shadow toggles. WebGPU passes matching pixel checks through the same HLSL-to-WGSL chain. Relocated Metal/Vulkan SDK and standalone npm consumers exercise the formal shadow capabilities. DX12 shaders compile to DXIL, but Windows hardware/WARP runtime and native SDK validation remain **deferred** at the user's request. No Windows SDK is published in 0.5.0. Ray-tracing light collections remain unsupported.

@@ -67,15 +67,16 @@ int main(int argc, char** argv)
                 if (!caps.point || !caps.spot || caps.maxLights != 16 || !caps.pointShadows || !caps.spotShadows)
                     throw std::runtime_error("Installed light capabilities mismatch");
                 render::SceneLight point;
-                point.id        = "installed-point";
-                point.type      = render::LightType::Point;
-                point.position  = {1, 2, 3};
-                point.intensity = 8;
-                point.range     = 10;
-                auto spot       = point;
-                spot.id         = "installed-spot";
-                spot.type       = render::LightType::Spot;
-                spot.direction  = {0, -1, -1};
+                point.id         = "installed-point";
+                point.type       = render::LightType::Point;
+                point.position   = {1, 2, 3};
+                point.intensity  = 8;
+                point.range      = 10;
+                point.castShadow = true;
+                auto spot        = point;
+                spot.id          = "installed-spot";
+                spot.type        = render::LightType::Spot;
+                spot.direction   = {0, -1, -1};
                 window.SetLights({point, spot});
                 if (window.GetLights().size() != 2)
                     throw std::runtime_error("Installed scene lights missing");

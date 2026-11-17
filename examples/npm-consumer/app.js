@@ -51,7 +51,7 @@ window.validation = (async () => {
     throw Error('Installed light capabilities mismatch')
   renderer.setLighting('pbr')
   renderer.setLights([
-    { id: 'point', type: 'point', position: [1, 2, 3], intensity: 8 },
+    { id: 'point', type: 'point', position: [1, 2, 3], intensity: 8, castShadow: true },
     { id: 'spot', type: 'spot', position: [-2, 3, 1], direction: [0, -1, -1], intensity: 8 },
   ])
   if (renderer.getLights().length !== 2) throw Error('Installed light collection missing')

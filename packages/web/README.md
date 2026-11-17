@@ -3,7 +3,7 @@
 Install the precompiled release archive, then copy its runtime assets:
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.4.0/nova-render-web-0.4.0.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.5.0/nova-render-web-0.5.0.tgz
 npx nova-web-assets --out public/nova
 ```
 
