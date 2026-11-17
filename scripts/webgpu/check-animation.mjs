@@ -193,11 +193,18 @@ try {
     await page.locator('.preview').screenshot({ path: 'build/validation/animation-web-panel.png' })
     const maps = page.getByRole('combobox', { name: 'Environment map', exact: true })
     if ((await maps.locator('option').count()) !== 3) throw Error('Fox environment options missing')
-    await maps.selectOption('/generated/kloppenheim_06.bin')
+    const environmentURL = await maps
+      .locator('option')
+      .evaluateAll(
+        (options) =>
+          options.find((option) => option.value.endsWith('/generated/kloppenheim_06.bin'))?.value,
+      )
+    if (!environmentURL) throw Error('Fox environment map missing')
+    await maps.selectOption(environmentURL)
     await page.waitForFunction(
       () => !document.querySelector('[aria-label="Environment map"]').disabled,
     )
-    if ((await maps.inputValue()) !== '/generated/kloppenheim_06.bin')
+    if ((await maps.inputValue()) !== environmentURL)
       throw Error('Fox environment selection failed')
     await page.getByRole('checkbox', { name: 'Show skybox', exact: true }).uncheck()
     await page.getByRole('slider', { name: 'Environment intensity', exact: true }).fill('.7')
