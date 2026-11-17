@@ -153,18 +153,13 @@ int main(int argc, char** argv)
             rejected = true;
         }
         Require(rejected && backend->GetLights().size() == 6, "Nontransactional validation");
-        bad               = {lights[2]};
-        bad[0].castShadow = true;
-        rejected          = false;
-        try
-        {
-            backend->SetLights(bad);
-        }
-        catch (const std::invalid_argument&)
-        {
-            rejected = true;
-        }
-        Require(rejected && !backend->GetLightingCapabilities().pointShadows, "Point shadow capability mismatch");
+        auto shadowPoint       = lights[2];
+        shadowPoint.castShadow = true;
+        backend->SetLights({shadowPoint});
+        Require(
+          backend->GetLights()[0].castShadow && backend->GetLightingCapabilities().pointShadows
+            && backend->GetLightingCapabilities().spotShadows,
+          "Local shadow capability mismatch");
         rejected = false;
         try
         {

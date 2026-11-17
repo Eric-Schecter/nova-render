@@ -76,7 +76,7 @@ namespace render::detail
               mode == RenderMode::Raster
               && (pathAPI == GraphicsAPI::Metal || pathAPI == GraphicsAPI::Vulkan || pathAPI == GraphicsAPI::D3D12))
             {
-                c.directional = c.point = c.spot = c.directionalShadows = true;
+                c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
                 c.maxLights                                             = 16;
             }
             else

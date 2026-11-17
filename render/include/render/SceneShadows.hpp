@@ -2,7 +2,7 @@
 #include <cstdint>
 namespace render
 {
-    // Raster scene directional-light shadows, evaluated on the GPU using shared per-asset BVHs.
+    // Raster scene light shadows, evaluated on the GPU using shared per-asset BVHs.
     struct SceneShadowSettings
     {
         bool     enabled  = false;

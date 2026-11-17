@@ -160,9 +160,132 @@ int main(int argc, char** argv)
         draw();
         Require(twoShadows.pixels != backend->GetRasterAAImage().pixels, "Second light shadow cast flag ignored");
         Require(
-          backend->GetLightingCapabilities().directionalShadows && !backend->GetLightingCapabilities().pointShadows
-            && !backend->GetLightingCapabilities().spotShadows,
+          backend->GetLightingCapabilities().directionalShadows && backend->GetLightingCapabilities().pointShadows
+            && backend->GetLightingCapabilities().spotShadows,
           "Shadow capability mismatch");
+        instances[1].world[12] = 0;
+        backend->SetScene({{"box", path}}, instances);
+        for (auto type : {LightType::Point, LightType::Spot})
+        {
+            const std::string label = type == LightType::Point ? "point" : "spot";
+            SceneLight        local;
+            local.id             = label;
+            local.type           = type;
+            local.position       = {-1, 3, 1};
+            local.direction      = {1, -3, -1};
+            local.intensity      = 35;
+            local.innerConeAngle = .4f;
+            local.outerConeAngle = 1.f;
+            local.shadowSoftness = 0;
+            backend->SetLights({local});
+            draw();
+            const auto unshadowed = backend->GetRasterAAImage();
+            save(label + "-off");
+            local.castShadow = true;
+            backend->SetLights({local});
+            draw();
+            const auto shadowed = backend->GetRasterAAImage();
+            save(label + "-hard");
+            size_t pixels = 0;
+            for (size_t i = 0; i < shadowed.pixels.size(); i += 4)
+                if (
+                  int(unshadowed.pixels[i]) + unshadowed.pixels[i + 1] + unshadowed.pixels[i + 2]
+                  > int(shadowed.pixels[i]) + shadowed.pixels[i + 1] + shadowed.pixels[i + 2] + 12)
+                    ++pixels;
+            Require(pixels > 100, "Local light shadow missing");
+            local.shadowSoftness = 4;
+            backend->SetLights({local});
+            draw();
+            save(label + "-soft");
+            Require(backend->GetRasterAAImage().pixels != shadowed.pixels, "Local soft shadow equals hard");
+            settings.enabled = false;
+            backend->SetShadows(settings);
+            draw();
+            Require(backend->GetRasterAAImage().pixels == unshadowed.pixels, "Global switch failed for local light");
+            settings.enabled = true;
+            backend->SetShadows(settings);
+            local.shadowSoftness    = 0;
+            instances[1].castShadow = false;
+            backend->SetScene({{"box", path}}, instances);
+            backend->SetLights({local});
+            draw();
+            Require(backend->GetRasterAAImage().pixels == unshadowed.pixels, "Excluded local caster still casts");
+            instances[1].castShadow = true;
+            instances[1].world[12]  = 1;
+            backend->SetScene({{"box", path}}, instances);
+            draw();
+            Require(backend->GetRasterAAImage().pixels != shadowed.pixels, "Local caster movement ignored");
+            // The blocker is beyond the source on rays from the visible floor center.
+            local.position         = {1, 2, 0};
+            local.direction        = {-1, -2, 0};
+            local.innerConeAngle   = .5f;
+            local.outerConeAngle   = 1.2f;
+            instances[1].world[12] = 2;
+            instances[1].world[13] = 4;
+            backend->SetScene({{"box", path}}, instances);
+            backend->SetLights({local});
+            draw();
+            const auto finite = backend->GetRasterAAImage();
+            save(label + "-behind-source");
+            instances[1].castShadow = false;
+            backend->SetScene({{"box", path}}, instances);
+            draw();
+            Require(backend->GetRasterAAImage().pixels == finite.pixels, "Geometry behind local source casts shadow");
+            local.range      = .1f;
+            local.castShadow = false;
+            backend->SetLights({local});
+            draw();
+            const auto outsideRange = backend->GetRasterAAImage();
+            local.castShadow        = true;
+            backend->SetLights({local});
+            draw();
+            Require(backend->GetRasterAAImage().pixels == outsideRange.pixels, "Shadows changed out-of-range lighting");
+            if (type == LightType::Spot)
+            {
+                local.range      = 0;
+                local.direction  = {0, 1, 0};
+                local.castShadow = false;
+                backend->SetLights({local});
+                draw();
+                const auto outsideCone = backend->GetRasterAAImage();
+                local.castShadow       = true;
+                backend->SetLights({local});
+                draw();
+                Require(backend->GetRasterAAImage().pixels == outsideCone.pixels, "Shadows changed outside spot cone");
+            }
+            instances[1].castShadow = true;
+            instances[1].world[12]  = 0;
+            instances[1].world[13]  = .3f;
+            backend->SetScene({{"box", path}}, instances);
+        }
+        SceneLight point, spot;
+        point.id             = "mixed-point";
+        point.type           = LightType::Point;
+        point.position       = {-1, 3, 1};
+        point.intensity      = 25;
+        point.color          = {1, .3f, .2f};
+        point.castShadow     = true;
+        point.shadowSoftness = 0;
+        spot                 = point;
+        spot.id              = "mixed-spot";
+        spot.type            = LightType::Spot;
+        spot.position        = {1, 3, 1};
+        spot.direction       = {-1, -3, -1};
+        spot.outerConeAngle  = 1;
+        spot.color           = {.2f, .4f, 1};
+        backend->SetLights({point, spot});
+        draw();
+        const auto mixed = backend->GetRasterAAImage();
+        save("mixed-local-hard");
+        point.castShadow = false;
+        backend->SetLights({point, spot});
+        draw();
+        Require(backend->GetRasterAAImage().pixels != mixed.pixels, "Point shadow missing in mixed collection");
+        point.castShadow = true;
+        spot.castShadow  = false;
+        backend->SetLights({point, spot});
+        draw();
+        Require(backend->GetRasterAAImage().pixels != mixed.pixels, "Spot shadow missing in mixed collection");
         backend.reset();
         glfwDestroyWindow(window);
         window = nullptr;

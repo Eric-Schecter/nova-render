@@ -670,8 +670,8 @@ class Renderer {
       spot: supported,
       maxLights: supported ? 16 : 0,
       directionalShadows: supported,
-      pointShadows: false,
-      spotShadows: false,
+      pointShadows: supported,
+      spotShadows: supported,
       shadowRequiresScene: true,
       reason: supported ? '' : 'Light collections currently require WebGPU raster rendering',
     }

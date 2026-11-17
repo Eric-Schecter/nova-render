@@ -45,8 +45,8 @@ window.validation = (async () => {
     !lightCaps.point ||
     !lightCaps.spot ||
     lightCaps.maxLights !== 16 ||
-    lightCaps.pointShadows ||
-    lightCaps.spotShadows
+    !lightCaps.pointShadows ||
+    !lightCaps.spotShadows
   )
     throw Error('Installed light capabilities mismatch')
   renderer.setLighting('pbr')

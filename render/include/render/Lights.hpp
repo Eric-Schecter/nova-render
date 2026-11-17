@@ -25,8 +25,9 @@ namespace render
         std::array<float, 3> direction{0, 1, 0};
         float                range          = 0;                          // World units; zero means unlimited.
         float                innerConeAngle = .35f, outerConeAngle = .6f; // Radian half angles.
-        bool                 castShadow     = false;
-        float                shadowSoftness = 1;
+        bool                 castShadow = false;
+        // Directional disk radius: softness * .006 radians; point/spot: softness * .006 world units.
+        float shadowSoftness = 1;
     };
     struct LightingCapabilities
     {
@@ -65,8 +66,6 @@ namespace render
                         fail("position");
                 if (!std::isfinite(light.range) || light.range < 0)
                     fail("range");
-                if (light.castShadow)
-                    fail("point/spot shadows (unsupported)");
             }
             if (light.type != LightType::Point)
             {

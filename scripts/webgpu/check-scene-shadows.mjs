@@ -1,7 +1,7 @@
 import { chromium } from 'playwright'
 import { realpathSync, mkdirSync, writeFileSync } from 'node:fs'
 import { decode } from './Screenshot.mjs'
-const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5222'
+const base = process.env.NOVA_TEST_URL || 'http://127.0.0.1:5220'
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
@@ -117,10 +117,155 @@ try {
   })
   if ((await capture('moved')).pixels.equals(hard.pixels))
     throw Error('Caster movement retained stale shadow')
+  for (const type of ['point', 'spot']) {
+    await page.evaluate(async (type) => {
+      instances[1].world[12] = 0
+      instances[1].world[13] = 0.3
+      instances[1].castShadow = true
+      await renderer.setScene(assets, instances)
+      window.local = {
+        id: type,
+        type,
+        position: [-1, 3, 1],
+        direction: [1, -3, -1],
+        intensity: 35,
+        innerConeAngle: 0.4,
+        outerConeAngle: 1,
+        shadowSoftness: 0,
+        castShadow: false,
+      }
+      renderer.setShadows({ enabled: true, samples: 16 })
+      renderer.setLights([local])
+      await renderer.drawFrame()
+      const caps = renderer.getLightingCapabilities()
+      if (!caps.pointShadows || !caps.spotShadows) throw Error('Missing local shadow capabilities')
+    }, type)
+    const unshadowed = await capture(type + '-off')
+    await page.evaluate(async () => {
+      local.castShadow = true
+      renderer.setLights([local])
+      await renderer.drawFrame()
+    })
+    const hard = await capture(type + '-hard')
+    let darker = 0
+    for (let i = 0; i < hard.pixels.length; i += hard.channels)
+      if (
+        unshadowed.pixels[i] + unshadowed.pixels[i + 1] + unshadowed.pixels[i + 2] >
+        hard.pixels[i] + hard.pixels[i + 1] + hard.pixels[i + 2] + 12
+      )
+        darker++
+    if (darker < 100) throw Error(type + ' shadow missing ' + darker)
+    await page.evaluate(async () => {
+      local.shadowSoftness = 4
+      renderer.setLights([local])
+      await renderer.drawFrame()
+    })
+    if ((await capture(type + '-soft')).pixels.equals(hard.pixels))
+      throw Error(type + ' soft equals hard')
+    await page.evaluate(async () => {
+      renderer.setShadows({ enabled: false })
+      await renderer.drawFrame()
+    })
+    if (!(await capture(type + '-global-off')).pixels.equals(unshadowed.pixels))
+      throw Error(type + ' global switch failed')
+    await page.evaluate(async () => {
+      renderer.setShadows({ enabled: true })
+      local.shadowSoftness = 0
+      instances[1].castShadow = false
+      await renderer.setScene(assets, instances)
+      renderer.setLights([local])
+      await renderer.drawFrame()
+    })
+    if (!(await capture(type + '-excluded')).pixels.equals(unshadowed.pixels))
+      throw Error(type + ' excluded caster still shadows')
+    await page.evaluate(async () => {
+      instances[1].castShadow = true
+      instances[1].world[12] = 1
+      await renderer.setScene(assets, instances)
+      await renderer.drawFrame()
+    })
+    if ((await capture(type + '-moved')).pixels.equals(hard.pixels))
+      throw Error(type + ' movement ignored')
+    await page.evaluate(async () => {
+      local.position = [1, 2, 0]
+      local.direction = [-1, -2, 0]
+      local.innerConeAngle = 0.5
+      local.outerConeAngle = 1.2
+      instances[1].world[12] = 2
+      instances[1].world[13] = 4
+      await renderer.setScene(assets, instances)
+      renderer.setLights([local])
+      await renderer.drawFrame()
+    })
+    const finite = await capture(type + '-behind-source')
+    await page.evaluate(async () => {
+      instances[1].castShadow = false
+      await renderer.setScene(assets, instances)
+      await renderer.drawFrame()
+    })
+    if (!(await capture(type + '-behind-excluded')).pixels.equals(finite.pixels))
+      throw Error(type + ' geometry behind source casts shadow')
+    for (const outside of ['range', 'cone']) {
+      if (outside === 'cone' && type !== 'spot') continue
+      await page.evaluate(async (outside) => {
+        local.range = outside === 'range' ? 0.1 : 0
+        if (outside === 'cone') local.direction = [0, 1, 0]
+        local.castShadow = false
+        renderer.setLights([local])
+        await renderer.drawFrame()
+      }, outside)
+      const off = await capture(type + '-' + outside + '-off')
+      await page.evaluate(async () => {
+        local.castShadow = true
+        renderer.setLights([local])
+        await renderer.drawFrame()
+      })
+      if (!(await capture(type + '-' + outside + '-on')).pixels.equals(off.pixels))
+        throw Error(type + ' shadow affects outside ' + outside)
+    }
+  }
+  await page.evaluate(async () => {
+    instances[1].castShadow = true
+    instances[1].world[12] = 0
+    instances[1].world[13] = 0.3
+    await renderer.setScene(assets, instances)
+    window.point = {
+      id: 'mixed-point',
+      type: 'point',
+      position: [-1, 3, 1],
+      intensity: 25,
+      color: [1, 0.3, 0.2],
+      castShadow: true,
+      shadowSoftness: 0,
+    }
+    window.spot = {
+      ...point,
+      id: 'mixed-spot',
+      type: 'spot',
+      position: [1, 3, 1],
+      direction: [-1, -3, -1],
+      outerConeAngle: 1,
+      color: [0.2, 0.4, 1],
+    }
+    renderer.setLights([point, spot])
+    await renderer.drawFrame()
+  })
+  const mixed = await capture('mixed-local-hard')
+  for (const type of ['point', 'spot']) {
+    await page.evaluate(async (type) => {
+      renderer.setLights([
+        { ...point, castShadow: type !== 'point' },
+        { ...spot, castShadow: type !== 'spot' },
+      ])
+      await renderer.drawFrame()
+    }, type)
+    if ((await capture('mixed-' + type + '-off')).pixels.equals(mixed.pixels))
+      throw Error(type + ' shadow missing in mixed collection')
+  }
   await page.evaluate(() => renderer.dispose())
   if (errors.length) throw Error(errors.join('\n'))
   console.log(
-    'PASS WebGPU scene hard/soft shadows, caster flags, movement and validation; pixels',
+    'PASS WebGPU directional/point/spot hard/soft shadows, finite segments, mixed flags, movement and validation; pixels',
     darker,
   )
 } finally {

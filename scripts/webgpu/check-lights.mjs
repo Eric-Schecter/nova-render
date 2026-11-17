@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { copySceneLights } from '../../web/src/Lighting.js'
 for (const invalid of [
   [{ id: 'a', type: 'spot', outerConeAngle: 2 }],
-  [{ id: 'a', type: 'point', castShadow: true }],
+  [{ id: 'a', type: 'point', shadowSoftness: -1 }],
   [{ id: 'a' }, { id: 'a' }],
   Array.from({ length: 17 }, (_, i) => ({ id: String(i) })),
 ])
@@ -113,7 +113,7 @@ try {
     for (const bad of [
       [...lights, { id: 'd1' }],
       [{ id: 'bad', type: 'point', range: -1 }],
-      [{ id: 'bad', type: 'spot', castShadow: true }],
+      [{ id: 'bad', type: 'spot', outerConeAngle: 2 }],
     ]) {
       let rejected = false
       try {

@@ -72,7 +72,6 @@ export function copySceneLights(input) {
     if (light.type !== 'directional') {
       light.position = vec(light.position, 'position')
       if (!Number.isFinite(light.range) || light.range < 0) throw Error('Invalid light range')
-      if (light.castShadow) throw Error('Point/spot shadows are unsupported')
     }
     if (light.type !== 'point') {
       const d = vec(light.direction, 'direction'),

@@ -64,7 +64,7 @@ int main(int argc, char** argv)
             if (window.GetLightingCapabilities().maxLights > 0)
             {
                 const auto caps = window.GetLightingCapabilities();
-                if (!caps.point || !caps.spot || caps.maxLights != 16 || caps.pointShadows || caps.spotShadows)
+                if (!caps.point || !caps.spot || caps.maxLights != 16 || !caps.pointShadows || !caps.spotShadows)
                     throw std::runtime_error("Installed light capabilities mismatch");
                 render::SceneLight point;
                 point.id        = "installed-point";

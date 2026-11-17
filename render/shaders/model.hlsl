@@ -120,9 +120,9 @@ float3 applyFog(float3 color, float3 position)
 #endif
     return lerp(color, fog, saturate(amount));
 }
-bool shadowBox(float3 low, float3 high, float3 origin, float3 direction)
+bool shadowBox(float3 low, float3 high, float3 origin, float3 direction, float maxDistance)
 {
-    float nearT = 0, farT = 1e30;
+    float nearT = 0, farT = maxDistance;
     [unroll] for (uint k = 0; k < 3; k++)
     {
         float pad = 1e-5 * max(1, max(abs(low[k]), abs(high[k])));
@@ -142,7 +142,7 @@ bool shadowBox(float3 low, float3 high, float3 origin, float3 direction)
     }
     return true;
 }
-bool shadowTriangle(InstanceData tri, float3 origin, float3 direction)
+bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance)
 {
     float3 a = tri.baseColor.xyz, e = tri.material.xyz - a, f = tri.emissive.xyz - a, p = cross(direction, f);
     float  determinant = dot(e, p);
@@ -155,9 +155,10 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction)
         return false;
     float3 q = cross(delta, e);
     float  v = dot(direction, q) * inverse;
-    return v >= 0 && u + v <= 1 && dot(f, q) * inverse > 1e-5;
+    float  distance = dot(f, q) * inverse;
+    return v >= 0 && u + v <= 1 && distance > 1e-5 && distance < maxDistance;
 }
-bool sceneOccluded(uint header, float3 origin, float3 direction)
+bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistance)
 {
     InstanceData settings = instances[header];
     [loop] for (uint i = 0; i < uint(settings.emissive.x); i++)
@@ -172,7 +173,7 @@ bool sceneOccluded(uint header, float3 origin, float3 direction)
         [loop] while (node < count)
         {
             InstanceData box = instances[root + node];
-            if (!shadowBox(box.baseColor.xyz, box.material.xyz, localOrigin, localDirection))
+            if (!shadowBox(box.baseColor.xyz, box.material.xyz, localOrigin, localDirection, maxDistance))
             {
                 node = uint(box.baseColor.w);
                 continue;
@@ -186,7 +187,8 @@ bool sceneOccluded(uint header, float3 origin, float3 direction)
             [loop] for (uint t = 0; t < triangles; t++) if (shadowTriangle(
                                                               instances[root + uint(box.uv.z) + t],
                                                               localOrigin,
-                                                              localDirection)) return true;
+                                                              localDirection,
+                                                              maxDistance)) return true;
             node = uint(box.baseColor.w);
         }
     }
@@ -210,7 +212,38 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
         float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * softness * .006;
         float  angle  = float(sampleIndex) * 2.39996323;
         float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
-        visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray) ? 0 : 1;
+        visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray, 1e30) ? 0 : 1;
+    }
+    return visible / count;
+}
+// Finite shadow segment: local BVH directions are deliberately not normalized,
+// so their intersection parameter retains world-space distance under nonuniform scale.
+float localLightVisibility(float3 position, float3 normal, float3 lightPosition, float softness)
+{
+    if (irradiance[3].w < .5)
+        return 1;
+    uint         header   = uint(irradiance[3].w) - 1;
+    InstanceData settings = instances[header];
+    if (settings.emissive.y < .5 || settings.emissive.x < .5)
+        return 1;
+    float3 origin   = position + normalize(normal) * settings.uv.x;
+    float3 delta    = lightPosition - origin;
+    float  distance = length(delta);
+    if (distance < 1e-5)
+        return 1;
+    float3 light   = delta / distance;
+    float3 axis    = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
+    uint   count   = softness < .0001 ? 1 : uint(settings.emissive.w);
+    float  visible = 0;
+    [loop] for (uint i = 0; i < count; ++i)
+    {
+        // Deterministic disk around the source, radius in world units.
+        float  radius         = count == 1 ? 0 : sqrt((float(i) + .5) / count) * softness * .006;
+        float  angle          = float(i) * 2.39996323;
+        float3 sampleDelta    = delta + radius * (cos(angle) * tangent + sin(angle) * bitangent);
+        float  sampleDistance = length(sampleDelta);
+        visible += sceneOccluded(header, origin, sampleDelta / sampleDistance, max(0, sampleDistance - 1e-5)) ? 0 : 1;
     }
     return visible / count;
 }
@@ -429,8 +462,13 @@ float4 PSMain(VertexOut input)
                                                                        : step(source.uv.y, cone);
                 }
             }
-            float visibility =
-              type == 0 && source.uv.z > .5 ? sceneVisibility(input.worldPosition, input.normal, l, source.uv.w) : 1;
+            if (attenuation <= 0)
+                continue;
+            float visibility = 1;
+            if (source.uv.z > .5)
+                visibility =
+                  type == 0 ? sceneVisibility(input.worldPosition, input.normal, l, source.uv.w)
+                            : localLightVisibility(input.worldPosition, input.normal, source.material.xyz, source.uv.w);
             color += directLight(
               n, v, l, base, metallic, roughness, source.baseColor.rgb * source.baseColor.w * attenuation * visibility);
         }
