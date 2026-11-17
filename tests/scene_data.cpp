@@ -114,7 +114,8 @@ int main(int argc, char** argv)
         reject(badAssets, instances);
         badAssets         = assets;
         badAssets[0].path = root / "Fox/Fox.glb";
-        reject(badAssets, instances);
+        scene.Update(badAssets, instances);
+        Require(scene.HasAnimations() && !scene.Animations(badAssets[0].id).empty(), "Animated scene not loaded");
         Require(!scene.AssetBounds("missing"), "Unknown bounds should be absent");
         scene.Update({}, {});
         Require(
