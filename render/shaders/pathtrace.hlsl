@@ -801,12 +801,17 @@ float3 analyticLights(
             }
             maxDistance = distance;
         }
-        if (attenuation <= 0 || dot(n, l) <= 0 || dot(geometric, l) <= 0)
+        // A dielectric can scatter into either geometric hemisphere. Test
+        // the full BSDF instead of applying an opaque reflection-only mask.
+        float3 f = pathF(surface, v, l);
+        if (attenuation <= 0 || !any(f > 0))
             continue;
         bool visible = true;
         if (info.z != 0 && options.z > .5)
         {
-            float3 origin = surface.position + geometric * asfloat(info.w), ray = l;
+            // Offset toward the sampled outgoing direction, including transmission.
+            float  side   = dot(geometric, l) < 0 ? -1 : 1;
+            float3 origin = surface.position + geometric * (side * asfloat(info.w)), ray = l;
             float3 axis = abs(l.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), t = normalize(cross(l, axis)),
                    b      = cross(l, t);
             float3 offset = 0;
@@ -827,7 +832,7 @@ float3 analyticLights(
             visible = maxDistance <= 1e-5 || !traceRay(origin, ray, max(0, maxDistance - 1e-5), blocker, true);
         }
         if (visible)
-            sum += pathF(surface, v, l) * abs(dot(surface.geometric, l)) * color.rgb * color.w * attenuation;
+            sum += f * abs(dot(surface.geometric, l)) * color.rgb * color.w * attenuation;
     }
     return sum;
 }
@@ -876,11 +881,11 @@ float3 path(
         if (depth + 1 >= minScatters && asuint(parameters[32]).x != 0)
             sum += weight * analyticLights(surface, v, state, includeLocal);
         if (
-          asuint(parameters[32]).x == 0 && depth + 1 >= minScatters && parameters[9].w > 0 && dot(n, light) > 0
-          && dot(geometric, light) > 0)
+          asuint(parameters[32]).x == 0 && depth + 1 >= minScatters && parameters[9].w > 0
+          && any(pathF(surface, v, light) > 0))
         {
             Hit shadow;
-            if (!traceRay(position + geometric * .001, light, 10000, shadow, true))
+            if (!traceRay(pathOrigin(surface, light), light, 10000, shadow, true))
                 sum += weight * pathF(surface, v, light) * abs(dot(surface.geometric, light)) * parameters[9].rgb
                        * parameters[9].w;
         }
@@ -913,7 +918,7 @@ float3 path(
         direction = l;
         origin    = pathOrigin(surface, l);
     }
-    return min(max(sum, 0), float3(64, 64, 64));
+    return max(sum, 0);
 }
 float sourcePdf(PathVertex p)
 {
@@ -1146,7 +1151,10 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
                   (t * cos(diskAngle) + cross(d, t) * sin(diskAngle)) * diskRadius * parameters[at + 3].w * .006;
                 float3 n, g;
                 pathFrame(eyeVertices[e], v, n, g);
-                start         = eyeVertices[e].position + g * asfloat(asuint(parameters[32]).w);
+                // Delta-source connections can transmit through the current interface.
+                // Offsetting toward the eye would immediately hit that same surface.
+                float side    = dot(g, d) < 0 ? -1 : 1;
+                start         = eyeVertices[e].position + g * (side * asfloat(asuint(parameters[32]).w));
                 end           = lightVertices[l].position + offset;
                 shadowEnabled = asuint(parameters[32]).z != 0 && parameters[at + 3].z > .5;
                 sourceFactor  = sourceFalloff(deltaIndex(lightVertices[l]), -d)
@@ -1162,7 +1170,7 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             result += eyeVertices[e].beta * lightVertices[l].beta * fEye * fLight * geometry * w;
         }
     }
-    return min(max(result, 0), float3(64, 64, 64));
+    return max(result, 0);
 }
 
 // Photon records and 32³ toroidal grid share the existing scratch binding.
@@ -1346,7 +1354,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
         origin      = pathOrigin(p, l);
         direction   = l;
     }
-    return min(max(result, 0), float3(64, 64, 64));
+    return max(result, 0);
 }
 
 // Global PSSMLT film. The indirect target is BDPT luminance; the independent
@@ -1366,7 +1374,7 @@ float3 mltEvaluate(out uint pixel)
     float3 value   = path(origin, direction, state, asuint(parameters[24]).w, !connect, 2, !connect);
     if (connect)
         value += bidirectional(origin, direction, state, asuint(parameters[24]).w, 2);
-    return min(max(value, 0), float3(64, 64, 64));
+    return max(value, 0);
 }
 float mltIntensity(float3 value)
 {
@@ -1588,7 +1596,7 @@ void mltTransition(inout uint rng, inout float3 value, inout float intensity, in
             value += bidirectional(origin, direction, state, frame.w);
         if (usePhotons)
             value += photonCamera(origin, direction, state, frame.w);
-        sum += min(max(value, 0), float3(64, 64, 64));
+        sum += max(value, 0);
     }
     if (useMLT)
     {

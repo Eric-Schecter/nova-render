@@ -121,7 +121,7 @@ try {
           const record = {
             scene,
             type,
-            pt: mean(reference),
+            referenceMean: mean(reference),
             direct: mean(direct),
             bdpt: mean(bdpt),
             photons: mean(photons),
@@ -131,12 +131,12 @@ try {
             blockHigh: blockMSE(photons, reference),
             raw: Array.from(photons),
           }
-          if (!(record.pt > record.direct * 1.05)) throw Error('No indirect local light')
-          if (Math.abs(record.bdpt / record.pt - 1) > 0.1)
+          if (!(record.referenceMean > record.direct * 1.05)) throw Error('No indirect local light')
+          if (Math.abs(record.bdpt / record.referenceMean - 1) > 0.1)
             throw Error('BDPT energy mismatch ' + JSON.stringify(record))
           if (
-            Math.abs(record.photons / record.pt - 1) > 0.18 ||
-            (scene === 'CornellBox' && record.mseHighBudget >= record.mseLowBudget)
+            Math.abs(record.photons / record.referenceMean - 1) > 0.05 ||
+            record.mseHighBudget >= record.mseLowBudget
           )
             throw Error('Photon convergence/energy mismatch')
           for (const [name, values] of [

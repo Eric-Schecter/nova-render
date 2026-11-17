@@ -147,19 +147,18 @@ int main(int argc, char** argv)
                     low.write(reinterpret_cast<const char*>(early.data()), early.size() * 4);
                 }
                 const double base = mean(reference);
-                std::cout << scene << " " << (type == LightType::Point ? "point" : "spot") << " PT=" << base
+                std::cout << scene << " " << (type == LightType::Point ? "point" : "spot") << " reference=" << base
                           << " direct=" << mean(direct) << " BDPT=" << mean(bdpt) << " photons=" << mean(photons)
                           << " photon MSE(256x8)=" << mse(early, reference)
                           << " MSE(8192x256/1024)=" << mse(photons, reference) << std::endl;
                 require(base > .00001 && base > mean(direct) * 1.05, "Missing indirect local illumination");
                 require(std::abs(mean(bdpt) / base - 1) < .1, "Delta-position BDPT energy mismatch");
-                require(std::abs(mean(photons) / base - 1) < .18, "Local photon flux mismatch");
+                require(std::abs(mean(photons) / base - 1) < .05, "Local photon flux mismatch");
                 std::cout << "Block-integrated MSE low=" << blockMSE(early, reference)
                           << " high=" << blockMSE(photons, reference) << std::endl;
-                // Sharp-caustic density estimates retain finite-budget bias;
-                // report their MSE without requiring monotonic pixel convergence.
-                if (std::string(scene) == "CornellBox")
-                    require(mse(photons, reference) < mse(early, reference), "Diffuse photons did not converge");
+                // Fixed low/high photon budgets must improve reconstruction in
+                // both diffuse and glass fixtures after the source-visibility fix.
+                require(mse(photons, reference) < mse(early, reference), "Photon reconstruction did not converge");
                 require(
                   mse(bdpt, render(PathIntegrator::PathTracing, 1024)) > 1e-14,
                   "BDPT still uses the identical camera-only sequence");

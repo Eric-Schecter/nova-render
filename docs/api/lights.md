@@ -46,7 +46,7 @@ Ray tracing supports point/spot **BDPT source subpaths and photon emission**, in
 
 Point sources emit over the sphere; spot sources sample their outer cone and weight the smooth inner/outer falloff. Position is a discrete delta, never an area PDF. Source selection probabilities and emission-direction PDFs normalize light-path throughput and photon flux. Mixed emissive geometry and local lights share emission selection, with no duplicate camera-path local-light term. The `lightSampling` switch still controls PT area/HDR MIS.
 
-Range and the near-source inverse-square clamp apply to the first source-to-surface segment; subsequent bounces transport that energy normally. Point/spot lights remain ideal point sources: `shadowSoftness` filters direct visibility, not photon emission or physical source size. Static snapshots, finite bounce limits, photon density bias, and the existing radiance clamp still apply.
+Range and the near-source inverse-square clamp apply to the first source-to-surface segment; subsequent bounces transport that energy normally. Point/spot lights remain ideal point sources: `shadowSoftness` filters direct visibility, not photon emission or physical source size. Static snapshots, finite bounce limits, and photon density bias still apply. Per-path radiance is not clipped; tone mapping and denoising remain display operations.
 
 Select the estimator through the existing ray settings; no light-specific backend calls are needed:
 
@@ -75,4 +75,10 @@ Metal, Vulkan and WebGPU pass six-light linear additivity, disabled/empty collec
 
 Non-emissive Cornell and glass-caustic scenes audit point/spot source energy against independent high-sample references, diffuse photon convergence, glass-caustic energy, disabled/range-limited sources and native/Web parity. The source sampler and all kernels are shared HLSL. See the renderer tests `source-lights-metal`, `source-lights-vulkan` and `scripts/webgpu/check-source-lights.mjs`.
 
-For sharp glass caustics the validation reports, without asserting monotonic improvement, both raw pixel MSE and 4-by-4 block-integrated MSE against an independent BDPT reference. Shrinking photon kernels retain finite-budget density bias: pixel MSE is not guaranteed to decrease monotonically. The supplied glass spot fixture still shows a roughly 16% mean-energy difference at its finite test budget; this is not a claim of pixel-identical or unbiased photon reconstruction.
+## 0.7.1 dielectric energy correction
+
+The former roughly 16% glass-spot energy discrepancy was primarily an implementation error, not evidence of inherent photon-map bias. Camera NEE rejected transmission hemispheres; BDPT delta-source visibility offset the shadow ray toward the eye and self-occluded transmitted connections. Both now use the full dielectric BSDF and offset toward the outgoing light direction. A hidden per-path radiance ceiling of 64 was also removed because it clipped rare caustic samples and broke intensity linearity. The documented near-source inverse-square regularization remains unchanged.
+
+The non-emissive 32-by-32 glass-spot fixture uses a 32,768-spp BDPT reference and 4,096 camera samples with 8,192 photons per iteration. Metal/Vulkan means are approximately 0.00078289 (BDPT) and 0.00078162 (photons, initial radius 0.16), a 0.16% difference; WebGPU reports about 0.17%. Independent PT and a radius sweep from 0.03 to 0.32 pass a 3% plus four block-standard-error agreement bound. These are fixture-specific finite-sample measurements, not a universal error guarantee.
+
+Single-interface regressions verify point/spot transmission, signed visibility bias, real blockers and high-intensity linearity above the old clipping threshold. Tests are `dielectric-lights-*`, `caustic-energy-*`, `scripts/webgpu/check-dielectric-lights.mjs` and `scripts/webgpu/check-caustic-energy.mjs`. The source-light regression now requires at most 5% mean-energy disagreement and improved raw reconstruction MSE in both Cornell fixtures. Photon density estimates still have finite-radius bias and individual realizations need not converge monotonically.
