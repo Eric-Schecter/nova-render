@@ -198,7 +198,11 @@ namespace render::detail
             throw std::runtime_error("Reflection environment unsupported");
         }
         virtual void  Resize(uint32_t width, uint32_t height, bool supersampled) = 0;
-        virtual Image Draw(const std::vector<AAPass>& passes)                    = 0;
+        // GPU output belongs to this device and is valid until the next resize/draw.
+        virtual void* GPUOutput() const { return nullptr; }
+        virtual Image Capture() { throw std::runtime_error("GPU capture unsupported"); }
+        uint64_t      readbackCount                                                 = 0;
+        virtual Image Draw(const std::vector<AAPass>& passes, bool readback = true) = 0;
     };
     std::unique_ptr<AADevice> CreateMetalAA(const RendererConfig&, const AAExternalScene& = {});
     std::unique_ptr<AADevice> CreateVulkanAA(const RendererConfig&, const AAExternalScene& = {});

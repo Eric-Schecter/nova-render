@@ -922,7 +922,29 @@ namespace render::detail
                 if (!needed[2])
                     Destroy(depthBaseline);
             }
-            Image Draw(const std::vector<AAPass>& passes) override
+            void* GPUOutput() const override { return reinterpret_cast<void*>(textures[AAOutput].view); }
+
+            Image Capture() override
+            {
+                if (!textures[AAOutput].image)
+                    throw std::runtime_error("Draw before GPU capture");
+                Begin();
+                Transition(textures[AAOutput], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                VkBufferImageCopy copy{};
+                copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                copy.imageExtent      = {width, height, 1};
+                api.vkCmdCopyImageToBuffer(
+                  command, textures[AAOutput].image, textures[AAOutput].layout, readback.buffer, 1, &copy);
+                Transition(textures[AAOutput], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                End();
+                void* mapped;
+                Check(api.vkMapMemory(device, readback.memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+                auto image = AAReadImage(static_cast<uint16_t*>(mapped), width, height, size_t(width) * 8);
+                api.vkUnmapMemory(device, readback.memory);
+                readbackCount++;
+                return image;
+            }
+            Image Draw(const std::vector<AAPass>& passes, bool readbackImage = true) override
             {
                 Ensure(passes);
                 Check(api.vkResetDescriptorPool(device, descriptorPool, 0));
@@ -1114,6 +1136,17 @@ namespace render::detail
                       0);
                     api.vkCmdEndRenderPass(command);
                 }
+                if (!readbackImage)
+                {
+                    Transition(textures[AAOutput], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    End();
+                    for (auto fb : framebuffers)
+                        api.vkDestroyFramebuffer(device, fb, nullptr);
+                    if (validationErrors)
+                        throw std::runtime_error("Vulkan AA validation errors: " + std::to_string(validationErrors));
+                    return {width, height, {}};
+                }
+                readbackCount++;
                 Transition(textures[AAOutput], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                 VkBufferImageCopy copy{};
                 copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};

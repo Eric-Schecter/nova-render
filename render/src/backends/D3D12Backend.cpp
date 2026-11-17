@@ -232,7 +232,10 @@ namespace render::detail
             if (!sceneWidth || !sceneHeight)
                 return FrameResult::Skipped;
             const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
-            if (path)
+            const bool  gpuFrame    = path && path->pixels.empty() && rasterAA.lastGPUFrame;
+            if (gpuFrame)
+                BindRasterGPUOutput();
+            else if (path)
                 UploadPathImage(*path);
             if (model)
             {
@@ -244,7 +247,7 @@ namespace render::detail
                   directionalLight,
                   environment.get(),
                   environmentSettings);
-                u.skyParams[2]     = path ? 1.0f : 0.0f;
+                u.skyParams[2]      = gpuFrame ? 2.f : path ? 1.0f : 0.0f;
                 u.lightDirection[3] = MaterialMode();
                 ApplyRasterSettings(u);
                 void*       mapped = nullptr;

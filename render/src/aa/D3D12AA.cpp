@@ -510,7 +510,38 @@ namespace render::detail
                     readback = Buffer(readbackSize, D3D12_HEAP_TYPE_READBACK);
                 }
             }
-            Image Draw(const std::vector<AAPass>& passes) override
+            void* GPUOutput() const override { return textures[AAOutput].resource.Get(); }
+
+            Image Capture() override
+            {
+                if (!textures[AAOutput].resource)
+                    throw std::runtime_error("Draw before GPU capture");
+                Begin();
+                Transition(textures[AAOutput], D3D12_RESOURCE_STATE_COPY_SOURCE);
+                D3D12_TEXTURE_COPY_LOCATION from{};
+                from.pResource = textures[AAOutput].resource.Get();
+                from.Type      = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                D3D12_TEXTURE_COPY_LOCATION to{};
+                to.pResource       = readback.Get();
+                to.Type            = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+                to.PlacedFootprint = footprint;
+                commands->CopyTextureRegion(&to, 0, 0, 0, &from, nullptr);
+                Transition(textures[AAOutput], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                End();
+                void*       mapped;
+                D3D12_RANGE range{size_t(footprint.Offset), size_t(readbackSize)};
+                Check(readback->Map(0, &range, &mapped));
+                auto image = AAReadImage(
+                  reinterpret_cast<uint16_t*>(static_cast<char*>(mapped) + footprint.Offset),
+                  width,
+                  height,
+                  footprint.Footprint.RowPitch);
+                D3D12_RANGE written{0, 0};
+                readback->Unmap(0, &written);
+                readbackCount++;
+                return image;
+            }
+            Image Draw(const std::vector<AAPass>& passes, bool readbackImage = true) override
             {
                 Ensure(passes);
                 void*       mapped;
@@ -691,6 +722,13 @@ namespace render::detail
                               DXGI_FORMAT_R16G16B16A16_FLOAT);
                         }
                 }
+                if (!readbackImage)
+                {
+                    Transition(textures[AAOutput], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                    End();
+                    return {width, height, {}};
+                }
+                readbackCount++;
                 Transition(textures[AAOutput], D3D12_RESOURCE_STATE_COPY_SOURCE);
                 D3D12_TEXTURE_COPY_LOCATION from{};
                 from.pResource = textures[AAOutput].resource.Get();

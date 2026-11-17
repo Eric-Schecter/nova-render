@@ -484,3 +484,18 @@ void UploadPathImage(const ModelImage& image)
     write.pImageInfo      = &info;
     vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 }
+
+void BindRasterGPUOutput()
+{
+    VkDescriptorImageInfo info{
+      VK_NULL_HANDLE,
+      reinterpret_cast<VkImageView>(rasterAA.device->GPUOutput()),
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet          = modelSet;
+    write.dstBinding      = 10;
+    write.descriptorCount = 1;
+    write.descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo      = &info;
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+}

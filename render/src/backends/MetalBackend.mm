@@ -186,7 +186,8 @@ namespace render::detail
                 if (!sceneWidth || !sceneHeight)
                     return FrameResult::Skipped;
                 const auto* path        = DrawPathFrame(sceneWidth, sceneHeight);
-                if (path)
+                const bool  gpuFrame    = path && path->pixels.empty() && rasterAA.lastGPUFrame;
+                if (path && !gpuFrame)
                     UploadPathImage(*path);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
                 if (!encoder)
@@ -212,7 +213,7 @@ namespace render::detail
                       directionalLight,
                       environment.get(),
                       environmentSettings);
-                    uniforms.skyParams[2] = path ? 1.0f : 0.0f;
+                    uniforms.skyParams[2]      = gpuFrame ? 2.f : path ? 1.0f : 0.0f;
                     uniforms.lightDirection[3] = MaterialMode();
                     ApplyRasterSettings(uniforms);
                     [encoder setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
@@ -227,7 +228,10 @@ namespace render::detail
                     [encoder setFragmentSamplerState:modelSampler atIndex:7];
                     [encoder setFragmentTexture:environmentTexture atIndex:8];
                     [encoder setFragmentTexture:backgroundTexture atIndex:9];
-                    [encoder setFragmentTexture:path ? pathDisplay : modelTextures[0] atIndex:10];
+                    [encoder setFragmentTexture:gpuFrame ? (__bridge id<MTLTexture>)rasterAA.device->GPUOutput()
+                                                : path   ? pathDisplay
+                                                         : modelTextures[0]
+                                        atIndex:10];
                     if ((environment && environmentSettings.showBackground) || path)
                     {
                         [encoder setRenderPipelineState:skyPipeline];

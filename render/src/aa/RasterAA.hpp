@@ -13,6 +13,7 @@ namespace render::detail
         std::vector<JointMatrix>  previousJoints;
         std::array<float, 2>      lastJitter{};
         Image                     image;
+        bool                      gpuPresentation = false, lastGPUFrame = false;
         PostProcessingState       postState;
         void                      Reset()
         {
@@ -163,7 +164,8 @@ namespace render::detail
             if (settings.split)
                 p->sources[3] = post.baseline;
             device->Resize(w, h, settings.method == AAMethod::SSAA);
-            image      = device->Draw(passes);
+            lastGPUFrame = gpuPresentation;
+            image        = device->Draw(passes, !gpuPresentation);
             lastJitter = jitter;
             previous   = current;
             frames++;

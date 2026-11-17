@@ -210,7 +210,34 @@ namespace render::detail
                 if (!needed[2])
                     depthBaseline = nil;
             }
-            Image Draw(const std::vector<AAPass>& passes) override
+            void* GPUOutput() const override { return (__bridge void*)textures[AAOutput]; }
+
+            Image Capture() override
+            {
+                if (!textures[AAOutput])
+                    throw std::runtime_error("Draw before GPU capture");
+                const size_t row     = (size_t(width) * 8 + 255) & ~size_t(255);
+                auto         buffer  = [device newBufferWithLength:row * height options:MTLResourceStorageModeShared];
+                auto         command = [queue commandBuffer];
+                auto         blit    = [command blitCommandEncoder];
+                [blit copyFromTexture:textures[AAOutput]
+                               sourceSlice:0
+                               sourceLevel:0
+                              sourceOrigin:MTLOriginMake(0, 0, 0)
+                                sourceSize:MTLSizeMake(width, height, 1)
+                                  toBuffer:buffer
+                         destinationOffset:0
+                    destinationBytesPerRow:row
+                  destinationBytesPerImage:row * height];
+                [blit endEncoding];
+                [command commit];
+                [command waitUntilCompleted];
+                if (command.status != MTLCommandBufferStatusCompleted)
+                    throw std::runtime_error(command.error.localizedDescription.UTF8String);
+                readbackCount++;
+                return AAReadImage(static_cast<const uint16_t*>(buffer.contents), width, height, row);
+            }
+            Image Draw(const std::vector<AAPass>& passes, bool readbackImage = true) override
             {
                 @autoreleasepool
                 {
@@ -345,6 +372,15 @@ namespace render::detail
                                                   : 3];
                         [e endEncoding];
                     }
+                    if (!readbackImage)
+                    {
+                        [command commit];
+                        [command waitUntilCompleted];
+                        if (command.status != MTLCommandBufferStatusCompleted)
+                            throw std::runtime_error(command.error.localizedDescription.UTF8String);
+                        return {width, height, {}};
+                    }
+                    readbackCount++;
                     const size_t row = (size_t(width) * 8 + 255) & ~size_t(255);
                     auto buffer      = [device newBufferWithLength:row * height options:MTLResourceStorageModeShared];
                     auto blit        = [command blitCommandEncoder];

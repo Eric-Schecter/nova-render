@@ -94,6 +94,7 @@ struct InstanceData
 [[vk::binding(14, 0)]] StructuredBuffer<InstanceData> instances : register(t11);
 
 float3 encodeDisplayRGB(float3 color);
+float3 diagnosticLinear(float3 color);
 float3 applyFog(float3 color, float3 position)
 {
     if (irradiance[3].w < .5)
@@ -398,7 +399,8 @@ float4 SkyPSMain(SkyOut input)
         uint width, height;
         pathTexture.GetDimensions(width, height);
         float2 halfTexel = 0.5 / float2(width, height);
-        return float4(pathTexture.SampleLevel(textureSampler, clamp(input.uv, halfTexel, 1 - halfTexel), 0).rgb, 1);
+        float3 color     = pathTexture.SampleLevel(textureSampler, clamp(input.uv, halfTexel, 1 - halfTexel), 0).rgb;
+        return float4(skyParams.z > 1.5 ? diagnosticLinear(color) : color, 1);
     }
     float3 direction = environmentDirection(normalize(input.direction));
     float3 color     = backgroundTexture.Sample(textureSampler, direction).rgb * skyParams.x;

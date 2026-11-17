@@ -320,6 +320,15 @@ namespace render::detail
         }
         AntiAliasingSettings GetAntiAliasing() const { return rasterSettings; }
         const Image&         GetRasterAAImage() const { return rasterAA.image; }
+        void                 EnableGPUFramePresentation(bool enabled) { rasterAA.gpuPresentation = enabled; }
+        uint64_t RasterReadbackCount() const { return rasterAA.device ? rasterAA.device->readbackCount : 0; }
+        void*    RasterGPUOutput() const { return rasterAA.device ? rasterAA.device->GPUOutput() : nullptr; }
+        Image    CaptureRasterFrame()
+        {
+            if (!rasterAA.device)
+                throw std::runtime_error("Draw before capture");
+            return rasterAA.device->Capture();
+        }
         uint32_t             GetAntiAliasingHistoryFrames() const
         {
             return rasterSettings.method == AAMethod::TAA && modelRaster.view == GBufferView::Final ? rasterAA.frames

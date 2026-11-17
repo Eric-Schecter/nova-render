@@ -419,3 +419,15 @@ void UploadPathImage(const ModelImage& image)
     view.Texture2D.MipLevels     = 1;
     device->CreateShaderResourceView(pathDisplay.Get(), &view, handle);
 }
+
+void BindRasterGPUOutput()
+{
+    auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += SIZE_T(7) * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+    view.Format                  = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    view.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+    view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    view.Texture2D.MipLevels     = 1;
+    device->CreateShaderResourceView(static_cast<ID3D12Resource*>(rasterAA.device->GPUOutput()), &view, handle);
+}
