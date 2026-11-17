@@ -69,9 +69,9 @@ Zero `shadowSoftness` uses one hard visibility ray. Raster positive values use t
 
 `SetDirectionalLight` / `setDirectionalLight` exits collection mode and restores the compatible single-light rendering path. `GetLights` then reports one `__directional` entry. Built-in parameter panels do not overwrite application-owned collections; edit collections through the API or your application UI.
 
-## 0.7.0 validation
+## 0.7.1 validation
 
-Metal, Vulkan and WebGPU pass six-light linear additivity, disabled/empty collections, point range and spot cones, shadow toggles, accumulation reset, four integrators, multi-instance transforms and runtime materials. Vulkan prefers hardware queries and falls back to shared-HLSL compute BVH when unavailable; `softwareRayTracing` truthfully reports the fallback. macOS Vulkan validation uses this compute path; Metal uses native acceleration structures. DX12 shaders compile to DXIL, but Windows hardware/WARP runtime and native SDK validation remain deferred at the user's request. No Windows SDK is published in 0.7.0.
+Metal, Vulkan and WebGPU pass six-light linear additivity, disabled/empty collections, point range and spot cones, shadow toggles, accumulation reset, four integrators, multi-instance transforms and runtime materials. Vulkan prefers hardware queries and falls back to shared-HLSL compute BVH when unavailable; `softwareRayTracing` truthfully reports the fallback. macOS Vulkan validation uses this compute path; Metal uses native acceleration structures. DX12 shaders compile to DXIL, but Windows hardware/WARP runtime and native SDK validation remain deferred at the user's request. No Windows SDK is published in 0.7.1.
 
 Non-emissive Cornell and glass-caustic scenes audit point/spot source energy against independent high-sample references, diffuse photon convergence, glass-caustic energy, disabled/range-limited sources and native/Web parity. The source sampler and all kernels are shared HLSL. See the renderer tests `source-lights-metal`, `source-lights-vulkan` and `scripts/webgpu/check-source-lights.mjs`.
 
