@@ -32,6 +32,8 @@ export function validateMaterial(m) {
     normalScale: m.normalScale ?? 1,
     occlusionStrength: m.occlusionStrength ?? 1,
     emissive: m.emissive ?? [0, 0, 0],
+    specularFactor: m.specularFactor ?? 1,
+    specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
   }
   if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean')
     throw Error('Invalid material alpha mode or sidedness')
@@ -43,6 +45,7 @@ export function validateMaterial(m) {
   for (const [key, n, max] of [
     ['baseColor', 4, 1],
     ['emissive', 3, 65504],
+    ['specularColorFactor', 3, 3.4028234663852886e38],
   ]) {
     if (!(Array.isArray(out[key]) || out[key] instanceof Float32Array) || out[key].length !== n)
       throw Error('Invalid material color')
@@ -55,6 +58,7 @@ export function validateMaterial(m) {
     ['alphaCutoff', 1],
     ['roughness', 1],
     ['metallic', 1],
+    ['specularFactor', 1],
     ['normalScale', 16],
     ['occlusionStrength', 1],
   ]) {
@@ -124,6 +128,9 @@ export function packMaterials(data) {
       x = (i % cols) * stride,
       y = Math.floor(i / cols) * stride
     for (const k of [0, 5, 10, 15, 16, 21, 26, 31]) record[k] = 1
+    // The first column of the world matrix is unused in material records.
+    record.set(m.specularColorFactor ?? [1, 1, 1], 0)
+    record[3] = m.specularFactor ?? 1
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)

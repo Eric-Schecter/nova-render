@@ -179,6 +179,33 @@ int main(int argc, char** argv)
         backend->LoadModel(source);
         backend->SetLighting(LightingMode::PBR);
         backend->SetAntiAliasing({AAMethod::Off});
+        auto dielectric = backend->GetMaterials("")[0];
+        dielectric.metallic = 0;
+        dielectric.specularColorFactor = {2, .5f, .25f};
+        backend->SetMaterial(0, dielectric, "");
+        for (auto pipeline : {RasterPipeline::Forward, RasterPipeline::Deferred})
+        {
+            RasterSettings raster;
+            raster.pipeline = pipeline;
+            backend->SetRasterSettings(raster);
+            backend->SetAntiAliasing({AAMethod::FXAA});
+            dielectric.specularFactor = 1;
+            backend->SetMaterial(0, dielectric, "");
+            draw();
+            const auto highlighted = backend->GetRasterAAImage().pixels;
+            dielectric.specularFactor = 0;
+            backend->SetMaterial(0, dielectric, "");
+            draw();
+            const auto& diffuse = backend->GetRasterAAImage().pixels;
+            Require(!diffuse.empty() && diffuse.size() == highlighted.size(), "Specular readback unavailable");
+            size_t difference = 0;
+            for (size_t i = 0; i < diffuse.size(); ++i)
+                difference += std::abs(int(diffuse[i]) - int(highlighted[i]));
+            Require(difference > 1000, "Specular factor did not affect raster shading");
+        }
+        backend->SetRasterSettings({});
+        backend->SetAntiAliasing({AAMethod::Off});
+        backend->LoadModel(source);
         if (backend->GetCapabilities().pathTracing)
         {
             backend->SetRenderMode(RenderMode::PathTracing);

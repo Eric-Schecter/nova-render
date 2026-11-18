@@ -73,12 +73,13 @@ export async function loadGLB(url) {
     !json ||
     !bin ||
     [...(json.extensionsRequired || []), ...(json.extensionsUsed || [])].some(
-      (e) => !['KHR_materials_transmission', 'KHR_materials_ior'].includes(e),
+      (e) =>
+        !['KHR_materials_transmission', 'KHR_materials_ior', 'KHR_materials_specular'].includes(e),
     ) ||
     json.buffers.length !== 1 ||
     json.buffers[0].uri
   )
-    throw Error('Only core GLB with embedded data and no extensions is supported')
+    throw Error('Expected embedded GLB data and supported glTF extensions')
   const animation = readAnimation(json, bin)
   const raw = new DataView(bin)
   function element(index, i, type, components) {
@@ -234,6 +235,17 @@ export async function loadGLB(url) {
   const materials = []
   for (const material of json.materials) {
     const pbr = material.pbrMetallicRoughness || {}
+    const specular = material.extensions?.KHR_materials_specular
+    if (specular !== undefined) {
+      if (!specular || typeof specular !== 'object' || Array.isArray(specular))
+        throw Error('Invalid KHR_materials_specular')
+      if ('specularTexture' in specular || 'specularColorTexture' in specular)
+        throw Error('KHR_materials_specular textures are not supported')
+      if ('specularFactor' in specular && typeof specular.specularFactor !== 'number')
+        throw Error('Invalid glTF specularFactor')
+      if ('specularColorFactor' in specular && !Array.isArray(specular.specularColorFactor))
+        throw Error('Invalid glTF specularColorFactor')
+    }
     if (!['OPAQUE', 'MASK', 'BLEND'].includes(material.alphaMode || 'OPAQUE'))
       throw Error('Invalid glTF alpha mode')
     const textures = [
@@ -275,6 +287,8 @@ export async function loadGLB(url) {
           baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
           metallic: pbr.metallicFactor ?? 1,
           roughness: pbr.roughnessFactor ?? 1,
+          specularFactor: specular?.specularFactor,
+          specularColorFactor: specular?.specularColorFactor,
           alphaMode: material.alphaMode ?? 'OPAQUE',
           alphaCutoff: material.alphaCutoff ?? 0.5,
           doubleSided: material.doubleSided ?? false,

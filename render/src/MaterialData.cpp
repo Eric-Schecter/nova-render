@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <stb_image.h>
 #include <stdexcept>
 namespace render
@@ -64,6 +65,9 @@ namespace render::detail
             range(x, 1);
         range(m.roughness, 1);
         range(m.metallic, 1);
+        range(m.specularFactor, 1);
+        for (float x : m.specularColorFactor)
+            range(x, std::numeric_limits<float>::max());
         range(m.normalScale, 16);
         range(m.occlusionStrength, 1);
         for (float x : m.emissive)
@@ -128,6 +132,9 @@ namespace render::detail
             std::array<float, 48> record{};
             for (int k : {0, 5, 10, 15, 16, 21, 26, 31})
                 record[k] = 1;
+            // The first column of the world matrix is unused in material records.
+            std::copy(m.specularColorFactor.begin(), m.specularColorFactor.end(), record.begin());
+            record[3] = m.specularFactor;
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
             record[36] = m.metallic;
             record[37] = m.roughness;

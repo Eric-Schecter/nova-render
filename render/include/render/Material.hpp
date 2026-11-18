@@ -34,6 +34,8 @@ namespace render
         // Base color and emissive are sRGB; the other three maps are linear.
         std::optional<Image> baseColorTexture, normalTexture, metallicRoughnessTexture, occlusionTexture,
           emissiveTexture;
+        float                specularFactor = 1;
+        std::array<float, 3> specularColorFactor{1, 1, 1};
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

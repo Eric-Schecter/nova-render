@@ -68,7 +68,9 @@ namespace render::detail
             throw std::runtime_error("Load GLB: " + path.string() + ": " + errors);
         for (const auto& list : {gltf.extensionsRequired, gltf.extensionsUsed})
             for (const auto& extension : list)
-                if (extension != "KHR_materials_transmission" && extension != "KHR_materials_ior")
+                if (
+                  extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
+                  && extension != "KHR_materials_specular")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -227,6 +229,34 @@ namespace render::detail
             const auto& pbr = mat.pbrMetallicRoughness;
             if (mat.alphaMode != "OPAQUE" && mat.alphaMode != "MASK" && mat.alphaMode != "BLEND")
                 throw std::runtime_error("Invalid glTF alpha mode");
+            const auto specular = mat.extensions.find("KHR_materials_specular");
+            if (specular != mat.extensions.end())
+            {
+                const auto& extension = specular->second;
+                if (!extension.IsObject())
+                    throw std::runtime_error("Invalid KHR_materials_specular");
+                if (extension.Has("specularTexture") || extension.Has("specularColorTexture"))
+                    throw std::runtime_error("KHR_materials_specular textures are not supported");
+                if (extension.Has("specularFactor"))
+                {
+                    const auto& value = extension.Get("specularFactor");
+                    if (!value.IsNumber())
+                        throw std::runtime_error("Invalid glTF specularFactor");
+                    slot.specularFactor = float(value.GetNumberAsDouble());
+                }
+                if (extension.Has("specularColorFactor"))
+                {
+                    const auto& color = extension.Get("specularColorFactor");
+                    if (!color.IsArray() || color.ArrayLen() != 3)
+                        throw std::runtime_error("Invalid glTF specularColorFactor");
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        if (!color.Get(k).IsNumber())
+                            throw std::runtime_error("Invalid glTF specularColorFactor");
+                        slot.specularColorFactor[k] = float(color.Get(k).GetNumberAsDouble());
+                    }
+                }
+            }
             slot.alphaMode   = mat.alphaMode == "MASK"    ? AlphaMode::Mask
                                : mat.alphaMode == "BLEND" ? AlphaMode::Blend
                                                           : AlphaMode::Opaque;

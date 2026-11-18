@@ -54,11 +54,14 @@ await renderer.setMaterial(0, sceneMaterial, 'helmet')
 - `alphaCutoff`: 0–1, default 0.5. MASK discards pixels below this threshold before color/depth writes.
 - `doubleSided`: default false. Back faces are discarded; double-sided back faces flip both geometric and mapped normals. Mirrored instances and negative baked node transforms preserve the authored front side.
 - `roughness`, `metallic`: 0–1, both default 1. Lighting must be PBR to see their effect.
+- `specularFactor`: dielectric reflection strength, 0–1, default 1. `specularColorFactor`: non-negative linear RGB multiplier for dielectric F0, default white. The metal reflection is unchanged.
 - `normalScale`: 0–16, default 1. `occlusionStrength`: 0–1, default 1.
 - `emissive`: linear RGB, 0–65504, default black.
 - `baseColorTexture`, `normalTexture`, `metallicRoughnessTexture`, `occlusionTexture`, `emissiveTexture`: optional RGBA8 images with `width`, `height`, `pixels`. Each dimension is 1–8192. Base color and emissive maps are sRGB; other maps are linear. Metallic/roughness uses B/G channels, occlusion uses R. Missing maps use white, or a neutral tangent-space normal.
 
 Only `TEXCOORD_0` and repeat sampling are supported. Multiple slots share an atlas: tiles are capped at 2048 pixels and automatically reduced to fit the 8192-pixel / 512 MiB five-map atlas budget; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression and transmission texture editing are not included.
+
+GLB loading supports the two factor properties of [KHR_materials_specular](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_specular). They affect Forward, Deferred and Hybrid PBR lighting on native and WebGPU. Assets using either specular texture property are rejected. Ray mode uses its existing material lighting.
 
 ## Update behavior
 

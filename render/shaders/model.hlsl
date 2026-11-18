@@ -314,11 +314,28 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.generatedNormal = v.uv.z;
     return o;
 }
-float3 fresnel(float cosine, float3 f0)
+float4 materialSpecular(InstanceData material)
 {
-    return f0 + (1 - f0) * pow(1 - saturate(cosine), 5);
+    return float4(material.world._m00, material.world._m10, material.world._m20, material.world._m30);
 }
-float3 directLight(float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float3 radiance)
+float3 dielectricF0(float4 specular)
+{
+    return min(0.04 * specular.rgb, 1.0) * specular.a;
+}
+float3 fresnel(float cosine, float3 f0, float f90)
+{
+    return lerp(f0, f90, pow(1 - saturate(cosine), 5));
+}
+float3 diffuseFresnel(float cosine, float3 reflection, float4 specular)
+{
+    // Preserve the core metallic-roughness shading for default materials.
+    if (all(specular == 1))
+        return reflection;
+    float3 dielectric = fresnel(cosine, dielectricF0(specular), specular.a);
+    return max(max(dielectric.r, dielectric.g), dielectric.b).xxx;
+}
+float3 directLight(
+  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance)
 {
     float3 halfVector = v + l;
     float3 h          = halfVector * rsqrt(max(dot(halfVector, halfVector), 1e-8));
@@ -327,8 +344,10 @@ float3 directLight(float3 n, float3 v, float3 l, float3 base, float metallic, fl
     float  d = a2 / (3.14159265 * pow(nh * nh * (a2 - 1) + 1, 2) + 0.0001);
     float  k = pow(roughness + 1, 2) / 8;
     float  g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
-    float3 f = fresnel(dot(v, h), lerp(float3(0.04, 0.04, 0.04), base, metallic));
-    return ((1 - f) * (1 - metallic) * base / 3.14159265 + d * g * f / (4 * nv * max(nl, 0.001))) * radiance * nl;
+    float  vh = dot(v, h);
+    float3 f = fresnel(vh, lerp(dielectricF0(specular), base, metallic), lerp(specular.a, 1, metallic));
+    float3 diffuse = (1 - diffuseFresnel(vh, f, specular)) * (1 - metallic) * base / 3.14159265;
+    return (diffuse + d * g * f / (4 * nv * max(nl, 0.001))) * radiance * nl;
 }
 // Analytic studio environment; no external HDR file is required by this example.
 float3 studio(float3 r, float roughness)
@@ -424,12 +443,14 @@ struct SurfaceData
     float3 position, normal, geometricNormal, base, emissive;
     float  metallic, roughness, ao;
     float  opacity, alphaInfo;
+    float4 specular;
     float4 visibility0, visibility1, visibility2, visibility3;
     uint   useVisibility;
 };
 SurfaceData sampleSurface(VertexOut input)
 {
     float  alphaInfo  = .125;
+    float4 specular   = 1;
     float2 uv         = input.uv;
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
     if (lightDirection.w > .5)
@@ -440,6 +461,7 @@ SurfaceData sampleSurface(VertexOut input)
         matFactor             = instance.material;
         emissionFactor.rgb    = instance.emissive.rgb;
         alphaInfo             = instance.emissive.w;
+        specular              = materialSpecular(instance);
     }
     float4 baseSample = baseTexture.Sample(textureSampler, uv);
     float3 base       = baseSample.rgb * baseFactor.rgb;
@@ -466,6 +488,7 @@ SurfaceData sampleSurface(VertexOut input)
     float       ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
     SurfaceData result;
     result.useVisibility = 0;
+    result.specular = specular;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
     result.opacity                                                                    = baseSample.a * baseFactor.a;
     result.alphaInfo                                                                  = alphaInfo;
@@ -536,7 +559,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
                                ? sceneVisibility(s.position, s.geometricNormal, l, source.uv.w)
                                : localLightVisibility(s.position, s.geometricNormal, source.material.xyz, source.uv.w);
             color += directLight(
-              n, v, l, base, metallic, roughness, source.baseColor.rgb * source.baseColor.w * attenuation * visibility);
+              n, v, l, base, metallic, roughness, s.specular, source.baseColor.rgb * source.baseColor.w * attenuation * visibility);
         }
     }
     else
@@ -547,29 +570,34 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
           base,
           metallic,
           roughness,
+          s.specular,
           lightColorIntensity.rgb * lightColorIntensity.w
             * (s.useVisibility?s.visibility0.x:sceneVisibility(
               s.position,
               s.geometricNormal,
               lightDirection.xyz,
               irradiance[3].w > .5 ? instances[uint(irradiance[3].w) - 1].emissive.z : 0)));
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), base, metallic);
-    float3 f  = fresnel(saturate(dot(n, v)), f0);
+    float3 f0 = lerp(dielectricF0(s.specular), base, metallic);
+    float  f90 = lerp(s.specular.a, 1, metallic);
+    float  nv = saturate(dot(n, v));
+    float3 f = fresnel(nv, f0, f90);
+    float3 diffuse = (1 - metallic) * base;
+    float3 diffuseEnergy = 1 - diffuseFresnel(nv, f, s.specular);
     if (cameraForward.w > 0.5)
     {
         float3 reflected = environmentDirection(reflect(-v, n));
         float3 prefiltered =
           environmentTexture.SampleLevel(textureSampler, reflected, roughness * environmentParams.w).rgb;
         float2 brdf    = environmentBRDF(roughness, saturate(dot(n, v)));
-        float3 ambient = (1 - f) * (1 - metallic) * base * diffuseEnvironment(n) * environmentParams.z
-                         + lerp(prefiltered * (f0 * brdf.x + brdf.y) * environmentParams.z, raySpecular, reflectionMix);
+        float3 ambient = diffuseEnergy * diffuse * diffuseEnvironment(n) * environmentParams.z
+                         + lerp(prefiltered * (f0 * brdf.x + f90 * brdf.y) * environmentParams.z, raySpecular, reflectionMix);
         color += ambient * ao;
     }
     else
     {
         if (!collection)
-            color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, float3(1, 1.6, 2.7));
-        color += (base * (1 - metallic) * studio(n, 1) * 0.4
+            color += directLight(n, v, normalize(float3(1, 0.7, -1)), base, metallic, roughness, s.specular, float3(1, 1.6, 2.7));
+        color += (diffuse * (all(s.specular == 1) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4
                   + lerp(studio(reflect(-v, n), roughness) * f, raySpecular, reflectionMix))
                  * ao;
     }
@@ -669,7 +697,11 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     // Both halves survive RGBA16F storage, preserving near/far scale without an extra target.
     float depth        = log2(max(1e-20, dot(s.position - eyeExposure.xyz, cameraForward.xyz)));
     float high         = f16tof32(f32tof16(depth));
-    o.positionAO       = float4(high, depth - high, s.ao, 0);
+    // Material slots sit immediately before the globals record. The relative
+    // index fits exactly in half precision even when the scene has many instances.
+    float slotDistance = lightDirection.w > .5 && irradiance[3].w > .5
+                         ? irradiance[3].w - 1 - float(input.instanceIndex) : 0;
+    o.positionAO       = float4(high, depth - high, s.ao, slotDistance);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     return o;
 }
@@ -840,6 +872,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
 
     SurfaceData hit = (SurfaceData)0;
     hit.position = position;
+    hit.specular = materialSpecular(mat);
     hit.normal = hit.geometricNormal = worldNormal;
     float2 deltaUV1 = uv1 - uv0, deltaUV2 = uv2 - uv0;
     float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
@@ -1064,7 +1097,9 @@ float3 hybridReflection(SurfaceData primary, float rotation)
                 : studio(ray, 0);
         float k = pow(rough + 1, 2) / 8;
         float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
-        sum += radiance * fresnel(vh, lerp(.04.xxx, primary.base, primary.metallic)) * (g * vh / (nv * nh));
+        float3 f0 = lerp(dielectricF0(primary.specular), primary.base, primary.metallic);
+        float f90 = lerp(primary.specular.a, 1, primary.metallic);
+        sum += radiance * fresnel(vh, f0, f90) * (g * vh / (nv * nh));
     }
     return sum / max(1, samples);
 }
@@ -1110,6 +1145,9 @@ float4 DeferredPSMain(SkyOut input)
     s.ao              = pos.z;
     s.emissive        = emission.rgb;
     s.metallic        = emission.w;
+    s.specular        = 1;
+    if (pos.w > .5 && irradiance[3].w > pos.w)
+        s.specular = materialSpecular(instances[uint(irradiance[3].w - 1 - pos.w)]);
     if (s.useVisibility)
     {
         float ao = hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
