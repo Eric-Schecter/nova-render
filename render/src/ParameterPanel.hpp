@@ -21,16 +21,17 @@ namespace render::detail
     };
 } // namespace render::detail
 #ifdef NOVA_HAS_UI
+#include "PresentationWindow.hpp"
 #include <imgui.h>
-struct GLFWwindow;
 namespace render::detail
 {
     // Owns only the context/input backend. GPU backends shut down before this context.
     class ParameterPanel
     {
       public:
-        explicit ParameterPanel(GLFWwindow* window);
+        explicit ParameterPanel(PresentationWindow window);
         ~ParameterPanel();
+        void ProcessWindowEvent(const void* event);
         void Activate() const;
         void ConfigureUI(const std::function<void()>& configure);
         void SetSRGBOutput(bool enabled);
@@ -59,9 +60,9 @@ namespace render::detail
         bool WantsKeyboard() const;
 
       private:
-        GLFWwindow*                        window;
-        ImGuiContext*                      context     = nullptr;
-        bool                               initialized = false;
+        PresentationWindow                 window;
+        ImGuiContext*                      context               = nullptr;
+        bool                               initialized           = false;
         bool                               applicationConfigured = false;
         OrbitCamera                        initialCamera;
         DirectionalLight                   initialLight;

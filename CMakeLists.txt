@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
+option(NOVA_ENABLE_SDL3 "Build the optional SDL3 window host" OFF)
 option(NOVA_ENABLE_UI "Build the optional parameter UI" ON)
 option(NOVA_ENABLE_VULKAN "Build the Vulkan backend" ON)
 # Select manifest dependencies before the vcpkg toolchain runs inside project().
@@ -10,6 +11,15 @@ if(NOVA_ENABLE_UI)
     list(APPEND VCPKG_MANIFEST_FEATURES ui)
     if(NOVA_ENABLE_VULKAN)
         list(APPEND VCPKG_MANIFEST_FEATURES ui-vulkan)
+    endif()
+endif()
+if(NOVA_ENABLE_SDL3)
+    list(APPEND VCPKG_MANIFEST_FEATURES sdl3)
+    if(NOVA_ENABLE_VULKAN)
+        list(APPEND VCPKG_MANIFEST_FEATURES sdl3-vulkan)
+    endif()
+    if(NOVA_ENABLE_UI)
+        list(APPEND VCPKG_MANIFEST_FEATURES ui-sdl3)
     endif()
 endif()
 project(NovaRender VERSION 0.9.2 LANGUAGES CXX)
@@ -38,7 +48,8 @@ add_custom_command(OUTPUT "${embedded_shader_cpp}"
     COMMAND ${CMAKE_COMMAND} "-DINPUTS=${SHADER_OUTPUTS}" "-DOUTPUT=${embedded_shader_cpp}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     DEPENDS ${SHADER_OUTPUTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedShaders.cmake" VERBATIM)
-add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp render/src/ModelData.cpp render/src/MaterialData.cpp render/src/CameraData.cpp render/src/SceneData.cpp render/src/Picking.cpp
+add_library(nova_render STATIC render/src/Renderer.cpp render/src/Window.cpp
+    render/src/PresentationWindow.cpp render/src/ModelData.cpp render/src/MaterialData.cpp render/src/CameraData.cpp render/src/SceneData.cpp render/src/Picking.cpp
     render/src/AnimationData.cpp render/src/ShaderData.cpp "${embedded_shader_cpp}")
 target_sources(nova_render PRIVATE render/src/aa/PipelineComparisonView.cpp render/src/ParameterPanel.cpp render/src/EnvironmentData.cpp render/src/RayTracingView.cpp render/src/path/PathTracing.cpp render/src/path/LightSampling.cpp render/src/aa/AntiAliasingView.cpp render/src/aa/ShadowView.cpp render/src/aa/PostProcessingView.cpp render/src/aa/ScreenSpaceReflectionView.cpp
     render/src/aa/PlanarReflectionView.cpp
@@ -87,6 +98,11 @@ target_include_directories(nova_render PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/render/include>
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(nova_render PRIVATE glfw)
+if(NOVA_ENABLE_SDL3)
+    find_package(SDL3 CONFIG REQUIRED)
+    target_link_libraries(nova_render PRIVATE SDL3::SDL3)
+    target_compile_definitions(nova_render PRIVATE NOVA_HAS_SDL3)
+endif()
 target_compile_definitions(nova_render PRIVATE VK_NO_PROTOTYPES GLFW_INCLUDE_NONE)
 if(NOVA_BUILD_EXAMPLES)
 add_executable(nova_triangle examples/triangle/main.cpp)
@@ -148,6 +164,14 @@ if(NOVA_BUILD_TOOLS)
 endif()
 
 include(CTest)
+if(BUILD_TESTING AND NOVA_ENABLE_SDL3 AND NOVA_ENABLE_UI AND APPLE)
+    add_executable(nova_sdl_window_test tests/sdl-window.cpp)
+    target_link_libraries(nova_sdl_window_test PRIVATE Nova::Render SDL3::SDL3 imgui::imgui)
+    add_test(NAME sdl-window-metal COMMAND nova_sdl_window_test metal)
+    if(NOVA_ENABLE_VULKAN)
+        add_test(NAME sdl-window-vulkan COMMAND nova_sdl_window_test vulkan)
+    endif()
+endif()
 if(BUILD_TESTING)
     add_executable(nova_fox_test tests/fox.cpp)
     target_link_libraries(nova_fox_test PRIVATE Nova::Render)

@@ -57,17 +57,21 @@ namespace render
     }
     struct Renderer::Impl
     {
-        GLFWwindow*                      window = nullptr;
+        detail::PresentationWindow       window;
         GraphicsAPI                      api;
         std::unique_ptr<detail::Backend> backend;
     };
     Renderer::Renderer(GLFWwindow* window, const RendererConfig& config)
+      : Renderer(detail::PresentationWindow(window), config)
+    {
+    }
+    Renderer::Renderer(const detail::PresentationWindow& window, const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
     {
         impl_->window  = window;
         const auto api = ResolveGraphicsAPI(config);
         if (!window)
-            throw std::invalid_argument("Renderer requires a GLFW window");
+            throw std::invalid_argument("Renderer requires a window");
         std::cout << "Selected backend: " << GraphicsAPIName(api) << " (requested: " << GraphicsAPIName(config.api)
                   << ")\n";
         impl_->api = api;
@@ -88,6 +92,10 @@ namespace render
         }
         impl_->backend->ConfigurePathTracing(api, config);
         std::cout << "Backend: " << GraphicsAPIName(api) << '\n';
+    }
+    void Renderer::ProcessWindowEvent(const void* event)
+    {
+        impl_->backend->ProcessWindowEvent(event);
     }
     Renderer::~Renderer() = default;
     RendererCapabilities Renderer::GetCapabilities() const

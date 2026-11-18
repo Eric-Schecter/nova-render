@@ -1,11 +1,9 @@
 #include "../Backend.hpp"
 #include "../ShaderData.hpp"
-#define GLFW_EXPOSE_NATIVE_COCOA
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
 #ifdef NOVA_HAS_UI
 #include <imgui_impl_metal.h>
 #endif
+#import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <iostream>
@@ -43,7 +41,7 @@ namespace render::detail
                 }
             }
         }
-        void Initialize(GLFWwindow* window, const RendererConfig& config)
+        void Initialize(PresentationWindow window, const RendererConfig& config)
         {
             @autoreleasepool
             {
@@ -54,10 +52,10 @@ namespace render::detail
                 queue = [device newCommandQueue];
                 if (!queue)
                     throw std::runtime_error("Create Metal queue failed");
-                NSWindow* native = glfwGetCocoaWindow(window);
+                NSWindow* native = (__bridge NSWindow*)window.NativeHandle();
                 view             = native.contentView;
                 if (!view)
-                    throw std::runtime_error("GLFW window has no Cocoa content view");
+                    throw std::runtime_error("Window has no Cocoa content view");
                 previousLayer            = view.layer;
                 previousWantsLayer       = view.wantsLayer;
                 layer                    = [CAMetalLayer layer];
@@ -697,7 +695,7 @@ namespace render::detail
         uint32_t                   width = 0, height = 0, errors = 0;
         bool                       resized = true;
     };
-    std::unique_ptr<Backend> CreateMetalBackend(GLFWwindow* window, const RendererConfig& config)
+    std::unique_ptr<Backend> CreateMetalBackend(PresentationWindow window, const RendererConfig& config)
     {
         auto backend = std::make_unique<MetalBackend>();
         backend->Initialize(window, config);

@@ -1,6 +1,9 @@
 @PACKAGE_INIT@
 include(CMakeFindDependencyMacro)
 # Search bundled dependencies first, while allowing conventional external packages.
+if(@NOVA_ENABLE_SDL3@)
+    find_dependency(SDL3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/sdl3")
+endif()
 find_dependency(glfw3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/glfw3")
 if(@NOVA_SDK_NEEDS_VOLK@)
     if(NOT DEFINED VOLK_PULL_IN_VULKAN)

@@ -5,11 +5,14 @@
 #include <algorithm>
 #include <cmath>
 #include <imgui_impl_glfw.h>
+#ifdef NOVA_HAS_SDL3
+#include <imgui_impl_sdl3.h>
+#endif
 #include <stdexcept>
 
 namespace render::detail
 {
-    ParameterPanel::ParameterPanel(GLFWwindow* value)
+    ParameterPanel::ParameterPanel(PresentationWindow value)
       : window(value)
     {
         IMGUI_CHECKVERSION();
@@ -33,7 +36,12 @@ namespace render::detail
         style.Colors[ImGuiCol_Button]        = {0.16f, 0.212f, 0.306f, 1};
         style.Colors[ImGuiCol_Border]        = {0.235f, 0.275f, 0.349f, 1};
         std::copy(style.Colors, style.Colors + ImGuiCol_COUNT, displayColors.begin());
-        initialized = ImGui_ImplGlfw_InitForOther(window, true);
+#ifdef NOVA_HAS_SDL3
+        if (window.sdl)
+            initialized = ImGui_ImplSDL3_InitForOther(window.sdl);
+        else
+#endif
+            initialized = ImGui_ImplGlfw_InitForOther(window.glfw, true);
         if (!initialized)
         {
             ImGui::DestroyContext(context);
@@ -57,9 +65,28 @@ namespace render::detail
         {
             Activate();
             if (initialized)
-                ImGui_ImplGlfw_Shutdown();
+            {
+#ifdef NOVA_HAS_SDL3
+                if (window.sdl)
+                    ImGui_ImplSDL3_Shutdown();
+                else
+#endif
+                    ImGui_ImplGlfw_Shutdown();
+            }
             ImGui::DestroyContext(context);
         }
+    }
+    void ParameterPanel::ProcessWindowEvent(const void* event)
+    {
+#ifdef NOVA_HAS_SDL3
+        if (window.sdl)
+        {
+            Activate();
+            ImGui_ImplSDL3_ProcessEvent(static_cast<const SDL_Event*>(event));
+        }
+#else
+        (void)event;
+#endif
     }
     void ParameterPanel::Activate() const
     {
@@ -92,7 +119,7 @@ namespace render::detail
     {
         Activate();
         double x, y;
-        glfwGetCursorPos(window, &x, &y);
+        window.CursorPosition(x, y);
         return ImGui::GetIO().WantCaptureMouse
                || (x >= position.x && y >= position.y && x < position.x + size.x && y < position.y + size.y);
     }
@@ -122,7 +149,12 @@ namespace render::detail
       const HybridCapabilities&         hybridCaps)
     {
         Activate();
-        ImGui_ImplGlfw_NewFrame();
+#ifdef NOVA_HAS_SDL3
+        if (window.sdl)
+            ImGui_ImplSDL3_NewFrame();
+        else
+#endif
+            ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         if (assets.config.drawUI)
             assets.config.drawUI();

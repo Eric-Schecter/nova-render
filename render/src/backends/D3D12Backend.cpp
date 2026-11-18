@@ -4,9 +4,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
 #include <algorithm>
 #include <climits>
 #include <cstring>
@@ -57,12 +54,12 @@ namespace render::detail
             if (event)
                 CloseHandle(event);
         }
-        void Initialize(GLFWwindow* window, const RendererConfig& config)
+        void Initialize(PresentationWindow window, const RendererConfig& config)
         {
             settings = config;
-            hwnd     = glfwGetWin32Window(window);
+            hwnd     = static_cast<HWND>(window.NativeHandle());
             if (!hwnd)
-                throw std::runtime_error("GLFW window has no HWND");
+                throw std::runtime_error("Window host has no HWND");
             const bool debug = ConfigureD3D12DebugLayer(config.enableValidation);
             if (config.enableValidation)
                 std::cout << "D3D12 debug layer: " << (debug ? "enabled" : "unavailable for this process") << '\n';
@@ -670,7 +667,7 @@ namespace render::detail
             checkHR(device->CreateGraphicsPipelineState(&info, IID_PPV_ARGS(&pipeline)), "Create graphics pipeline");
         }
     };
-    std::unique_ptr<Backend> CreateD3D12Backend(GLFWwindow* window, const RendererConfig& config)
+    std::unique_ptr<Backend> CreateD3D12Backend(PresentationWindow window, const RendererConfig& config)
     {
         auto backend = std::make_unique<D3D12Backend>();
         backend->Initialize(window, config);

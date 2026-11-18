@@ -22,7 +22,7 @@ namespace render
     };
 
     // Convenience entry point: owns window, event system and renderer.
-    // Main thread only; one live Window, without externally managed GLFW, at a time.
+    // Main thread only; one live Window, without a separately managed window host, at a time.
     class Window
     {
       public:

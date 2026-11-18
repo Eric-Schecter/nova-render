@@ -4,6 +4,7 @@
 #include "Color.hpp"
 #include "ModelData.hpp"
 #include "ParameterPanel.hpp"
+#include "PresentationWindow.hpp"
 #include "SceneData.hpp"
 #include "TextureFiltering.hpp"
 #include "aa/RasterAA.hpp"
@@ -623,7 +624,16 @@ namespace render::detail
             environmentSettings = value;
         }
         EnvironmentSettings GetEnvironment() const { return environmentSettings; }
-        bool                EnableParameterPanel(GLFWwindow* window, bool enabled)
+        void                ProcessWindowEvent(const void* event)
+        {
+#ifdef NOVA_HAS_UI
+            if (panelEnabled && parameterPanel)
+                parameterPanel->ProcessWindowEvent(event);
+#else
+            (void)event;
+#endif
+        }
+        bool EnableParameterPanel(PresentationWindow window, bool enabled)
         {
 #ifdef NOVA_HAS_UI
             if (enabled && !parameterPanel)
@@ -975,11 +985,11 @@ namespace render::detail
       public:
         virtual uint32_t ValidationErrorCount() const = 0;
     };
-    std::unique_ptr<Backend> CreateVulkanBackend(GLFWwindow*, const RendererConfig&);
+    std::unique_ptr<Backend> CreateVulkanBackend(PresentationWindow, const RendererConfig&);
 #ifdef __APPLE__
-    std::unique_ptr<Backend> CreateMetalBackend(GLFWwindow*, const RendererConfig&);
+    std::unique_ptr<Backend> CreateMetalBackend(PresentationWindow, const RendererConfig&);
 #endif
 #ifdef _WIN32
-    std::unique_ptr<Backend> CreateD3D12Backend(GLFWwindow*, const RendererConfig&);
+    std::unique_ptr<Backend> CreateD3D12Backend(PresentationWindow, const RendererConfig&);
 #endif
 } // namespace render::detail

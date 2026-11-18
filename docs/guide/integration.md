@@ -55,3 +55,16 @@ Examples show completed-update FPS, latest Draw time, P95 of the last 60 non-ini
 Draw includes CPU preparation and GPU waits, not pure GPU time. Native examples wait for completion to match browser timing, limiting CPU/GPU overlap; ordinary library calls do not add this synchronization. Web example controllers expose `getPerformanceStats()`; native examples share PerformancePanel.
 
 Only AO has adaptive interaction quality. `ParameterPanelConfig.sceneTopInset` reserves native logical pixels for a bar and adjusts viewport/projection/internal tracing size; UI-disabled builds keep the original viewport. Other than integrator comparison, panels float at the top right and can collapse.
+
+## Optional SDL3 window host
+
+The convenience `render::Window` can use either GLFW or SDL3. Configure with `-DNOVA_ENABLE_SDL3=ON` to include SDL3, then select it at launch:
+
+```sh
+NOVA_WINDOW_BACKEND=sdl3 ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api metal --frames 60
+NOVA_WINDOW_BACKEND=sdl3 ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api vulkan --frames 60
+```
+
+GLFW remains the default. The manifest adds SDL3 and, when UI is enabled, the ImGui SDL3 platform binding. A Vulkan loader must be available to both Nova and SDL. If SDL cannot find the Vulkan loader on macOS, set `SDL_VULKAN_LIBRARY` to the full path of the SDK's `macOS/lib/libvulkan.1.dylib`.
+
+Existing `Window` callers use the same C++ methods. C++ applications that already own GLFW windows can still construct `Renderer` with their GLFW handle. The optional SDL3 host covers desktop window setup and input. The mobile application entry points are separate work.

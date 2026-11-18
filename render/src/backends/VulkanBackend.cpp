@@ -1,12 +1,11 @@
 #include "../Backend.hpp"
 #include "../ShaderData.hpp"
-// Volk must precede GLFW so that its Vulkan surface declarations are enabled.
 #include <volk.h>
 
 #ifdef NOVA_HAS_UI
 #include <imgui_impl_vulkan.h>
 #endif
-#include <GLFW/glfw3.h>
+#include "../VulkanPresentation.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -44,14 +43,14 @@ namespace render::detail
     struct VulkanBackend final : Backend
     {
         ~VulkanBackend() { cleanup(); }
-        void initialize(GLFWwindow* target, const RendererConfig& settings)
+        void initialize(PresentationWindow target, const RendererConfig& settings)
         {
             if (!target)
-                throw std::invalid_argument("Renderer requires a GLFW window");
+                throw std::invalid_argument("Renderer requires a window");
             window = target;
             config = settings;
             initInstance();
-            check(glfwCreateWindowSurface(instance, window, nullptr, &surface), "Create surface");
+            surface = CreateVulkanSurface(window, instance);
             initDevice();
             initCommands();
         }
@@ -69,7 +68,7 @@ namespace render::detail
 #ifdef NOVA_HAS_UI
         bool uiRenderer = false;
 #endif
-        GLFWwindow*                window = nullptr;
+        PresentationWindow         window;
         RendererConfig             config;
         uint32_t                   width = 0, height = 0;
         bool                       resized          = true;
@@ -488,14 +487,17 @@ namespace render::detail
             check(vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr), "Count instance extensions");
             std::vector<VkExtensionProperties> available(count);
             check(vkEnumerateInstanceExtensionProperties(nullptr, &count, available.data()), "Instance extensions");
-            const char** required = glfwGetRequiredInstanceExtensions(&count);
+            const char* const* required = VulkanSurfaceExtensions(window, count);
             if (!required)
-                throw std::runtime_error("GLFW found no Vulkan surface support");
+                throw std::runtime_error("Window host found no Vulkan surface support");
             std::vector<const char*> extensions(required, required + count);
             VkInstanceCreateInfo     info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
             if (hasExtension(available, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
             {
-                extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+                if (std::none_of(extensions.begin(), extensions.end(), [](const char* extension) {
+                        return std::strcmp(extension, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0;
+                    }))
+                    extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
                 info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
             }
             if (hasExtension(available, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
@@ -1140,15 +1142,7 @@ namespace render::detail
                 device = VK_NULL_HANDLE;
             }
             if (surface)
-            {
-                vkDestroySurfaceKHR(instance, surface, nullptr);
-                surface = VK_NULL_HANDLE;
-            }
-            if (messenger)
-            {
-                vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
-                messenger = VK_NULL_HANDLE;
-            }
+                DestroyVulkanSurface(window, instance, surface);
             if (instance)
             {
                 vkDestroyInstance(instance, nullptr);
@@ -1157,7 +1151,7 @@ namespace render::detail
         }
     };
 
-    std::unique_ptr<Backend> CreateVulkanBackend(GLFWwindow* window, const RendererConfig& config)
+    std::unique_ptr<Backend> CreateVulkanBackend(PresentationWindow window, const RendererConfig& config)
     {
         auto backend = std::make_unique<VulkanBackend>();
         backend->initialize(window, config);

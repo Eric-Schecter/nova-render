@@ -62,6 +62,34 @@
           ]
         }
       ]
+    },
+    "sdl3": {
+      "description": "Optional SDL3 window host",
+      "dependencies": [
+        "sdl3"
+      ]
+    },
+    "ui-sdl3": {
+      "description": "SDL3 input for the parameter panel",
+      "dependencies": [
+        {
+          "name": "imgui",
+          "features": [
+            "sdl3-binding"
+          ]
+        }
+      ]
+    },
+    "sdl3-vulkan": {
+      "description": "Vulkan surface support for the SDL3 window host",
+      "dependencies": [
+        {
+          "name": "sdl3",
+          "features": [
+            "vulkan"
+          ]
+        }
+      ]
     }
   },
   "vcpkg-configuration": {

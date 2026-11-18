@@ -18,6 +18,10 @@
 #include <memory>
 
 struct GLFWwindow;
+namespace render::detail
+{
+    struct PresentationWindow;
+}
 
 namespace render
 {
@@ -140,6 +144,8 @@ namespace render
 
       private:
         friend class Window;
+        Renderer(const detail::PresentationWindow& window, const RendererConfig& config);
+        void ProcessWindowEvent(const void* event);
         bool UIWantsMouse() const;
         bool UIWantsKeyboard() const;
         struct Impl;

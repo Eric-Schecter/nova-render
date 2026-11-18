@@ -1,5 +1,5 @@
 #include "../common/PerformancePanel.hpp"
-#include "render/Renderer.hpp"
+#include "render/Window.hpp"
 #include <GLFW/glfw3.h>
 #include <cstdlib>
 #include <iostream>
@@ -82,6 +82,27 @@ int main(int argc, char** argv)
         config.enableValidation = false;
 #endif
         render::ResolveGraphicsAPI(config); // Reject unsupported requests before creating a window.
+        if (!resizeTest)
+        {
+            render::WindowConfig windowConfig;
+            windowConfig.renderer = config;
+            windowConfig.title    = std::string("Nova Render | ")
+                                 + render::GraphicsAPIName(render::ResolveGraphicsAPI(config)) + " Triangle"
+                                 + (warp ? " (WARP)" : "");
+            render::Window               window(windowConfig);
+            example::PerformancePanel    performance;
+            render::ParameterPanelConfig panel;
+            performance.Attach(panel);
+            window.EnableParameterPanel(panel);
+            int frames = 0;
+            while ((!frameLimit || frames < frameLimit) && window.PollEvents())
+                if (performance.DrawFrame(window, window.GetFramebufferSize()) == render::FrameResult::Rendered)
+                    ++frames;
+            window.WaitIdle();
+            std::cout << "Rendered " << frames << " frames; validation errors: " << window.ValidationErrorCount()
+                      << '\n';
+            return window.ValidationErrorCount() || (frameLimit && frames != frameLimit) ? EXIT_FAILURE : EXIT_SUCCESS;
+        }
         GlfwContext glfw;
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window(
@@ -93,8 +114,8 @@ int main(int argc, char** argv)
                 glfwSetWindowShouldClose(w, GLFW_TRUE);
         });
         render::Renderer  renderer(window.get(), config);
-        const std::string title =
-          std::string("Nova Render | ") + render::GraphicsAPIName(renderer.GetAPI()) + " Triangle" + (warp ? " (WARP)" : "");
+        const std::string title = std::string("Nova Render | ") + render::GraphicsAPIName(renderer.GetAPI())
+                                  + " Triangle" + (warp ? " (WARP)" : "");
         glfwSetWindowTitle(window.get(), title.c_str());
         glfwSetWindowUserPointer(window.get(), &renderer);
         glfwSetFramebufferSizeCallback(window.get(), [](GLFWwindow* w, int width, int height) {
