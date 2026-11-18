@@ -4,17 +4,15 @@
 #include "render/Renderer.hpp"
 ```
 
-`Renderer` owns GPU resources; the application owns the GLFW window and event loop. Use it on the window's main thread. Only one live renderer is currently supported; copying and moving are disabled.
-
-## Lifetime
+`Renderer` owns GPU resources and is created by [Window](./window). Use the window's main thread. Only one live renderer is supported, and copying and moving are disabled.
 
 ```cpp
-render::RendererConfig config;
-config.shaderDirectory = APP_SHADER_DIR;
-render::Renderer renderer(window, config);
+render::WindowConfig config;
+config.renderer.shaderDirectory = APP_SHADER_DIR;
+render::Window window(config);
 ```
 
-Initialize GLFW and create a `GLFW_NO_API` window first. Destroy Renderer before the window, then terminate GLFW. Invalid configuration, unavailable devices and loading failures throw exceptions. Some resources are created on the first draw.
+`Window` forwards rendering calls and manages framebuffer resizing. Invalid configuration, unavailable devices and loading failures throw exceptions. Some resources are created on the first draw.
 
 ## Methods
 

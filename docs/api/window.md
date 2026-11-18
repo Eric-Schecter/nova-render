@@ -41,7 +41,7 @@ uint32_t ValidationErrorCount() const;
 - `DrawFrame`: synchronizes pixel dimensions and draws. Zero-size windows pause, and skipped frames briefly wait for events.
 - Other methods forward to the internal [Renderer](./renderer).
 
-Use only on the main thread. Copying and moving are disabled. Do not mix Window's GLFW lifecycle with an externally managed one. Construction validates configuration and cleans up on failure. Call `WaitIdle()` before exit; destruction releases Renderer, window and event system in that order.
+Use only on the main thread. Copying and moving are disabled. Construction validates configuration and cleans up on failure. Call `WaitIdle()` before exit; destruction releases Renderer, window and event system in that order.
 
 `SetLighting(Unlit / PBR)` defaults to Unlit. Directional light, model, camera, environment, [AA](./antialiasing), [render mode](./render-mode), and [parameter panel](./ui) controls match Renderer. The panel configuration overload accepts application-owned asset lists.
 

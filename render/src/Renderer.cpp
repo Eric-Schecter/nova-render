@@ -61,12 +61,6 @@ namespace render
         GraphicsAPI                      api;
         std::unique_ptr<detail::Backend> backend;
     };
-#ifdef NOVA_HAS_GLFW
-    Renderer::Renderer(GLFWwindow* window, const RendererConfig& config)
-      : Renderer(detail::PresentationWindow(window), config)
-    {
-    }
-#endif
     Renderer::Renderer(const detail::PresentationWindow& window, const RendererConfig& config)
       : impl_(std::make_unique<Impl>())
     {

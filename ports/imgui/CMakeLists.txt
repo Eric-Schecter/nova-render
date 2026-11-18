@@ -56,14 +56,6 @@ if(IMGUI_BUILD_DX12_BINDING)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
 endif()
 
-if(IMGUI_BUILD_GLFW_BINDING)
-    if(NOT EMSCRIPTEN)
-        find_package(glfw3 CONFIG REQUIRED)
-        target_link_libraries(${PROJECT_NAME} PUBLIC glfw)
-    endif()
-    target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/backends/imgui_impl_glfw.cpp)
-endif()
-
 if(IMGUI_BUILD_GLUT_BINDING)
     find_package(GLUT REQUIRED)
     target_link_libraries(${PROJECT_NAME} PUBLIC GLUT::GLUT)
@@ -204,10 +196,6 @@ if(NOT IMGUI_SKIP_HEADERS)
 
     if(IMGUI_BUILD_DX12_BINDING)
         install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/backends/imgui_impl_dx12.h DESTINATION include)
-    endif()
-
-    if(IMGUI_BUILD_GLFW_BINDING)
-        install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/backends/imgui_impl_glfw.h DESTINATION include)
     endif()
 
     if(IMGUI_BUILD_GLUT_BINDING)

@@ -1,39 +1,25 @@
 #include "../common/PerformancePanel.hpp"
 #include "render/Window.hpp"
-#ifdef NOVA_HAS_GLFW
-#include <GLFW/glfw3.h>
-#endif
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
-#ifdef NOVA_HAS_GLFW
-struct GlfwContext
+static void resizeWindow(render::Window& window, uint32_t width, uint32_t height)
 {
-    GlfwContext()
+    const auto previous = window.GetFramebufferSize();
+    window.SetSize(width, height);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (window.GetFramebufferSize() == previous)
     {
-        glfwSetErrorCallback(
-          [](int code, const char* message) { std::cerr << "GLFW " << code << ": " << message << '\n'; });
-        if (!glfwInit())
-            throw std::runtime_error("GLFW initialization failed");
-    }
-    ~GlfwContext() { glfwTerminate(); }
-};
-
-static void waitForIconified(GLFWwindow* window, bool expected)
-{
-    const double deadline = glfwGetTime() + 5.0;
-    while ((glfwGetWindowAttrib(window, GLFW_ICONIFIED) == GLFW_TRUE) != expected)
-    {
-        if (glfwWindowShouldClose(window) || glfwGetTime() >= deadline)
-            throw std::runtime_error(expected ? "Window did not minimize" : "Window did not restore");
-        glfwWaitEventsTimeout(0.01);
+        if (!window.PollEvents() || std::chrono::steady_clock::now() >= deadline)
+            throw std::runtime_error("Window did not resize");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
 
-#endif
 int main(int argc, char** argv)
 {
     try
@@ -86,98 +72,32 @@ int main(int argc, char** argv)
         config.enableValidation = false;
 #endif
         render::ResolveGraphicsAPI(config); // Reject unsupported requests before creating a window.
-        if (!resizeTest)
-        {
-            render::WindowConfig windowConfig;
-            windowConfig.renderer = config;
-            windowConfig.title    = std::string("Nova Render | ")
-                                 + render::GraphicsAPIName(render::ResolveGraphicsAPI(config)) + " Triangle"
-                                 + (warp ? " (WARP)" : "");
-            render::Window               window(windowConfig);
-            example::PerformancePanel    performance;
-            render::ParameterPanelConfig panel;
-            performance.Attach(panel);
-            window.EnableParameterPanel(panel);
-            int frames = 0;
-            while ((!frameLimit || frames < frameLimit) && window.PollEvents())
-                if (performance.DrawFrame(window, window.GetFramebufferSize()) == render::FrameResult::Rendered)
-                    ++frames;
-            window.WaitIdle();
-            std::cout << "Rendered " << frames << " frames; validation errors: " << window.ValidationErrorCount()
-                      << '\n';
-            return window.ValidationErrorCount() || (frameLimit && frames != frameLimit) ? EXIT_FAILURE : EXIT_SUCCESS;
-        }
-#ifdef NOVA_HAS_GLFW
-        GlfwContext glfw;
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window(
-          glfwCreateWindow(800, 600, "Nova Render | Triangle", nullptr, nullptr), glfwDestroyWindow);
-        if (!window)
-            throw std::runtime_error("Window creation failed");
-        glfwSetKeyCallback(window.get(), [](GLFWwindow* w, int key, int, int action, int) {
-            if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-                glfwSetWindowShouldClose(w, GLFW_TRUE);
-        });
-        render::Renderer  renderer(window.get(), config);
-        const std::string title = std::string("Nova Render | ") + render::GraphicsAPIName(renderer.GetAPI())
-                                  + " Triangle" + (warp ? " (WARP)" : "");
-        glfwSetWindowTitle(window.get(), title.c_str());
-        glfwSetWindowUserPointer(window.get(), &renderer);
-        glfwSetFramebufferSizeCallback(window.get(), [](GLFWwindow* w, int width, int height) {
-            static_cast<render::Renderer*>(glfwGetWindowUserPointer(w))->Resize(width, height);
-        });
+        render::WindowConfig windowConfig;
+        windowConfig.renderer = config;
+        windowConfig.title = std::string("Nova Render | ") + render::GraphicsAPIName(render::ResolveGraphicsAPI(config))
+                             + " Triangle" + (warp ? " (WARP)" : "");
+        render::Window               window(windowConfig);
         example::PerformancePanel    performance;
         render::ParameterPanelConfig panel;
         performance.Attach(panel);
-        renderer.EnableParameterPanel(panel);
-        int  frames      = 0;
-        bool firstResize = false, secondResize = false, suspendTest = false;
-        while (!glfwWindowShouldClose(window.get()))
+        window.EnableParameterPanel(panel);
+        int frames = 0;
+        while ((!frameLimit || frames < frameLimit) && window.PollEvents())
         {
-            glfwPollEvents();
-            if (glfwWindowShouldClose(window.get()))
-                break;
-            if (resizeTest && frames >= 20 && !firstResize)
+            if (performance.DrawFrame(window, window.GetFramebufferSize()) != render::FrameResult::Rendered)
+                continue;
+            ++frames;
+            if (resizeTest && frames == 20)
+                resizeWindow(window, 1024, 640);
+            if (resizeTest && frames == 40)
             {
-                glfwSetWindowSize(window.get(), 1024, 640);
-                firstResize = true;
+                resizeWindow(window, windowConfig.width, windowConfig.height);
+                std::cout << "Window resize check passed\n";
             }
-            if (resizeTest && frames >= 40 && !secondResize)
-            {
-                glfwSetWindowSize(window.get(), 800, 600);
-                secondResize = true;
-            }
-            if (resizeTest && frames >= 60 && !suspendTest)
-            {
-                glfwIconifyWindow(window.get());
-                waitForIconified(window.get(), true);
-                renderer.Resize(0, 0);
-                if (renderer.DrawFrame() != render::FrameResult::Skipped)
-                    throw std::runtime_error("Zero-size frame was not skipped");
-                glfwRestoreWindow(window.get());
-                waitForIconified(window.get(), false);
-                glfwPollEvents();
-                suspendTest = true;
-                std::cout << "Suspend/resume check passed\n";
-            }
-            int width, height;
-            glfwGetFramebufferSize(window.get(), &width, &height);
-            if (glfwGetWindowAttrib(window.get(), GLFW_ICONIFIED))
-                width = height = 0;
-            renderer.Resize(width, height);
-            if (performance.DrawFrame(renderer, {uint32_t(width), uint32_t(height)}) == render::FrameResult::Rendered)
-                ++frames;
-            else
-                glfwWaitEventsTimeout(0.05);
-            if (frameLimit && frames >= frameLimit)
-                break;
         }
-        renderer.WaitIdle();
-        std::cout << "Rendered " << frames << " frames; validation errors: " << renderer.ValidationErrorCount() << '\n';
-        return renderer.ValidationErrorCount() ? EXIT_FAILURE : EXIT_SUCCESS;
-#else
-        throw std::invalid_argument("--resize-test requires the GLFW compatibility build");
-#endif
+        window.WaitIdle();
+        std::cout << "Rendered " << frames << " frames; validation errors: " << window.ValidationErrorCount() << '\n';
+        return window.ValidationErrorCount() || (frameLimit && frames != frameLimit) ? EXIT_FAILURE : EXIT_SUCCESS;
     }
     catch (const std::exception& error)
     {

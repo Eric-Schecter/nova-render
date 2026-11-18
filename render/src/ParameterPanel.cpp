@@ -1,17 +1,9 @@
 #include "ParameterPanel.hpp"
 #include "Color.hpp"
 #ifdef NOVA_HAS_UI
-#ifdef NOVA_HAS_GLFW
-#include <GLFW/glfw3.h>
-#endif
 #include <algorithm>
 #include <cmath>
-#ifdef NOVA_HAS_GLFW
-#include <imgui_impl_glfw.h>
-#endif
-#ifdef NOVA_HAS_SDL3
 #include <imgui_impl_sdl3.h>
-#endif
 #include <stdexcept>
 
 namespace render::detail
@@ -40,16 +32,7 @@ namespace render::detail
         style.Colors[ImGuiCol_Button]        = {0.16f, 0.212f, 0.306f, 1};
         style.Colors[ImGuiCol_Border]        = {0.235f, 0.275f, 0.349f, 1};
         std::copy(style.Colors, style.Colors + ImGuiCol_COUNT, displayColors.begin());
-#ifdef NOVA_HAS_SDL3
-        if (window.sdl)
-            initialized = ImGui_ImplSDL3_InitForOther(window.sdl);
-        else
-#endif
-        {
-#ifdef NOVA_HAS_GLFW
-            initialized = ImGui_ImplGlfw_InitForOther(window.glfw, true);
-#endif
-        }
+        initialized = ImGui_ImplSDL3_InitForOther(window.sdl);
         if (!initialized)
         {
             ImGui::DestroyContext(context);
@@ -73,32 +56,14 @@ namespace render::detail
         {
             Activate();
             if (initialized)
-            {
-#ifdef NOVA_HAS_SDL3
-                if (window.sdl)
-                    ImGui_ImplSDL3_Shutdown();
-                else
-#endif
-                {
-#ifdef NOVA_HAS_GLFW
-                    ImGui_ImplGlfw_Shutdown();
-#endif
-                }
-            }
+                ImGui_ImplSDL3_Shutdown();
             ImGui::DestroyContext(context);
         }
     }
     void ParameterPanel::ProcessWindowEvent(const void* event)
     {
-#ifdef NOVA_HAS_SDL3
-        if (window.sdl)
-        {
-            Activate();
-            ImGui_ImplSDL3_ProcessEvent(static_cast<const SDL_Event*>(event));
-        }
-#else
-        (void)event;
-#endif
+        Activate();
+        ImGui_ImplSDL3_ProcessEvent(static_cast<const SDL_Event*>(event));
     }
     void ParameterPanel::Activate() const
     {
@@ -161,16 +126,7 @@ namespace render::detail
       const HybridCapabilities&         hybridCaps)
     {
         Activate();
-#ifdef NOVA_HAS_SDL3
-        if (window.sdl)
-            ImGui_ImplSDL3_NewFrame();
-        else
-#endif
-        {
-#ifdef NOVA_HAS_GLFW
-            ImGui_ImplGlfw_NewFrame();
-#endif
-        }
+        ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
         if (assets.config.drawUI)
             assets.config.drawUI();

@@ -17,7 +17,6 @@
 #include <filesystem>
 #include <memory>
 
-struct GLFWwindow;
 namespace render::detail
 {
     struct PresentationWindow;
@@ -54,15 +53,12 @@ namespace render
         Skipped
     };
 
-    // GLFW must be initialized. The window must outlive this object.
+    // Window owns the renderer and its presentation surface.
     // Use on the window's main thread; only one renderer at a time is supported.
     // Auto selects Metal on macOS, D3D12 on Windows, Vulkan on Linux.
     class Renderer
     {
       public:
-#ifdef NOVA_HAS_GLFW
-        Renderer(GLFWwindow* window, const RendererConfig& config);
-#endif
         ~Renderer();
         Renderer(const Renderer&)            = delete;
         Renderer& operator=(const Renderer&) = delete;

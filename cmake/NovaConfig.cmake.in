@@ -2,12 +2,7 @@
 include(CMakeFindDependencyMacro)
 set(Nova_WINDOW_HOST_CONTROLS TRUE)
 # Search bundled dependencies first, while allowing conventional external packages.
-if(@NOVA_ENABLE_SDL3@)
-    find_dependency(SDL3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/sdl3")
-endif()
-if(@NOVA_ENABLE_GLFW@)
-    find_dependency(glfw3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/glfw3")
-endif()
+find_dependency(SDL3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/sdl3")
 if(@NOVA_SDK_NEEDS_VOLK@)
     if(NOT DEFINED VOLK_PULL_IN_VULKAN)
         set(VOLK_PULL_IN_VULKAN OFF) # volk loads the system Vulkan loader at runtime.

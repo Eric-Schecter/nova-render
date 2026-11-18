@@ -27,7 +27,7 @@ if(FAILURE_EXPECTED)
 else()
     if(NOT result EQUAL 0 OR NOT log MATCHES "Backend: ${EXPECT}([\r\n]|$)"
        OR NOT log MATCHES "Rendered 120 frames; validation errors: 0"
-       OR NOT log MATCHES "Suspend/resume check passed")
+       OR NOT log MATCHES "Window resize check passed")
         message(FATAL_ERROR "Backend/frame/resize validation failed: ${result}")
     endif()
 endif()

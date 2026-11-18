@@ -67,15 +67,6 @@
         }
       ]
     },
-    "glfw-binding": {
-      "description": "Make available GLFW binding",
-      "dependencies": [
-        {
-          "name": "glfw3",
-          "platform": "!emscripten"
-        }
-      ]
-    },
     "glut-binding": {
       "description": "Make available Glut binding",
       "dependencies": [

@@ -1,29 +1,16 @@
 #include "PresentationWindow.hpp"
+#include <SDL3/SDL.h>
 #ifdef NOVA_HAS_VULKAN
 #include "VulkanPresentation.hpp"
-#endif
-#ifdef NOVA_HAS_GLFW
-#include <GLFW/glfw3.h>
-#if defined(__APPLE__)
-#define GLFW_EXPOSE_NATIVE_COCOA
-#elif defined(_WIN32)
-#define GLFW_EXPOSE_NATIVE_WIN32
-#endif
-#if defined(__APPLE__) || defined(_WIN32)
-#include <GLFW/glfw3native.h>
-#endif
-#endif
-#ifdef NOVA_HAS_SDL3
-#include <SDL3/SDL.h>
-#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
 #include <SDL3/SDL_vulkan.h>
+#include <stdexcept>
+#if defined(__APPLE__)
 #include <string>
 #endif
 #endif
 
 namespace render::detail
 {
-#ifdef NOVA_HAS_SDL3
     SDL_Window* CreateSDLWindow(const char* title, int width, int height, bool vulkan, bool resizable)
     {
         SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -49,11 +36,9 @@ namespace render::detail
 #endif
         return window;
     }
-#endif
 
     void* PresentationWindow::NativeHandle() const
     {
-#ifdef NOVA_HAS_SDL3
         if (sdl)
         {
 #if defined(__APPLE__)
@@ -62,91 +47,34 @@ namespace render::detail
             return SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
 #endif
         }
-#endif
-#if defined(NOVA_HAS_GLFW) && defined(__APPLE__)
-        return glfwGetCocoaWindow(glfw);
-#elif defined(NOVA_HAS_GLFW) && defined(_WIN32)
-        return glfwGetWin32Window(glfw);
-#else
         return nullptr;
-#endif
     }
 
     void PresentationWindow::CursorPosition(double& x, double& y) const
     {
-#ifdef NOVA_HAS_SDL3
-        if (sdl)
-        {
-            float px, py;
-            SDL_GetMouseState(&px, &py);
-            x = px;
-            y = py;
-            return;
-        }
-#endif
-#ifdef NOVA_HAS_GLFW
-        glfwGetCursorPos(glfw, &x, &y);
-#else
-        x = y = 0;
-#endif
+        float px, py;
+        SDL_GetMouseState(&px, &py);
+        x = px;
+        y = py;
     }
-} // namespace render::detail
 
 #ifdef NOVA_HAS_VULKAN
-#include <stdexcept>
-#ifdef NOVA_HAS_SDL3
-#include <SDL3/SDL_vulkan.h>
-#endif
-namespace render::detail
-{
-    const char* const* VulkanSurfaceExtensions(PresentationWindow window, uint32_t& count)
+    const char* const* VulkanSurfaceExtensions(PresentationWindow, uint32_t& count)
     {
-#ifdef NOVA_HAS_SDL3
-        if (window.sdl)
-            return SDL_Vulkan_GetInstanceExtensions(&count);
-#else
-        (void)window;
-#endif
-#ifdef NOVA_HAS_GLFW
-        return glfwGetRequiredInstanceExtensions(&count);
-#else
-        count = 0;
-        return nullptr;
-#endif
+        return SDL_Vulkan_GetInstanceExtensions(&count);
     }
 
     VkSurfaceKHR CreateVulkanSurface(PresentationWindow window, VkInstance instance)
     {
         VkSurfaceKHR surface = VK_NULL_HANDLE;
-#ifdef NOVA_HAS_SDL3
-        if (window.sdl)
-        {
-            if (!SDL_Vulkan_CreateSurface(window.sdl, instance, nullptr, &surface))
-                throw std::runtime_error(SDL_GetError());
-            return surface;
-        }
-#endif
-#ifdef NOVA_HAS_GLFW
-        if (glfwCreateWindowSurface(instance, window.glfw, nullptr, &surface) != VK_SUCCESS)
-            throw std::runtime_error("GLFW could not create Vulkan window surface");
+        if (!SDL_Vulkan_CreateSurface(window.sdl, instance, nullptr, &surface))
+            throw std::runtime_error(SDL_GetError());
         return surface;
-#else
-        throw std::runtime_error("Vulkan requires an SDL3 window");
-#endif
     }
 
-    void DestroyVulkanSurface(PresentationWindow window, VkInstance instance, VkSurfaceKHR surface)
+    void DestroyVulkanSurface(PresentationWindow, VkInstance instance, VkSurfaceKHR surface)
     {
-#ifdef NOVA_HAS_SDL3
-        if (window.sdl)
-        {
-            SDL_Vulkan_DestroySurface(instance, surface, nullptr);
-            return;
-        }
-#else
-        (void)window;
-#endif
-        vkDestroySurfaceKHR(instance, surface, nullptr);
+        SDL_Vulkan_DestroySurface(instance, surface, nullptr);
     }
-} // namespace render::detail
 #endif
+} // namespace render::detail

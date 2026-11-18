@@ -63,6 +63,24 @@ int main(int argc, char** argv)
         require(window.GetFramebufferSize() != firstSize, "Framebuffer did not resize");
         require(window.DrawFrame() == render::FrameResult::Rendered, "Triangle did not render after resize");
 
+#if defined(_WIN32) || defined(__APPLE__)
+        const auto waitForMinimized = [&](bool expected) {
+            const auto deadline = SDL_GetTicks() + 5000;
+            while (bool(SDL_GetWindowFlags(host) & SDL_WINDOW_MINIMIZED) != expected)
+            {
+                require(window.PollEvents(), "Window closed during minimize or restore");
+                require(SDL_GetTicks() < deadline, "Window did not minimize or restore");
+                SDL_Delay(10);
+            }
+        };
+        require(SDL_MinimizeWindow(host), SDL_GetError());
+        waitForMinimized(true);
+        require(window.DrawFrame() == render::FrameResult::Skipped, "Minimized frame was not skipped");
+        require(SDL_RestoreWindow(host), SDL_GetError());
+        waitForMinimized(false);
+        require(window.DrawFrame() == render::FrameResult::Rendered, "Triangle did not render after restore");
+#endif
+
         const auto before = window.GetCamera();
         SDL_Event  press{};
         press.type            = SDL_EVENT_MOUSE_BUTTON_DOWN;

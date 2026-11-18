@@ -48,7 +48,7 @@ npm run pack:sdk -- --build-dir build/sdk --config Release
 
 Without Node.js, run `cmake --build build/sdk --target nova_render` and `cpack --config build/sdk/CPackConfig.cmake -C Release`. The npm wrapper writes `.tar.gz`, `.zip` and SHA-256 files into `build/packages/`; direct CPack uses `build/sdk/packages/`.
 
-Names follow `nova-render-sdk-version-system-architecture-compiler-configuration`. `share/Nova/sdk.json` records compiler/runtime/build settings. Bundled headers, static libraries, shaders and notices include GLFW/volk/optional ImGui. SDK consumers need no Nova checkout, vcpkg, DXC, SPIRV-Cross or Node.js. Match OS, architecture, ABI and Windows runtime; Release SDKs do not contain Debug Nova binaries.
+Names follow `nova-render-sdk-version-system-architecture-compiler-configuration`. `share/Nova/sdk.json` records compiler/runtime/build settings. Bundled headers, static libraries, shaders and notices include SDL3, volk, and optional ImGui. SDK consumers need no Nova checkout, vcpkg, DXC, SPIRV-Cross or Node.js. Match OS, architecture, ABI and Windows runtime; Release SDKs do not contain Debug Nova binaries.
 
 In another project:
 
@@ -66,7 +66,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 cmake --build build --config Release
 ```
 
-When switching SDK directories, use `cmake --fresh` to clear cached `Nova_DIR`. Do not use Nova's vcpkg toolchain for SDK consumption. `render::Window` encapsulates GLFW; lower-level external-window integration remains available. Dynamic-triplet DLLs/libraries must ship with the app; the Windows consumer copies SDK DLLs.
+When switching SDK directories, use `cmake --fresh` to clear cached `Nova_DIR`. Do not use Nova's vcpkg toolchain for SDK consumption. `render::Window` manages the SDL3 window and event loop. Dynamic-triplet DLLs/libraries must ship with the app; the Windows consumer copies SDK DLLs.
 
 `cmake --install build/sdk --prefix /path/to/sdk` remains supported. Disable `NOVA_BUNDLE_DEPENDENCIES` only if consumers manage dependencies themselves.
 

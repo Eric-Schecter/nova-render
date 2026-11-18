@@ -14,7 +14,8 @@
       "platform": "osx"
     },
     "tinygltf",
-    "glm"
+    "glm",
+    "sdl3"
   ],
   "default-features": [
     "vulkan"
@@ -23,14 +24,23 @@
     "vulkan": {
       "description": "Vulkan backend",
       "dependencies": [
-        "volk"
+        "volk",
+        {
+          "name": "sdl3",
+          "features": [
+            "vulkan"
+          ]
+        }
       ]
     },
     "ui": {
       "description": "Optional parameter UI",
       "dependencies": [
         {
-          "name": "imgui"
+          "name": "imgui",
+          "features": [
+            "sdl3-binding"
+          ]
         },
         {
           "name": "imgui",
@@ -55,51 +65,6 @@
           "name": "imgui",
           "features": [
             "vulkan-binding"
-          ]
-        }
-      ]
-    },
-    "sdl3": {
-      "description": "Optional SDL3 window host",
-      "dependencies": [
-        "sdl3"
-      ]
-    },
-    "ui-sdl3": {
-      "description": "SDL3 input for the parameter panel",
-      "dependencies": [
-        {
-          "name": "imgui",
-          "features": [
-            "sdl3-binding"
-          ]
-        }
-      ]
-    },
-    "sdl3-vulkan": {
-      "description": "Vulkan surface support for the SDL3 window host",
-      "dependencies": [
-        {
-          "name": "sdl3",
-          "features": [
-            "vulkan"
-          ]
-        }
-      ]
-    },
-    "glfw": {
-      "description": "GLFW compatibility host",
-      "dependencies": [
-        "glfw3"
-      ]
-    },
-    "ui-glfw": {
-      "description": "GLFW input binding",
-      "dependencies": [
-        {
-          "name": "imgui",
-          "features": [
-            "glfw-binding"
           ]
         }
       ]
