@@ -47,8 +47,8 @@ foreach(pass RANGE 0 29)
         if(APPLE)
             add_custom_command(OUTPUT "${base}.air"
                 COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 -DAA_PASS=${pass} -T ${profile} -E ${entry} "${source}" -Fo "${base}.metal.spv"
-                COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${base}.metal.spv" --msl --msl-version 20100 --msl-decoration-binding --output "${base}.metal"
-                COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.1 -c "${base}.metal" -o "${base}.air"
+                COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${base}.metal.spv" --msl ${NOVA_METAL_PLATFORM_ARGS} --msl-version 20100 --msl-decoration-binding --output "${base}.metal"
+                COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal ${NOVA_METAL_TARGET_ARGS} "-std=${NOVA_METAL_STD}" -c "${base}.metal" -o "${base}.air"
                 DEPENDS ${dependencies} VERBATIM)
             list(APPEND aa_air "${base}.air")
         elseif(WIN32)

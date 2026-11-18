@@ -64,8 +64,8 @@ foreach(_kernel IN ITEMS pathtrace denoise photon-clear photon-trace mlt-bootstr
     if(APPLE)
         set(_path_metal "${SHADER_OUTPUT_DIR}/${_kernel}.metallib")
         add_custom_command(OUTPUT "${_path_metal}"
-            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${_path_spv}" --msl --msl-version 30000 --msl-decoration-binding --output "${SHADER_OUTPUT_DIR}/${_kernel}.metal"
-            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=metal3.0 -c "${SHADER_OUTPUT_DIR}/${_kernel}.metal" -o "${SHADER_OUTPUT_DIR}/${_kernel}.air"
+            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${_path_spv}" --msl ${NOVA_METAL_PLATFORM_ARGS} --msl-version 30000 --msl-decoration-binding --output "${SHADER_OUTPUT_DIR}/${_kernel}.metal"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal ${NOVA_METAL_TARGET_ARGS} -std=metal3.0 -c "${SHADER_OUTPUT_DIR}/${_kernel}.metal" -o "${SHADER_OUTPUT_DIR}/${_kernel}.air"
             COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metallib "${SHADER_OUTPUT_DIR}/${_kernel}.air" -o "${_path_metal}"
             DEPENDS "${_path_spv}" "${NOVA_SPIRV_CROSS_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${_path_metal}")

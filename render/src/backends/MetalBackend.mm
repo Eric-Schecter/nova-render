@@ -3,7 +3,8 @@
 #ifdef NOVA_HAS_UI
 #include <imgui_impl_metal.h>
 #endif
-#import <Cocoa/Cocoa.h>
+#include <SDL3/SDL_metal.h>
+#include <SDL3/SDL_error.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <iostream>
@@ -34,11 +35,8 @@ namespace render::detail
                     ImGui_ImplMetal_Shutdown();
                 }
 #endif
-                if (view && layer && view.layer == layer)
-                {
-                    view.layer      = previousLayer;
-                    view.wantsLayer = previousWantsLayer;
-                }
+                if (metalView)
+                    SDL_Metal_DestroyView(metalView);
             }
         }
         void Initialize(PresentationWindow window, const RendererConfig& config)
@@ -52,22 +50,16 @@ namespace render::detail
                 queue = [device newCommandQueue];
                 if (!queue)
                     throw std::runtime_error("Create Metal queue failed");
-                NSWindow* native = (__bridge NSWindow*)window.NativeHandle();
-                view             = native.contentView;
-                if (!view)
-                    throw std::runtime_error("Window has no Cocoa content view");
-                previousLayer            = view.layer;
-                previousWantsLayer       = view.wantsLayer;
-                layer                    = [CAMetalLayer layer];
-                layer.device             = device;
-                layer.pixelFormat        = MTLPixelFormatBGRA8Unorm_sRGB;
-                layer.framebufferOnly    = YES;
-                layer.opaque             = YES;
-                layer.displaySyncEnabled = YES;
-                layer.contentsScale      = native.backingScaleFactor;
-                layer.frame              = view.bounds;
-                view.wantsLayer          = YES;
-                view.layer               = layer;
+                metalView = SDL_Metal_CreateView(window.sdl);
+                if (!metalView)
+                    throw std::runtime_error(SDL_GetError());
+                layer = (__bridge CAMetalLayer*)SDL_Metal_GetLayer(metalView);
+                if (!layer)
+                    throw std::runtime_error("SDL Metal view has no CAMetalLayer");
+                layer.device          = device;
+                layer.pixelFormat     = MTLPixelFormatBGRA8Unorm_sRGB;
+                layer.framebufferOnly = YES;
+                layer.opaque          = YES;
                 const auto      bytes    = LoadShader(config.shaderDirectory, "triangle.metallib");
                 NSData*         data     = [NSData dataWithBytes:bytes.data() length:bytes.size()];
                 dispatch_data_t shaderData =
@@ -109,8 +101,6 @@ namespace render::detail
                 WaitIdle(); // One frame in flight, matching the other backends.
                 if (resized)
                 {
-                    layer.frame         = view.bounds;
-                    layer.contentsScale = view.window.backingScaleFactor;
                     layer.drawableSize  = CGSizeMake(width, height);
                     resized             = false;
                     std::cout << "Metal drawable: " << width << 'x' << height << '\n';
@@ -688,10 +678,8 @@ namespace render::detail
         id<MTLCommandQueue>        queue;
         id<MTLRenderPipelineState> pipeline;
         id<MTLCommandBuffer>       lastCommand;
-        NSView*                    view               = nil;
-        CALayer*                   previousLayer      = nil;
-        CAMetalLayer*              layer              = nil;
-        BOOL                       previousWantsLayer = NO;
+        SDL_MetalView              metalView = nullptr;
+        CAMetalLayer*              layer = nil;
         uint32_t                   width = 0, height = 0, errors = 0;
         bool                       resized = true;
     };

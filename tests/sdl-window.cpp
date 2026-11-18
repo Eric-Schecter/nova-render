@@ -131,6 +131,15 @@ int main(int argc, char** argv)
         require(!window.PollEvents(), "SDL close request not reported");
         window.CancelClose();
         require(window.PollEvents(), "CancelClose did not reopen the event loop");
+        SDL_Event lifecycle{};
+        lifecycle.type = SDL_EVENT_WILL_ENTER_BACKGROUND;
+        push(lifecycle);
+        require(window.PollEvents(), "Backgrounding closed the window");
+        require(window.DrawFrame() == render::FrameResult::Skipped, "Background frame was submitted");
+        lifecycle.type = SDL_EVENT_DID_ENTER_FOREGROUND;
+        push(lifecycle);
+        require(window.PollEvents(), "Foregrounding closed the window");
+        require(window.DrawFrame() == render::FrameResult::Rendered, "Rendering did not resume in the foreground");
         window.WaitIdle();
         require(!window.ValidationErrorCount(), "GPU validation errors");
         std::cout << "SDL3 triangle, resize, mouse orbit and ImGui passed on " << argv[1] << '\n';

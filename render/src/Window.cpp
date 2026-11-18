@@ -2,6 +2,7 @@
 #include "OrbitInput.hpp"
 #include "PresentationWindow.hpp"
 #include <SDL3/SDL.h>
+#include <atomic>
 #include <exception>
 #include <limits>
 #include <stdexcept>
@@ -38,6 +39,20 @@ namespace render
         bool                                                      orbitEnabled = false, dragging = false;
         bool                                                      closeOnEscape = true;
         std::exception_ptr                                        inputError;
+        std::atomic_bool foreground{true};
+        static bool TrackForeground(void* userdata, SDL_Event* event)
+        {
+            auto& self = *static_cast<Impl*>(userdata);
+            if (event->type == SDL_EVENT_WILL_ENTER_BACKGROUND)
+                self.foreground.store(false);
+            if (event->type == SDL_EVENT_DID_ENTER_FOREGROUND)
+                self.foreground.store(true);
+            return true;
+        }
+        ~Impl()
+        {
+            SDL_RemoveEventWatch(TrackForeground, this);
+        }
         template <class Change>
         void UpdateCamera(Change change) noexcept
         {
@@ -105,6 +120,8 @@ namespace render
             if (!window)
                 throw std::runtime_error(SDL_GetError());
             renderer.reset(new Renderer(detail::PresentationWindow(window.get()), config.renderer));
+            if (!SDL_AddEventWatch(TrackForeground, this))
+                throw std::runtime_error(SDL_GetError());
         }
     };
     Window::Window(const WindowConfig& config)
@@ -141,6 +158,8 @@ namespace render
     }
     std::array<uint32_t, 2> Window::GetFramebufferSize() const
     {
+        if (!impl_->foreground.load())
+            return {};
         int width = 0, height = 0;
         if (!(SDL_GetWindowFlags(impl_->window.get()) & SDL_WINDOW_MINIMIZED))
             SDL_GetWindowSizeInPixels(impl_->window.get(), &width, &height);

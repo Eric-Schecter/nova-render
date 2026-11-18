@@ -11,6 +11,27 @@ if(APPLE)
         HINTS "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/spirv-cross"
               "$ENV{VULKAN_SDK}/bin" ${_nova_sdk_bins} REQUIRED)
     find_program(NOVA_XCRUN_EXECUTABLE xcrun REQUIRED)
+    set(NOVA_METAL_STD macos-metal2.1)
+    set(NOVA_METAL_TARGET_ARGS)
+    set(NOVA_METAL_PLATFORM_ARGS)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(_nova_ios_sdk iphoneos)
+        set(_nova_ios_suffix)
+        if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator|iPhoneSimulator")
+            set(_nova_ios_sdk iphonesimulator)
+            set(_nova_ios_suffix -simulator)
+        endif()
+        set(_nova_ios_version "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        if(NOT _nova_ios_version)
+            set(_nova_ios_version 16.0)
+        endif()
+        execute_process(COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk "${_nova_ios_sdk}" --show-sdk-path
+            COMMAND_ERROR_IS_FATAL ANY OUTPUT_VARIABLE _nova_ios_sysroot OUTPUT_STRIP_TRAILING_WHITESPACE)
+        # Invoke the host Metal toolchain with the selected iOS AIR target and SDK.
+        set(NOVA_METAL_TARGET_ARGS -target "air64-apple-ios${_nova_ios_version}${_nova_ios_suffix}" -isysroot "${_nova_ios_sysroot}")
+        set(NOVA_METAL_STD ios-metal2.1)
+        set(NOVA_METAL_PLATFORM_ARGS --msl-ios)
+    endif()
 endif()
 foreach(shader_name triangle model skybox model-motion sky-motion model-gbuffer model-deferred model-oit model-hybrid-shadow model-probe-deferred model-probe-update)
 if(shader_name STREQUAL "skybox" OR shader_name MATCHES "motion$" OR shader_name MATCHES "^model-(gbuffer|deferred|oit|hybrid-shadow|probe-deferred|probe-update)$")
@@ -107,11 +128,11 @@ foreach(stage IN LISTS _nova_stages)
                 ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${spv}" "${_hlsl}"
             DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         add_custom_command(OUTPUT "${msl}"
-            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${spv}" --msl --msl-version 20100 --msl-decoration-binding
+            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${spv}" --msl ${NOVA_METAL_PLATFORM_ARGS} --msl-version 20100 --msl-decoration-binding
                 --rename-entry-point ${entry} ${msl_entry} ${stage} --output "${msl}"
             DEPENDS "${spv}" "${NOVA_SPIRV_CROSS_EXECUTABLE}" VERBATIM)
         add_custom_command(OUTPUT "${air}"
-            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.1 -c "${msl}" -o "${air}"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal ${NOVA_METAL_TARGET_ARGS} "-std=${NOVA_METAL_STD}" -c "${msl}" -o "${air}"
             DEPENDS "${msl}" VERBATIM)
         list(APPEND METAL_AIR "${air}")
     endif()

@@ -18,6 +18,10 @@ namespace render::detail
             flags |= SDL_WINDOW_RESIZABLE;
         if (vulkan)
             flags |= SDL_WINDOW_VULKAN;
+#ifdef SDL_PLATFORM_APPLE
+        else
+            flags |= SDL_WINDOW_METAL;
+#endif
 #if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
         // Match volk's fallback to the standard macOS Vulkan SDK loader location.
         const bool loaderReference =
@@ -41,9 +45,7 @@ namespace render::detail
     {
         if (sdl)
         {
-#if defined(__APPLE__)
-            return SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
-#elif defined(_WIN32)
+#ifdef _WIN32
             return SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
 #endif
         }
