@@ -607,6 +607,7 @@ class Renderer {
     this.#check()
     if (typeof value === 'string') {
       this.#sceneData.setAnimation(value, state)
+      this.#refreshAnimationShadows()
       this.#resetAA()
       return
     }
@@ -627,6 +628,12 @@ class Renderer {
   updateAnimations(delta) {
     this.#check()
     this.#sceneData.updateAnimations(delta)
+    this.#refreshAnimationShadows()
+  }
+  #refreshAnimationShadows() {
+    if (!this.#sceneModel || !this.#sceneData.players.size) return
+    const { instances, draws, shadowRecords } = this.#sceneData.shadowInstances()
+    this.#model.setInstances(instances, draws, shadowRecords)
   }
   getSceneInstanceBounds(id) {
     this.#check()
@@ -642,7 +649,7 @@ class Renderer {
       instancePlayback: supported,
       gpuSkinning: supported,
       manualClock: true,
-      dynamicShadows: false,
+      dynamicShadows: supported,
       posedPicking: true,
       posedBounds: true,
       rayTracing: false,
@@ -650,7 +657,7 @@ class Renderer {
       minimumSpeed: 0.1,
       maximumSpeed: 4,
       reason: supported
-        ? 'Scene animation uses an explicit clock; animated shadow casting and ray modes are unavailable'
+        ? 'Scene animation uses an explicit clock; dynamic scene shadows are supported in Raster'
         : 'Animation playback currently requires Raster',
     }
   }

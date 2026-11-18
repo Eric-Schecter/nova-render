@@ -133,7 +133,7 @@ try {
     !caps.gpuSkinning ||
     !caps.posedPicking ||
     !caps.posedBounds ||
-    caps.dynamicShadows ||
+    !caps.dynamicShadows ||
     caps.morph
   )
     throw Error('False capabilities')
@@ -186,6 +186,38 @@ try {
     (await page.evaluate(() => r.getAnimationState('node-a').time)) !== 0
   )
     throw Error('Rigid node animation failed')
+  await page.evaluate(() => {
+    const floor = world(0, -1.4, 0)
+    floor[0] = floor[10] = 3
+    floor[5] = 0.15
+    window.shadowScene = [
+      { id: 'b', assetId: 'rig' },
+      { id: 'floor', assetId: 'box', world: floor, castShadow: false },
+    ]
+    r.setCamera({ distance: 6, yaw: 0, pitch: 25 })
+    r.setDirectionalLight({ direction: [-1, 2, 1], intensity: 8, color: [1, 1, 1] })
+    r.setLighting('pbr')
+    r.setShadows({ enabled: true, softness: 0 })
+  })
+  async function shadowMask(name, seek = false) {
+    await page.evaluate(async (seek) => {
+      shadowScene[0].castShadow = true
+      await r.setScene(sources, shadowScene)
+      if (seek)
+        r.setAnimationState('b', { clip: 1, time: r.getAnimations('rig')[1].duration * 0.4 })
+    }, seek)
+    const on = await capture(name)
+    await page.evaluate(async () => {
+      shadowScene[0].castShadow = false
+      await r.setScene(sources, shadowScene)
+    })
+    const off = await capture(name + '-off')
+    return on.map((value, index) => (off[index] > value + 8 ? 255 : 0))
+  }
+  const shadowBind = await shadowMask('shadow-bind')
+  const shadowPose = await shadowMask('shadow-pose', true)
+  if (shadowPose.filter(Boolean).length < 40 || diff(shadowBind, shadowPose) < 0.03)
+    throw Error('Animated shadow did not follow pose or cast flag')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of ['bind', 'pose', 'advanced', 'preserved', 'node-bind', 'node-pose']) {

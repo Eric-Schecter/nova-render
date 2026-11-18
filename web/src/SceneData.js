@@ -316,7 +316,6 @@ export class SceneData {
           ]
           if (m.data.animation) {
             values[28] = players.get(i.id).paletteOffset + 1
-            values[46] = 0
           }
           if (!values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
             throw Error('Instance transform overflows float32')
@@ -335,7 +334,43 @@ export class SceneData {
     this.inputSnapshot = structuredClone(input)
     this.pickInstances = effective.map((i) => ({ ...i, world: Array.from(i.world, Math.fround) }))
     this.sourceSpaces = spaces
-    return { model: this.model, instances, draws, shadowRecords: this.shadowRecords }
+    this.instanceBytes = instances
+    this.draws = draws
+    return { model: this.model, ...this.shadowInstances() }
+  }
+  shadowInstances() {
+    if (!this.players.size)
+      return { instances: this.instanceBytes, draws: this.draws, shadowRecords: this.shadowRecords }
+    const instances = this.instanceBytes.slice(),
+      chunks = [this.shadowRecords]
+    let length = this.shadowRecords.length,
+      index = 0
+    for (const [assetId, mesh] of this.meshes) {
+      for (const instance of this.pickInstances) {
+        if (instance.assetId !== assetId) continue
+        const at = index++ * 48,
+          player = this.players.get(instance.id)
+        if (!player || !instances[at + 46]) continue
+        player.queryPick ||= new PickMesh(this.poseGeometry(instance.id))
+        const nodes = player.queryPick.nodes.length
+        const rows = player.queryPick.shadowRecords()
+        if ((length + rows.length) * 4 > 64 * 1024 * 1024)
+          throw Error('Scene shadow BVHs exceed 64 MiB')
+        instances[at + 45] = length / 48
+        instances[at + 47] = nodes
+        const offset = this.model.vertices[mesh.first * 12 + 3] - mesh.data.vertices[3]
+        for (let row = nodes; row < rows.length / 48; row++) rows[row * 48 + 43] += offset
+        chunks.push(rows)
+        length += rows.length
+      }
+    }
+    const shadowRecords = new Float32Array(length)
+    let offset = 0
+    for (const chunk of chunks) {
+      shadowRecords.set(chunk, offset)
+      offset += chunk.length
+    }
+    return { instances, draws: this.draws, shadowRecords }
   }
   animations(id) {
     const mesh = this.meshes.get(id)

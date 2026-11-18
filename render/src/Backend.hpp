@@ -219,7 +219,11 @@ namespace render::detail
             globals.world[6]     = hybrid.reflectionStrength;
             rasterInstances.push_back(globals);
             if (scene.active)
+            {
+                const size_t shadowBase = rasterInstances.size();
                 rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
+                scene.AppendAnimatedShadows(rasterInstances, shadowBase);
+            }
             if (singleHybrid)
                 for (const auto& row : singleBVH->ShadowRecords())
                 {
@@ -311,19 +315,20 @@ namespace render::detail
         void SetSceneAnimation(const std::string& id, const AnimationState& value)
         {
             scene.SetAnimation(id, value);
+            RebuildRasterInstances();
             rasterAA.Reset();
         }
         AnimationCapabilities GetAnimationCapabilities() const
         {
             AnimationCapabilities c;
+            c.dynamicShadows = mode == RenderMode::Raster;
             if (mode != RenderMode::Raster)
             {
                 c.skeletal = c.nodeTRS = c.instancePlayback = c.gpuSkinning = false;
                 c.reason = "Animation playback currently requires Raster";
             }
             else
-                c.reason =
-                  "Scene animation uses an explicit clock; animated shadow casting and ray modes are unavailable";
+                c.reason = "Scene animation uses an explicit clock; dynamic scene shadows are supported in Raster";
             return c;
         }
         AnimationPlayer animation;

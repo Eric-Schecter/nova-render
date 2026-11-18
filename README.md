@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.9.0** adds independent GPU animation for scene instances, pose picking/bounds and Hybrid rendering. It includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
+Release **0.9.1** adds pose-dependent shadows for animated scene instances. The SDK also includes independent GPU animation, posed picking and bounds, and Hybrid rendering. It includes a macOS ARM64 C++ SDK (Metal / Vulkan via MoltenVK) and a WebGPU npm package. Scene light collections support raster and ray tracing on Metal, Vulkan, DX12 and WebGPU; DX12 runtime validation is pending. Windows x64 SDKs remain available in 0.2.1; Windows ARM64 in 0.1.0. A Linux SDK is not included.
 
 ## Features
 

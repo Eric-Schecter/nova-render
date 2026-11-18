@@ -198,7 +198,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Material edit lost state");
         auto caps = backend->GetAnimationCapabilities();
         if (
-          !caps.skeletal || !caps.instancePlayback || !caps.gpuSkinning || caps.morph || caps.dynamicShadows
+          !caps.skeletal || !caps.instancePlayback || !caps.gpuSkinning || caps.morph || !caps.dynamicShadows
           || !caps.posedPicking || !caps.posedBounds)
             throw std::runtime_error("False animation capabilities");
         for (auto mode : {RenderMode::Hybrid, RenderMode::RayTracing})
@@ -246,6 +246,41 @@ int main(int argc, char** argv)
           Difference(nodeBind, nodePose) < .01 || boxAfter->minimum[0] <= boxBefore->minimum[0] + .1f
           || backend->scene.Animation("node-a").time != 0)
             throw std::runtime_error("Rigid node animation did not move geometry/bounds");
+        auto floor = world(0, -1.4f, 0);
+        floor[0] = floor[10] = 3;
+        floor[5]             = .15f;
+        std::vector<SceneInstance> shadowScene{{"b", "rig"}, {"floor", "box", floor, false}};
+        backend->SetScene(sources, shadowScene);
+        camera.pitch = 25;
+        backend->SetCamera(camera);
+        DirectionalLight light;
+        light.direction = {-1, 2, 1};
+        light.intensity = 8;
+        backend->SetDirectionalLight(light);
+        backend->SetLighting(LightingMode::PBR);
+        SceneShadowSettings shadows;
+        shadows.enabled  = true;
+        shadows.softness = 0;
+        backend->SetShadows(shadows);
+        auto mask = [&](const std::string& name, bool seek) {
+            shadowScene[0].castShadow = true;
+            backend->SetScene(sources, shadowScene);
+            if (seek)
+                backend->SetSceneAnimation("b", {1, clips[1].duration * .4f, 1, false, true});
+            auto on                   = draw(name);
+            shadowScene[0].castShadow = false;
+            backend->SetScene(sources, shadowScene);
+            auto off = draw(name + "-off");
+            for (size_t pixel = 0; pixel < on.pixels.size(); pixel++)
+                on.pixels[pixel] = off.pixels[pixel] > on.pixels[pixel] + 8 ? 255 : 0;
+            return on;
+        };
+        auto shadowBind = mask("shadow-bind", false);
+        auto shadowPose = mask("shadow-pose", true);
+        if (
+          std::count(shadowPose.pixels.begin(), shadowPose.pixels.end(), 255) < 40
+          || Difference(shadowBind, shadowPose) < .03)
+            throw std::runtime_error("Animated shadow did not follow pose or cast flag");
         std::cout << "GPU pose delta left=" << left << " right=" << right
                   << "; independent states, clock, seek, sharing and preservation passed\n";
         backend.reset();

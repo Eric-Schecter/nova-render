@@ -178,7 +178,7 @@ namespace render::detail
                         v.normal[12] = float(nextPlayers.at(i.id).paletteOffset + 1);
                     v.uv[0] = float(input.size());
                     v.uv[1] = float(m.shadowFirst);
-                    v.uv[2] = !m.data->animation && i.castShadow && std::abs(determinant) > 1e-12f ? 1.f : 0.f;
+                    v.uv[2] = i.castShadow && std::abs(determinant) > 1e-12f ? 1.f : 0.f;
                     v.uv[3] = float(m.shadowNodes);
                     for (float value : v.world)
                         if (!std::isfinite(value))
@@ -422,6 +422,38 @@ namespace render::detail
         if (!active || p == players.end())
             throw std::invalid_argument("Instance has no animation");
         return p->second.state;
+    }
+    void SceneData::AppendAnimatedShadows(std::vector<InstanceData>& records, size_t shadowBase) const
+    {
+        size_t index = 0;
+        for (const auto& [assetId, mesh] : meshes)
+            for (const auto& instance : pickInstances)
+            {
+                if (instance.assetId != assetId)
+                    continue;
+                auto& record = records[index++];
+                if (!mesh.data->animation || !instance.castShadow || record.uv[2] == 0)
+                    continue;
+                const auto& player = players.at(instance.id);
+                if (!player.queryPick)
+                    player.queryPick = std::make_shared<PickMesh>(PoseGeometry(instance.id));
+                const auto&  rows      = player.queryPick->ShadowRecords();
+                const size_t nodeCount = player.queryPick->ShadowNodeCount();
+                if ((records.size() - shadowBase + rows.size()) * 192ull > 64ull * 1024 * 1024)
+                    throw std::runtime_error("Scene shadow BVHs exceed 64 MiB");
+                record.uv[1] = float(records.size() - shadowBase);
+                record.uv[3] = float(nodeCount);
+                const float materialOffset =
+                  model->vertices[mesh.first].position[3] - mesh.data->vertices[0].position[3];
+                for (size_t row = 0; row < rows.size(); ++row)
+                {
+                    InstanceData packed;
+                    std::memcpy(&packed, rows[row].data(), sizeof(packed));
+                    if (row >= nodeCount)
+                        packed.emissive[3] += materialOffset;
+                    records.push_back(packed);
+                }
+            }
     }
     void SceneData::CommitPalettes()
     {

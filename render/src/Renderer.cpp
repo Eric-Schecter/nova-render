@@ -200,6 +200,8 @@ namespace render
     void Renderer::UpdateAnimations(float delta)
     {
         impl_->backend->scene.UpdateAnimations(delta);
+        if (impl_->backend->scene.HasAnimations())
+            impl_->backend->RebuildRasterInstances();
     }
     AnimationCapabilities Renderer::GetAnimationCapabilities() const
     {
