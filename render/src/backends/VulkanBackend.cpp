@@ -121,6 +121,8 @@ namespace render::detail
                                           : sky                               ? "SkyVSMain"
                                                                               : "VSMain");
             }
+            if (std::string(name) == "model-probe-deferred")
+                stages[1].pName = "DeferredPSMain";
             if (std::string(name) == "model-oit")
                 stages[1].pName = "OITPSMain";
             if (std::string(name) == "model-hybrid-shadow")
@@ -186,6 +188,128 @@ namespace render::detail
             check(status, "Create raster AA pipeline");
             return result;
         }
+        VkPipeline probeDeferredPipeline = VK_NULL_HANDLE;
+        bool       probeFrame            = false;
+        void       EncodeProbeUpdate(VkCommandBuffer command)
+        {
+            bool reset;
+            probeFrame = PrepareProbes(reset);
+            if (!probeFrame)
+                return;
+            if (!probeUpdatePipeline)
+            {
+                constexpr auto bytes = ProbeCount * ProbeBytes;
+                modelBuffer(probeUniform, sizeof(ProbeConfig), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+                modelBuffer(
+                  probeCurrent,
+                  bytes,
+                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                    | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+                modelBuffer(
+                  probePrevious, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+                VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                alloc.descriptorPool     = modelPool;
+                alloc.descriptorSetCount = 1;
+                alloc.pSetLayouts        = &probeSetLayout;
+                check(vkAllocateDescriptorSets(device, &alloc, &probeReadSet), "Allocate probe sampling set");
+                check(vkAllocateDescriptorSets(device, &alloc, &probeUpdateSet), "Allocate probe update set");
+                alloc.pSetLayouts = &modelSetLayout;
+                check(vkAllocateDescriptorSets(device, &alloc, &probeModelSet), "Allocate probe scene set");
+                auto bind = [&](VkDescriptorSet set, const ModelBuffer& input) {
+                    VkDescriptorBufferInfo buffers[]{
+                      {probeUniform.buffer, 0, sizeof(ProbeConfig)},
+                      {input.buffer, 0, VK_WHOLE_SIZE},
+                      {probeCurrent.buffer, 0, VK_WHOLE_SIZE}};
+                    VkWriteDescriptorSet writes[3]{};
+                    for (uint32_t i = 0; i < 3; ++i)
+                    {
+                        auto& write           = writes[i];
+                        write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        write.dstSet          = set;
+                        write.dstBinding      = 25 + i;
+                        write.descriptorCount = 1;
+                        write.descriptorType =
+                          i == 0 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                        write.pBufferInfo = &buffers[i];
+                    }
+                    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+                };
+                bind(probeReadSet, probeCurrent);
+                bind(probeUpdateSet, probePrevious);
+                auto                        module = shader("model-probe-update.comp.spv");
+                VkComputePipelineCreateInfo info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+                info.stage        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+                info.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+                info.stage.module = module;
+                info.stage.pName  = "HybridProbeUpdateCS";
+                info.layout       = layout;
+                const auto status =
+                  vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &probeUpdatePipeline);
+                vkDestroyShaderModule(device, module, nullptr);
+                check(status, "Create probe update pipeline");
+                reset = true;
+            }
+            auto upload = [&](ModelBuffer& buffer, const void* data, size_t size) {
+                void* mapped;
+                check(vkMapMemory(device, buffer.memory, 0, size, 0, &mapped), "Map probe input");
+                std::memcpy(mapped, data, size);
+                vkUnmapMemory(device, buffer.memory);
+            };
+            const uint32_t      bindings[] = {0, 2, 3, 4, 5, 6, 7, 8, 14};
+            VkCopyDescriptorSet copies[std::size(bindings)]{};
+            for (size_t i = 0; i < std::size(bindings); ++i)
+            {
+                copies[i].sType      = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET;
+                copies[i].srcSet     = modelSet;
+                copies[i].dstSet     = probeModelSet;
+                copies[i].srcBinding = copies[i].dstBinding = bindings[i];
+                copies[i].descriptorCount                   = 1;
+            }
+            vkUpdateDescriptorSets(device, 0, nullptr, std::size(copies), copies);
+            upload(modelUniform, &rasterAA.current, sizeof(SceneUniforms));
+            upload(probeUniform, &probeConfig, sizeof(ProbeConfig));
+            auto barrier = [&](
+                             VkPipelineStageFlags before,
+                             VkAccessFlags        source,
+                             VkPipelineStageFlags after,
+                             VkAccessFlags        destination) {
+                VkMemoryBarrier memory{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+                memory.srcAccessMask = source;
+                memory.dstAccessMask = destination;
+                vkCmdPipelineBarrier(command, before, after, 0, 1, &memory, 0, nullptr, 0, nullptr);
+            };
+            barrier(
+              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+              VK_PIPELINE_STAGE_TRANSFER_BIT,
+              VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
+            if (reset)
+            {
+                vkCmdFillBuffer(command, probeCurrent.buffer, 0, VK_WHOLE_SIZE, 0);
+                barrier(
+                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                  VK_ACCESS_TRANSFER_WRITE_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                  VK_ACCESS_TRANSFER_READ_BIT);
+            }
+            const VkDeviceSize offset = probeConfig.dimensionsFirst[3] * ProbeBytes;
+            VkBufferCopy       copy{offset, offset, probeConfig.count * ProbeBytes};
+            vkCmdCopyBuffer(command, probeCurrent.buffer, probePrevious.buffer, 1, &copy);
+            barrier(
+              VK_PIPELINE_STAGE_TRANSFER_BIT,
+              VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, probeUpdatePipeline);
+            vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &probeModelSet, 0, nullptr);
+            vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2, 1, &probeUpdateSet, 0, nullptr);
+            vkCmdDispatch(command, (probeConfig.count * 6 + 31) / 32, 1, 1);
+            barrier(
+              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+              VK_ACCESS_SHADER_WRITE_BIT,
+              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+              VK_ACCESS_SHADER_READ_BIT);
+        }
         void CreateRasterAADevice() override
         {
             AAExternalScene external;
@@ -219,6 +343,9 @@ namespace render::detail
                   &activeSet,
                   0,
                   nullptr);
+            };
+            external.beforeScene = [this](void* command) {
+                EncodeProbeUpdate(reinterpret_cast<VkCommandBuffer>(command));
             };
             external.draw = [this](const AAPass& pass, void* command, void* targetPass) {
                 auto      cmd        = reinterpret_cast<VkCommandBuffer>(command);
@@ -273,10 +400,19 @@ namespace render::detail
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
                 if (pass.program == -5 || pass.program == -7)
                 {
-                    auto& active = pass.program == -7 ? aaHybridShadow : aaDeferred;
+                    const bool probes = pass.program == -5 && probeFrame;
+                    auto& active = pass.program == -7 ? aaHybridShadow : probes ? probeDeferredPipeline : aaDeferred;
+                    if (probes)
+                        vkCmdBindDescriptorSets(
+                          cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 2, 1, &probeReadSet, 0, nullptr);
                     if (!active)
                         active = AAPipeline(
-                          pass.program == -7 ? "model-hybrid-shadow" : "model-deferred", true, 1, renderPass);
+                          pass.program == -7 ? "model-hybrid-shadow"
+                          : probes           ? "model-probe-deferred"
+                                             : "model-deferred",
+                          true,
+                          1,
+                          renderPass);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, active);
                     vkCmdDraw(cmd, 3, 1, 0, 0);
                     return;
@@ -335,6 +471,7 @@ namespace render::detail
             release(aaOit);
             release(aaGBuffer);
             release(aaDeferred);
+            release(probeDeferredPipeline);
             release(aaHybridShadow);
             release(aaMotion);
             release(aaSkyMotion);
@@ -640,10 +777,10 @@ namespace render::detail
             rp.pDependencies   = &dep;
             check(vkCreateRenderPass(device, &rp, nullptr, &renderPass), "Create render pass");
             VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-            VkDescriptorSetLayout      modelLayouts[] = {modelSetLayout, gBufferSetLayout};
+            VkDescriptorSetLayout      modelLayouts[] = {modelSetLayout, gBufferSetLayout, probeSetLayout};
             if (model)
             {
-                pl.setLayoutCount = 2;
+                pl.setLayoutCount = 3;
                 pl.pSetLayouts    = modelLayouts;
             }
             check(vkCreatePipelineLayout(device, &pl, nullptr, &layout), "Create pipeline layout");

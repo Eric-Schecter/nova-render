@@ -49,7 +49,11 @@ try {
     const diffuseBounce = page.getByLabel('Diffuse bounce', { exact: true })
     if (id === 'global-illumination-test') await diffuseBounce.check()
     await page.locator('canvas').scrollIntoViewIfNeeded()
+    if (id === 'global-illumination-test')
+      await page.getByLabel('DDGI probes', { exact: true }).check()
     await page.locator('canvas').screenshot({ path: root + '/' + id + '.png' })
+    if (id === 'global-illumination-test')
+      await page.getByLabel('DDGI probes', { exact: true }).uncheck()
     if (id === 'global-illumination-test') await diffuseBounce.uncheck()
     console.log('Scene/presets passed:', id)
   }

@@ -69,3 +69,39 @@ The Damaged Helmet mirror fixture changes only the reflected helmet's normal sca
 ## Diffuse bounce
 
 The red-wall and neutral-floor fixture compares the same pose and lighting with diffuse bounce off and on. The test checks for added red light in the floor region on Metal, Vulkan/MoltenVK and Chrome WebGPU. The combined Hybrid regression, including the new captures, stays below 0.015/255 native/Web mean channel error. The four-ray estimator provides a baseline for probe-based GI and uses the existing optional temporal reconstruction.
+
+## GI room performance baseline
+
+Run the existing reference fixture at 320 × 180 with the dedicated baseline mode:
+
+```sh
+build/lights-040/nova_hybrid_reference_test metal build/reference/hybrid-rendering/scenes.json --bounce-baseline
+build/lights-040/nova_hybrid_reference_test vulkan build/reference/hybrid-rendering/scenes.json --bounce-baseline
+node scripts/webgpu/check-hybrid-reference.mjs --bounce-baseline
+```
+
+The last command uses the same local WebGPU validation server as the reference checks. For each of the four fixed cameras, each mode warms up four frames before taking the median of 15 synchronized frames. The timed interval includes frame submission, rendering and the wait for GPU completion. Presentation and scheduling can affect it. Image capture, model loading and setup are outside the interval. Compare modes on the same backend and machine.
+
+On Apple M4 at 320 × 180, the four per-camera medians ranged from 18.3–35.3 ms with bounce off and 32.1–40.1 ms with pixel bounce on Metal. Vulkan/MoltenVK measured 29.6–34.9 ms off and 40.3–47.4 ms on. Chrome WebGPU measured 5.8–13.7 ms off and 18.4–23.9 ms on. Pixel bounce changed all four views. The largest native/Web mean channel error across captures was 0.101/255. Captures and timing JSON are saved under `build/validation/hybrid-gi-baseline`.
+
+These results establish the existing per-pixel baseline for DDGI. Probe-cache updates and sampling are outside this comparison.
+
+## Probe update kernel
+
+`HybridProbeUpdateCS` traces one batch of a world-space probe grid through the shared material-aware BVH. Each probe stores six directional lobes with RGB diffuse radiance, validity and normalized first and second hit-distance moments. Previous and destination buffers are separate. The caller must initialize invalid history to zero and preserve untouched ranges when advancing batches.
+
+`node scripts/webgpu/check-hybrid-probe-update.mjs` compiles HLSL to WGSL and dispatches a partial batch against an empty scene. It checks untouched probes, fresh miss distances and irradiance/moment blending against initialized history. The same entry compiles to Metal and validates as Vulkan SPIR-V. This isolated test does not exercise backend frame scheduling, nonempty-scene radiance, deferred sampling or leak suppression.
+
+The shared sampler blends up to eight neighboring probes. It selects directional lobes by the shading normal for radiance and by the probe-to-surface direction for distance moments. A squared variance bound reduces contributions behind blockers; blocked probes keep their normalization weight so a lone blocked probe cannot recover its original brightness through renormalization. The WebGPU kernel test verifies a visible sample, a blocked sample, an out-of-grid sample and directional weighting. This is a synthetic visibility check, not an image-level leak test in the reference room.
+
+### DDGI frame-loop comparison
+
+```sh
+build/lights-040/nova_hybrid_reference_test metal build/reference/hybrid-rendering/scenes.json --probe-comparison
+build/lights-040/nova_hybrid_reference_test vulkan build/reference/hybrid-rendering/scenes.json --probe-comparison
+node scripts/webgpu/check-hybrid-reference.mjs --probe-comparison
+```
+
+Metal, Vulkan and WebGPU dispatch the same HLSL update entry. They preserve untouched probes, update up to eight per frame and sample the cache during deferred lighting. The four-camera comparison warms up for 52 probe frames (four complete grid sweeps). The test preserves the off and per-pixel modes and compares all three image sets. Native metrics include synchronized presented frame times and render-only times, excluding swapchain presentation from the latter. Captures and timing JSON are in `build/validation/hybrid-gi-baseline`.
+
+On Apple M4 at 320 × 180, the four per-camera medians for per-pixel versus probes were 8.34–9.75 versus 4.89–8.21 ms on Metal and 9.52–10.64 versus 10.01–11.00 ms on Vulkan/MoltenVK, measured without native presentation. In Chrome WebGPU the synchronized frame medians were 10.30–14.10 versus 5.20–6.60 ms. Probe timings include the scheduled update every frame. The maximum native/Web mean RGB error among probe captures was 0.077/255. This comparison measures agreement across backends, not accuracy against ground truth.

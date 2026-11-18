@@ -10,6 +10,8 @@
 #include "path/PathTracing.hpp"
 #include "render/Renderer.hpp"
 #include <cmath>
+#include <glm/gtc/type_ptr.hpp>
+#include <limits>
 #include <stdexcept>
 
 namespace render::detail
@@ -17,6 +19,13 @@ namespace render::detail
     class Backend
     {
       public:
+        // Render the prepared Hybrid workload without swapchain presentation.
+        void RenderHybridOffscreen(uint32_t width, uint32_t height)
+        {
+            if (mode != RenderMode::Hybrid || !rasterAA.device)
+                throw std::logic_error("Render a Hybrid frame before the offscreen benchmark");
+            DrawPathFrame(width, height);
+        }
         PanelAssets assets;
         SceneData   scene;
         void        ValidateMaterialState(const ModelData* next) const
@@ -35,6 +44,7 @@ namespace render::detail
         HybridCapabilities GetHybridCapabilities() const
         {
             HybridCapabilities c;
+            c.probeGI = pathAPI != GraphicsAPI::D3D12;
             if ((model && model->animation) || scene.HasAnimations())
             {
                 c.supported = false;
@@ -42,6 +52,79 @@ namespace render::detail
             }
             return c;
         }
+        struct ProbeConfig
+        {
+            std::array<float, 4>    origin{}, spacingDistance{};
+            std::array<uint32_t, 4> dimensionsFirst{5, 4, 5, 0};
+            uint32_t                count = 0, sequence = 0;
+            float                   weight = .85f;
+            uint32_t                header = 0;
+        };
+        static_assert(sizeof(ProbeConfig) == 64);
+        static constexpr uint32_t ProbeCount = 100, ProbeBytes = 6 * 32;
+        uint32_t                  probeFirst = 0, probeSequence = 0;
+        bool                      probeReset = true;
+        ProbeConfig               probeConfig;
+        void                      InvalidateProbes() { probeReset = true; }
+        bool                      PrepareProbes(bool& reset)
+        {
+            if (mode != RenderMode::Hybrid || !hybrid.probeGI || !model || model->vertices.empty())
+                return false;
+            reset = probeReset;
+            if (reset)
+            {
+                glm::vec3 low(std::numeric_limits<float>::infinity()), high(-std::numeric_limits<float>::infinity());
+                auto      include = [&](glm::vec3 p) {
+                    low  = glm::min(low, p);
+                    high = glm::max(high, p);
+                };
+                if (scene.active)
+                {
+                    for (const auto& draw : scene.draws)
+                    {
+                        glm::vec3 a(std::numeric_limits<float>::infinity()), b(-std::numeric_limits<float>::infinity());
+                        for (uint32_t i = 0; i < draw.vertexCount; ++i)
+                        {
+                            auto p = glm::make_vec3(model->vertices[draw.firstVertex + i].position);
+                            a      = glm::min(a, p);
+                            b      = glm::max(b, p);
+                        }
+                        if (!draw.vertexCount)
+                            continue;
+                        for (uint32_t i = 0; i < draw.instanceCount; ++i)
+                        {
+                            auto transform = glm::make_mat4(scene.instances[draw.firstInstance + i].world);
+                            for (unsigned k = 0; k < 8; ++k)
+                            {
+                                glm::vec3 corner(k & 1 ? b.x : a.x, k & 2 ? b.y : a.y, k & 4 ? b.z : a.z);
+                                include(glm::vec3(transform * glm::vec4(corner, 1)));
+                            }
+                        }
+                    }
+                }
+                else
+                    for (const auto& vertex : model->vertices)
+                        include(glm::make_vec3(vertex.position));
+                if (!std::isfinite(low.x))
+                    return false;
+                auto extent = glm::max(high - low, glm::vec3(.25f));
+                for (int i = 0; i < 3; ++i)
+                {
+                    probeConfig.spacingDistance[i] = extent[i] / probeConfig.dimensionsFirst[i];
+                    probeConfig.origin[i]          = low[i] + .5f * probeConfig.spacingDistance[i];
+                }
+                probeConfig.spacingDistance[3] = glm::length(extent);
+                probeFirst = probeSequence = 0;
+                probeReset                 = false;
+            }
+            probeConfig.dimensionsFirst[3] = probeFirst;
+            probeConfig.count              = std::min(8u, ProbeCount - probeFirst);
+            probeConfig.sequence           = probeSequence++;
+            probeConfig.header             = rasterGlobals;
+            probeFirst                     = (probeFirst + probeConfig.count) % ProbeCount;
+            return true;
+        }
+
         void SetHybrid(const HybridSettings& value)
         {
             if (
@@ -54,6 +137,8 @@ namespace render::detail
               || value.reflectionSamples > 16 || !std::isfinite(value.historyWeight) || value.historyWeight < 0
               || value.historyWeight > .98f)
                 throw std::invalid_argument("Invalid Hybrid settings");
+            if (value.probeGI && pathAPI == GraphicsAPI::D3D12)
+                throw std::invalid_argument("DDGI requires Metal or Vulkan");
             hybrid = value;
             RebuildRasterInstances();
             rasterAA.Reset();
@@ -186,6 +271,7 @@ namespace render::detail
         }
         void RebuildRasterInstances()
         {
+            InvalidateProbes();
             const bool skinned = SingleSkinnedShadows();
             const bool singleCaster =
               skinned || (mode == RenderMode::Hybrid && !scene.active && model && !model->vertices.empty());
@@ -530,7 +616,10 @@ namespace render::detail
         void SetEnvironment(const EnvironmentSettings& value)
         {
             if (std::memcmp(&environmentSettings, &value, sizeof(value)) != 0)
+            {
+                InvalidateProbes();
                 rasterAA.Reset();
+            }
             environmentSettings = value;
         }
         EnvironmentSettings GetEnvironment() const { return environmentSettings; }
@@ -653,7 +742,10 @@ namespace render::detail
         void             SetLighting(LightingMode value)
         {
             if (lighting != value)
+            {
+                InvalidateProbes();
                 rasterAA.Reset();
+            }
             lighting = value;
         }
         void SetCamera(const OrbitCamera& value)
@@ -794,6 +886,7 @@ namespace render::detail
             const auto oldClear       = clearColor;
             const auto oldCamera      = camera;
             const auto oldLight       = directionalLight;
+            const auto oldLighting    = lighting;
             const auto oldEnvironment = environmentSettings;
             parameterPanel->Draw(
               bool(model) && !aaTriangle,
@@ -821,7 +914,7 @@ namespace render::detail
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
               || previousHybrid.reflectionDistance != hybrid.reflectionDistance
-              || previousHybrid.diffuseBounce != hybrid.diffuseBounce
+              || previousHybrid.probeGI != hybrid.probeGI || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
@@ -858,6 +951,12 @@ namespace render::detail
               || oldEnvironment.backgroundIntensity != environmentSettings.backgroundIntensity
               || oldEnvironment.showBackground != environmentSettings.showBackground)
                 rasterAA.Reset();
+            if (
+              oldLighting != lighting || oldLight.direction != directionalLight.direction
+              || oldLight.color != directionalLight.color || oldLight.intensity != directionalLight.intensity
+              || oldEnvironment.rotation != environmentSettings.rotation
+              || oldEnvironment.intensity != environmentSettings.intensity)
+                InvalidateProbes();
             if (previous.clip != animation.state.clip || std::abs(previous.time - animation.state.time) > .25f)
                 rasterAA.Reset();
             if (previous.clip != animation.state.clip || previous.time != animation.state.time)

@@ -383,6 +383,20 @@ export function attachParameterPanel(
         slider(renderer, 'hybrid_aoSamples', 'AO rays/pixel', 'AO rays per pixel', 1, 32, 1, (v) =>
           adapter.setHybrid({ aoSamples: v }),
         )
+        const probeRow = document.createElement('label'),
+          probeToggle = document.createElement('input')
+        probeRow.textContent = 'DDGI probes'
+        probeToggle.type = 'checkbox'
+        probeToggle.setAttribute('aria-label', 'DDGI probes')
+        probeToggle.checked = h.probeGI
+        probeToggle.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ probeGI: probeToggle.checked })),
+          { signal: fieldEvents.signal },
+        )
+        probeRow.prepend(probeToggle)
+        renderer.append(probeRow)
+        fields.set('hybrid_probeGI', { input: probeToggle })
         const bounceRow = document.createElement('label'),
           bounceToggle = document.createElement('input')
         bounceRow.textContent = 'Diffuse bounce'
@@ -816,6 +830,7 @@ export function attachParameterPanel(
         if (typeof value === 'boolean') field.input.checked = value
         else field.input.value = value
         if (field.output) field.output.textContent = String(value)
+        if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
         if (name === 'shadowLight')
           field.input.closest('label').style.display =
             adapter.getHybrid().view === 'shadows' ? '' : 'none'

@@ -76,6 +76,7 @@ class Renderer {
     this.#check()
     this.#hybrid = copyHybrid({ ...this.#hybrid, ...value })
     this.#resetAA()
+    if (this.#hybrid.probeGI) this.#continuePathTracing()
     this.#parameterPanel?.refresh()
   }
   getHybridCapabilities() {
@@ -143,8 +144,17 @@ class Renderer {
   #aaSettings = { method: 'off', historyWeight: 0.9, zoom: 1, split: false, textureFiltering: true }
   #resetAA() {
     this.#aaView?.resetHistory()
-    this.#aaRemaining = 32
+    this.#aaRemaining = this.#hybrid.probeGI ? 52 : 32
     if (this.#postSettings.enabled && this.#postSettings.autoExposure) this.#postRemaining = 480
+  }
+  #probesActive() {
+    return (
+      this.#renderMode === 'hybrid' &&
+      this.#hybrid.probeGI &&
+      this.#hybrid.view === 'final' &&
+      this.#rasterSettings.view === 'final' &&
+      this.#aaRemaining > 0
+    )
   }
   #taaActive() {
     return (
@@ -742,6 +752,7 @@ class Renderer {
         !this.#aoSettings.enabled &&
         !this.#animationPlaying() &&
         !this.#taaActive() &&
+        !this.#probesActive() &&
         (this.#postRemaining <= 0 || this.#rasterSettings.view !== 'final')) ||
       this.#pathFrame
     )

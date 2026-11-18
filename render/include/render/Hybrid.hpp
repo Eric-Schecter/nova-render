@@ -25,6 +25,7 @@ namespace render
         float      historyWeight          = .9f;
         uint32_t   aoSamples              = 4;
         bool       diffuseBounce          = false;
+        bool       probeGI                = false;
     };
     struct HybridCapabilities
     {
@@ -32,6 +33,7 @@ namespace render
         bool        softwareRayTracing = true, hardwareRayTracing = false;
         bool        ambientOcclusion = true, reflections = true, globalIllumination = true;
         bool        temporalReconstruction = true, animatedGeometry = false, taa = false, splitAA = false;
+        bool        probeGI         = true;
         bool        gpuPresentation = true, alphaMask = true, alphaBlend = true;
         std::string execution = "fragment-bvh", reason;
     };

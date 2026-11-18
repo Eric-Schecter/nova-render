@@ -155,6 +155,26 @@ for (const [name, vertexEntry, fragmentEntry] of [
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
 }
 
+const probeUpdate = await compile(rasterSource, {
+  compute: true,
+  computeEntry: 'HybridProbeUpdateCS',
+  optimizeCompute: true,
+})
+const probeDeferred = await compile('#define NOVA_HYBRID_PROBES 1\n' + rasterSource, {
+  model: true,
+  vertexEntry: 'SkyVSMain',
+  fragmentEntry: 'DeferredPSMain',
+  optimizeModel: true,
+})
+await writeFile(
+  'docs/public/generated/model-probes.json',
+  JSON.stringify({
+    compute: probeUpdate.compute,
+    vert: probeDeferred.vert,
+    frag: probeDeferred.frag,
+  }),
+)
+
 for (const pass of [9, 10]) {
   const data = await compile(
     '#define AA_PASS ' + pass + '\n' + (await readFile('render/shaders/shadows.hlsl', 'utf8')),

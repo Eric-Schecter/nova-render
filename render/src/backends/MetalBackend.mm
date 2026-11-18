@@ -294,6 +294,64 @@ namespace render::detail
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
           aaDeferred, aaOit, aaHybridShadow;
+        id<MTLComputePipelineState> probeUpdatePipeline;
+        id<MTLRenderPipelineState>  probeDeferredPipeline;
+        id<MTLBuffer>               probeCurrent, probePrevious;
+        bool                        probeFrame = false;
+        void                        EncodeProbeUpdate(id<MTLCommandBuffer> command)
+        {
+            bool reset;
+            probeFrame = PrepareProbes(reset);
+            if (!probeFrame)
+                return;
+            if (!probeUpdatePipeline)
+            {
+                const auto bytes = LoadShader(settings.shaderDirectory, "model-probe-update.metallib");
+                auto       blob  = dispatch_data_create(
+                  bytes.data(),
+                  bytes.size(),
+                  dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0),
+                  DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+                NSError* error   = nil;
+                auto     library = [device newLibraryWithData:blob error:&error];
+                if (!library)
+                    throw metalError("Load probe update shader", error);
+                probeUpdatePipeline =
+                  [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"computeMain"]
+                                                        error:&error];
+                if (!probeUpdatePipeline)
+                    throw metalError("Create probe update pipeline", error);
+                probeCurrent  = [device newBufferWithLength:ProbeCount * ProbeBytes
+                                                   options:MTLResourceStorageModePrivate];
+                probePrevious = [device newBufferWithLength:ProbeCount * ProbeBytes
+                                                    options:MTLResourceStorageModePrivate];
+                reset         = true;
+            }
+            auto blit = [command blitCommandEncoder];
+            if (reset)
+                [blit fillBuffer:probeCurrent range:NSMakeRange(0, ProbeCount * ProbeBytes) value:0];
+            const auto offset = probeConfig.dimensionsFirst[3] * ProbeBytes;
+            [blit copyFromBuffer:probeCurrent
+                    sourceOffset:offset
+                        toBuffer:probePrevious
+               destinationOffset:offset
+                            size:probeConfig.count * ProbeBytes];
+            [blit endEncoding];
+            auto encoder = [command computeCommandEncoder];
+            [encoder setComputePipelineState:probeUpdatePipeline];
+            [encoder setBytes:&rasterAA.current length:sizeof(SceneUniforms) atIndex:0];
+            [encoder setBuffer:sceneInstanceBuffer offset:0 atIndex:14];
+            [encoder setBytes:&probeConfig length:sizeof(probeConfig) atIndex:25];
+            [encoder setBuffer:probePrevious offset:0 atIndex:26];
+            [encoder setBuffer:probeCurrent offset:0 atIndex:27];
+            for (NSUInteger i = 0; i < 5; ++i)
+                [encoder setTexture:modelTextures[i] atIndex:2 + i];
+            [encoder setTexture:environmentTexture atIndex:8];
+            [encoder setSamplerState:modelSampler atIndex:7];
+            [encoder dispatchThreadgroups:MTLSizeMake((probeConfig.count * 6 + 31) / 32, 1, 1)
+                    threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+            [encoder endEncoding];
+        }
         id<MTLDepthStencilState>   oitDepthState;
         id<MTLBuffer>              aaPreviousPalette;
         id<MTLRenderPipelineState> AAPipeline(const char* file, uint32_t samples)
@@ -347,7 +405,8 @@ namespace render::detail
                 for (int i = 0; i < 8; i++)
                     [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:17 + i];
             };
-            external.draw = [this](const AAPass& pass, void* encoder, void*) {
+            external.beforeScene = [this](void* command) { EncodeProbeUpdate((__bridge id<MTLCommandBuffer>)command); };
+            external.draw        = [this](const AAPass& pass, void* encoder, void*) {
                 id<MTLRenderCommandEncoder> e      = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 const int                   sample = pass.multisampled ? 1 : 0;
                 if (aaTriangle)
@@ -383,10 +442,19 @@ namespace render::detail
                 [e setFragmentSamplerState:modelSampler atIndex:7];
                 if (pass.program == -5 || pass.program == -7)
                 {
-                    auto& active = pass.program == -7 ? aaHybridShadow : aaDeferred;
+                    const bool probes = pass.program == -5 && probeFrame;
+                    auto& active = pass.program == -7 ? aaHybridShadow : probes ? probeDeferredPipeline : aaDeferred;
                     if (!active)
                         active = AAPipeline(
-                          pass.program == -7 ? "model-hybrid-shadow.metallib" : "model-deferred.metallib", 1);
+                          pass.program == -7 ? "model-hybrid-shadow.metallib"
+                          : probes           ? "model-probe-deferred.metallib"
+                                             : "model-deferred.metallib",
+                          1);
+                    if (probes)
+                    {
+                        [e setFragmentBytes:&probeConfig length:sizeof(probeConfig) atIndex:25];
+                        [e setFragmentBuffer:probeCurrent offset:0 atIndex:26];
+                    }
                     [e setRenderPipelineState:active];
                     [e setDepthStencilState:skyDepthState];
                     [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];

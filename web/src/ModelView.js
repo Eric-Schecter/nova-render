@@ -1,3 +1,4 @@
+import { createHybridProbes, probeSceneBounds } from './HybridProbes.js'
 import { PickMesh } from './Picking.js'
 import { lightRecords } from './Lighting.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
@@ -185,6 +186,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         texture: { sampleType: 'float' },
       })),
     })
+    const probeLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 25, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 26, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      ],
+    })
+    let probes, probeDeferred, probeBounds, probeLightingKey, probeEnabled
     let bindGroup = group(cube, backgroundCube)
     async function pipelineFor(
       shader,
@@ -196,6 +204,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       deferred = false,
       oit = false,
       hybridShadow = false,
+      probe = false,
     ) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
@@ -206,7 +215,11 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       }
       return device.createRenderPipelineAsync({
         layout: device.createPipelineLayout({
-          bindGroupLayouts: deferred || hybridShadow ? [layout, gBufferLayout] : [layout],
+          bindGroupLayouts: probe
+            ? [layout, gBufferLayout, probeLayout]
+            : deferred || hybridShadow
+              ? [layout, gBufferLayout]
+              : [layout],
         }),
         vertex: {
           module: vertex,
@@ -270,6 +283,56 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       cachedBytes = new Float32Array(0),
       cachedShadows = new Float32Array(0)
     let encodedLights = new Float32Array(0)
+    async function updateProbes(lighting, light, environmentSettings) {
+      probeEnabled = false
+      if (!hybrid?.probeGI) return
+      probeBounds ||= probeSceneBounds(data.vertices, cachedBytes, sceneDraws)
+      if (!probeBounds) return
+      if (!probes) {
+        const response = await fetch(
+          new URL('model-probes.json', new URL(shaderURL, document.baseURI)),
+        )
+        if (!response.ok) throw Error('Missing probe shader package')
+        const shaders = await response.json()
+        const compute = await device.createComputePipelineAsync({
+          layout: 'auto',
+          compute: {
+            module: device.createShaderModule({ code: shaders.compute }),
+            entryPoint: 'HybridProbeUpdateCS',
+          },
+        })
+        probeDeferred = await pipelineFor(
+          shaders,
+          false,
+          1,
+          false,
+          true,
+          false,
+          true,
+          false,
+          false,
+          true,
+        )
+        probes = createHybridProbes(device, compute, probeLayout)
+      }
+      const key = JSON.stringify([
+        lighting,
+        light,
+        environmentSettings,
+        hybrid.shadows,
+        hybrid.shadowSamples,
+      ])
+      if (key !== probeLightingKey) probes.invalidate()
+      probeLightingKey = key
+      probes.update(probeBounds, rasterGlobals, [
+        { binding: 0, resource: { buffer: uniform } },
+        ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
+        { binding: 7, resource: sampler },
+        { binding: 8, resource: cube.createView({ dimension: 'cube' }) },
+        { binding: 14, resource: { buffer: instanceBuffer } },
+      ])
+      probeEnabled = true
+    }
     function writeGlobals() {
       const record = new Float32Array(48)
       record.set(
@@ -380,6 +443,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     return {
       data,
       setHybrid(settings) {
+        if (hybrid !== settings) probes?.invalidate()
         hybrid = settings
         writeGlobals()
         refreshSingleShadows()
@@ -483,6 +547,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           'world-position',
         ].indexOf(rasterSettings?.view || 'final')
         device.queue.writeBuffer(uniform, 0, currentScene)
+        await updateProbes(lighting, light, settings)
         device.queue.writeBuffer(previousUniform, 0, frames && lastScene ? lastScene : currentScene)
         if (data.skinInputs?.byteLength) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         const palette = data.jointMatrices || new Float32Array(16)
@@ -501,7 +566,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
               })),
             }),
           )
-          pass.setPipeline(program === -7 ? aaPipelines.hybridShadow : aaPipelines.deferred)
+          if (program === -5 && probeEnabled) pass.setBindGroup(2, probes.read)
+          pass.setPipeline(
+            program === -7
+              ? aaPipelines.hybridShadow
+              : probeEnabled
+                ? probeDeferred
+                : aaPipelines.deferred,
+          )
           pass.draw(3)
           return
         }
@@ -644,6 +716,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         }
         cube.destroy()
         backgroundCube.destroy()
+        probes?.invalidate()
         backgroundCube = nextBackgroundCube
         cube = nextCube
         bindGroup = nextGroup
@@ -652,6 +725,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       setRasterSettings(fog, shadows, lights = null) {
         if (rasterLights !== lights) {
+          probes?.invalidate()
           rasterLights = lights
           encodedLights = lightRecords(lights)
           uploadInstances(cachedBytes, sceneDraws, cachedShadows)
@@ -663,6 +737,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       setInstances(bytes, draws, shadowRecords) {
         if (disposed) throw Error('Model has been disposed')
+        probeBounds = undefined
+        probes?.invalidate()
         uploadInstances(bytes, draws, shadowRecords)
       },
       draw(camera, clear, width, height, lighting, light, settings) {
@@ -730,6 +806,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (disposed) return
         disposed = true
         pathView?.dispose()
+        probes?.dispose()
         for (const image of data.images) image.bitmap?.close()
         depth?.destroy()
         cube?.destroy()

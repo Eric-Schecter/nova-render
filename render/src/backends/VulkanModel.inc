@@ -18,6 +18,10 @@ VkSampler                   modelSampler   = VK_NULL_HANDLE;
 VkDescriptorSetLayout       modelSetLayout = VK_NULL_HANDLE, gBufferSetLayout = VK_NULL_HANDLE;
 VkDescriptorPool            modelPool      = VK_NULL_HANDLE;
 VkDescriptorSet             modelSet = VK_NULL_HANDLE, gBufferSet = VK_NULL_HANDLE, hybridGBufferSet = VK_NULL_HANDLE;
+VkDescriptorSetLayout probeSetLayout = VK_NULL_HANDLE;
+VkDescriptorSet probeReadSet = VK_NULL_HANDLE, probeUpdateSet = VK_NULL_HANDLE, probeModelSet = VK_NULL_HANDLE;
+ModelBuffer probeUniform, probeCurrent, probePrevious;
+VkPipeline probeUpdatePipeline = VK_NULL_HANDLE;
 bool                        modelReady     = false;
 uint32_t                    memoryType(uint32_t bits, VkMemoryPropertyFlags flags)
 {
@@ -302,6 +306,9 @@ void uploadModel()
                                       : (i == 1 || i >= 11) ? VK_SHADER_STAGE_VERTEX_BIT
                                                             : VK_SHADER_STAGE_FRAGMENT_BIT;
     }
+    for (auto& binding : bindings)
+        if (binding.binding == 0 || (binding.binding >= 2 && binding.binding <= 8) || binding.binding == 14)
+            binding.stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
     bindings[14] = {
       15, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     bindings[15] = {16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
@@ -315,13 +322,20 @@ void uploadModel()
     layoutInfo.bindingCount = 8;
     layoutInfo.pBindings    = gBindings;
     check(vkCreateDescriptorSetLayout(device,&layoutInfo,nullptr,&gBufferSetLayout),"Create G-buffer descriptor layout");
+    VkDescriptorSetLayoutBinding probeBindings[] = {
+      {25, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+      {26, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+      {27, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+    layoutInfo.bindingCount = 3;
+    layoutInfo.pBindings = probeBindings;
+    check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &probeSetLayout), "Create probe descriptor layout");
     VkDescriptorPoolSize sizes[] = {
-      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
-      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 24},
-      {VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 32},
+      {VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    poolInfo.maxSets       = 3;
+    poolInfo.maxSets       = 6;
     poolInfo.poolSizeCount = 4;
     poolInfo.pPoolSizes    = sizes;
     check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &modelPool), "Create model descriptor pool");
@@ -380,6 +394,17 @@ void LoadModel(std::shared_ptr<const ModelData> data) override
 }
 void destroyModel()
 {
+    if (probeUpdatePipeline)
+        vkDestroyPipeline(device, probeUpdatePipeline, nullptr);
+    probeUpdatePipeline = VK_NULL_HANDLE;
+    if (probeSetLayout)
+        vkDestroyDescriptorSetLayout(device, probeSetLayout, nullptr);
+    probeSetLayout = VK_NULL_HANDLE;
+    probeReadSet = probeUpdateSet = probeModelSet = VK_NULL_HANDLE;
+    destroyModelBuffer(probeUniform);
+    destroyModelBuffer(probeCurrent);
+    destroyModelBuffer(probePrevious);
+    InvalidateProbes();
     if (modelPool)
     {
         vkDestroyDescriptorPool(device, modelPool, nullptr);

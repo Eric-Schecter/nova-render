@@ -391,7 +391,7 @@ namespace render::detail
                 blend.attachmentCount                       = (program == 17 || program == 22)                   ? 4
                                                               : (program == 0 || program == 10 || program == 16) ? 2
                                                                                                                  : 1;
-                blend.pAttachments    = blends;
+                blend.pAttachments                          = blends;
                 VkDynamicState                   dynamics[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
                 VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
                 dynamic.dynamicStateCount = 2;
@@ -720,16 +720,16 @@ namespace render::detail
                 Check(api.vkCreateSampler(device, &si, nullptr, &linear));
                 si.magFilter = si.minFilter = VK_FILTER_NEAREST;
                 Check(api.vkCreateSampler(device, &si, nullptr, &point));
-                scenePass      = MakePass(true, false);
-                msPass         = MakePass(true, true);
-                postPass       = MakePass(false, false);
-                externalPass   = MakePass(true, false, true);
+                scenePass        = MakePass(true, false);
+                msPass           = MakePass(true, true);
+                postPass         = MakePass(false, false);
+                externalPass     = MakePass(true, false, true);
                 externalLoadPass = MakePass(true, false, true, false, true);
                 oitPass          = MakePass(true, false, true, false, true, true);
-                externalMSPass = MakePass(true, true, true);
+                externalMSPass   = MakePass(true, true, true);
                 surfaceLoadPass  = MakePass(true, false, false, true, true);
-                surfacePass    = MakePass(true, false, false, true);
-                surfaceMSPass  = MakePass(true, true, false, true);
+                surfacePass      = MakePass(true, false, false, true);
+                surfaceMSPass    = MakePass(true, true, false, true);
                 for (int i = 0; i < 30; i++)
                     pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, config) : Pipeline(i, false, config);
                 sceneMS  = Pipeline(0, true, config);
@@ -957,6 +957,8 @@ namespace render::detail
                       static_cast<char*>(mapped) + i * uniformStride, passes[i].uniforms.data(), sizeof(AAUniforms));
                 api.vkUnmapMemory(device, uniforms.memory);
                 Begin();
+                if (external.beforeScene)
+                    external.beforeScene(reinterpret_cast<void*>(command));
                 for (int i : {AAHistoryA, AAHistoryB, AAPrevMotion, AADummy})
                     if (textures[i].image && (passes.front().uniforms[3][0] < .5f || i == AADummy))
                         Clear(textures[i]);
@@ -969,15 +971,15 @@ namespace render::detail
                         Dispatch(p, index);
                         continue;
                     }
-                    bool        scene =
+                    bool scene =
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
-                    const bool               nativeScene = p.program < 0;
-                    const int                attachments =
+                    const bool nativeScene = p.program < 0;
+                    const int  attachments =
                       (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)  ? 4
-                                     : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
-                                                                                                                 : 1;
-                    auto&                    target      = textures[p.target];
+                       : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
+                                                                                                   : 1;
+                    auto&                    target = textures[p.target];
                     std::vector<VkImageView> views;
                     for (int a = 0; a < attachments; a++)
                     {

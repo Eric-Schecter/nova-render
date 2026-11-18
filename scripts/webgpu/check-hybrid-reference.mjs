@@ -1,15 +1,19 @@
 import { chromium } from 'playwright'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { decode } from './Screenshot.mjs'
-const effects = process.argv.includes('--effects')
+const probeComparison = process.argv.includes('--probe-comparison')
+const bounceBaseline = probeComparison || process.argv.includes('--bounce-baseline')
+const effects = !bounceBaseline && process.argv.includes('--effects')
 const fixture = JSON.parse(
     readFileSync(
       'build/reference/hybrid-rendering/' + (effects ? 'scenes-effects.json' : 'scenes.json'),
     ),
   ),
-  root = effects
-    ? 'build/validation/hybrid-reference-effects'
-    : 'build/validation/hybrid-reference',
+  root = bounceBaseline
+    ? 'build/validation/hybrid-gi-baseline'
+    : effects
+      ? 'build/validation/hybrid-reference-effects'
+      : 'build/validation/hybrid-reference',
   dir = root + '/web'
 mkdirSync(dir, { recursive: true })
 const browser = await chromium.launch({
@@ -48,6 +52,7 @@ try {
   }, fixture)
   const results = []
   for (const scene of fixture.scenes) {
+    if (bounceBaseline && scene.id !== 'global-illumination-test') continue
     await page.evaluate(async (s) => {
       r.setRenderMode('raster')
       await r.setScene(
@@ -61,6 +66,50 @@ try {
         const { id, ...value } = c
         r.setViewCamera(value)
       }, camera)
+      if (bounceBaseline) {
+        const result = { camera: camera.id, native: {} }
+        const images = []
+        const modes = ['off', 'pixel-bounce']
+        if (probeComparison) modes.push('probes')
+        for (const label of modes) {
+          result[label] = await page.evaluate(async (mode) => {
+            r.setRenderMode('hybrid')
+            r.setHybrid({ diffuseBounce: mode === 'pixel-bounce', probeGI: mode === 'probes' })
+            for (let n = 0; n < (mode === 'probes' ? 52 : 4); n++) {
+              await r.drawFrame()
+              await r.waitIdle()
+            }
+            const samples = []
+            for (let n = 0; n < 15; n++) {
+              const start = performance.now()
+              await r.drawFrame()
+              await r.waitIdle()
+              samples.push(performance.now() - start)
+            }
+            return samples.sort((a, b) => a - b)[7]
+          }, label)
+          const name = scene.id + '-' + camera.id + '-' + label + '.png'
+          const captured = decode(
+            await page.locator('canvas').screenshot({ path: dir + '/' + name }),
+          )
+          images.push(captured)
+          for (const api of ['metal', 'vulkan']) {
+            const error = difference(captured, decode(readFileSync(root + '/' + api + '/' + name)))
+            if (error > 1) throw Error(name + ' ' + api + ' MAE ' + error)
+            result.native[api + '/' + label] = error
+          }
+        }
+        result.effectMAE = difference(images[0], images[1])
+        if (probeComparison) {
+          result.probeEffectMAE = difference(images[0], images[2])
+          result.probeToPixelMAE = difference(images[1], images[2])
+          if (result.probeEffectMAE <= 0.001) throw Error('Probe mode did not change the image')
+        }
+        if (result.effectMAE <= 0.001) throw Error('GI room bounce did not change the image')
+        results.push(result)
+        console.log(result)
+        continue
+      }
       if (effects)
         await page.evaluate(() =>
           r.setHybrid({
@@ -185,12 +234,17 @@ try {
         throw Error('Missing reference effect: ' + scene.id)
     }
   if (errors.length) throw Error(errors.join('\n'))
-  writeFileSync(root + '/web-metrics.json', JSON.stringify(results, null, 2))
+  writeFileSync(
+    root + (probeComparison ? '/web-probe-metrics.json' : '/web-metrics.json'),
+    JSON.stringify(results, null, 2),
+  )
   console.log(
-    'Original three scenes / twelve fixed cameras: ' +
-      (effects
-        ? 'AO/reflections/temporal effects and native parity passed'
-        : 'WebGPU and native parity passed'),
+    (bounceBaseline ? 'Four GI room cameras: ' : 'Original three scenes / twelve fixed cameras: ') +
+      (bounceBaseline
+        ? 'GI room baseline and native parity passed'
+        : effects
+          ? 'AO/reflections/temporal effects and native parity passed'
+          : 'WebGPU and native parity passed'),
   )
 } finally {
   await browser.close()

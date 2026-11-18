@@ -866,6 +866,147 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     return surfaceRadiance(hit, 0, 0, -ray);
 }
 
+// Two buffers keep the previous update available while writing the next batch.
+struct HybridProbeLobe
+{
+    float4 irradiance; // RGB and validity
+    float4 distanceMoments; // Normalized mean and second moment
+};
+[[vk::binding(25, 2)]] cbuffer HybridProbeUpdate : register(b0, space2)
+{
+    float4 probeOrigin;
+    float4 probeSpacingDistance; // XYZ spacing, W ray limit
+    uint4 probeDimensionsFirst; // XYZ counts, W first probe in this batch
+    uint2 probeBatch; // Count and update sequence
+    float probeHistoryWeight;
+    uint probeSceneHeader;
+};
+[[vk::binding(26, 2)]] StructuredBuffer<HybridProbeLobe> probePrevious : register(t0, space2);
+[[vk::binding(27, 2)]] RWStructuredBuffer<HybridProbeLobe> probeUpdated : register(u0, space2);
+
+[numthreads(32, 1, 1)]
+void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
+{
+    const uint lobeCount = 6, sampleCount = 16;
+    uint localProbe = thread.x / lobeCount;
+    if (localProbe >= probeBatch.x)
+        return;
+
+    uint3 dimensions = probeDimensionsFirst.xyz;
+    uint probe = probeDimensionsFirst.w + localProbe;
+    if (probe >= dimensions.x * dimensions.y * dimensions.z)
+        return;
+
+    uint3 cell = uint3(
+      probe % dimensions.x,
+      probe / dimensions.x % dimensions.y,
+      probe / (dimensions.x * dimensions.y));
+    float3 origin = probeOrigin.xyz + float3(cell) * probeSpacingDistance.xyz;
+    uint lobe = thread.x % lobeCount;
+    uint axis = lobe / 2;
+    float3 n = float3(axis == 0, axis == 1, axis == 2) * ((lobe & 1) ? -1 : 1);
+    float3 tangent = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n));
+    float3 bitangent = cross(n, tangent);
+    float rotation = frac(float(probeBatch.y) * .61803399 + float(probe) * .75487767) * 6.28318531;
+    float3 incoming = 0;
+    float2 moments = 0;
+    [loop] for (uint j = 0; j < sampleCount; ++j)
+    {
+        float u = (j + .5) / sampleCount, phi = rotation + j * 2.39996323;
+        float3 ray = sqrt(u) * (tangent * cos(phi) + bitangent * sin(phi)) + n * sqrt(1 - u);
+        float distance = probeSpacingDistance.w;
+        uint instance, hitTriangle;
+        float2 bary;
+        if (hybridNearest(probeSceneHeader, origin, ray, distance, instance, hitTriangle, bary))
+            incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray);
+        float normalizedDistance = saturate(distance / probeSpacingDistance.w);
+        moments += float2(normalizedDistance, normalizedDistance * normalizedDistance);
+    }
+    uint index = probe * lobeCount + lobe;
+    HybridProbeLobe previous = probePrevious[index];
+    float history = saturate(probeHistoryWeight) * previous.irradiance.w;
+    HybridProbeLobe result;
+    result.irradiance = float4(lerp(incoming / sampleCount, previous.irradiance.rgb, history), 1);
+    result.distanceMoments = float4(lerp(moments / sampleCount, previous.distanceMoments.xy, history), 0, 0);
+    probeUpdated[index] = result;
+}
+
+// Axis lobes use squared direction components so constant radiance stays constant.
+float4 hybridProbeDirection(uint probe, float3 direction, bool distance)
+{
+    float3 weights = direction * direction;
+    uint first = probe * 6;
+    HybridProbeLobe x = probePrevious[first     + uint(direction.x < 0)];
+    HybridProbeLobe y = probePrevious[first + 2 + uint(direction.y < 0)];
+    HybridProbeLobe z = probePrevious[first + 4 + uint(direction.z < 0)];
+    if (distance)
+        return x.distanceMoments * weights.x + y.distanceMoments * weights.y + z.distanceMoments * weights.z;
+    return x.irradiance * weights.x + y.irradiance * weights.y + z.irradiance * weights.z;
+}
+
+float hybridProbeVisibility(float normalizedDistance, float2 moments)
+{
+    float delta = max(normalizedDistance - moments.x, 0);
+    float variance = max(moments.y - moments.x * moments.x, 1e-5);
+    float bound = variance / (variance + delta * delta);
+    // Squaring the upper bound suppresses broad variance tails behind walls.
+    return bound * bound;
+}
+
+float3 hybridSampleProbes(float3 position, float3 normal)
+{
+    uint3 dimensions = probeDimensionsFirst.xyz;
+    if (any(dimensions == 0))
+        return 0;
+    float3 rel = (position - probeOrigin.xyz) / probeSpacingDistance.xyz;
+    if (any(rel < -.5) || any(rel > float3(dimensions) - .5))
+        return 0;
+
+    float3 grid = clamp(rel, 0, float3(dimensions - 1));
+    uint3 first = uint3(floor(grid));
+    float3 fraction = frac(grid);
+    float3 total = 0;
+    float weightTotal = 0;
+    [loop] for (uint corner = 0; corner < 8; ++corner)
+    {
+        uint3 offset = uint3(corner & 1, (corner >> 1) & 1, corner >> 2);
+        float3 axisWeight = lerp(1 - fraction, fraction, float3(offset));
+        float weight = axisWeight.x * axisWeight.y * axisWeight.z;
+        if (weight == 0)
+            continue;
+
+        uint3 cell = first + offset;
+        uint probe = cell.x + dimensions.x * (cell.y + dimensions.y * cell.z);
+        float4 irradiance = hybridProbeDirection(probe, normal, false);
+        if (irradiance.w <= 0)
+            continue;
+
+        float3 center = probeOrigin.xyz + float3(cell) * probeSpacingDistance.xyz;
+        float3 toSurface = position - center;
+        float distance = length(toSurface);
+        float3 direction = distance > 1e-5 ? toSurface / distance : normal;
+        float2 moments = hybridProbeDirection(probe, direction, true).xy;
+        float visibility = hybridProbeVisibility(distance / probeSpacingDistance.w, moments);
+        float facing = saturate(.5 - .5 * dot(normal, direction));
+        total += irradiance.rgb * (weight * visibility * facing);
+        // Keep blocked probes in the denominator so normalization cannot restore leaked light.
+        weightTotal += weight * irradiance.w;
+    }
+    return weightTotal > 0 ? total / weightTotal : 0;
+}
+
+#if defined(NOVA_PROBE_SAMPLE_VALIDATION)
+[[vk::binding(3, 2)]] StructuredBuffer<float4> probeQueries : register(t1, space2);
+[[vk::binding(4, 2)]] RWStructuredBuffer<float4> probeSamples : register(u1, space2);
+[numthreads(32, 1, 1)]
+void HybridProbeSampleCS(uint3 thread : SV_DispatchThreadID)
+{
+    if (thread.x < probeBatch.x)
+        probeSamples[thread.x] = float4(hybridSampleProbes(
+          probeQueries[thread.x * 2].xyz, probeQueries[thread.x * 2 + 1].xyz), 1);
+}
+#endif
+
 float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
 {
     float3 n = surface.geometricNormal;
@@ -991,11 +1132,20 @@ float4 DeferredPSMain(SkyOut input)
             reflectionMix = instances[header].world._m21;
         }
         bool diffuseBounce = instances[header].world._m31 > 0 && emissiveFactor.w > .5;
-        if (debug == 0 && (reflections || diffuseBounce))
+#if defined(NOVA_HYBRID_PROBES)
+        bool probes = probeDimensionsFirst.x > 0 && emissiveFactor.w > .5;
+#else
+        bool probes = false;
+#endif
+        if (debug == 0 && (reflections || diffuseBounce || probes))
         {
             float3 viewDirection = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
             float3 color = surfaceRadiance(s, reflection, reflectionMix, viewDirection);
-            if (diffuseBounce && s.metallic < 1)
+#if defined(NOVA_HYBRID_PROBES)
+            if (probes && s.metallic < 1)
+                color += hybridSampleProbes(s.position, s.normal) * s.base * (1 - s.metallic);
+#endif
+            if (!probes && diffuseBounce && s.metallic < 1)
                 color += hybridDiffuseBounce(s, header, rotation);
             return float4(applyFog(displayRadiance(color), s.position), 1);
         }

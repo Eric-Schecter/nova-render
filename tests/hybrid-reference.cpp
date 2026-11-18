@@ -1,6 +1,8 @@
 #include "Backend.hpp"
 #include "TestDevice.hpp"
 #include <GLFW/glfw3.h>
+#include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -23,9 +25,11 @@ int main(int argc, char** argv)
     {
         const std::string api = argc > 1 ? TestAPI(argv[1]) : "metal";
         std::ifstream     source(argc > 2 ? argv[2] : "build/reference/hybrid-rendering/scenes.json");
-        auto              fixture = nlohmann::json::parse(source);
-        const bool        effects = fixture.contains("hybridEffects");
-        RendererConfig    config;
+        auto              fixture         = nlohmann::json::parse(source);
+        const bool        probeComparison = argc > 3 && std::string_view(argv[3]) == "--probe-comparison";
+        const bool bounceBaseline = probeComparison || (argc > 3 && std::string_view(argv[3]) == "--bounce-baseline");
+        const bool effects        = !bounceBaseline && fixture.contains("hybridEffects");
+        RendererConfig config;
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
         config.useWarp = argc > 1 && TestUseWarp(argv[1]);
         if (!glfwInit())
@@ -64,7 +68,9 @@ int main(int argc, char** argv)
         post.toneMapping  = ToneMapping::ACES;
         backend->SetPostProcessing(post);
         auto dir = std::filesystem::path(
-                     effects ? "build/validation/hybrid-reference-effects" : "build/validation/hybrid-reference")
+                     bounceBaseline ? "build/validation/hybrid-gi-baseline"
+                     : effects      ? "build/validation/hybrid-reference-effects"
+                                    : "build/validation/hybrid-reference")
                    / api;
         std::filesystem::create_directories(dir);
         auto draw = [&](const std::string& name) {
@@ -140,6 +146,8 @@ int main(int argc, char** argv)
         double         maximum  = 0;
         for (const auto& scene : fixture["scenes"])
         {
+            if (bounceBaseline && scene["id"] != "global-illumination-test")
+                continue;
             backend->SetRenderMode(RenderMode::Raster);
             std::vector<SceneAsset>    assets;
             std::vector<SceneInstance> instances;
@@ -165,6 +173,48 @@ int main(int argc, char** argv)
                 camera.farPlane    = 1000;
                 backend->SetViewCamera(camera);
                 std::string name = scene["id"].get<std::string>() + "-" + c["id"].get<std::string>();
+                if (bounceBaseline)
+                {
+                    backend->SetRenderMode(RenderMode::Hybrid);
+                    nlohmann::json result{{"camera", c["id"]}};
+                    for (int mode = 0; mode < (probeComparison ? 3 : 2); ++mode)
+                    {
+                        const std::string label = mode == 2 ? "probes" : mode == 1 ? "pixel-bounce" : "off";
+                        HybridSettings    profile;
+                        profile.shadowSamples = 1;
+                        profile.diffuseBounce = mode == 1;
+                        profile.probeGI       = mode == 2;
+                        backend->SetHybrid(profile);
+                        for (int n = 0; n < (profile.probeGI ? 52 : 4); ++n)
+                            gpuFrame();
+                        std::array<double, 15> samples;
+                        for (auto& sample : samples)
+                        {
+                            const auto start = std::chrono::steady_clock::now();
+                            gpuFrame();
+                            sample = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                                       .count();
+                        }
+                        std::sort(samples.begin(), samples.end());
+                        result[label] = samples[samples.size() / 2];
+                        captureGPU(name + "-" + label);
+                        for (auto& sample : samples)
+                        {
+                            const auto start = std::chrono::steady_clock::now();
+                            backend->RenderHybridOffscreen(
+                              fixture["width"].get<uint32_t>(), fixture["height"].get<uint32_t>());
+                            sample = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                                       .count();
+                        }
+                        std::sort(samples.begin(), samples.end());
+                        result["renderOnlyMs"][label] = samples[samples.size() / 2];
+                        if (backend->ValidationErrorCount())
+                            throw std::runtime_error("Reference offscreen GPU validation error");
+                        ++captures;
+                    }
+                    metrics.push_back(result);
+                    continue;
+                }
                 backend->SetRenderMode(RenderMode::Raster);
                 hybrid               = HybridSettings{};
                 hybrid.shadowSamples = 1;
@@ -276,7 +326,7 @@ int main(int argc, char** argv)
             if (effects && (sceneAO < .001 || sceneReflection < .001))
                 throw std::runtime_error("Missing scene effect: " + scene["id"].get<std::string>());
         }
-        if (effects)
+        if (effects || bounceBaseline)
         {
             std::ofstream output(dir / "metrics.json");
             output << metrics.dump(2) << '\n';

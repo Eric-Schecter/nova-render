@@ -12,14 +12,21 @@ if(APPLE)
               "$ENV{VULKAN_SDK}/bin" ${_nova_sdk_bins} REQUIRED)
     find_program(NOVA_XCRUN_EXECUTABLE xcrun REQUIRED)
 endif()
-foreach(shader_name triangle model skybox model-motion sky-motion model-gbuffer model-deferred model-oit model-hybrid-shadow)
-if(shader_name STREQUAL "skybox" OR shader_name MATCHES "motion$" OR shader_name MATCHES "^model-(gbuffer|deferred|oit|hybrid-shadow)$")
+foreach(shader_name triangle model skybox model-motion sky-motion model-gbuffer model-deferred model-oit model-hybrid-shadow model-probe-deferred model-probe-update)
+if(shader_name STREQUAL "skybox" OR shader_name MATCHES "motion$" OR shader_name MATCHES "^model-(gbuffer|deferred|oit|hybrid-shadow|probe-deferred|probe-update)$")
     set(_hlsl "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl")
 else()
     set(_hlsl "${PROJECT_SOURCE_DIR}/render/shaders/${shader_name}.hlsl")
 endif()
 set(METAL_AIR)
-foreach(stage vert frag)
+set(_nova_stages vert frag)
+set(_nova_shader_defines)
+if(shader_name STREQUAL "model-probe-update")
+    set(_nova_stages comp)
+elseif(shader_name STREQUAL "model-probe-deferred")
+    set(_nova_shader_defines -DNOVA_HYBRID_PROBES=1)
+endif()
+foreach(stage IN LISTS _nova_stages)
     if(stage STREQUAL "vert")
         set(entry VSMain)
         set(profile vs_6_0)
@@ -30,6 +37,11 @@ foreach(stage vert frag)
         set(profile ps_6_0)
         set(msl_entry fragmentMain)
         set(vulkan_options)
+    endif()
+    if(stage STREQUAL "comp")
+        set(entry HybridProbeUpdateCS)
+        set(profile cs_6_0)
+        set(msl_entry computeMain)
     endif()
     if(shader_name STREQUAL "skybox")
         if(stage STREQUAL "vert")
@@ -61,7 +73,7 @@ foreach(stage vert frag)
         else()
             set(entry HybridShadowPSMain)
         endif()
-    elseif(shader_name STREQUAL "model-deferred")
+    elseif(shader_name MATCHES "^model-(deferred|probe-deferred)$")
         if(stage STREQUAL "vert")
             set(entry SkyVSMain)
         else()
@@ -73,7 +85,7 @@ foreach(stage vert frag)
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
-                ${vulkan_options} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
+                ${_nova_shader_defines} ${vulkan_options} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
             DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     endif()
@@ -81,7 +93,7 @@ foreach(stage vert frag)
         set(output "${SHADER_OUTPUT_DIR}/${shader_name}.${stage}.dxil")
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
-            COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12=1 -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12=1 ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
             DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     elseif(APPLE)
@@ -92,7 +104,7 @@ foreach(stage vert frag)
         add_custom_command(OUTPUT "${spv}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
-                -T ${profile} -E ${entry} -Fo "${spv}" "${_hlsl}"
+                ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${spv}" "${_hlsl}"
             DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         add_custom_command(OUTPUT "${msl}"
             COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${spv}" --msl --msl-version 20100 --msl-decoration-binding

@@ -8,17 +8,17 @@ namespace render::detail
     {
         class MetalAA final : public AADevice
         {
-            AAExternalScene            external;
-            id<MTLDevice>              device;
-            id<MTLCommandQueue>        queue;
-            id<MTLTexture>             textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
+            AAExternalScene             external;
+            id<MTLDevice>               device;
+            id<MTLCommandQueue>         queue;
+            id<MTLTexture>              textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             id<MTLRenderPipelineState>  pipelines[30], sceneMS, shadowMS, hdrMS, ssrMS;
             id<MTLComputePipelineState> compute[2];
-            id<MTLSamplerState>        linear, point;
-            id<MTLDepthStencilState>   depthState;
-            uint32_t                   width = 0, height = 0;
-            bool                       super = false;
-            id<MTLTexture>             Texture(uint32_t w, uint32_t h, MTLPixelFormat format, NSUInteger samples = 1)
+            id<MTLSamplerState>         linear, point;
+            id<MTLDepthStencilState>    depthState;
+            uint32_t                    width = 0, height = 0;
+            bool                        super = false;
+            id<MTLTexture>              Texture(uint32_t w, uint32_t h, MTLPixelFormat format, NSUInteger samples = 1)
             {
                 auto d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:w height:h mipmapped:NO];
                 d.storageMode = MTLStorageModePrivate;
@@ -243,6 +243,8 @@ namespace render::detail
                 {
                     Ensure(passes);
                     auto command = [queue commandBuffer];
+                    if (external.beforeScene)
+                        external.beforeScene((__bridge void*)command);
                     // Clear history/dummy inputs before sampling, even on the first invalid-history frame.
                     for (int i : {AAHistoryA, AAHistoryB, AAPrevMotion, AADummy})
                         if (textures[i] && (passes.front().uniforms[3][0] < .5f || i == AADummy))

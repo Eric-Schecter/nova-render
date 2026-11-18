@@ -91,11 +91,12 @@ namespace render::detail
 
     struct AAExternalScene
     {
-        void*                                            instance    = nullptr;
-        void*                                            physical    = nullptr;
-        void*                                            device      = nullptr;
-        uint32_t                                         queueFamily = 0;
-        std::function<void(const AAPass&, void*, void*)> draw;
+        void*                                                        instance    = nullptr;
+        void*                                                        physical    = nullptr;
+        void*                                                        device      = nullptr;
+        uint32_t                                                     queueFamily = 0;
+        std::function<void(void*)>                                   beforeScene;
+        std::function<void(const AAPass&, void*, void*)>             draw;
         std::function<void(void*, const std::array<void*, 8>&, int)> bindGBuffer;
     };
     struct AASpec
@@ -209,7 +210,7 @@ namespace render::detail
         {
             throw std::runtime_error("Reflection environment unsupported");
         }
-        virtual void  Resize(uint32_t width, uint32_t height, bool supersampled) = 0;
+        virtual void Resize(uint32_t width, uint32_t height, bool supersampled) = 0;
         // GPU output belongs to this device and is valid until the next resize/draw.
         virtual void* GPUOutput() const { return nullptr; }
         virtual Image Capture() { throw std::runtime_error("GPU capture unsupported"); }
