@@ -383,6 +383,20 @@ export function attachParameterPanel(
         slider(renderer, 'hybrid_aoSamples', 'AO rays/pixel', 'AO rays per pixel', 1, 32, 1, (v) =>
           adapter.setHybrid({ aoSamples: v }),
         )
+        const bounceRow = document.createElement('label'),
+          bounceToggle = document.createElement('input')
+        bounceRow.textContent = 'Diffuse bounce'
+        bounceToggle.type = 'checkbox'
+        bounceToggle.setAttribute('aria-label', 'Diffuse bounce')
+        bounceToggle.checked = h.diffuseBounce
+        bounceToggle.addEventListener(
+          'change',
+          () => change(() => adapter.setHybrid({ diffuseBounce: bounceToggle.checked })),
+          { signal: fieldEvents.signal },
+        )
+        bounceRow.prepend(bounceToggle)
+        renderer.append(bounceRow)
+        fields.set('hybrid_diffuseBounce', { input: bounceToggle })
         const reflectionRow = document.createElement('label'),
           reflectionToggle = document.createElement('input')
         reflectionRow.textContent = 'Hybrid reflections'

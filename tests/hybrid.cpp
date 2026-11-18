@@ -85,7 +85,7 @@ int main(int argc, char** argv)
         auto caps = backend->GetHybridCapabilities();
         if (
           !caps.supported || !caps.shadows || !caps.softwareRayTracing || caps.hardwareRayTracing
-          || !caps.ambientOcclusion || !caps.reflections || caps.globalIllumination)
+          || !caps.ambientOcclusion || !caps.reflections || !caps.globalIllumination)
             throw std::runtime_error("Incorrect Hybrid capabilities");
         auto capture = [&](const std::string& name) {
             glfwPollEvents();
@@ -364,6 +364,34 @@ int main(int argc, char** argv)
         };
         if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
             throw std::runtime_error("Reflected helmet lost normal map or material AO");
+        backend->SetScene(
+          {{"mirror", assets / "SceneSample/Red.glb"}, {"wall", assets / "SceneSample/Red.glb"}},
+          {{"ground", "mirror", matrix(2, .06f, 2, 0, -.9f, 0)}, {"wall", "wall", matrix(2, .9f, .06f, 0, 0, -1)}});
+        camera.yaw = 30;
+        backend->SetCamera(camera);
+        DirectionalLight bounceLight;
+        bounceLight.intensity = 1;
+        backend->SetDirectionalLight(bounceLight);
+        mirror.baseColor = {.45f, .45f, .45f, 1};
+        mirror.metallic  = 0;
+        mirror.roughness = .7f;
+        backend->SetMaterial(0, mirror, "mirror");
+        auto redWall      = backend->GetMaterials("wall")[0];
+        redWall.baseColor = {1, 0, 0, 1};
+        redWall.metallic  = 0;
+        backend->SetMaterial(0, redWall, "wall");
+        HybridSettings bounce;
+        backend->SetHybrid(bounce);
+        auto noBounce        = capture("diffuse-bounce-off");
+        bounce.diffuseBounce = true;
+        backend->SetHybrid(bounce);
+        auto   indirect   = capture("diffuse-bounce-on");
+        size_t colorSpill = 0;
+        for (size_t i = size_t(indirect.height * .65f) * indirect.width * 4; i < indirect.pixels.size(); i += 4)
+            colorSpill += int(indirect.pixels[i]) - int(noBounce.pixels[i])
+                          > int(indirect.pixels[i + 1]) - int(noBounce.pixels[i + 1]) + 3;
+        if (colorSpill < 20)
+            throw std::runtime_error("Diffuse bounce did not transfer red light to the receiver");
         backend.reset();
         glfwDestroyWindow(window);
         glfwTerminate();

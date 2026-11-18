@@ -65,3 +65,7 @@ Example 19 defaults to Reflections Test and also offers Shadows Test, Global Ill
 ## Materials at reflected hits
 
 The Damaged Helmet mirror fixture changes only the reflected helmet's normal scale and material AO strength. Both changes affect the mirror region on Metal, Vulkan/MoltenVK and Chrome WebGPU. The paired Hybrid regression has a maximum native/Web mean channel error of 0.015/255. The original three reference scenes and twelve cameras were rerun with the updated shader. Across the 324 captures, the maximum native/Web RGB mean error is 0.127/255.
+
+## Diffuse bounce
+
+The red-wall and neutral-floor fixture compares the same pose and lighting with diffuse bounce off and on. The test checks for added red light in the floor region on Metal, Vulkan/MoltenVK and Chrome WebGPU. The combined Hybrid regression, including the new captures, stays below 0.015/255 native/Web mean channel error. The four-ray estimator provides a baseline for probe-based GI and uses the existing optional temporal reconstruction.

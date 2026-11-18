@@ -234,6 +234,7 @@ namespace render::detail
             globals.world[4]     = hybrid.reflections ? hybrid.reflectionDistance : 0;
             globals.world[5]     = float(hybrid.reflectionSamples);
             globals.world[6]     = hybrid.reflectionStrength;
+            globals.world[7]     = hybrid.diffuseBounce ? 10.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -820,6 +821,7 @@ namespace render::detail
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
               || previousHybrid.reflectionDistance != hybrid.reflectionDistance
+              || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction

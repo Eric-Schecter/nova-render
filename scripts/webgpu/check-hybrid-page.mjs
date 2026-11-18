@@ -46,8 +46,11 @@ try {
     await page.waitForFunction(
       () => !document.querySelector('[aria-label="Hybrid camera preset"]').disabled,
     )
+    const diffuseBounce = page.getByLabel('Diffuse bounce', { exact: true })
+    if (id === 'global-illumination-test') await diffuseBounce.check()
     await page.locator('canvas').scrollIntoViewIfNeeded()
     await page.locator('canvas').screenshot({ path: root + '/' + id + '.png' })
+    if (id === 'global-illumination-test') await diffuseBounce.uncheck()
     console.log('Scene/presets passed:', id)
   }
   await scene.selectOption('reflections-test')

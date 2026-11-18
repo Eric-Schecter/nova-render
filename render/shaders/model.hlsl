@@ -824,6 +824,70 @@ float hybridRotation(uint2 pixel)
     seed ^= seed >> 13;
     return (seed & 65535u) * (6.28318530718 / 65536.0);
 }
+float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 position, float3 ray)
+{
+    InstanceData tri = instances[hitTri];
+    InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
+    float2 uv0 = tri.uv.xy, uv1 = tri.uv.zw;
+    float2 uv2 = float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]);
+    float2 uv  = frac(uv0 + (uv1 - uv0) * bary.x + (uv2 - uv0) * bary.y) * mat.uv.xy + mat.uv.zw;
+    float3 localEdge1 = tri.material.xyz - tri.baseColor.xyz;
+    float3 localEdge2 = tri.emissive.xyz - tri.baseColor.xyz;
+    float3 worldNormal = normalize(mul(
+      (float3x3)instances[instance].normalMatrix, cross(localEdge1, localEdge2)));
+    if (dot(worldNormal, ray) > 0)
+        worldNormal = -worldNormal;
+
+    SurfaceData hit = (SurfaceData)0;
+    hit.position = position;
+    hit.normal = hit.geometricNormal = worldNormal;
+    float2 deltaUV1 = uv1 - uv0, deltaUV2 = uv2 - uv0;
+    float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
+    if (abs(uvDet) > 1e-8 && mat.material.z != 0)
+    {
+        float3 edge1 = mul((float3x3)instances[instance].world, localEdge1);
+        float3 edge2 = mul((float3x3)instances[instance].world, localEdge2);
+        // The determinant sign preserves the orientation of mirrored UV charts.
+        float3 t = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * sign(uvDet);
+        float3 b = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * sign(uvDet);
+        float  scale = rsqrt(max(max(dot(t, t), dot(b, b)), 1e-12));
+        float3 sampled = normalTexture.SampleLevel(textureSampler, uv, 0).xyz * 2 - 1;
+        sampled.xy *= mat.material.z;
+        float3 mapped = (t * sampled.x + b * sampled.y) * scale + worldNormal * sampled.z;
+        if (dot(mapped, mapped) > 1e-12)
+            hit.normal = normalize(mapped);
+    }
+    hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb;
+    float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
+    hit.metallic  = saturate(mr.b * mat.material.x);
+    hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
+    hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, uv, 0).r, mat.material.w);
+    hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
+    return surfaceRadiance(hit, 0, 0, -ray);
+}
+
+float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
+{
+    float3 n = surface.geometricNormal;
+    float3 t = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n));
+    float3 b = cross(n, t);
+    float3 origin = surface.position + n * max(1e-4, instances[header].uv.x);
+    float3 incoming = 0;
+    const uint samples = 4;
+    [loop] for (uint j = 0; j < samples; ++j)
+    {
+        float u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
+        float3 ray = sqrt(u) * (t * cos(phi) + b * sin(phi)) + n * sqrt(1 - u);
+        float distance = instances[header].world._m31;
+        uint instance, hitTriangle;
+        float2 bary;
+        // The existing environment lighting already accounts for rays that leave the scene.
+        if (hybridNearest(header, origin, ray, distance, instance, hitTriangle, bary))
+            incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray);
+    }
+    return incoming * surface.base * (1 - surface.metallic) / samples;
+}
+
 float3 hybridReflection(SurfaceData primary, float rotation)
 {
     uint   header      = uint(irradiance[3].w) - 1;
@@ -850,44 +914,7 @@ float3 hybridReflection(SurfaceData primary, float rotation)
         float3 radiance;
         if (hybridNearest(header, origin, ray, distance, instance, hitTri, bary))
         {
-            InstanceData tri = instances[hitTri];
-            InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
-            float2 uv0 = tri.uv.xy, uv1 = tri.uv.zw;
-            float2 uv2 = float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]);
-            float2 uv  = frac(uv0 + (uv1 - uv0) * bary.x + (uv2 - uv0) * bary.y) * mat.uv.xy + mat.uv.zw;
-            float3 localEdge1 = tri.material.xyz - tri.baseColor.xyz;
-            float3 localEdge2 = tri.emissive.xyz - tri.baseColor.xyz;
-            float3 worldNormal = normalize(mul(
-              (float3x3)instances[instance].normalMatrix, cross(localEdge1, localEdge2)));
-            if (dot(worldNormal, ray) > 0)
-                worldNormal = -worldNormal;
-
-            SurfaceData hit = (SurfaceData)0;
-            hit.position = origin + ray * distance;
-            hit.normal = hit.geometricNormal = worldNormal;
-            float2 deltaUV1 = uv1 - uv0, deltaUV2 = uv2 - uv0;
-            float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
-            if (abs(uvDet) > 1e-8 && mat.material.z != 0)
-            {
-                float3 edge1 = mul((float3x3)instances[instance].world, localEdge1);
-                float3 edge2 = mul((float3x3)instances[instance].world, localEdge2);
-                // The determinant sign preserves the orientation of mirrored UV charts.
-                float3 t = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * sign(uvDet);
-                float3 b = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * sign(uvDet);
-                float  scale = rsqrt(max(max(dot(t, t), dot(b, b)), 1e-12));
-                float3 sampled = normalTexture.SampleLevel(textureSampler, uv, 0).xyz * 2 - 1;
-                sampled.xy *= mat.material.z;
-                float3 mapped = (t * sampled.x + b * sampled.y) * scale + worldNormal * sampled.z;
-                if (dot(mapped, mapped) > 1e-12)
-                    hit.normal = normalize(mapped);
-            }
-            hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb;
-            float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
-            hit.metallic  = saturate(mr.b * mat.material.x);
-            hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
-            hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, uv, 0).r, mat.material.w);
-            hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
-            radiance     = surfaceRadiance(hit, 0, 0, -ray);
+            radiance = hybridHitRadiance(instance, hitTri, bary, origin + ray * distance, ray);
         }
         else
             radiance =
@@ -949,21 +976,29 @@ float4 DeferredPSMain(SkyOut input)
             return float4(diagnosticLinear(ao.xxx), 1);
         s.ao *= ao;
     }
-    if (s.useVisibility && irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m01 > 0)
+    if (s.useVisibility && irradiance[3].w > .5)
     {
-        float3 reflection = hybridReflection(s, hybridRotation(uint2(input.position.xy)));
-        if (instances[uint(irradiance[3].w) - 1].world._m30 > 2.5)
-            return float4(displayRadiance(reflection), 1);
-        if (debug == 0)
-            return float4(
-              applyFog(
-                displayRadiance(surfaceRadiance(
-                  s,
-                  reflection,
-                  instances[uint(irradiance[3].w) - 1].world._m21,
-                  cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position))),
-                s.position),
-              1);
+        uint header = uint(irradiance[3].w) - 1;
+        float reflectionMix = 0;
+        float3 reflection = 0;
+        float rotation = hybridRotation(uint2(input.position.xy));
+        bool reflections = instances[header].world._m01 > 0;
+        if (reflections)
+        {
+            reflection = hybridReflection(s, rotation);
+            if (instances[header].world._m30 > 2.5)
+                return float4(displayRadiance(reflection), 1);
+            reflectionMix = instances[header].world._m21;
+        }
+        bool diffuseBounce = instances[header].world._m31 > 0 && emissiveFactor.w > .5;
+        if (debug == 0 && (reflections || diffuseBounce))
+        {
+            float3 viewDirection = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
+            float3 color = surfaceRadiance(s, reflection, reflectionMix, viewDirection);
+            if (diffuseBounce && s.metallic < 1)
+                color += hybridDiffuseBounce(s, header, rotation);
+            return float4(applyFog(displayRadiance(color), s.position), 1);
+        }
     }
     if (debug == 0)
         return shadeSurface(s);

@@ -153,7 +153,7 @@ try {
       caps.softwareRayTracing &&
       !caps.hardwareRayTracing &&
       caps.reflections &&
-      !caps.globalIllumination &&
+      caps.globalIllumination &&
       invalid === 3 &&
       r.getRenderMode() === 'hybrid'
     )
@@ -314,6 +314,49 @@ try {
   }
   if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
     throw Error('Reflected helmet lost normal map or material AO')
+  await page.evaluate(async () => {
+    const matrix = (x, y, z, tx, ty, tz) => [x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, tx, ty, tz, 1]
+    await r.setScene(
+      [
+        { id: 'mirror', url: '/generated/SceneRed.glb' },
+        { id: 'wall', url: '/generated/SceneRed.glb' },
+      ],
+      [
+        { id: 'ground', assetId: 'mirror', world: matrix(2, 0.06, 2, 0, -0.9, 0) },
+        { id: 'wall', assetId: 'wall', world: matrix(2, 0.9, 0.06, 0, 0, -1) },
+      ],
+    )
+    r.setCamera({ yaw: 30, pitch: 25, distance: 5.5 })
+    r.setDirectionalLight({ direction: [-1, 1.6, 2], color: [1, 3.2 / 3.5, 0.8], intensity: 1 })
+    await r.setMaterial(
+      0,
+      {
+        ...r.getMaterials('mirror')[0],
+        baseColor: [0.45, 0.45, 0.45, 1],
+        metallic: 0,
+        roughness: 0.7,
+      },
+      'mirror',
+    )
+    await r.setMaterial(
+      0,
+      { ...r.getMaterials('wall')[0], baseColor: [1, 0, 0, 1], metallic: 0 },
+      'wall',
+    )
+    r.setHybrid({
+      view: 'final',
+      reflections: false,
+      ambientOcclusion: false,
+      diffuseBounce: false,
+    })
+  })
+  const noBounce = await capture('diffuse-bounce-off')
+  await page.evaluate(() => r.setHybrid({ diffuseBounce: true }))
+  const indirect = await capture('diffuse-bounce-on')
+  let colorSpill = 0
+  for (let i = Math.floor(240 * 0.65) * 320 * 4; i < indirect.length; i += 4)
+    colorSpill += indirect[i] - noBounce[i] > indirect[i + 1] - noBounce[i + 1] + 3
+  if (colorSpill < 20) throw Error('Diffuse bounce did not transfer red light to the receiver')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
@@ -332,6 +375,8 @@ try {
       'reflected-material-mapped',
       'reflected-material-flat',
       'reflected-material-no-ao',
+      'diffuse-bounce-off',
+      'diffuse-bounce-on',
       'ao-final',
       'ao-visibility',
       'single-off',

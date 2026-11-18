@@ -286,7 +286,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           hybrid?.reflections ? hybrid.reflectionDistance : 0,
           hybrid?.reflectionSamples || 1,
           hybrid?.reflectionStrength ?? 1,
-          0,
+          hybrid?.diffuseBounce ? 10 : 0,
         ],
         4,
       )

@@ -267,6 +267,7 @@ namespace render::detail
                     int aoSamples = int(hybrid.aoSamples);
                     if (ImGui::SliderInt("AO rays/pixel", &aoSamples, 1, 32))
                         hybrid.aoSamples = uint32_t(aoSamples);
+                    ImGui::Checkbox("Diffuse bounce", &hybrid.diffuseBounce);
                     ImGui::Checkbox("Hybrid reflections", &hybrid.reflections);
                     ImGui::SliderFloat("Reflection distance", &hybrid.reflectionDistance, .1f, 1000.f);
                     ImGui::SliderFloat("Reflection strength", &hybrid.reflectionStrength, 0, 1);

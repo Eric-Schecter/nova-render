@@ -6,6 +6,7 @@ export const defaultHybrid = () => ({
   temporalReconstruction: false,
   historyWeight: 0.9,
   reflections: false,
+  diffuseBounce: false,
   reflectionDistance: 1000,
   reflectionStrength: 1,
   reflectionSamples: 1,
@@ -28,6 +29,7 @@ export function copyHybrid(value) {
           'temporalReconstruction',
           'historyWeight',
           'reflections',
+          'diffuseBounce',
           'reflectionDistance',
           'reflectionStrength',
           'reflectionSamples',
@@ -60,6 +62,7 @@ export function copyHybrid(value) {
     s.aoSamples < 1 ||
     s.aoSamples > 32 ||
     typeof s.reflections !== 'boolean' ||
+    typeof s.diffuseBounce !== 'boolean' ||
     !Number.isFinite(s.reflectionDistance) ||
     s.reflectionDistance <= 0 ||
     s.reflectionDistance > 100000 ||
@@ -86,7 +89,7 @@ export function hybridCapabilities(animated = false) {
     hardwareRayTracing: false,
     ambientOcclusion: true,
     reflections: true,
-    globalIllumination: false,
+    globalIllumination: true,
     temporalReconstruction: true,
     animatedGeometry: false,
     taa: false,
