@@ -246,7 +246,7 @@ int main(int argc, char** argv)
         }
         backend.reset();
         CloseTestWindow(window);
-        window = nullptr;
+        window = {};
         QuitTestWindowHost();
         std::cout << "PASS " << api
                   << " scene render: grouped draws, all AA methods, source equivalence, clear and legacy model\n";

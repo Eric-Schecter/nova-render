@@ -20,7 +20,7 @@ int main(int argc, char** argv)
         auto        path = std::filesystem::path(argv[2]) / "SceneSample/Red.glb";
         Require(InitTestWindowHost(), "Window host initialization");
         window = OpenTestWindow(api, 320, 240, "GPU scene shadow validation");
-        Require(window, "Window init");
+        Require(bool(window), "Window init");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
         config.useWarp = TestUseWarp(argv[1]);
@@ -287,7 +287,7 @@ int main(int argc, char** argv)
         Require(backend->GetRasterAAImage().pixels != mixed.pixels, "Spot shadow missing in mixed collection");
         backend.reset();
         CloseTestWindow(window);
-        window = nullptr;
+        window = {};
         QuitTestWindowHost();
         std::cout << "PASS GPU scene shadows, softness, cast flags and movement: " << api << "; shadow pixels "
                   << darker << '\n';

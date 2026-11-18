@@ -217,7 +217,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Deferred MSAA must be rejected");
         backend.reset();
         CloseTestWindow(window);
-        window = nullptr;
+        window = {};
         QuitTestWindowHost();
         std::cout << "Deferred model checks passed\n";
     }

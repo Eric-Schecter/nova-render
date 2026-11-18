@@ -26,7 +26,7 @@ int main(int argc, char** argv)
           source->vertices[0].position[3] == 1 && source->vertices[36].position[3] == 2, "Incorrect slot assignment");
         Require(InitTestWindowHost(), "Window host initialization");
         window = OpenTestWindow(api, 480, 360, "Multi-light validation");
-        Require(window, "Window failed");
+        Require(bool(window), "Window failed");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
         config.useWarp = TestUseWarp(argv[1]);
@@ -184,7 +184,7 @@ int main(int argc, char** argv)
         image("legacy");
         backend.reset();
         CloseTestWindow(window);
-        window = nullptr;
+        window = {};
         QuitTestWindowHost();
         std::cout << "PASS " << api << " six-light accumulation, types, range, cone, validation and capabilities\n";
         return 0;
