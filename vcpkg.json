@@ -3,7 +3,6 @@
   "version-string": "0.7.1",
   "builtin-baseline": "971828fe0920d00c077c7b5d34798bc45b261ec4",
   "dependencies": [
-    "glfw3",
     {
       "name": "directx-dxc",
       "host": true,
@@ -31,10 +30,7 @@
       "description": "Optional parameter UI",
       "dependencies": [
         {
-          "name": "imgui",
-          "features": [
-            "glfw-binding"
-          ]
+          "name": "imgui"
         },
         {
           "name": "imgui",
@@ -87,6 +83,23 @@
           "name": "sdl3",
           "features": [
             "vulkan"
+          ]
+        }
+      ]
+    },
+    "glfw": {
+      "description": "GLFW compatibility host",
+      "dependencies": [
+        "glfw3"
+      ]
+    },
+    "ui-glfw": {
+      "description": "GLFW input binding",
+      "dependencies": [
+        {
+          "name": "imgui",
+          "features": [
+            "glfw-binding"
           ]
         }
       ]

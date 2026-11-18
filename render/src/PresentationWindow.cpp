@@ -2,6 +2,7 @@
 #ifdef NOVA_HAS_VULKAN
 #include "VulkanPresentation.hpp"
 #endif
+#ifdef NOVA_HAS_GLFW
 #include <GLFW/glfw3.h>
 #if defined(__APPLE__)
 #define GLFW_EXPOSE_NATIVE_COCOA
@@ -11,12 +12,45 @@
 #if defined(__APPLE__) || defined(_WIN32)
 #include <GLFW/glfw3native.h>
 #endif
+#endif
 #ifdef NOVA_HAS_SDL3
 #include <SDL3/SDL.h>
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+#include <SDL3/SDL_vulkan.h>
+#include <string>
+#endif
 #endif
 
 namespace render::detail
 {
+#ifdef NOVA_HAS_SDL3
+    SDL_Window* CreateSDLWindow(const char* title, int width, int height, bool vulkan, bool resizable)
+    {
+        SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        if (resizable)
+            flags |= SDL_WINDOW_RESIZABLE;
+        if (vulkan)
+            flags |= SDL_WINDOW_VULKAN;
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+        // Match volk's fallback to the standard macOS Vulkan SDK loader location.
+        const bool loaderReference =
+          vulkan && !SDL_GetHint(SDL_HINT_VULKAN_LIBRARY)
+          && (SDL_Vulkan_LoadLibrary(nullptr) || SDL_Vulkan_LoadLibrary("/usr/local/lib/libvulkan.dylib"));
+#endif
+        SDL_Window* window = SDL_CreateWindow(title, width, height, flags);
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+        if (loaderReference)
+        {
+            const std::string error = window ? "" : SDL_GetError();
+            SDL_Vulkan_UnloadLibrary();
+            if (!window)
+                SDL_SetError("%s", error.c_str());
+        }
+#endif
+        return window;
+    }
+#endif
+
     void* PresentationWindow::NativeHandle() const
     {
 #ifdef NOVA_HAS_SDL3
@@ -29,9 +63,9 @@ namespace render::detail
 #endif
         }
 #endif
-#ifdef __APPLE__
+#if defined(NOVA_HAS_GLFW) && defined(__APPLE__)
         return glfwGetCocoaWindow(glfw);
-#elif defined(_WIN32)
+#elif defined(NOVA_HAS_GLFW) && defined(_WIN32)
         return glfwGetWin32Window(glfw);
 #else
         return nullptr;
@@ -50,7 +84,11 @@ namespace render::detail
             return;
         }
 #endif
+#ifdef NOVA_HAS_GLFW
         glfwGetCursorPos(glfw, &x, &y);
+#else
+        x = y = 0;
+#endif
     }
 } // namespace render::detail
 
@@ -69,7 +107,12 @@ namespace render::detail
 #else
         (void)window;
 #endif
+#ifdef NOVA_HAS_GLFW
         return glfwGetRequiredInstanceExtensions(&count);
+#else
+        count = 0;
+        return nullptr;
+#endif
     }
 
     VkSurfaceKHR CreateVulkanSurface(PresentationWindow window, VkInstance instance)
@@ -83,9 +126,13 @@ namespace render::detail
             return surface;
         }
 #endif
+#ifdef NOVA_HAS_GLFW
         if (glfwCreateWindowSurface(instance, window.glfw, nullptr, &surface) != VK_SUCCESS)
             throw std::runtime_error("GLFW could not create Vulkan window surface");
         return surface;
+#else
+        throw std::runtime_error("Vulkan requires an SDL3 window");
+#endif
     }
 
     void DestroyVulkanSurface(PresentationWindow window, VkInstance instance, VkSurfaceKHR surface)

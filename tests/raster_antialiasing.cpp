@@ -1,11 +1,11 @@
 #include "Backend.hpp"
 #include "TestDevice.hpp"
-#include <GLFW/glfw3.h>
+#include "TestWindowHost.hpp"
 #include <iostream>
 #include <stdexcept>
 int main(int argc, char** argv)
 {
-    GLFWwindow* window = nullptr;
+    render::detail::PresentationWindow window;
     try
     {
         render::RendererConfig config;
@@ -14,10 +14,9 @@ int main(int argc, char** argv)
                                      : api == "vulkan" ? render::GraphicsAPI::Vulkan
                                                        : render::GraphicsAPI::D3D12;
         config.useWarp             = TestUseWarp(argv[1]);
-        if (!glfwInit())
-            throw std::runtime_error("GLFW init");
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(240, 180, "Raster AA validation", nullptr, nullptr);
+        if (!InitTestWindowHost())
+            throw std::runtime_error("Window host initialization");
+        window = OpenTestWindow(api, 240, 180, "Raster AA validation");
         if (!window)
             throw std::runtime_error("Window creation");
         std::unique_ptr<render::detail::Backend> backend;
@@ -37,9 +36,9 @@ int main(int argc, char** argv)
             throw std::runtime_error("Backend unavailable");
         backend->ConfigurePathTracing(config.api, config);
         auto draw = [&] {
-            glfwPollEvents();
+            PollTestWindow();
             int w, h;
-            glfwGetFramebufferSize(window, &w, &h);
+            TestPixelSize(window, &w, &h);
             backend->Resize(w, h);
             if (backend->DrawFrame() != render::FrameResult::Rendered)
                 throw std::runtime_error("Skipped AA frame");
@@ -136,8 +135,8 @@ int main(int argc, char** argv)
         backend->SetPostProcessing(post);
         draw();
         backend.reset();
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        CloseTestWindow(window);
+        QuitTestWindowHost();
         std::cout << "PASS model raster AA, camera/cuts, skinning and validation\n";
         return 0;
     }
@@ -145,8 +144,8 @@ int main(int argc, char** argv)
     {
         std::cerr << error.what() << '\n';
         if (window)
-            glfwDestroyWindow(window);
-        glfwTerminate();
+            CloseTestWindow(window);
+        QuitTestWindowHost();
         return 1;
     }
 }

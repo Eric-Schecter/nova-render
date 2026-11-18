@@ -28,8 +28,12 @@ namespace render
       public:
         explicit Window(const WindowConfig& config = {});
         ~Window();
-        Window(const Window&)                            = delete;
-        Window&                 operator=(const Window&) = delete;
+        Window(const Window&)            = delete;
+        Window& operator=(const Window&) = delete;
+        // Clear a close request after a caller chooses to keep the window open.
+        void CancelClose();
+        // Logical window size. The framebuffer can be larger on high-density displays.
+        void                    SetSize(uint32_t width, uint32_t height);
         bool                    PollEvents(); // false after closing the window or pressing Escape.
         std::array<uint32_t, 2> GetFramebufferSize() const;
         FrameResult             DrawFrame(); // Updates framebuffer size; yields briefly if skipped.

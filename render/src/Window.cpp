@@ -3,11 +3,10 @@
 #include "PresentationWindow.hpp"
 #ifdef NOVA_HAS_SDL3
 #include <SDL3/SDL.h>
-#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
-#include <SDL3/SDL_vulkan.h>
 #endif
-#endif
+#ifdef NOVA_HAS_GLFW
 #include <GLFW/glfw3.h>
+#endif
 #include <cstdlib>
 #include <exception>
 #include <limits>
@@ -46,8 +45,15 @@ namespace render
                     throw std::runtime_error("SDL3 window host requires NOVA_ENABLE_SDL3=ON");
 #endif
                 }
-                else if (!glfwInit())
-                    throw std::runtime_error("GLFW initialization failed");
+                else
+                {
+#ifdef NOVA_HAS_GLFW
+                    if (!glfwInit())
+                        throw std::runtime_error("GLFW initialization failed");
+#else
+                    throw std::runtime_error("GLFW host requires NOVA_ENABLE_GLFW=ON");
+#endif
+                }
                 windowContextActive = true;
             }
             ~Context()
@@ -57,15 +63,21 @@ namespace render
                     SDL_QuitSubSystem(SDL_INIT_VIDEO);
                 else
 #endif
+                {
+#ifdef NOVA_HAS_GLFW
                     glfwTerminate();
+#endif
+                }
                 windowContextActive = false;
             }
         };
     } // namespace
     struct Window::Impl
     {
-        Context                                                   context;
+        Context context;
+#ifdef NOVA_HAS_GLFW
         std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window{nullptr, glfwDestroyWindow};
+#endif
 #ifdef NOVA_HAS_SDL3
         std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> sdlWindow{nullptr, SDL_DestroyWindow};
         bool                                                      sdlClose = false;
@@ -90,6 +102,7 @@ namespace render
         ~Impl()
         {
             renderer.reset();
+#ifdef NOVA_HAS_GLFW
             if (window)
             {
                 glfwSetMouseButtonCallback(window.get(), nullptr);
@@ -98,6 +111,7 @@ namespace render
                 glfwSetWindowFocusCallback(window.get(), nullptr);
                 glfwSetWindowUserPointer(window.get(), nullptr);
             }
+#endif
         }
 #ifdef NOVA_HAS_SDL3
         bool PollSDL()
@@ -153,35 +167,16 @@ namespace render
 #ifdef NOVA_HAS_SDL3
             if (context.sdl)
             {
-                SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-                if (ResolveGraphicsAPI(config.renderer) == GraphicsAPI::Vulkan)
-                    flags |= SDL_WINDOW_VULKAN;
-#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
-                // Match the standard macOS loader fallback used by volk when SDL's
-                // normal library search cannot resolve the SDK installation.
-                const bool loaded =
-                  (flags & SDL_WINDOW_VULKAN) && !SDL_GetHint(SDL_HINT_VULKAN_LIBRARY)
-                  && (SDL_Vulkan_LoadLibrary(nullptr) || SDL_Vulkan_LoadLibrary("/usr/local/lib/libvulkan.dylib"));
-#endif
-                sdlWindow.reset(SDL_CreateWindow(
-                  config.title.c_str(), static_cast<int>(config.width), static_cast<int>(config.height), flags));
+                const bool vulkan = ResolveGraphicsAPI(config.renderer) == GraphicsAPI::Vulkan;
+                sdlWindow.reset(
+                  detail::CreateSDLWindow(config.title.c_str(), int(config.width), int(config.height), vulkan, true));
                 if (!sdlWindow)
-                {
-                    const std::string error = SDL_GetError();
-#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
-                    if (loaded)
-                        SDL_Vulkan_UnloadLibrary();
-#endif
-                    throw std::runtime_error(error);
-                }
-#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
-                if (loaded)
-                    SDL_Vulkan_UnloadLibrary();
-#endif
+                    throw std::runtime_error(SDL_GetError());
                 renderer.reset(new Renderer(detail::PresentationWindow(sdlWindow.get()), config.renderer));
                 return;
             }
 #endif
+#ifdef NOVA_HAS_GLFW
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
             window.reset(glfwCreateWindow(
               static_cast<int>(config.width), static_cast<int>(config.height), config.title.c_str(), nullptr, nullptr));
@@ -222,6 +217,7 @@ namespace render
                 if (!focused)
                     static_cast<Impl*>(glfwGetWindowUserPointer(w))->dragging = false;
             });
+#endif
         }
     };
     Window::Window(const WindowConfig& config)
@@ -235,15 +231,17 @@ namespace render
     Window::~Window() = default;
     bool Window::PollEvents()
     {
-        bool open;
+        bool open = false;
 #ifdef NOVA_HAS_SDL3
         if (impl_->sdlWindow)
             open = impl_->PollSDL();
         else
 #endif
         {
+#ifdef NOVA_HAS_GLFW
             glfwPollEvents();
             open = !glfwWindowShouldClose(impl_->window.get());
+#endif
         }
         if (impl_->inputError)
         {
@@ -252,6 +250,36 @@ namespace render
             std::rethrow_exception(error);
         }
         return open;
+    }
+    void Window::CancelClose()
+    {
+#ifdef NOVA_HAS_SDL3
+        if (impl_->sdlWindow)
+        {
+            impl_->sdlClose = false;
+            return;
+        }
+#endif
+#ifdef NOVA_HAS_GLFW
+        glfwSetWindowShouldClose(impl_->window.get(), GLFW_FALSE);
+#endif
+    }
+    void Window::SetSize(uint32_t width, uint32_t height)
+    {
+        constexpr auto max = static_cast<uint32_t>(std::numeric_limits<int>::max());
+        if (!width || !height || width > max || height > max)
+            throw std::invalid_argument("Window dimensions must be positive and fit in int");
+#ifdef NOVA_HAS_SDL3
+        if (impl_->sdlWindow)
+        {
+            if (!SDL_SetWindowSize(impl_->sdlWindow.get(), int(width), int(height)))
+                throw std::runtime_error(SDL_GetError());
+            return;
+        }
+#endif
+#ifdef NOVA_HAS_GLFW
+        glfwSetWindowSize(impl_->window.get(), int(width), int(height));
+#endif
     }
     std::array<uint32_t, 2> Window::GetFramebufferSize() const
     {
@@ -264,7 +292,11 @@ namespace render
         }
         else
 #endif
+        {
+#ifdef NOVA_HAS_GLFW
             glfwGetFramebufferSize(impl_->window.get(), &width, &height);
+#endif
+        }
         return {uint32_t(width), uint32_t(height)};
     }
     FrameResult Window::DrawFrame()
@@ -279,7 +311,11 @@ namespace render
                 SDL_Delay(10);
             else
 #endif
+            {
+#ifdef NOVA_HAS_GLFW
                 glfwWaitEventsTimeout(0.01);
+#endif
+            }
         }
         return result;
     }

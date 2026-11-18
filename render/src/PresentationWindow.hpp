@@ -5,6 +5,8 @@ struct SDL_Window;
 
 namespace render::detail
 {
+    SDL_Window* CreateSDLWindow(const char* title, int width, int height, bool vulkan, bool resizable);
+
     // Borrowed window handle. The host owns the window and outlives the renderer.
     struct PresentationWindow
     {

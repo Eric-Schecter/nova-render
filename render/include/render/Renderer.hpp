@@ -60,7 +60,9 @@ namespace render
     class Renderer
     {
       public:
+#ifdef NOVA_HAS_GLFW
         Renderer(GLFWwindow* window, const RendererConfig& config);
+#endif
         ~Renderer();
         Renderer(const Renderer&)            = delete;
         Renderer& operator=(const Renderer&) = delete;

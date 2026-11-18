@@ -1,6 +1,6 @@
 #include "Backend.hpp"
 #include "TestDevice.hpp"
-#include <GLFW/glfw3.h>
+#include "TestWindowHost.hpp"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -19,7 +19,7 @@ static double Difference(const Image& a, const Image& b)
 }
 int main(int argc, char** argv)
 {
-    GLFWwindow* window = nullptr;
+    render::detail::PresentationWindow window;
     std::cout.setf(std::ios::unitbuf);
     try
     {
@@ -32,17 +32,15 @@ int main(int argc, char** argv)
         RendererConfig config;
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
         config.useWarp = argc > 1 && TestUseWarp(argv[1]);
-        if (!glfwInit())
-            throw std::runtime_error("GLFW init");
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        if (!InitTestWindowHost())
+            throw std::runtime_error("Window host initialization");
         float scaleX = 1, scaleY = 1;
-        glfwGetMonitorContentScale(glfwGetPrimaryMonitor(), &scaleX, &scaleY);
-        window = glfwCreateWindow(
+        TestPixelDensity(&scaleX, &scaleY);
+        window = OpenTestWindow(
+          api,
           int(fixture["width"].get<float>() / scaleX),
           int(fixture["height"].get<float>() / scaleY),
-          "Reference scene validation",
-          nullptr,
-          nullptr);
+          "Reference scene validation");
         if (!window)
             throw std::runtime_error("Window init");
         std::unique_ptr<detail::Backend> backend;
@@ -74,9 +72,9 @@ int main(int argc, char** argv)
                    / api;
         std::filesystem::create_directories(dir);
         auto draw = [&](const std::string& name) {
-            glfwPollEvents();
+            PollTestWindow();
             int w, h;
-            glfwGetFramebufferSize(window, &w, &h);
+            TestPixelSize(window, &w, &h);
             backend->Resize(w, h);
             if (backend->DrawFrame() != FrameResult::Rendered)
                 throw std::runtime_error("Skipped frame");
@@ -115,9 +113,9 @@ int main(int argc, char** argv)
         raster.pipeline = RasterPipeline::Deferred;
         backend->SetRasterSettings(raster);
         auto gpuFrame = [&] {
-            glfwPollEvents();
+            PollTestWindow();
             int w, h;
-            glfwGetFramebufferSize(window, &w, &h);
+            TestPixelSize(window, &w, &h);
             if (w != fixture["width"].get<int>() || h != fixture["height"].get<int>())
                 throw std::runtime_error("Reference framebuffer size mismatch");
             backend->Resize(w, h);
@@ -222,9 +220,9 @@ int main(int argc, char** argv)
                 backend->SetHybrid(hybrid);
                 auto baseline = draw(name + "-raster");
                 backend->SetRenderMode(RenderMode::Hybrid);
-                glfwPollEvents();
+                PollTestWindow();
                 int w, h;
-                glfwGetFramebufferSize(window, &w, &h);
+                TestPixelSize(window, &w, &h);
                 backend->Resize(w, h);
                 auto before = backend->RasterReadbackCount();
                 backend->DrawFrame();
@@ -332,8 +330,8 @@ int main(int argc, char** argv)
             output << metrics.dump(2) << '\n';
         }
         backend.reset();
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        CloseTestWindow(window);
+        QuitTestWindowHost();
         std::cout << api << " reference captures=" << captures << ", max Raster/Hybrid MAE=" << maximum << "/255\n";
         return 0;
     }
@@ -341,8 +339,8 @@ int main(int argc, char** argv)
     {
         std::cerr << e.what() << '\n';
         if (window)
-            glfwDestroyWindow(window);
-        glfwTerminate();
+            CloseTestWindow(window);
+        QuitTestWindowHost();
         return 1;
     }
 }

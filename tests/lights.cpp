@@ -1,6 +1,6 @@
 #include "Backend.hpp"
 #include "TestDevice.hpp"
-#include <GLFW/glfw3.h>
+#include "TestWindowHost.hpp"
 #include <fstream>
 #include <iostream>
 #include <stb_image_write.h>
@@ -14,7 +14,7 @@ void Require(bool ok, const char* message)
 int main(int argc, char** argv)
 {
     std::cout.setf(std::ios::unitbuf);
-    GLFWwindow* window = nullptr;
+    render::detail::PresentationWindow window;
     try
     {
         Require(argc == 3, "Expected API and asset directory");
@@ -24,9 +24,8 @@ int main(int argc, char** argv)
         Require(source->materials.size() == 2, "Missing slots");
         Require(
           source->vertices[0].position[3] == 1 && source->vertices[36].position[3] == 2, "Incorrect slot assignment");
-        Require(glfwInit(), "GLFW init");
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(480, 360, "Multi-light validation", nullptr, nullptr);
+        Require(InitTestWindowHost(), "Window host initialization");
+        window = OpenTestWindow(api, 480, 360, "Multi-light validation");
         Require(window, "Window failed");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
@@ -53,9 +52,9 @@ int main(int argc, char** argv)
         camera.orthographicHeight = 2.6f;
         backend->SetViewCamera(camera);
         auto draw = [&]() {
-            glfwPollEvents();
+            PollTestWindow();
             int w, h;
-            glfwGetFramebufferSize(window, &w, &h);
+            TestPixelSize(window, &w, &h);
             backend->Resize(w, h);
             Require(backend->DrawFrame() == FrameResult::Rendered, "Skipped frame");
             backend->WaitIdle();
@@ -184,9 +183,9 @@ int main(int argc, char** argv)
         Require(backend->GetLights().size() == 1, "Legacy replacement failed");
         image("legacy");
         backend.reset();
-        glfwDestroyWindow(window);
+        CloseTestWindow(window);
         window = nullptr;
-        glfwTerminate();
+        QuitTestWindowHost();
         std::cout << "PASS " << api << " six-light accumulation, types, range, cone, validation and capabilities\n";
         return 0;
     }
@@ -194,8 +193,8 @@ int main(int argc, char** argv)
     {
         std::cerr << e.what() << '\n';
         if (window)
-            glfwDestroyWindow(window);
-        glfwTerminate();
+            CloseTestWindow(window);
+        QuitTestWindowHost();
         return 1;
     }
 }

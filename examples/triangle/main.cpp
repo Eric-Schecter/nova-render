@@ -1,12 +1,15 @@
 #include "../common/PerformancePanel.hpp"
 #include "render/Window.hpp"
+#ifdef NOVA_HAS_GLFW
 #include <GLFW/glfw3.h>
+#endif
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 
+#ifdef NOVA_HAS_GLFW
 struct GlfwContext
 {
     GlfwContext()
@@ -30,6 +33,7 @@ static void waitForIconified(GLFWwindow* window, bool expected)
     }
 }
 
+#endif
 int main(int argc, char** argv)
 {
     try
@@ -103,6 +107,7 @@ int main(int argc, char** argv)
                       << '\n';
             return window.ValidationErrorCount() || (frameLimit && frames != frameLimit) ? EXIT_FAILURE : EXIT_SUCCESS;
         }
+#ifdef NOVA_HAS_GLFW
         GlfwContext glfw;
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window(
@@ -170,6 +175,9 @@ int main(int argc, char** argv)
         renderer.WaitIdle();
         std::cout << "Rendered " << frames << " frames; validation errors: " << renderer.ValidationErrorCount() << '\n';
         return renderer.ValidationErrorCount() ? EXIT_FAILURE : EXIT_SUCCESS;
+#else
+        throw std::invalid_argument("--resize-test requires the GLFW compatibility build");
+#endif
     }
     catch (const std::exception& error)
     {

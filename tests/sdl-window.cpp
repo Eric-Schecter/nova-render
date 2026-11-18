@@ -56,7 +56,8 @@ int main(int argc, char** argv)
         require(window.DrawFrame() == render::FrameResult::Rendered, "Triangle did not render");
 
         const auto firstSize = window.GetFramebufferSize();
-        require(SDL_SetWindowSize(host, 640, 360) && SDL_SyncWindow(host), SDL_GetError());
+        window.SetSize(640, 360);
+        require(SDL_SyncWindow(host), SDL_GetError());
         require(window.PollEvents(), "Window closed during resize");
         verifySize();
         require(window.GetFramebufferSize() != firstSize, "Framebuffer did not resize");
@@ -105,6 +106,13 @@ int main(int argc, char** argv)
         require(window.PollEvents(), "Window closed during panel input");
         require(
           window.DrawFrame() == render::FrameResult::Rendered && panelWheel > 0, "SDL mouse wheel did not reach ImGui");
+        SDL_Event close{};
+        close.type            = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        close.window.windowID = id;
+        push(close);
+        require(!window.PollEvents(), "SDL close request not reported");
+        window.CancelClose();
+        require(window.PollEvents(), "CancelClose did not reopen the event loop");
         window.WaitIdle();
         require(!window.ValidationErrorCount(), "GPU validation errors");
         std::cout << "SDL3 triangle, resize, mouse orbit and ImGui passed on " << argv[1] << '\n';

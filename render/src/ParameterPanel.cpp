@@ -1,10 +1,14 @@
 #include "ParameterPanel.hpp"
 #include "Color.hpp"
 #ifdef NOVA_HAS_UI
+#ifdef NOVA_HAS_GLFW
 #include <GLFW/glfw3.h>
+#endif
 #include <algorithm>
 #include <cmath>
+#ifdef NOVA_HAS_GLFW
 #include <imgui_impl_glfw.h>
+#endif
 #ifdef NOVA_HAS_SDL3
 #include <imgui_impl_sdl3.h>
 #endif
@@ -41,7 +45,11 @@ namespace render::detail
             initialized = ImGui_ImplSDL3_InitForOther(window.sdl);
         else
 #endif
+        {
+#ifdef NOVA_HAS_GLFW
             initialized = ImGui_ImplGlfw_InitForOther(window.glfw, true);
+#endif
+        }
         if (!initialized)
         {
             ImGui::DestroyContext(context);
@@ -71,7 +79,11 @@ namespace render::detail
                     ImGui_ImplSDL3_Shutdown();
                 else
 #endif
+                {
+#ifdef NOVA_HAS_GLFW
                     ImGui_ImplGlfw_Shutdown();
+#endif
+                }
             }
             ImGui::DestroyContext(context);
         }
@@ -154,7 +166,11 @@ namespace render::detail
             ImGui_ImplSDL3_NewFrame();
         else
 #endif
+        {
+#ifdef NOVA_HAS_GLFW
             ImGui_ImplGlfw_NewFrame();
+#endif
+        }
         ImGui::NewFrame();
         if (assets.config.drawUI)
             assets.config.drawUI();

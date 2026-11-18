@@ -1,6 +1,6 @@
 #include "Backend.hpp"
 #include "TestDevice.hpp"
-#include <GLFW/glfw3.h>
+#include "TestWindowHost.hpp"
 #include <iostream>
 #include <stb_image_write.h>
 #include <stdexcept>
@@ -12,15 +12,14 @@ void Require(bool value, const char* text)
 }
 int main(int argc, char** argv)
 {
-    GLFWwindow* window = nullptr;
+    render::detail::PresentationWindow window;
     try
     {
         Require(argc == 3, "Expected API and assets");
         std::string api  = TestAPI(argv[1]);
         auto        path = std::filesystem::path(argv[2]) / "SceneSample/Red.glb";
-        Require(glfwInit(), "GLFW init");
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(320, 240, "GPU scene shadow validation", nullptr, nullptr);
+        Require(InitTestWindowHost(), "Window host initialization");
+        window = OpenTestWindow(api, 320, 240, "GPU scene shadow validation");
         Require(window, "Window init");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
@@ -67,9 +66,9 @@ int main(int argc, char** argv)
         backend->SetLighting(LightingMode::PBR);
         backend->SetAntiAliasing({AAMethod::FXAA});
         auto draw = [&] {
-            glfwPollEvents();
+            PollTestWindow();
             int w, h;
-            glfwGetFramebufferSize(window, &w, &h);
+            TestPixelSize(window, &w, &h);
             backend->Resize(w, h);
             Require(backend->DrawFrame() == FrameResult::Rendered, "Frame skipped");
             backend->WaitIdle();
@@ -287,9 +286,9 @@ int main(int argc, char** argv)
         draw();
         Require(backend->GetRasterAAImage().pixels != mixed.pixels, "Spot shadow missing in mixed collection");
         backend.reset();
-        glfwDestroyWindow(window);
+        CloseTestWindow(window);
         window = nullptr;
-        glfwTerminate();
+        QuitTestWindowHost();
         std::cout << "PASS GPU scene shadows, softness, cast flags and movement: " << api << "; shadow pixels "
                   << darker << '\n';
         return 0;
@@ -298,8 +297,8 @@ int main(int argc, char** argv)
     {
         std::cerr << e.what() << '\n';
         if (window)
-            glfwDestroyWindow(window);
-        glfwTerminate();
+            CloseTestWindow(window);
+        QuitTestWindowHost();
         return 1;
     }
 }

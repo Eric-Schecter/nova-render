@@ -64,8 +64,8 @@ Only AO has adaptive interaction quality. `ParameterPanelConfig.sceneTopInset` r
 NOVA_WINDOW_BACKEND=glfw ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api metal --frames 60
 ```
 
-The same C++ `Window` API works with either host. Programs that own a GLFW window can still pass its handle to `Renderer`. When updating nova-editor to an SDL3-default SDK, launch with `NOVA_WINDOW_BACKEND=glfw` until its unsaved-changes close flow no longer casts the ImGui platform handle to `GLFWwindow*`. The pre-existing editor SDK pin keeps its original behavior.
+Set `-DNOVA_ENABLE_GLFW=OFF` at configure time to build and package only the SDL3 window host. The C++ `Window` API works with either host. Use `Window::CancelClose()` to keep a window open after a close request and `Window::SetSize(width, height)` to resize it in logical pixels. Programs that pass a GLFW handle directly to `Renderer` need a GLFW-enabled build.
 
 Vulkan needs a driver and a loader visible to Nova and SDL. On macOS Nova also checks the standard SDK loader location at `/usr/local/lib/libvulkan.dylib`. With a custom loader location, set `SDL_VULKAN_LIBRARY` to the matching library path.
 
-The `sdl-window-*` CTest cases exercise the default selection, triangle presentation, resizing, mouse orbit and ImGui input. Verified on Apple M4 Metal and Vulkan/MoltenVK (2× framebuffer density), Windows x64 RTX 4060 Laptop GPU with DX12 and Vulkan, and Ubuntu 24.04 ARM64 Vulkan with Lavapipe/Xvfb. The Linux runtime check used SDL3 3.2.28 built for X11 and the pinned ImGui SDL3 source with precompiled SPIR-V; it did not validate a fresh Linux vcpkg dependency install or a physical Linux GPU. A standalone macOS consumer linked the installed SDK, and nova-editor rendered against that SDK with the GLFW host selected.
+The `sdl-window-*` CTest cases exercise triangle presentation, resizing, close cancellation, mouse orbit, and ImGui input.

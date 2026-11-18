@@ -5,7 +5,7 @@ add_executable(nova_sdk_consumer main.cpp)
 target_link_libraries(nova_sdk_consumer PRIVATE Nova::Render)
 # Verification must not accidentally resolve libraries from the producer checkout/vcpkg.
 if(NOVA_EXPECTED_SDK)
-    foreach(dependency Nova::Render glfw volk::volk imgui::imgui)
+    foreach(dependency Nova::Render SDL3::SDL3 SDL3::SDL3-static glfw volk::volk imgui::imgui)
         if(TARGET ${dependency})
             get_target_property(configurations ${dependency} IMPORTED_CONFIGURATIONS)
             foreach(configuration IN LISTS configurations)
