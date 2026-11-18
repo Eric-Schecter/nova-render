@@ -4,22 +4,22 @@ Project/repository: **Nova Render** / `nova-render`; CMake project: `NovaRender`
 
 Native uses a C++17 SDK and web uses an npm archive. Both use the CMake project version. Packaging commands generate local files without publishing. Downloads are in [GitHub Releases](https://github.com/Eric-Schecter/nova-render/releases).
 
-## Download 0.9.2
+## Download 0.10.0
 
-[Release v0.9.2](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.9.2) contains a macOS ARM64 Release C++ SDK, a WebGPU npm archive and SHA-256 checksums. `manifest.json` pairs packages from the same clean release commit. The release adds independent GPU skeletal/node animation for scene instances, explicit playback clocks, posed picking/bounds and Hybrid shadows/AO/reflections/temporal reconstruction. Both single-model animation and animated scene instances cast pose-dependent shadows in Raster. Morph animation remains unavailable. Existing alpha material and Deferred/G-buffer APIs remain supported. Alpha materials currently require Raster mode; BLEND does not support MSAA, TAA or AA split. Point/spot/multi-light collections support Metal, Vulkan, DX12 and WebGPU raster and ray tracing. Metal/Vulkan/WebGPU have been tested; DX12 shaders compile, but Windows runtime validation is deferred and no new Windows SDK is included. Windows x64 SDKs remain available in v0.2.1. No Linux SDK is included.
+[Release v0.10.0](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.0) provides macOS ARM64 and Windows x64 Release C++ SDKs, a WebGPU npm archive, and SHA-256 checksums. The macOS SDK and Web package are paired in `manifest.json` for nova-editor. Both desktop SDKs bundle SDL3. Applications using `render::Window` keep the same API. Migrate code constructing a renderer from an external window to `render::Window`.
 
 Download and verify the pair on macOS:
 
 ```sh
-mkdir -p nova-0.9.2
-cd nova-0.9.2
-release=https://github.com/Eric-Schecter/nova-render/releases/download/v0.9.2
+mkdir -p nova-0.10.0
+cd nova-0.10.0
+release=https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.0
 curl -fL "$release/manifest.json" -o manifest.json
 curl -fL "$release/SHA256SUMS" -o SHA256SUMS
-curl -fL "$release/nova-render-sdk-0.9.2-darwin-arm64-appleclang-release.zip" -O
-curl -fL "$release/nova-render-web-0.9.2.tgz" -O
+curl -fL "$release/nova-render-sdk-0.10.0-darwin-arm64-appleclang-release.zip" -O
+curl -fL "$release/nova-render-web-0.10.0.tgz" -O
 shasum -a 256 -c SHA256SUMS
-unzip nova-render-sdk-0.9.2-darwin-arm64-appleclang-release.zip
+unzip nova-render-sdk-0.10.0-darwin-arm64-appleclang-release.zip
 ```
 
 Use the extracted SDK directory containing `include/`, `lib/` and `share/` as `CMAKE_PREFIX_PATH`. The SDK includes optional ImGui integration. Sample models and environments belong to the application.
@@ -29,11 +29,11 @@ Use the extracted SDK directory containing `include/`, `lib/` and `share/` as `C
 From the editor checkout, download and install the matching pair directly:
 
 ```sh
-pnpm sdk:install https://github.com/Eric-Schecter/nova-render/releases/download/v0.9.2/manifest.json
+pnpm sdk:install https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.0/manifest.json
 pnpm sdk:verify
 ```
 
-Existing projects keep their locked version until explicitly updated. The updated nova-editor integration uses `pnpm sdk:update 0.9.2`; older editor versions need their SDK compatibility policy updated first. The installer validates platform, architecture, features, hashes and embedded source revisions before replacing packages. A local downloaded manifest also works.
+Existing projects keep their locked version until explicitly updated. The updated nova-editor integration uses `pnpm sdk:update 0.10.0`; older editor versions need their SDK compatibility policy updated first. The installer validates platform, architecture, features, hashes and embedded source revisions before replacing packages. A local downloaded manifest also works.
 
 ## Build a C++ SDK
 
@@ -78,12 +78,12 @@ Generate from the Nova repository:
 npm run pack:web
 ```
 
-This produces `build/packages/nova-render-web-0.9.2.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
+This produces `build/packages/nova-render-web-0.10.0.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
 
 In another project (or use a verified local `.tgz` path):
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.9.2/nova-render-web-0.9.2.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.0/nova-render-web-0.10.0.tgz
 npx nova-web-assets --out public/nova
 ```
 
@@ -104,19 +104,9 @@ Install the generated `.tgz`, not the documentation package at the repository ro
 ```sh
 node scripts/packaging/check-sdk.mjs /path/to/sdk.tar.gz metal Release
 node scripts/packaging/check-sdk.mjs /path/to/sdk.zip vulkan Release
-node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.9.2.tgz
+node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.10.0.tgz
 ```
 
 Scripts copy consumers outside the repository. Native validation relocates the SDK, checks all imported library locations, then exercises two probes and a window. Web validation installs offline, copies assets and runs triangle/probe APIs in a real WebGPU browser.
 
-Projects: `examples/sdk-consumer` and `examples/npm-consumer`. Version 0.9.2 validates macOS ARM64 Metal/Vulkan and Chrome WebGPU. Version 0.2.1 validated Windows x64 DX12/Vulkan on RTX; 0.1.0 validated Windows ARM64 DX12 WARP. No Linux SDK has been generated/validated. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.
-
-The 0.2 SDK includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. For your own builds, use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. Local packaging does not publish a release.
-
-See [Windows x64 / RTX validation](../validation/windows) for the hardware ray-query, integrator and independent SDK checks incorporated into 0.2.1. The original v0.2.0 assets are unchanged.
-
-## Release cadence
-
-Publish a new version after an important feature or compatibility stage has passed validation. Fixes use a patch release; compatible feature stages normally use a minor release. Individual commits do not require releases. Build all supported artifacts from one clean commit, validate independent consumers, publish checksums and platform manifests, and update installation links. Published versions are kept unchanged.
-
-GitHub Releases is the primary distribution channel for native SDK archives and the matching npm archive. GitHub Packages is optional: it has no native C++ SDK registry, and its npm registry requires consumer authentication. Release URL dependencies stay pinned to that version; automatic version-range updates would require a package registry.
+Projects: `examples/sdk-consumer` and `examples/npm-consumer`. This version validates macOS ARM64 Metal/Vulkan, Windows x64 DirectX 12/Vulkan and Chrome WebGPU. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.

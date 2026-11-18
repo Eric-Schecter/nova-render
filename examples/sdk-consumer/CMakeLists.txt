@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(NovaRenderSDKConsumer LANGUAGES CXX)
-find_package(Nova 0.9 CONFIG REQUIRED)
+find_package(Nova 0.10 CONFIG REQUIRED)
 add_executable(nova_sdk_consumer main.cpp)
 target_link_libraries(nova_sdk_consumer PRIVATE Nova::Render)
 # Verification must not accidentally resolve libraries from the producer checkout/vcpkg.
