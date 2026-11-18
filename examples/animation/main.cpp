@@ -7,12 +7,14 @@ int main(int argc, char** argv)
 {
     try
     {
-        const auto     options = example::ParseModelOptions(argc, argv, "Nova Render | Skeletal Animation", true, false, true);
+        const auto options =
+          example::ParseModelOptions(argc, argv, "Nova Render | Skeletal Animation", true, false, true, 3);
         render::Window window(options.window);
         window.LoadModel(options.modelPath);
         window.SetRenderMode(options.mode);
         window.SetLighting(render::LightingMode::PBR);
         window.SetDirectionalLight(options.light);
+        window.SetShadows({.enabled = true});
         window.LoadEnvironment(options.environmentPath);
         window.SetEnvironment(render::EnvironmentSettings{});
         render::OrbitCamera camera;

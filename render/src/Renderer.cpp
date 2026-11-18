@@ -167,6 +167,7 @@ namespace render
         // Apply UI requests before a backend starts recording the next frame.
         apply(assets.requestedModel, [&](const auto& path) { LoadModel(path); });
         apply(assets.requestedEnvironment, [&](const auto& path) { LoadEnvironment(path); });
+        impl_->backend->RefreshSingleAnimationShadows();
         return impl_->backend->DrawFrame();
     }
     std::vector<AnimationClip> Renderer::GetAnimations() const

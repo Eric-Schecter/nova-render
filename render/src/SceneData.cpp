@@ -514,19 +514,23 @@ namespace render::detail
         if (p.query)
             return p.query;
         const auto& source = *meshes.at(p.assetId).data;
-        auto        out    = std::make_shared<ModelData>();
-        out->vertices      = source.vertices;
+        return p.query     = PoseAnimationGeometry(source, p.palette);
+    }
+    std::shared_ptr<const ModelData> PoseAnimationGeometry(
+      const ModelData& source, const std::vector<JointMatrix>& palette)
+    {
+        auto out      = std::make_shared<ModelData>();
+        out->vertices = source.vertices;
         for (size_t i = 0; i < source.skinInputs.size(); ++i)
         {
             const auto& input = source.skinInputs[i];
             glm::mat4   matrix(0);
             for (int j = 0; j < 4; ++j)
-                matrix += input.weights[j] * glm::make_mat4(p.palette.at(input.joints[j]).data());
+                matrix += input.weights[j] * glm::make_mat4(palette.at(input.joints[j]).data());
             auto position = matrix * glm::make_vec4(input.position.data());
             for (int k = 0; k < 3; ++k)
                 out->vertices[i].position[k] = position[k];
         }
-        p.query = out;
         return out;
     }
     std::optional<Bounds> SceneData::InstanceBounds(const std::string& id) const

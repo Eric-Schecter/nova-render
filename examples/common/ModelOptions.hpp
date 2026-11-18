@@ -23,9 +23,10 @@ namespace example
       int         argc,
       char**      argv,
       const char* title,
-      bool        allowLighting      = false,
-      bool        allowEnvironment   = false,
-      bool        defaultEnvironment = false)
+      bool        allowLighting             = false,
+      bool        allowEnvironment          = false,
+      bool        defaultEnvironment        = false,
+      float       environmentLightIntensity = 0)
     {
         if (argc < (allowEnvironment ? 3 : 2))
             throw std::invalid_argument(
@@ -38,7 +39,7 @@ namespace example
         ModelOptions options;
         options.modelPath = argv[1];
         if (defaultEnvironment)
-            options.light.intensity = 0;
+            options.light.intensity = environmentLightIntensity;
         if (allowEnvironment)
         {
             options.environmentPath = argv[2];

@@ -172,23 +172,40 @@ namespace render::detail
         }
         std::vector<InstanceData>        rasterInstances;
         const std::vector<InstanceData>& RasterInstances() const { return rasterInstances; }
-        void                             RebuildRasterInstances()
+        bool                             SingleSkinnedShadows() const
         {
-            const bool singleHybrid = mode == RenderMode::Hybrid && !scene.active && model && !model->vertices.empty();
-            rasterInstances         = scene.active ? scene.instances : std::vector<InstanceData>{};
-            if (singleHybrid)
+            return mode == RenderMode::Raster && !scene.active && model && model->animation
+                   && (shadowSettings.enabled || std::any_of(lights.begin(), lights.end(), [](const SceneLight& light) {
+                           return light.enabled && light.castShadow;
+                       }));
+        }
+        void RefreshSingleAnimationShadows()
+        {
+            if (SingleSkinnedShadows() && (singleBVHModel != model || singleBVHRevision != model->revision))
+                RebuildRasterInstances();
+        }
+        void RebuildRasterInstances()
+        {
+            const bool skinned = SingleSkinnedShadows();
+            const bool singleCaster =
+              skinned || (mode == RenderMode::Hybrid && !scene.active && model && !model->vertices.empty());
+            rasterInstances = scene.active ? scene.instances : std::vector<InstanceData>{};
+            if (singleCaster)
             {
-                if (singleBVHModel != model)
+                if (singleBVHModel != model || singleBVHRevision != model->revision)
                 {
-                    singleBVHModel = model;
-                    singleBVH      = std::make_shared<PickMesh>(model);
+                    singleBVHModel    = model;
+                    singleBVHRevision = model->revision;
+                    singleBVH =
+                      std::make_shared<PickMesh>(skinned ? PoseAnimationGeometry(*model, model->jointMatrices) : model);
                 }
                 InstanceData identity{};
                 for (int k : {0, 5, 10, 15})
                     identity.world[k] = identity.normal[k] = 1;
-                identity.uv[0] = 1;
-                identity.uv[2] = 1;
-                identity.uv[3] = float(singleBVH->ShadowNodeCount());
+                identity.normal[12] = skinned ? 1.f : 0.f;
+                identity.uv[0]      = 1;
+                identity.uv[2]      = 1;
+                identity.uv[3]      = float(singleBVH->ShadowNodeCount());
                 rasterInstances.push_back(identity);
             }
             if (model)
@@ -205,7 +222,7 @@ namespace render::detail
             globals.material[0]  = fogSettings.nearDistance;
             globals.material[1]  = fogSettings.farDistance;
             globals.material[2]  = fogSettings.density;
-            globals.emissive[0]  = scene.active ? float(scene.instances.size()) : singleHybrid ? 1.f : 0;
+            globals.emissive[0]  = scene.active ? float(scene.instances.size()) : singleCaster ? 1.f : 0;
             globals.emissive[1]  = shadowSettings.enabled ? 1.f : 0.f;
             globals.emissive[2]  = shadowSettings.softness;
             globals.emissive[3]  = float(shadowSettings.samples);
@@ -224,7 +241,7 @@ namespace render::detail
                 rasterInstances.insert(rasterInstances.end(), scene.shadowRecords.begin(), scene.shadowRecords.end());
                 scene.AppendAnimatedShadows(rasterInstances, shadowBase);
             }
-            if (singleHybrid)
+            if (singleCaster)
                 for (const auto& row : singleBVH->ShadowRecords())
                 {
                     InstanceData record;
@@ -295,9 +312,11 @@ namespace render::detail
         }
         float MaterialMode() const
         {
-            return scene.active || (mode == RenderMode::Hybrid && model && !model->vertices.empty()) ? 1.f
-                   : model && !model->materialRecords.empty()                                        ? 2.f
-                                                                                                     : 0.f;
+            return scene.active || SingleSkinnedShadows()
+                       || (mode == RenderMode::Hybrid && model && !model->vertices.empty())
+                     ? 1.f
+                   : model && !model->materialRecords.empty() ? 2.f
+                                                              : 0.f;
         }
         void ConfigurePathTracing(GraphicsAPI api, const RendererConfig& config)
         {
@@ -668,6 +687,7 @@ namespace render::detail
         PostProcessingSettings           postSettings;
         std::shared_ptr<const ModelData> singleBVHModel;
         std::shared_ptr<PickMesh>        singleBVH;
+        uint64_t                         singleBVHRevision = 0;
         detail::RasterAA                 rasterAA;
         bool                             aaTriangle = false;
         std::optional<Image>             presentedImage;

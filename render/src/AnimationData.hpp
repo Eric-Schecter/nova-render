@@ -6,6 +6,8 @@
 #include <tiny_gltf.h>
 namespace render::detail
 {
+    std::shared_ptr<const ModelData> PoseAnimationGeometry(
+      const ModelData& source, const std::vector<JointMatrix>& palette);
     struct AnimationNode
     {
         int       parent = -1;

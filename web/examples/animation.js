@@ -29,8 +29,9 @@ export async function showAnimation(
     renderer.setDirectionalLight({
       direction: [-1, 1.6, 2],
       color: [1, 3.2 / 3.5, 0.8],
-      intensity: 0,
+      intensity: 3,
     })
+    renderer.setShadows({ enabled: true })
     renderer.setCamera(camera)
     // Standard glTF skin + animation clips. The renderer owns sampling and skinning.
     renderer.setAnimationState({ clip: 0, time: 0, speed: 1, playing: true, loop: true })

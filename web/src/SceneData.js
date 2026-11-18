@@ -1,5 +1,5 @@
 import { packMaterials, validateMaterial } from './MaterialData.js'
-import { createAnimationPlayer, evaluateAnimation } from './AnimationData.js'
+import { createAnimationPlayer, evaluateAnimation, poseAnimationGeometry } from './AnimationData.js'
 import { PickMesh, pickScene } from './Picking.js'
 import { loadGLB, emptyModelData, multiply } from './ModelData.js'
 const cross = (a, b) => [
@@ -51,27 +51,7 @@ export class SceneData {
   poseGeometry(id) {
     const p = this.players.get(id)
     if (p.query) return p.query
-    const source = this.meshes.get(p.assetId).data,
-      vertices = source.vertices.slice(),
-      bytes = source.skinInputs
-    const values = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4),
-      joints = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
-    for (let i = 0; i < vertices.length / 12; ++i)
-      for (let axis = 0; axis < 3; ++axis) {
-        let sum = 0
-        for (let k = 0; k < 4; ++k) {
-          const at = joints[i * 16 + 8 + k] * 16,
-            weight = values[i * 16 + 12 + k]
-          sum +=
-            weight *
-            (p.palette[at + axis] * values[i * 16] +
-              p.palette[at + 4 + axis] * values[i * 16 + 1] +
-              p.palette[at + 8 + axis] * values[i * 16 + 2] +
-              p.palette[at + 12 + axis])
-        }
-        vertices[i * 12 + axis] = sum
-      }
-    return (p.query = { ...source, vertices })
+    return (p.query = poseAnimationGeometry(this.meshes.get(p.assetId).data, p.palette))
   }
   instanceBounds(id) {
     const instance = this.pickInstances.find((i) => i.id === id)

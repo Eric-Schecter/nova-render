@@ -218,9 +218,36 @@ try {
   const shadowPose = await shadowMask('shadow-pose', true)
   if (shadowPose.filter(Boolean).length < 40 || diff(shadowBind, shadowPose) < 0.03)
     throw Error('Animated shadow did not follow pose or cast flag')
+  await page.evaluate(() => r.loadModel(sources[0].url))
+  const singleMasks = []
+  for (const [name, time] of [
+    ['single-shadow-bind', 0],
+    ['single-shadow-pose', clips[1].duration * 0.4],
+  ]) {
+    await page.evaluate((time) => {
+      r.setShadows({ enabled: true })
+      r.setAnimationState({ clip: 1, time, speed: 1, playing: false, loop: true })
+    }, time)
+    const on = await capture(name)
+    await page.evaluate(() => r.setShadows({ enabled: false }))
+    const off = await capture(name + '-off')
+    const mask = on.map((v, i) => (off[i] > v + 8 ? 255 : 0))
+    if (!mask.some(Boolean)) throw Error('Single-model self-shadow missing')
+    singleMasks.push(mask)
+  }
+  if (diff(...singleMasks) <= 0.001) throw Error('Single-model shadow did not follow the pose')
   const parity = []
   for (const api of ['metal', 'vulkan'])
-    for (const name of ['bind', 'pose', 'advanced', 'preserved', 'node-bind', 'node-pose']) {
+    for (const name of [
+      'bind',
+      'pose',
+      'advanced',
+      'preserved',
+      'node-bind',
+      'node-pose',
+      'single-shadow-bind',
+      'single-shadow-pose',
+    ]) {
       const a = await decode(readFileSync(`${dir}/${name}.png`)),
         b = await decode(readFileSync(`build/validation/scene-animation/${api}/${name}.png`)),
         mae = diff(a, b)

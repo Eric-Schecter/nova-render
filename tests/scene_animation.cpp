@@ -281,6 +281,27 @@ int main(int argc, char** argv)
           std::count(shadowPose.pixels.begin(), shadowPose.pixels.end(), 255) < 40
           || Difference(shadowBind, shadowPose) < .03)
             throw std::runtime_error("Animated shadow did not follow pose or cast flag");
+        backend->LoadModel(detail::LoadGLB(assets / "SkinningRobot/SkinningRobot.glb"));
+        auto singleShadow = [&](const std::string& label, float time) {
+            backend->SetAnimationState({1, time, 1, false, true});
+            backend->RefreshSingleAnimationShadows();
+            auto on         = draw(label);
+            shadows.enabled = false;
+            backend->SetShadows(shadows);
+            auto off        = draw(label + "-off");
+            shadows.enabled = true;
+            backend->SetShadows(shadows);
+            for (size_t pixel = 0; pixel < on.pixels.size(); pixel++)
+                on.pixels[pixel] = off.pixels[pixel] > on.pixels[pixel] + 8 ? 255 : 0;
+            return on;
+        };
+        auto singleBind = singleShadow("single-shadow-bind", 0);
+        auto singlePose = singleShadow("single-shadow-pose", clips[1].duration * .4f);
+        if (
+          !std::count(singleBind.pixels.begin(), singleBind.pixels.end(), 255)
+          || !std::count(singlePose.pixels.begin(), singlePose.pixels.end(), 255)
+          || Difference(singleBind, singlePose) <= .001)
+            throw std::runtime_error("Single-model self-shadow did not follow the pose");
         std::cout << "GPU pose delta left=" << left << " right=" << right
                   << "; independent states, clock, seek, sharing and preservation passed\n";
         backend.reset();

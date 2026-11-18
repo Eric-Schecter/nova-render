@@ -2,7 +2,7 @@ import { PickMesh } from './Picking.js'
 import { lightRecords } from './Lighting.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
 import { materialMipmaps } from './TextureFiltering.js'
-import { createAnimationPlayer } from './AnimationData.js'
+import { createAnimationPlayer, poseAnimationGeometry } from './AnimationData.js'
 import { createPathView } from './PathView.js'
 import { loadGLB, sceneUniforms } from './ModelData.js'
 import { fallbackEnvironment } from './EnvironmentData.js'
@@ -39,8 +39,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     rasterFog = copyFog(),
     rasterShadows = copyShadows(),
     shadowInstanceCount = 0,
-    singleHybrid = false,
-    singleBVH = null,
+    singleCaster = false,
     hybrid = null
   let depth,
     cube,
@@ -313,7 +312,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       cachedShadows = shadowRecords
       shadowInstanceCount = draws
         ? draws.reduce((n, d) => n + d.instanceCount, 0)
-        : singleHybrid
+        : singleCaster
           ? 1
           : 0
       rasterGlobals = bytes.byteLength / 192
@@ -345,26 +344,45 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       writeGlobals()
     }
     uploadInstances(data.materialRecords || new Float32Array(0), null)
+    let singleShadowPose = null
+    function refreshSingleShadows() {
+      if (sceneDraws !== null) return
+      const posed =
+        !!data.animation &&
+        (rasterShadows.enabled || encodedLights.some((value, i) => i % 48 === 46 && value > 0))
+      const enabled = !!hybrid || posed
+      const state = posed ? animator.state : null
+      const pose = state ? [state.clip, state.time] : null
+      if (
+        enabled &&
+        (!singleCaster ||
+          pose?.[0] !== singleShadowPose?.[0] ||
+          pose?.[1] !== singleShadowPose?.[1])
+      ) {
+        const singleBVH = new PickMesh(
+          posed ? poseAnimationGeometry(data, data.jointMatrices) : data,
+        )
+        singleShadowPose = pose
+        const bytes = new Float32Array(48 + (data.materialRecords?.length || 0))
+        for (const k of [0, 5, 10, 15, 16, 21, 26, 31]) bytes[k] = 1
+        bytes[28] = posed ? 1 : 0
+        bytes[44] = 1
+        bytes[46] = 1
+        bytes[47] = singleBVH.nodes.length
+        bytes.set(data.materialRecords || [], 48)
+        singleCaster = true
+        uploadInstances(bytes, null, singleBVH.shadowRecords())
+      } else if (!enabled && singleCaster) {
+        singleCaster = false
+        uploadInstances(data.materialRecords || new Float32Array(0), null)
+      }
+    }
     return {
       data,
       setHybrid(settings) {
         hybrid = settings
         writeGlobals()
-        if (sceneDraws !== null) return
-        if (settings && !singleHybrid) {
-          singleBVH ||= new PickMesh(data)
-          const bytes = new Float32Array(48 + (data.materialRecords?.length || 0))
-          for (const k of [0, 5, 10, 15, 16, 21, 26, 31]) bytes[k] = 1
-          bytes[44] = 1
-          bytes[46] = 1
-          bytes[47] = singleBVH.nodes.length
-          bytes.set(data.materialRecords || [], 48)
-          singleHybrid = true
-          uploadInstances(bytes, null, singleBVH.shadowRecords())
-        } else if (!settings && singleHybrid) {
-          singleHybrid = false
-          uploadInstances(data.materialRecords || new Float32Array(0), null)
-        }
+        refreshSingleShadows()
       },
       async prepareAA(
         camera,
@@ -436,7 +454,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           settings,
         )
         currentScene[35] =
-          sceneDraws !== null || singleHybrid ? 1 : data.materialRecords?.length ? 2 : 0
+          sceneDraws !== null || singleCaster ? 1 : data.materialRecords?.length ? 2 : 0
         currentScene[75] = rasterGlobals + 1
         currentScene[67] = hybrid ? 1 : 0
         currentScene[71] = hybrid?.shadowSamples || 1
@@ -532,9 +550,11 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       },
       setAnimationState(value) {
         animator.set(value)
+        refreshSingleShadows()
       },
       updateAnimation(delta) {
         animator.update(delta)
+        refreshSingleShadows()
       },
       get accumulatedSamples() {
         return pathView?.samples || 0
@@ -638,6 +658,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         }
         rasterFog = copyFog(fog)
         rasterShadows = copyShadows(shadows)
+        refreshSingleShadows()
         writeGlobals()
       },
       setInstances(bytes, draws, shadowRecords) {
@@ -664,7 +685,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           environment,
           settings,
         )
-        values[35] = sceneDraws !== null ? 1 : data.materialRecords?.length ? 2 : 0
+        values[35] = sceneDraws !== null || singleCaster ? 1 : data.materialRecords?.length ? 2 : 0
         values[75] = rasterGlobals + 1
         device.queue.writeBuffer(uniform, 0, values)
         const encoder = device.createCommandEncoder(),
