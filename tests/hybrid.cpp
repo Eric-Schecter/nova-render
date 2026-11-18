@@ -329,6 +329,41 @@ int main(int argc, char** argv)
             alphaResolved = capture("temporal-alpha");
         if (Difference(alphaBase, alphaResolved) > .05)
             throw std::runtime_error("Temporal OIT changed transparency");
+        backend->SetScene(
+          {{"mirror", assets / "SceneSample/Red.glb"}, {"helmet", assets / "DamagedHelmet/DamagedHelmet.glb"}},
+          {{"ground", "mirror", matrix(2, .06f, 2, 0, -.9f, 0)},
+           {"subject", "helmet", matrix(.65f, .65f, .65f, 0, .05f, 0)}});
+        backend->SetLighting(LightingMode::PBR);
+        backend->SetCamera(camera);
+        backend->SetDirectionalLight(DirectionalLight{});
+        auto mirror      = backend->GetMaterials("mirror")[0];
+        mirror.baseColor = {.85f, .85f, .85f, 1};
+        mirror.metallic  = 1;
+        mirror.roughness = .04f;
+        backend->SetMaterial(0, mirror, "mirror");
+        HybridSettings hitMaterials;
+        hitMaterials.reflections = true;
+        hitMaterials.view        = HybridView::Reflections;
+        backend->SetHybrid(hitMaterials);
+        auto helmet              = backend->GetMaterials("helmet")[0];
+        helmet.normalScale       = 1;
+        helmet.occlusionStrength = 1;
+        backend->SetMaterial(0, helmet, "helmet");
+        auto mapped        = capture("reflected-material-mapped");
+        helmet.normalScale = 0;
+        backend->SetMaterial(0, helmet, "helmet");
+        auto flat                = capture("reflected-material-flat");
+        helmet.occlusionStrength = 0;
+        backend->SetMaterial(0, helmet, "helmet");
+        auto clearAO     = capture("reflected-material-no-ao");
+        auto groundDelta = [](const Image& a, const Image& b) {
+            size_t changed = 0;
+            for (size_t i = size_t(a.height * .65f) * a.width * 4; i < a.pixels.size(); ++i)
+                changed += std::abs(int(a.pixels[i]) - int(b.pixels[i])) > 2;
+            return changed;
+        };
+        if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
+            throw std::runtime_error("Reflected helmet lost normal map or material AO");
         backend.reset();
         glfwDestroyWindow(window);
         glfwTerminate();

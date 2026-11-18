@@ -35,6 +35,6 @@ Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settin
 
 `GetHybridHistoryFrames()` / `getHybridHistoryFrames()` reports history frames. `ResetHybridHistory()` / `resetHybridHistory()` clears them. Smooth camera movement preserves history; cuts (>20° or >2 world units), lens/exposure, scene/material/light, viewport and size changes reset it.
 
-Hybrid selects Deferred. Off, FXAA, SMAA and SSAA work; MSAA, TAA and AA split are rejected. Static instances and MASK coverage are supported. BLEND remains OIT, without shadow casting or ray-traced glass. Secondary reflection hits use material textures and geometric normals, without secondary normal mapping or recursive reflection.
+Hybrid selects Deferred. Off, FXAA, SMAA and SSAA work; MSAA, TAA and AA split are rejected. Static instances and MASK coverage are supported. BLEND remains OIT, without shadow casting or ray-traced glass. Secondary reflection hits use material textures, including normal maps and material AO. The tangent frame comes from the hit triangle and its UVs, with geometric shading for degenerate UVs. Reflections use one bounce.
 
 Animated geometry, moving-instance motion vectors, DDGI and hardware ray queries remain unsupported. Scene edits conservatively reset history. Reconstruction uses combined color, without per-effect variance-guided spatial filtering.

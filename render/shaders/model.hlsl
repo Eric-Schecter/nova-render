@@ -852,21 +852,40 @@ float3 hybridReflection(SurfaceData primary, float rotation)
         {
             InstanceData tri = instances[hitTri];
             InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
-            float2       uv  = tri.uv.xy * (1 - bary.x - bary.y) + tri.uv.zw * bary.x
-                        + float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]) * bary.y;
-            uv                 = frac(uv) * mat.uv.xy + mat.uv.zw;
-            float3 localNormal = cross(tri.material.xyz - tri.baseColor.xyz, tri.emissive.xyz - tri.baseColor.xyz);
-            float3 worldNormal = normalize(mul((float3x3)instances[instance].normalMatrix, localNormal));
+            float2 uv0 = tri.uv.xy, uv1 = tri.uv.zw;
+            float2 uv2 = float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]);
+            float2 uv  = frac(uv0 + (uv1 - uv0) * bary.x + (uv2 - uv0) * bary.y) * mat.uv.xy + mat.uv.zw;
+            float3 localEdge1 = tri.material.xyz - tri.baseColor.xyz;
+            float3 localEdge2 = tri.emissive.xyz - tri.baseColor.xyz;
+            float3 worldNormal = normalize(mul(
+              (float3x3)instances[instance].normalMatrix, cross(localEdge1, localEdge2)));
             if (dot(worldNormal, ray) > 0)
                 worldNormal = -worldNormal;
+
             SurfaceData hit = (SurfaceData)0;
-            hit.position    = origin + ray * distance;
+            hit.position = origin + ray * distance;
             hit.normal = hit.geometricNormal = worldNormal;
-            hit.base                         = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb;
-            float4 mr                        = materialTexture.SampleLevel(textureSampler, uv, 0);
-            hit.metallic                     = saturate(mr.b * mat.material.x);
-            hit.roughness                    = clamp(mr.g * mat.material.y, .04, 1);
-            hit.ao                           = 1;
+            float2 deltaUV1 = uv1 - uv0, deltaUV2 = uv2 - uv0;
+            float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
+            if (abs(uvDet) > 1e-8 && mat.material.z != 0)
+            {
+                float3 edge1 = mul((float3x3)instances[instance].world, localEdge1);
+                float3 edge2 = mul((float3x3)instances[instance].world, localEdge2);
+                // The determinant sign preserves the orientation of mirrored UV charts.
+                float3 t = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * sign(uvDet);
+                float3 b = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * sign(uvDet);
+                float  scale = rsqrt(max(max(dot(t, t), dot(b, b)), 1e-12));
+                float3 sampled = normalTexture.SampleLevel(textureSampler, uv, 0).xyz * 2 - 1;
+                sampled.xy *= mat.material.z;
+                float3 mapped = (t * sampled.x + b * sampled.y) * scale + worldNormal * sampled.z;
+                if (dot(mapped, mapped) > 1e-12)
+                    hit.normal = normalize(mapped);
+            }
+            hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb;
+            float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
+            hit.metallic  = saturate(mr.b * mat.material.x);
+            hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
+            hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, uv, 0).r, mat.material.w);
             hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
             radiance     = surfaceRadiance(hit, 0, 0, -ray);
         }

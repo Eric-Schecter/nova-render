@@ -260,6 +260,60 @@ try {
   let alphaResolved
   for (let f = 0; f < 4; ++f) alphaResolved = await capture('temporal-alpha')
   if (diff(alphaBase, alphaResolved) > 0.05) throw Error('Temporal OIT changed transparency')
+  await page.evaluate(async () => {
+    const matrix = (x, y, z, tx, ty, tz) => [x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, tx, ty, tz, 1]
+    await r.setScene(
+      [
+        { id: 'mirror', url: '/generated/SceneRed.glb' },
+        { id: 'helmet', url: '/generated/DamagedHelmet.glb' },
+      ],
+      [
+        { id: 'ground', assetId: 'mirror', world: matrix(2, 0.06, 2, 0, -0.9, 0) },
+        { id: 'subject', assetId: 'helmet', world: matrix(0.65, 0.65, 0.65, 0, 0.05, 0) },
+      ],
+    )
+    r.setLighting('pbr')
+    r.setCamera({ yaw: 72, pitch: 25, distance: 5.5 })
+    r.setDirectionalLight({ direction: [-1, 1.6, 2], color: [1, 3.2 / 3.5, 0.8], intensity: 3.5 })
+    await r.setMaterial(
+      0,
+      {
+        ...r.getMaterials('mirror')[0],
+        baseColor: [0.85, 0.85, 0.85, 1],
+        metallic: 1,
+        roughness: 0.04,
+      },
+      'mirror',
+    )
+    r.setHybrid({
+      reflections: true,
+      reflectionSamples: 1,
+      view: 'reflections',
+      temporalReconstruction: false,
+    })
+    await r.setMaterial(
+      0,
+      { ...r.getMaterials('helmet')[0], normalScale: 1, occlusionStrength: 1 },
+      'helmet',
+    )
+  })
+  const mapped = await capture('reflected-material-mapped')
+  await page.evaluate(() =>
+    r.setMaterial(0, { ...r.getMaterials('helmet')[0], normalScale: 0 }, 'helmet'),
+  )
+  const flat = await capture('reflected-material-flat')
+  await page.evaluate(() =>
+    r.setMaterial(0, { ...r.getMaterials('helmet')[0], occlusionStrength: 0 }, 'helmet'),
+  )
+  const clearAO = await capture('reflected-material-no-ao')
+  const groundDelta = (a, b) => {
+    let changed = 0
+    for (let i = Math.floor(240 * 0.65) * 320 * 4; i < a.length; i += 4)
+      for (let c = 0; c < 3; c++) changed += Math.abs(a[i + c] - b[i + c]) > 2
+    return changed
+  }
+  if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
+    throw Error('Reflected helmet lost normal map or material AO')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
@@ -275,6 +329,9 @@ try {
       'reflection-off',
       'reflection-final',
       'reflection-only',
+      'reflected-material-mapped',
+      'reflected-material-flat',
+      'reflected-material-no-ao',
       'ao-final',
       'ao-visibility',
       'single-off',

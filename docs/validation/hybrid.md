@@ -61,3 +61,7 @@ This establishes effect operation and cross-backend agreement on original geomet
 Example 19 defaults to Reflections Test and also offers Shadows Test, Global Illumination Test and the procedural box. Documentation builds verify the pinned archive and prepare only the five required GLBs in a separate `hybrid-reference` public directory (about 22 MB total). Browser requests load the selected scene only; changing camera presets does not reload models. This directory is excluded from SDK/npm packaging. Sources and notices are listed in the footer credits.
 
 `scripts/webgpu/check-hybrid-page.mjs` exercises the built page, four scene choices, all twelve reference camera presets, effect controls, Raster/Hybrid switching, parameter collapse and narrow-screen overflow. Reference orbit/zoom also preserves 60° FOV and 1/1000 clipping; Reset view restores the original camera position.
+
+## Materials at reflected hits
+
+The Damaged Helmet mirror fixture changes only the reflected helmet's normal scale and material AO strength. Both changes affect the mirror region on Metal, Vulkan/MoltenVK and Chrome WebGPU. The paired Hybrid regression has a maximum native/Web mean channel error of 0.015/255. The original three reference scenes and twelve cameras were rerun with the updated shader. Across the 324 captures, the maximum native/Web RGB mean error is 0.127/255.
