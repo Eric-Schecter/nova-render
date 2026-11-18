@@ -3,6 +3,9 @@
 #include "PresentationWindow.hpp"
 #ifdef NOVA_HAS_SDL3
 #include <SDL3/SDL.h>
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+#include <SDL3/SDL_vulkan.h>
+#endif
 #endif
 #include <GLFW/glfw3.h>
 #include <cstdlib>
@@ -18,7 +21,11 @@ namespace render
         bool windowContextActive = false; // Window's API is confined to the main thread.
         struct Context
         {
+#ifdef NOVA_HAS_SDL3
+            bool sdl = true;
+#else
             bool sdl = false;
+#endif
             Context()
             {
                 if (windowContextActive)
@@ -149,10 +156,28 @@ namespace render
                 SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
                 if (ResolveGraphicsAPI(config.renderer) == GraphicsAPI::Vulkan)
                     flags |= SDL_WINDOW_VULKAN;
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+                // Match the standard macOS loader fallback used by volk when SDL's
+                // normal library search cannot resolve the SDK installation.
+                const bool loaded =
+                  (flags & SDL_WINDOW_VULKAN) && !SDL_GetHint(SDL_HINT_VULKAN_LIBRARY)
+                  && (SDL_Vulkan_LoadLibrary(nullptr) || SDL_Vulkan_LoadLibrary("/usr/local/lib/libvulkan.dylib"));
+#endif
                 sdlWindow.reset(SDL_CreateWindow(
                   config.title.c_str(), static_cast<int>(config.width), static_cast<int>(config.height), flags));
                 if (!sdlWindow)
-                    throw std::runtime_error(SDL_GetError());
+                {
+                    const std::string error = SDL_GetError();
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+                    if (loaded)
+                        SDL_Vulkan_UnloadLibrary();
+#endif
+                    throw std::runtime_error(error);
+                }
+#if defined(__APPLE__) && defined(NOVA_HAS_VULKAN)
+                if (loaded)
+                    SDL_Vulkan_UnloadLibrary();
+#endif
                 renderer.reset(new Renderer(detail::PresentationWindow(sdlWindow.get()), config.renderer));
                 return;
             }

@@ -1142,7 +1142,15 @@ namespace render::detail
                 device = VK_NULL_HANDLE;
             }
             if (surface)
+            {
                 DestroyVulkanSurface(window, instance, surface);
+                surface = VK_NULL_HANDLE;
+            }
+            if (messenger)
+            {
+                vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
+                messenger = VK_NULL_HANDLE;
+            }
             if (instance)
             {
                 vkDestroyInstance(instance, nullptr);

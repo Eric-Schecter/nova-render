@@ -56,15 +56,16 @@ Draw includes CPU preparation and GPU waits, not pure GPU time. Native examples 
 
 Only AO has adaptive interaction quality. `ParameterPanelConfig.sceneTopInset` reserves native logical pixels for a bar and adjusts viewport/projection/internal tracing size; UI-disabled builds keep the original viewport. Other than integrator comparison, panels float at the top right and can collapse.
 
-## Optional SDL3 window host
+## SDL3 window host and GLFW compatibility
 
-The convenience `render::Window` can use either GLFW or SDL3. Configure with `-DNOVA_ENABLE_SDL3=ON` to include SDL3, then select it at launch:
+`render::Window` defaults to SDL3. A standard vcpkg build includes SDL3 and, when UI is enabled, the ImGui SDL3 input binding. Set `-DNOVA_ENABLE_SDL3=OFF` at configure time for a GLFW-only build, or select GLFW at launch without rebuilding:
 
 ```sh
-NOVA_WINDOW_BACKEND=sdl3 ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api metal --frames 60
-NOVA_WINDOW_BACKEND=sdl3 ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api vulkan --frames 60
+NOVA_WINDOW_BACKEND=glfw ./build/nova_triangle.app/Contents/MacOS/nova_triangle --api metal --frames 60
 ```
 
-GLFW remains the default. The manifest adds SDL3 and, when UI is enabled, the ImGui SDL3 platform binding. A Vulkan loader must be available to both Nova and SDL. If SDL cannot find the Vulkan loader on macOS, set `SDL_VULKAN_LIBRARY` to the full path of the SDK's `macOS/lib/libvulkan.1.dylib`.
+The same C++ `Window` API works with either host. Programs that own a GLFW window can still pass its handle to `Renderer`. When updating nova-editor to an SDL3-default SDK, launch with `NOVA_WINDOW_BACKEND=glfw` until its unsaved-changes close flow no longer casts the ImGui platform handle to `GLFWwindow*`. The pre-existing editor SDK pin keeps its original behavior.
 
-Existing `Window` callers use the same C++ methods. C++ applications that already own GLFW windows can still construct `Renderer` with their GLFW handle. The optional SDL3 host covers desktop window setup and input. The mobile application entry points are separate work.
+Vulkan needs a driver and a loader visible to Nova and SDL. On macOS Nova also checks the standard SDK loader location at `/usr/local/lib/libvulkan.dylib`. With a custom loader location, set `SDL_VULKAN_LIBRARY` to the matching library path.
+
+The `sdl-window-*` CTest cases exercise the default selection, triangle presentation, resizing, mouse orbit and ImGui input. Verified on Apple M4 Metal and Vulkan/MoltenVK (2× framebuffer density), Windows x64 RTX 4060 Laptop GPU with DX12 and Vulkan, and Ubuntu 24.04 ARM64 Vulkan with Lavapipe/Xvfb. The Linux runtime check used SDL3 3.2.28 built for X11 and the pinned ImGui SDL3 source with precompiled SPIR-V; it did not validate a fresh Linux vcpkg dependency install or a physical Linux GPU. A standalone macOS consumer linked the installed SDK, and nova-editor rendered against that SDK with the GLFW host selected.

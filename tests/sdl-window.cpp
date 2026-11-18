@@ -23,13 +23,13 @@ int main(int argc, char** argv)
 {
     try
     {
-        require(argc == 2, "Specify metal or vulkan");
-        require(SDL_setenv_unsafe("NOVA_WINDOW_BACKEND", "sdl3", 1) == 0, "Select SDL3 host");
+        require(argc == 2, "Specify metal, vulkan or dx12");
         render::WindowConfig config;
-        config.width  = 480;
-        config.height = 320;
-        config.renderer.api =
-          std::string_view(argv[1]) == "metal" ? render::GraphicsAPI::Metal : render::GraphicsAPI::Vulkan;
+        config.width                     = 480;
+        config.height                    = 320;
+        config.renderer.api              = std::string_view(argv[1]) == "metal"  ? render::GraphicsAPI::Metal
+                                           : std::string_view(argv[1]) == "dx12" ? render::GraphicsAPI::D3D12
+                                                                                 : render::GraphicsAPI::Vulkan;
         config.renderer.enableValidation = true;
         render::Window window(config);
         window.EnableOrbitControls();
