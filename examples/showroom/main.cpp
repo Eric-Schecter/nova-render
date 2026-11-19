@@ -71,7 +71,7 @@ int main(int argc, char** argv)
         fill.id         = "fill";
         fill.position   = {2.9f, .85f, -.65f};
         fill.direction  = {-1, .14f, -.08f};
-        fill.width      = 4.4f;
+        fill.width      = 5.8f;
         fill.height     = 1.35f;
         fill.intensity  = .55f;
         fill.color      = {1, 1, 1};
