@@ -243,6 +243,16 @@ int main(int argc, char** argv)
         auto halfReflection = capture("reflection-half-final");
         if (Difference(reflectionOff, halfReflection) < .05 || Difference(reflection, halfReflection) > 5)
             throw std::runtime_error("Half-resolution reflection did not preserve reflection lighting");
+        settings.reflectionDenoising = true;
+        backend->SetHybrid(settings);
+        auto denoisedFirst = capture("reflection-denoised-first");
+        auto denoised = denoisedFirst;
+        for (int i = 0; i < 8; ++i)
+            denoised = capture("reflection-denoised-" + std::to_string(i));
+        if (Difference(reflectionOff, denoised) < .05 || Difference(reflection, denoised) > 5
+            || Difference(denoisedFirst, denoised) < .001)
+            throw std::runtime_error("Independent reflection denoising did not accumulate");
+        settings.reflectionDenoising = false;
         settings.halfResolutionReflections = false;
         settings.ambientOcclusion       = true;
         settings.aoSamples              = 4;

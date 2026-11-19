@@ -614,9 +614,15 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         currentScene[75] = rasterGlobals + 1
         currentScene[67] = hybrid ? 1 : 0
         currentScene[71] = hybrid?.shadowSamples || 1
-        currentScene[87] = hybrid?.temporalReconstruction ? frames + 1 : 0
         currentScene[79] = hybrid?.shadows ? 1 : 0
-        currentScene[87] = hybrid?.temporalReconstruction ? frames + 1 : 0
+        const denoiseReflections =
+          hybrid?.reflections && hybrid.halfResolutionReflections && hybrid.reflectionDenoising
+        // Negative frame indices rotate reflection rays without changing AO or shadow sampling.
+        currentScene[87] = hybrid?.temporalReconstruction
+          ? frames + 1
+          : denoiseReflections
+            ? -(frames + 1)
+            : 0
         currentScene[83] = hybrid?.view === 'shadows' ? hybrid.shadowLight + 1 : 0
         currentScene[63] =
           (rasterSettings?.view && rasterSettings.view !== 'final') ||

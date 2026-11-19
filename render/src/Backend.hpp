@@ -830,6 +830,10 @@ namespace render::detail
                   hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : 0.f;
                 rasterAA.current.irradiance[6][3] =
                   mode == RenderMode::Hybrid && hybrid.temporalReconstruction ? float(rasterAA.frames + 1) : 0.f;
+                // Negative frame indices rotate reflection rays only. AO and shadows use the positive sequence.
+                if (mode == RenderMode::Hybrid && hybrid.reflections && hybrid.halfResolutionReflections
+                    && hybrid.reflectionDenoising && !hybrid.temporalReconstruction)
+                    rasterAA.current.irradiance[6][3] = -float(rasterAA.frames + 1);
                 const bool debug = modelRaster.view != GBufferView::Final;
                 rasterAA.current.irradiance[0][3] =
                   !debug && !(mode == RenderMode::Hybrid && hybrid.view != HybridView::Final) && postSettings.enabled
@@ -928,6 +932,7 @@ namespace render::detail
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
+              || previousHybrid.reflectionDenoising != hybrid.reflectionDenoising
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {

@@ -434,7 +434,7 @@ namespace render::detail
                 if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
                     const bool probes = pass.program == -5 && probeFrame;
-                    const bool half = pass.program == -5 && pass.sources[9] == AAHybridReflection;
+                    const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto& active = pass.program == -8 ? aaHybridReflection
                                    : pass.program == -7 ? aaHybridShadow
                                    : probes && half     ? probeDeferredHalf

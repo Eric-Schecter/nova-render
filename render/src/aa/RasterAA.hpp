@@ -108,8 +108,13 @@ namespace render::detail
             }
             const bool oit        = transparent && modelSettings.view == GBufferView::Final;
             const int  sceneColor = oit ? AARawOpaque : AARawColor;
+            const bool halfReflections = hybrid && hybridSettings.reflections
+                                         && hybridSettings.halfResolutionReflections;
+            const bool denoiseReflections = deferred && halfReflections && hybridSettings.reflectionDenoising;
             if (deferred)
             {
+                if (denoiseReflections)
+                    add(-2, AARawMotion);
                 add(-4, AAModelBase);
                 if (hybrid)
                 {
@@ -118,8 +123,6 @@ namespace render::detail
                         shadow->sources[i] = AAModelBase + i;
                     shadow->sources[8] = AAModelClearcoat;
                 }
-                const bool halfReflections = hybrid && hybridSettings.reflections
-                                             && hybridSettings.halfResolutionReflections;
                 if (halfReflections)
                 {
                     auto* reflection = add(-8, AAHybridReflection);
@@ -129,9 +132,28 @@ namespace render::detail
                     reflection->uniforms[1][0] *= .5f;
                     reflection->uniforms[1][1] *= .5f;
                 }
+                int resolvedReflection = AAHybridReflection;
+                if (denoiseReflections)
+                {
+                    const bool odd = frames % 2;
+                    resolvedReflection = odd ? AAReflectionHistoryB : AAReflectionHistoryA;
+                    auto* resolve = add(30, resolvedReflection);
+                    resolve->sources[0] = AAHybridReflection;
+                    resolve->sources[1] = AAModelNormal;
+                    resolve->sources[2] = AAModelBase;
+                    resolve->sources[3] = odd ? AAReflectionHistoryA : AAReflectionHistoryB;
+                    resolve->sources[4] = AARawMotion;
+                    resolve->sources[5] = AAReflectionPreviousGuide;
+                    resolve->sources[6] = AAModelPosition;
+                    auto* guide = add(30, AAReflectionPreviousGuide);
+                    guide->sources[1] = AAModelNormal;
+                    guide->sources[4] = AARawMotion;
+                    guide->sources[6] = AAModelPosition;
+                    guide->uniforms[6][3] = 1;
+                }
                 auto* p = add(-5, sceneColor);
                 if (halfReflections)
-                    p->sources[9] = AAHybridReflection;
+                    p->sources[9] = resolvedReflection;
                 if (hybrid)
                     for (int i = 0; i < 4; i++)
                         p->sources[4 + i] = AAHybridShadow0 + i;
@@ -173,7 +195,8 @@ namespace render::detail
             }
             if (reconstruct)
             {
-                add(-2, AARawMotion);
+                if (!denoiseReflections)
+                    add(-2, AARawMotion);
                 const uint32_t scale = settings.method == AAMethod::SSAA ? 2 : 1;
                 crop(AAMotion, AARawMotion, w * scale, h * scale, false);
                 crop(AAHybridCurrentNormal, AAModelNormal, w * scale, h * scale, false);

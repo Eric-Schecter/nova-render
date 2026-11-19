@@ -12,7 +12,7 @@ namespace render::detail
             id<MTLDevice>               device;
             id<MTLCommandQueue>         queue;
             id<MTLTexture>              textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
-            id<MTLRenderPipelineState>  pipelines[30], sceneMS, shadowMS, hdrMS, ssrMS;
+            id<MTLRenderPipelineState>  pipelines[31], sceneMS, shadowMS, hdrMS, ssrMS;
             id<MTLComputePipelineState> compute[2];
             id<MTLSamplerState>         linear, point;
             id<MTLDepthStencilState>    depthState;
@@ -74,7 +74,7 @@ namespace render::detail
                 if (![device supportsTextureSampleCount:4])
                     throw std::runtime_error("Metal AA requires 4x MSAA support");
                 queue = [device newCommandQueue];
-                for (int i = 0; i < 30; i++)
+                for (int i = 0; i < 31; i++)
                 {
                     const auto data =
                       LoadShader(config.shaderDirectory, ("aa-" + std::to_string(i) + ".metallib").c_str());

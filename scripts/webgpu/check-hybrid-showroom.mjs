@@ -6,13 +6,18 @@ import { compile } from './compiler.mjs'
 import { decode } from './Screenshot.mjs'
 
 const [archive, baseline] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'))
-const halfReflections = process.argv.includes('--half-reflections')
+const denoise = process.argv.includes('--reflection-denoising')
+const halfReflections = denoise || process.argv.includes('--half-reflections')
 if (!archive || (!baseline && !halfReflections))
   throw Error(
-    'Usage: check-hybrid-showroom.mjs showroom.zip [baseline-model.hlsl | --half-reflections]',
+    'Usage: check-hybrid-showroom.mjs showroom.zip [baseline-model.hlsl | --half-reflections | --reflection-denoising]',
   )
 const output = resolve(
-  halfReflections ? 'build/validation/hybrid-half-showroom' : 'build/validation/hybrid-showroom',
+  denoise
+    ? 'build/validation/hybrid-reflection-denoising'
+    : halfReflections
+      ? 'build/validation/hybrid-half-showroom'
+      : 'build/validation/hybrid-showroom',
 )
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
@@ -23,7 +28,9 @@ const browser = await chromium.launch({
 const results = []
 try {
   const cases = halfReflections
-    ? [['full'], ['half']]
+    ? denoise
+      ? [['full'], ['half'], ['denoised']]
+      : [['full'], ['half']]
     : [
         ['before', baseline],
         ['after', 'render/shaders/model.hlsl'],
@@ -64,6 +71,13 @@ try {
       )
     if (name === 'after' && !process.argv.includes('--instance-bounds'))
       await page.route('**/sdk/src/SceneData.js', (route) => route.continue())
+    if (usesCurrentSdk)
+      await page.route('**/sdk/generated/aa-30.json', (route) =>
+        route.fulfill({
+          path: resolve('docs/public/generated/aa-30.json'),
+          contentType: 'application/json',
+        }),
+      )
     await page.route('**/sdk/generated/model-*.json', (route) => {
       const file = new URL(route.request().url()).pathname.split('/').at(-1)
       if (shaders[file]) return route.fulfill({ json: shaders[file] })
@@ -107,35 +121,49 @@ export async function createRenderer(options) {
       showroom.paused = true
     })
     await page.getByRole('combobox', { name: '渲染模式' }).selectOption('hybrid')
-    await page.evaluate((halfResolutionReflections) => {
-      const { raw } = showroom
-      raw.setHybrid({
-        halfResolutionReflections,
-        shadowSamples: 1,
-        aoSamples: 1,
-        reflections: true,
-        ambientOcclusion: true,
-        shadows: true,
-        temporalReconstruction: true,
-      })
-      const camera = raw.getViewCamera()
-      showroom.measure = async (moving) => {
-        raw.resetHybridHistory()
-        for (let i = 0; i < 4; i++) await raw.drawFrame()
-        const times = []
-        for (let i = 0; i < 16; i++) {
+    await page.evaluate(
+      ({ halfResolutionReflections, reflectionDenoising }) => {
+        const { raw } = showroom
+        raw.setHybrid({
+          halfResolutionReflections,
+          reflectionDenoising,
+          shadowSamples: 1,
+          aoSamples: 1,
+          reflections: true,
+          ambientOcclusion: true,
+          shadows: true,
+          temporalReconstruction: true,
+        })
+        const camera = raw.getViewCamera()
+        showroom.shot = async (moving, i) => {
           if (moving)
             raw.setViewCamera({
               position: camera.position.map((x, k) => x + (k === 0 ? 0.014 * i : 0)),
             })
-          const start = performance.now()
           if ((await raw.drawFrame()) !== 'rendered') throw Error('Frame did not render')
-          times.push(performance.now() - start)
         }
-        times.sort((a, b) => a - b)
-        return (times[7] + times[8]) / 2
-      }
-    }, name === 'half')
+        showroom.reset = async () => {
+          raw.setViewCamera(camera)
+          raw.resetHybridHistory()
+          for (let i = 0; i < 8; i++) await showroom.shot(false, i)
+        }
+        showroom.measure = async (moving) => {
+          await showroom.reset()
+          const times = []
+          for (let i = 0; i < 16; i++) {
+            const start = performance.now()
+            await showroom.shot(moving, i)
+            times.push(performance.now() - start)
+          }
+          times.sort((a, b) => a - b)
+          return (times[7] + times[8]) / 2
+        }
+      },
+      {
+        halfResolutionReflections: name === 'half' || name === 'denoised',
+        reflectionDenoising: name === 'denoised',
+      },
+    )
     const timing = { name }
     const captures = {}
     for (const mode of ['still', 'moving']) {
@@ -146,6 +174,21 @@ export async function createRenderer(options) {
           .screenshot({ path: resolve(output, name + '-' + mode + '.png') }),
       )
     }
+    if (denoise && name !== 'full') {
+      for (const mode of ['still', 'moving']) {
+        await page.evaluate(() => showroom.reset())
+        for (let frame = 0; frame < 16; frame++) {
+          await page.evaluate(({ moving, frame }) => showroom.shot(moving, frame), {
+            moving: mode === 'moving',
+            frame,
+          })
+          if (frame >= 10)
+            await page
+              .locator('canvas')
+              .screenshot({ path: resolve(output, `${name}-${mode}-${frame}.png`) })
+        }
+      }
+    }
     await page.evaluate(async () => {
       const menu = document.querySelector('select[aria-label="渲染模式"]')
       if (menu?.value !== 'hybrid') throw Error('Hybrid mode was lost')
@@ -155,7 +198,8 @@ export async function createRenderer(options) {
     await page.close()
     console.log(name, timing)
   }
-  const [before, after] = results
+  const [before] = results
+  const after = results.at(-1)
   const mae = {}
   for (const mode of ['still', 'moving']) {
     const a = before.captures[mode],

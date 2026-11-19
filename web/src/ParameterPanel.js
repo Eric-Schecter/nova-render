@@ -467,6 +467,18 @@ export function attachParameterPanel(
         )
         reflectionResolutionRow.prepend(reflectionResolutionToggle)
         renderer.append(reflectionResolutionRow)
+        const reflectionDenoiseRow = document.createElement('label'),
+          reflectionDenoiseToggle = document.createElement('input')
+        reflectionDenoiseRow.textContent = 'Reflection temporal denoising'
+        reflectionDenoiseToggle.type = 'checkbox'
+        reflectionDenoiseToggle.checked = h.reflectionDenoising
+        reflectionDenoiseToggle.disabled =
+          reflectionResolutionToggle.disabled || !h.halfResolutionReflections
+        reflectionDenoiseToggle.addEventListener('change', () =>
+          adapter.setHybrid({ reflectionDenoising: reflectionDenoiseToggle.checked }),
+        )
+        reflectionDenoiseRow.prepend(reflectionDenoiseToggle)
+        renderer.append(reflectionDenoiseRow)
         const temporalRow = document.createElement('label'),
           temporalToggle = document.createElement('input')
         temporalRow.textContent = 'Hybrid temporal reconstruction'

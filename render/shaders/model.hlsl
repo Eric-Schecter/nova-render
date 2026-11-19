@@ -974,14 +974,18 @@ bool hybridNearest(
     }
     return found;
 }
-float hybridRotation(uint2 pixel)
+float hybridFrameRotation(uint2 pixel, float frame)
 {
-    if (irradiance[6].w < .5)
+    if (frame < .5)
         return 0;
-    uint seed = pixel.x * 1973u + pixel.y * 9277u + uint(irradiance[6].w) * 26699u;
+    uint seed = pixel.x * 1973u + pixel.y * 9277u + uint(frame) * 26699u;
     seed      = (seed ^ (seed >> 16)) * 2246822519u;
     seed ^= seed >> 13;
     return (seed & 65535u) * (6.28318530718 / 65536.0);
+}
+float hybridRotation(uint2 pixel)
+{
+    return hybridFrameRotation(pixel, irradiance[6].w);
 }
 float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 position, float3 ray)
 {
@@ -1287,7 +1291,7 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     s.specular = 1;
     if (pos.w > .5 && irradiance[3].w > pos.w)
         s.specular = materialSpecular(instances[uint(irradiance[3].w - 1 - pos.w)]);
-    return float4(hybridReflection(s, hybridRotation(uint2(pixel.xy))), 1);
+    return float4(hybridReflection(s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w))), 1);
 }
 
 #if defined(NOVA_HALF_REFLECTIONS)
@@ -1312,7 +1316,7 @@ bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, 
             float dz = abs((position.x - guideDepth.x) + (position.y - guideDepth.y));
             float alignment = min(dot(surface.normal, octDecode(guideNormal.xy)),
                                   dot(surface.geometricNormal, octDecode(guideNormal.zw)));
-            float weight = sampleValue.a * exp2(-120 * dz) * pow(saturate(alignment), 24);
+            float weight = (sampleValue.a > 0 ? 1 : 0) * exp2(-120 * dz) * pow(saturate(alignment), 24);
             if (dz > .06 || alignment < .8 || abs(position.w - guideDepth.w) > .5)
                 weight = 0;
             weight *= max(.02, (x == 0 ? 1 - fraction.x : fraction.x) * (y == 0 ? 1 - fraction.y : fraction.y));

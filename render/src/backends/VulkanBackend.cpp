@@ -318,6 +318,46 @@ namespace render::detail
               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
               VK_ACCESS_SHADER_READ_BIT);
         }
+        void PrepareRasterAAInputs()
+        {
+            const auto& current  = rasterAA.current;
+            const auto& previous = rasterAA.frames ? rasterAA.previous : current;
+            const auto& palette  = rasterAA.frames ? rasterAA.previousJoints : model->jointMatrices;
+            if (!aaPreviousUniform.buffer)
+                modelBuffer(aaPreviousUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+            size_t bytes = std::max(size_t(64), palette.size() * sizeof(JointMatrix));
+            if (bytes > aaPreviousPaletteBytes)
+            {
+                destroyModelBuffer(aaPreviousPalette);
+                modelBuffer(aaPreviousPalette, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                aaPreviousPaletteBytes = bytes;
+            }
+            auto write = [&](ModelBuffer& buffer, const void* data, size_t size) {
+                if (!size)
+                    return;
+                void* mapped;
+                check(vkMapMemory(device, buffer.memory, 0, size, 0, &mapped), "Map raster AA input");
+                std::memcpy(mapped, data, size);
+                vkUnmapMemory(device, buffer.memory);
+            };
+            write(modelUniform, &current, sizeof(current));
+            write(aaPreviousUniform, &previous, sizeof(previous));
+            write(aaPreviousPalette, palette.data(), palette.size() * sizeof(JointMatrix));
+            VkDescriptorBufferInfo buffers[] = {
+              {aaPreviousUniform.buffer, 0, sizeof(SceneUniforms)}, {aaPreviousPalette.buffer, 0, VK_WHOLE_SIZE}};
+            VkWriteDescriptorSet writes[2]{};
+            for (int i = 0; i < 2; i++)
+            {
+                auto& w           = writes[i];
+                w                 = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                w.dstSet          = modelSet;
+                w.dstBinding      = i ? 16 : 15;
+                w.descriptorCount = 1;
+                w.descriptorType  = i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                w.pBufferInfo     = &buffers[i];
+            }
+            vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+        }
         void CreateRasterAADevice() override
         {
             AAExternalScene external;
@@ -355,6 +395,9 @@ namespace render::detail
                   nullptr);
             };
             external.beforeScene = [this](void* command) {
+                // Update the shared descriptors before any pass binds the model set.
+                if (!aaTriangle)
+                    PrepareRasterAAInputs();
                 EncodeProbeUpdate(reinterpret_cast<VkCommandBuffer>(command));
             };
             external.draw = [this](const AAPass& pass, void* command, void* targetPass) {
@@ -369,49 +412,11 @@ namespace render::detail
                     vkCmdDraw(cmd, 3, 1, 0, 0);
                     return;
                 }
-                const auto& current  = rasterAA.current;
-                const auto& previous = rasterAA.frames ? rasterAA.previous : current;
-                const auto& palette  = rasterAA.frames ? rasterAA.previousJoints : model->jointMatrices;
-                if (!aaPreviousUniform.buffer)
-                    modelBuffer(aaPreviousUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-                size_t bytes = std::max(size_t(64), palette.size() * sizeof(JointMatrix));
-                if (bytes > aaPreviousPaletteBytes)
-                {
-                    destroyModelBuffer(aaPreviousPalette);
-                    modelBuffer(aaPreviousPalette, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-                    aaPreviousPaletteBytes = bytes;
-                }
-                auto write = [&](ModelBuffer& buffer, const void* data, size_t size) {
-                    if (!size)
-                        return;
-                    void* mapped;
-                    check(vkMapMemory(device, buffer.memory, 0, size, 0, &mapped), "Map raster AA input");
-                    std::memcpy(mapped, data, size);
-                    vkUnmapMemory(device, buffer.memory);
-                };
-                write(modelUniform, &current, sizeof(current));
-                write(aaPreviousUniform, &previous, sizeof(previous));
-                write(aaPreviousPalette, palette.data(), palette.size() * sizeof(JointMatrix));
-                VkDescriptorBufferInfo buffers[] = {
-                  {aaPreviousUniform.buffer, 0, sizeof(SceneUniforms)}, {aaPreviousPalette.buffer, 0, VK_WHOLE_SIZE}};
-                VkWriteDescriptorSet writes[2]{};
-                for (int i = 0; i < 2; i++)
-                {
-                    auto& w           = writes[i];
-                    w                 = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                    w.dstSet          = modelSet;
-                    w.dstBinding      = i ? 16 : 15;
-                    w.descriptorCount = 1;
-                    w.descriptorType  = i ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                    w.pBufferInfo     = &buffers[i];
-                }
-                if (pass.program!=-5 && (pass.target == AARawBaseline || ((pass.target == AARawColor || pass.program==-4) && !rasterSettings.split)))
-                    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
                 if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
                     const bool probes = pass.program == -5 && probeFrame;
-                    const bool half = pass.program == -5 && pass.sources[9] == AAHybridReflection;
+                    const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto& active = pass.program == -8 ? aaHybridReflection
                                    : pass.program == -7 ? aaHybridShadow
                                    : probes && half     ? probeDeferredHalf

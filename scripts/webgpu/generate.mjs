@@ -99,7 +99,7 @@ await writeFile(
 
 // Built-in AA library only: flatten vendored headers, preserve original notices on disk.
 const aaSource = await readFile('render/shaders/antialiasing.hlsl', 'utf8')
-for (let pass = 0; pass < 9; pass++) {
+for (const pass of [0, 1, 2, 3, 4, 5, 6, 7, 8, 30]) {
   let source = aaSource.replace(
     '#include "texture-filtering.hlsli"',
     await readFile('render/shaders/texture-filtering.hlsli', 'utf8'),

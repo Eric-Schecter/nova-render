@@ -506,7 +506,7 @@ namespace render::detail
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
-                    const bool half = pass.program == -5 && pass.sources[9] == AAHybridReflection;
+                    const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto& active = pass.program == -8 ? aaHybridReflection
                                    : pass.program == -7 ? aaHybridShadow
                                    : half               ? aaDeferredHalf

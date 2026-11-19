@@ -189,7 +189,19 @@ try {
   const halfReflection = await capture('reflection-half-final')
   if (diff(reflectionOff, halfReflection) < 0.05 || diff(reflection, halfReflection) > 5)
     throw Error('Half-resolution reflection did not preserve reflection lighting')
-  await page.evaluate(() => r.setHybrid({ halfResolutionReflections: false }))
+  await page.evaluate(() => r.setHybrid({ reflectionDenoising: true }))
+  const denoisedFirst = await capture('reflection-denoised-first')
+  let denoised = denoisedFirst
+  for (let i = 0; i < 8; i++) denoised = await capture('reflection-denoised-' + i)
+  if (
+    diff(reflectionOff, denoised) < 0.05 ||
+    diff(reflection, denoised) > 5 ||
+    diff(denoisedFirst, denoised) < 0.001
+  )
+    throw Error('Independent reflection denoising did not accumulate')
+  await page.evaluate(() =>
+    r.setHybrid({ halfResolutionReflections: false, reflectionDenoising: false }),
+  )
   await page.evaluate(() =>
     r.setHybrid({
       view: 'final',

@@ -179,6 +179,102 @@ Varying VSMain(uint vertex : SV_VertexID)
 #define SMAA_INCLUDE_PS 1
 #include "third_party/smaa/SMAA.hlsl"
 #endif
+#if AA_PASS == 30
+float3 reflectionNormal(float2 oct)
+{
+    float3 n = float3(oct, 1 - abs(oct.x) - abs(oct.y));
+    float t = saturate(-n.z);
+    n.xy += float2(n.x >= 0 ? -t : t, n.y >= 0 ? -t : t);
+    return normalize(n);
+}
+float reflectionLuma(float3 radiance)
+{
+    return dot(radiance, float3(.2126, .7152, .0722));
+}
+float4 reflectionTemporal(int2 lowPixel)
+{
+    uint width, height;
+    areaTex.GetDimensions(width, height);
+    int2 extent = int2(width, height) - 2;
+    int2 last = (extent + 1) / 2;
+    if (any(lowPixel < 1) || any(lowPixel > last))
+        return 0;
+    int3 pixel = int3(lowPixel * 2 - 1, 0);
+    float4 depth = areaTex.Load(pixel), motion = motionTex.Load(pixel);
+    float2 encodedNormal = edgeTex.Load(pixel).xy;
+    float currentDepth = depth.x + depth.y;
+    if (aa[6].w > .5)
+        return float4(encodedNormal, currentDepth, motion.w);
+
+    float4 current = colorTex.Load(int3(lowPixel, 0));
+    if (current.a <= 0)
+        return 0;
+    float roughness = weightTex.Load(pixel).a;
+    float3 normal = reflectionNormal(encodedNormal);
+
+    // Use nearby samples from the same surface to limit isolated fireflies on rough materials.
+    float3 neighbors = 0, upper = current.rgb;
+    float count = 0;
+    const int2 offsets[4] = {int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1)};
+    [unroll] for (int i = 0; i < 4; ++i)
+    {
+        int2 tap = lowPixel + offsets[i];
+        if (any(tap < 1) || any(tap > last))
+            continue;
+        float4 sampleValue = colorTex.Load(int3(tap, 0));
+        int3 guide = int3(tap * 2 - 1, 0);
+        float4 tapDepth = areaTex.Load(guide);
+        if (sampleValue.a <= 0 || abs(tapDepth.x + tapDepth.y - currentDepth) > .06
+            || abs(tapDepth.w - depth.w) > .5
+            || dot(normal, reflectionNormal(edgeTex.Load(guide).xy)) < .9)
+            continue;
+        neighbors += sampleValue.rgb;
+        upper = max(upper, sampleValue.rgb);
+        count += 1;
+    }
+    if (count >= 2)
+    {
+        float3 mean = neighbors / count;
+        float ceiling = max(.025, 4 * reflectionLuma(mean));
+        float suppression = smoothstep(.25, .65, roughness);
+        current.rgb *= lerp(1, min(1, ceiling / max(.0001, reflectionLuma(current.rgb))), suppression);
+        upper = lerp(upper, min(upper, max(current.rgb, mean * 4 + .025)), suppression);
+    }
+
+    if (aa[3].x < .5 || motion.w < .5)
+        return float4(current.rgb, 1);
+    float2 previousPixel = float2(lowPixel) + (motion.xy * float2(extent) + aa[1].zw - aa[1].xy) * .5;
+    int2 first = int2(floor(previousPixel));
+    float2 fracPixel = frac(previousPixel);
+    float3 sum = 0;
+    float mass = 0, age = 0;
+    [unroll] for (int y = 0; y <= 1; ++y)
+        [unroll] for (int x = 0; x <= 1; ++x)
+        {
+            int2 tap = first + int2(x, y);
+            if (any(tap < 1) || any(tap > last))
+                continue;
+            float4 guide = oldMotionTex.Load(int3(tap, 0));
+            if (abs(guide.w - motion.w) > .25 || abs(guide.z - motion.z) > .045
+                || dot(normal, reflectionNormal(guide.xy)) < .9)
+                continue;
+            float4 history = historyTex.Load(int3(tap, 0));
+            if (history.a <= 0)
+                continue;
+            float blend = (x ? fracPixel.x : 1 - fracPixel.x) * (y ? fracPixel.y : 1 - fracPixel.y);
+            sum += history.rgb * blend;
+            age += history.a * blend;
+            mass += blend;
+        }
+    if (mass < .15)
+        return float4(current.rgb, 1);
+    age /= mass;
+    float3 historyColor = min(sum / mass, max(upper * 1.35, current.rgb + .015));
+    float strength = lerp(.65, .9, smoothstep(.15, .65, roughness));
+    float weight = min(strength, age / (age + 1)) * saturate(mass * 2);
+    return float4(lerp(current.rgb, historyColor, weight), min(age + 1, 16));
+}
+#endif
 float4 PSMain(Varying i)
   : SV_Target0
 {
@@ -260,6 +356,8 @@ float4 PSMain(Varying i)
     float3 history  = clamp(historyTex.SampleLevel(LinearSampler, prevUV, 0).rgb, lo, hi);
     float3 resolved = lerp(current.rgb, history, aa[3].y);
     return aa[6].w > .5 ? float4(resolved, current.a) : rgbL(resolved);
+#elif AA_PASS == 30
+    return reflectionTemporal(int2(i.position.xy));
 #elif AA_PASS == 8
     uv       = .5 + (uv - .5) / aa[3].z;
     float3 c = colorTex.SampleLevel(PointSampler, uv, 0).rgb;
