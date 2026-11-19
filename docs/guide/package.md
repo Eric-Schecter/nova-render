@@ -6,7 +6,7 @@ Native uses a C++17 SDK and web uses an npm archive. Both use the CMake project 
 
 ## Download 0.10.2
 
-[Release v0.10.2](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.2) provides macOS ARM64 and Windows x64 Release C++ SDKs, a WebGPU npm archive, and SHA-256 checksums. The macOS SDK and Web package are paired in `manifest.json` for nova-editor. Both desktop SDKs bundle SDL3. Applications using `render::Window` keep the same API. Migrate code constructing a renderer from an external window to `render::Window`.
+[Release v0.10.2](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.2) provides a macOS ARM64 Release C++ SDK, a WebGPU npm archive, and SHA-256 checksums. The latest Windows x64 SDK is [v0.10.1](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.1). The macOS SDK and Web package are paired in `manifest.json` for nova-editor. Both desktop SDKs bundle SDL3. Applications using `render::Window` keep the same API. Migrate code constructing a renderer from an external window to `render::Window`.
 
 Download and verify the pair on macOS:
 
@@ -109,4 +109,4 @@ node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.10.2.tgz
 
 Scripts copy consumers outside the repository. Native validation relocates the SDK, checks all imported library locations, then exercises two probes and a window. Web validation installs offline, copies assets and runs triangle/probe APIs in a real WebGPU browser.
 
-Projects: `examples/sdk-consumer` and `examples/npm-consumer`. This version validates macOS ARM64 Metal/Vulkan, Windows x64 DirectX 12/Vulkan and Chrome WebGPU. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.
+Projects: `examples/sdk-consumer` and `examples/npm-consumer`. Version 0.10.2 was validated with macOS ARM64 Metal/Vulkan and Chrome WebGPU. The Windows x64 SDK was last validated with DirectX 12/Vulkan in v0.10.1. Drivers, OS graphics/window services and browser WebGPU remain runtime requirements. Models and environment maps are application-owned.
