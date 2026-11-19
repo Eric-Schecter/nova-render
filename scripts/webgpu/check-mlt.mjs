@@ -33,7 +33,17 @@ for (const [name, entry] of [
       await compile(analytic, { compute: true, maxSourceBytes: 128 * 1024, computeEntry: entry }),
     ),
   )
-for (const name of ['pathtrace', 'pathpresent', 'denoise', 'photon-clear', 'photon-trace'])
+for (const name of [
+  'pathtrace',
+  'pathpresent',
+  'denoise',
+  'photon-clear',
+  'photon-trace',
+  'ao-prepare',
+  'ao-pyramid',
+  'ao-main',
+  'ao-filter',
+])
   await copyFile('docs/public/generated/' + name + '.json', folder + '/' + name + '.json')
 const browser = await chromium.launch({
   channel: 'chrome',

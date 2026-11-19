@@ -40,9 +40,15 @@ try {
           size: 16,
           usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
         })
+      const params = device.createBuffer({ size: 1552, usage: GPUBufferUsage.STORAGE })
+      const work = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE })
       const group = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 6, resource: { buffer: output } }],
+        entries: [
+          { binding: 1, resource: { buffer: params } },
+          { binding: 6, resource: { buffer: output } },
+          { binding: 7, resource: { buffer: work } },
+        ],
       })
       const encoder = device.createCommandEncoder(),
         pass = encoder.beginComputePass()
@@ -55,8 +61,13 @@ try {
       await read.mapAsync(GPUMapMode.READ)
       const energy = Array.from(new Float32Array(read.getMappedRange()).slice(0, 3))
       read.unmap()
+      params.destroy()
+      work.destroy()
       output.destroy()
       read.destroy()
+      const probeError = await device.popErrorScope()
+      if (probeError) throw Error(probeError.message)
+      device.pushErrorScope('validation')
       for (const [i, expected] of [0.04 + 0.96 / 2.25, 0.04 + 0.96 * 2.25, 1].entries())
         if (Math.abs(energy[i] / expected - 1) > 0.025)
           throw Error('Dielectric energy/TIR ' + energy)
@@ -111,7 +122,7 @@ try {
     { root: '/@fs' + resolve('web/src'), probe },
   )
   try {
-    const native = await readFile('build/glass-native.bin'),
+    const native = await readFile(process.env.NOVA_GLASS_NATIVE || 'build/glass-native.bin'),
       values = new Float32Array(native.buffer, native.byteOffset, native.byteLength / 4)
     if (values.length !== result.nativeParity.length) throw Error('Native glass size mismatch')
     const rms = Math.sqrt(

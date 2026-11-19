@@ -109,7 +109,10 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const coated = Array.from({ length: coatCount }, (_, i) => records[i * 48 + 4]).some(
       (x) => x > 0,
     )
-    for (const image of data.images.slice(0, 5)) {
+    for (const [slot, source] of data.images.slice(0, 5).entries()) {
+      // Baked AO is an ambient raster term. The path kernel uses ray visibility.
+      const image =
+        slot === 3 ? { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) } : source
       let pixels = image.pixels
       if (!pixels) {
         const canvas = new OffscreenCanvas(image.width, image.height),

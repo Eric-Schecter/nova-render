@@ -105,6 +105,14 @@ namespace render::detail
             }
             for (size_t i = 0; i < 5; ++i)
             {
+                // Baked AO is an ambient raster term. Ray visibility is evaluated in the integrator.
+                constexpr std::array<unsigned char, 4> white{255, 255, 255, 255};
+                if (i == 3)
+                {
+                    data.images[i] = {uint32_t(data.texels.size() / 4), 1, 1, 0};
+                    data.texels.insert(data.texels.end(), white.begin(), white.end());
+                    continue;
+                }
                 const auto& texture = model->images[i];
                 data.images[i]      = {uint32_t(data.texels.size() / 4), texture.width, texture.height, 0};
                 data.texels.insert(data.texels.end(), texture.pixels.begin(), texture.pixels.end());
