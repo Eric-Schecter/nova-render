@@ -45,6 +45,14 @@ for (const name of ['venice_sunset', 'kloppenheim_06', 'studio_small_09']) {
   await rm(`docs/public/generated/${name}.nenv`, { force: true })
 }
 
+await mkdir('docs/public/generated/showroom', { recursive: true })
+for (const name of ['CarConcept.glb', 'Ground.glb', 'CleanStudio.nenv']) {
+  await writeFile(
+    'docs/public/generated/showroom/' + name.replace('.nenv', '.bin'),
+    await readFile('assets/CarConcept/' + name),
+  )
+}
+
 const path = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
   compute: true,
 })

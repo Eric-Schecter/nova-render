@@ -995,6 +995,8 @@ if(BUILD_TESTING)
 endif()
 
 if(NOVA_BUILD_EXAMPLES)
+    add_executable(nova_showroom examples/showroom/main.cpp)
+    target_link_libraries(nova_showroom PRIVATE Nova::Render)
     add_executable(nova_hybrid examples/hybrid/main.cpp)
     target_link_libraries(nova_hybrid PRIVATE Nova::Render)
     if(NOVA_ENABLE_UI)

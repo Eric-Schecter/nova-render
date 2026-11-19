@@ -48,6 +48,7 @@ export default defineConfig({
           { text: '17 · Deferred models', link: '/examples/deferred' },
           { text: '18 · Alpha materials', link: '/examples/material-alpha' },
           { text: '19 · Hybrid rendering', link: '/examples/hybrid' },
+          { text: '20 · CarConcept showroom', link: '/examples/car-showroom' },
         ],
       },
       {

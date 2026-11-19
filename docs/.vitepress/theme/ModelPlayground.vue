@@ -1,6 +1,9 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { withBase } from 'vitepress'
+import { showShowroom } from '../../../web/examples/showroom.js'
+import showroomJS from '../../../web/examples/showroom.js?raw'
+import showroomCPP from '../../../examples/showroom/main.cpp?raw'
 import HlslEditor from './HlslEditor.vue'
 import { showHybrid } from '../../../web/examples/hybrid.js'
 import hybridJS from '../../../web/examples/hybrid.js?raw'
@@ -32,6 +35,7 @@ import helmetJS from '../../../web/examples/helmet.js?raw'
 import helmetCPP from '../../../examples/helmet/main.cpp?raw'
 import hlslSource from '../../../render/shaders/model.hlsl?raw'
 const props = defineProps({
+  showroom: Boolean,
   hybrid: Boolean,
   deferred: Boolean,
   lighting: Boolean,
@@ -41,57 +45,63 @@ const props = defineProps({
   weekend: Boolean,
   ao: Boolean,
 })
-const jsSource = props.hybrid
-  ? hybridJS
-  : props.deferred
-    ? deferredJS
-    : props.ao
-      ? aoJS
-      : props.weekend
-        ? weekendJS
-        : props.comparison
-          ? comparisonJS
-          : props.animation
-            ? animationJS
-            : props.environment
-              ? environmentJS
-              : props.lighting
-                ? lightingJS
-                : helmetJS
-const cppSource = props.hybrid
-  ? hybridCPP
-  : props.deferred
-    ? deferredCPP
-    : props.ao
-      ? aoCPP
-      : props.weekend
-        ? environmentCPP
-        : props.comparison
-          ? comparisonCPP
-          : props.animation
-            ? animationCPP
-            : props.environment
-              ? environmentCPP
-              : props.lighting
-                ? lightingCPP
-                : helmetCPP
-const showExample = props.hybrid
-  ? showHybrid
-  : props.deferred
-    ? showDeferred
-    : props.ao
-      ? showAO
-      : props.weekend
-        ? showWeekend
-        : props.comparison
-          ? showComparison
-          : props.animation
-            ? showAnimation
-            : props.environment
-              ? showEnvironment
-              : props.lighting
-                ? showLighting
-                : showHelmet
+const jsSource = props.showroom
+  ? showroomJS
+  : props.hybrid
+    ? hybridJS
+    : props.deferred
+      ? deferredJS
+      : props.ao
+        ? aoJS
+        : props.weekend
+          ? weekendJS
+          : props.comparison
+            ? comparisonJS
+            : props.animation
+              ? animationJS
+              : props.environment
+                ? environmentJS
+                : props.lighting
+                  ? lightingJS
+                  : helmetJS
+const cppSource = props.showroom
+  ? showroomCPP
+  : props.hybrid
+    ? hybridCPP
+    : props.deferred
+      ? deferredCPP
+      : props.ao
+        ? aoCPP
+        : props.weekend
+          ? environmentCPP
+          : props.comparison
+            ? comparisonCPP
+            : props.animation
+              ? animationCPP
+              : props.environment
+                ? environmentCPP
+                : props.lighting
+                  ? lightingCPP
+                  : helmetCPP
+const showExample = props.showroom
+  ? showShowroom
+  : props.hybrid
+    ? showHybrid
+    : props.deferred
+      ? showDeferred
+      : props.ao
+        ? showAO
+        : props.weekend
+          ? showWeekend
+          : props.comparison
+            ? showComparison
+            : props.animation
+              ? showAnimation
+              : props.environment
+                ? showEnvironment
+                : props.lighting
+                  ? showLighting
+                  : showHelmet
 const tab = ref('example'),
   canvas = ref(null),
   message = ref('Loading model…'),
@@ -220,21 +230,23 @@ onBeforeUnmount(() => {
   <div class="model-example" :data-ready="ready">
     <div class="toolbar">
       <strong>{{
-        hybrid
-          ? 'Hybrid rendering'
-          : deferred
-            ? 'Deferred model rendering'
-            : ao
-              ? 'Ambient occlusion'
-              : comparison
-                ? 'Integrator comparison'
-                : animation
-                  ? 'Skeletal animation'
-                  : environment
-                    ? 'Skybox and environment lighting'
-                    : lighting
-                      ? 'PBR lighting'
-                      : 'Model loading'
+        showroom
+          ? 'CarConcept showroom'
+          : hybrid
+            ? 'Hybrid rendering'
+            : deferred
+              ? 'Deferred model rendering'
+              : ao
+                ? 'Ambient occlusion'
+                : comparison
+                  ? 'Integrator comparison'
+                  : animation
+                    ? 'Skeletal animation'
+                    : environment
+                      ? 'Skybox and environment lighting'
+                      : lighting
+                        ? 'PBR lighting'
+                        : 'Model loading'
       }}</strong>
       <div>
         <button
@@ -313,14 +325,16 @@ onBeforeUnmount(() => {
         v-else
         ref="canvas"
         width="800"
-        :height="hybrid ? 450 : 650"
-        :class="{ hybrid }"
+        :height="showroom ? 505 : hybrid ? 450 : 650"
+        :class="{ hybrid, showroom }"
         :aria-label="
-          hybrid
-            ? 'Hybrid rendering preview'
-            : animation
-              ? 'Skeletal animation preview'
-              : 'Damaged Helmet preview'
+          showroom
+            ? 'CarConcept showroom preview'
+            : hybrid
+              ? 'Hybrid rendering preview'
+              : animation
+                ? 'Skeletal animation preview'
+                : 'Damaged Helmet preview'
         "
       />
     </div>
@@ -351,6 +365,9 @@ onBeforeUnmount(() => {
 }
 .scene-controls :disabled {
   opacity: 0.6;
+}
+canvas.showroom {
+  aspect-ratio: 750/473;
 }
 canvas.hybrid {
   aspect-ratio: 16/9;

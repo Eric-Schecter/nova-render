@@ -456,7 +456,7 @@ namespace render::detail
                         [e setFragmentBuffer:probeCurrent offset:0 atIndex:26];
                     }
                     [e setRenderPipelineState:active];
-                    [e setDepthStencilState:pass.program == -8 ? nil : skyDepthState];
+                    [e setDepthStencilState:skyDepthState];
                     [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                     return;
                 }
@@ -661,13 +661,13 @@ namespace render::detail
                 skyPipeline           = [device newRenderPipelineStateWithDescriptor:desc error:&error];
                 if (!skyPipeline)
                     throw metalError("Create skybox pipeline", error);
-                MTLDepthStencilDescriptor* skyDepth = [MTLDepthStencilDescriptor new];
-                skyDepth.depthCompareFunction       = MTLCompareFunctionAlways;
-                skyDepth.depthWriteEnabled          = NO;
-                skyDepthState                       = [device newDepthStencilStateWithDescriptor:skyDepth];
-                if (!skyDepthState)
-                    throw std::runtime_error("Create skybox depth state failed");
             }
+            MTLDepthStencilDescriptor* skyDepth = [MTLDepthStencilDescriptor new];
+            skyDepth.depthCompareFunction       = MTLCompareFunctionAlways;
+            skyDepth.depthWriteEnabled          = NO;
+            skyDepthState                       = [device newDepthStencilStateWithDescriptor:skyDepth];
+            if (!skyDepthState)
+                throw std::runtime_error("Create fullscreen depth state failed");
             MTLSamplerDescriptor* sampler        = [MTLSamplerDescriptor new];
             sampler.minFilter                    = MTLSamplerMinMagFilterLinear;
             sampler.magFilter                    = MTLSamplerMinMagFilterLinear;

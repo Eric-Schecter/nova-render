@@ -54,3 +54,7 @@ Example 11 uses Krzysztof Narkowicz's [ACES Filmic Tone Mapping Curve](https://k
 Example 19 offers Shadows Test, Reflections Test and Global Illumination Test from [diharaw/hybrid-rendering 1.1.0](https://github.com/diharaw/hybrid-rendering/releases/tag/1.1.0), © Dihara Wijetunga. The Stanford bunny originates from Stanford University Computer Graphics Laboratory. Code license and source notices accompany the documentation assets as `hybrid-reference/REFERENCE-LICENSE.txt` and `hybrid-reference/SOURCE.txt`; model and texture authorship remains upstream.
 
 The pinned release archive is checksum-verified during documentation preparation. Conversion embeds textures and reproduces the reference importer's mesh-space convention. Original geometry, materials, instance transforms and camera presets are retained. These resources are downloaded on scene selection and are excluded from Nova SDK/npm packages.
+
+## CarConcept showroom
+
+CarConcept model and textures by Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Nova uses the Carmine paint, bakes UV transforms, omits unused variants and iridescence, and approximates extended emissive strength. Embedded logos retain their Khronos terms. [Upstream asset and notices](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept).
