@@ -69,7 +69,7 @@ int main(int argc, char** argv)
         side.castShadow = false;
         SceneLight fill = side;
         fill.id         = "fill";
-        fill.position   = {2.9f, .85f, .35f};
+        fill.position   = {2.9f, .85f, -.65f};
         fill.direction  = {-1, .14f, -.08f};
         fill.width      = 4.4f;
         fill.height     = 1.35f;
