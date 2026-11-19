@@ -11,4 +11,4 @@ python3 scripts/generate-clean-studio.py build/clean-studio.hdr
 ./build/nova_environment_bake build/clean-studio.hdr assets/CarConcept/CleanStudio.nenv 128 256
 ```
 
-The showroom tunes Paint 1 Carmine's base roughness from 0.25 to 0.42. Its clearcoat and all other CarConcept material fields retain the imported values. The floor has a baked contact mask under the four tires, aligned to this parked pose. Regenerate it with `python3 scripts/generate-showroom-ground.py` from the repository root.
+The showroom tunes Paint 1 Carmine's base roughness from 0.25 to 0.42. Its clearcoat and all other CarConcept material fields retain the imported values. The floor has a baked contact mask under the four tires, aligned to the lowest tread vertices in this parked pose. The showroom seats all four treads on the floor, with up to 1.5 mm of tread overlap and about 87 mm of minimum body clearance. Regenerate it with `python3 scripts/generate-showroom-ground.py` from the repository root.

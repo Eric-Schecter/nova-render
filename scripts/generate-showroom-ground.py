@@ -8,8 +8,8 @@ from pathlib import Path
 
 SIZE = 1024
 HALF_FLOOR = 18
-# Wheel centers in showroom world X/Z after the CarConcept instance translation.
-WHEEL_CENTERS = ((0.981, 1.247), (-0.971, 1.246), (0.988, -1.553), (-0.976, -1.553))
+# Tread contact centers in showroom world X/Z after the CarConcept instance translation.
+WHEEL_CENTERS = ((0.981, 1.247), (-0.966, 1.236), (1.019, -1.553), (-0.976, -1.541))
 
 
 def png_chunk(kind, data):

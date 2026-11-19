@@ -20,7 +20,8 @@ int main(int argc, char** argv)
         window.SetLighting(LightingMode::PBR);
         SceneInstance car{"car", "car"};
         car.world[12] = .005216949f;
-        car.world[13] = .18429903f;
+        // Seat the tire tread on the floor while keeping the body clear.
+        car.world[13] = -.00122019f;
         car.world[14] = -.23846179f;
         window.SetScene(
           {{"car", assets / "CarConcept.glb", true}, {"floor", assets / "Ground.glb", true}},

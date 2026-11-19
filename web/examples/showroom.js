@@ -16,7 +16,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
         {
           id: 'car',
           assetId: 'car',
-          world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.005216949, 0.18429903, -0.23846179, 1],
+          world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.005216949, -0.00122019, -0.23846179, 1],
         },
         { id: 'floor', assetId: 'floor' },
       ],
