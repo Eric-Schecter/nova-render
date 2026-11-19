@@ -196,12 +196,23 @@ int main(int argc, char** argv)
             dielectric.specularFactor = 0;
             backend->SetMaterial(0, dielectric, "");
             draw();
-            const auto& diffuse = backend->GetRasterAAImage().pixels;
+            const auto diffuse = backend->GetRasterAAImage().pixels;
             Require(!diffuse.empty() && diffuse.size() == highlighted.size(), "Specular readback unavailable");
             size_t difference = 0;
             for (size_t i = 0; i < diffuse.size(); ++i)
                 difference += std::abs(int(diffuse[i]) - int(highlighted[i]));
             Require(difference > 1000, "Specular factor did not affect raster shading");
+            dielectric.clearcoatFactor = 1;
+            dielectric.clearcoatRoughnessFactor = .18f;
+            backend->SetMaterial(0, dielectric, "");
+            draw();
+            const auto& coated = backend->GetRasterAAImage().pixels;
+            Require(coated.size() == diffuse.size(), "Clearcoat readback unavailable");
+            dielectric.clearcoatFactor = 0;
+            difference = 0;
+            for (size_t i = 0; i < diffuse.size(); ++i)
+                difference += std::abs(int(diffuse[i]) - int(coated[i]));
+            Require(difference > 1000, "Clearcoat factor did not affect raster shading");
         }
         backend->SetRasterSettings({});
         backend->SetAntiAliasing({AAMethod::Off});

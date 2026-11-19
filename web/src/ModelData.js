@@ -74,7 +74,12 @@ export async function loadGLB(url) {
     !bin ||
     [...(json.extensionsRequired || []), ...(json.extensionsUsed || [])].some(
       (e) =>
-        !['KHR_materials_transmission', 'KHR_materials_ior', 'KHR_materials_specular'].includes(e),
+        ![
+          'KHR_materials_transmission',
+          'KHR_materials_ior',
+          'KHR_materials_specular',
+          'KHR_materials_clearcoat',
+        ].includes(e),
     ) ||
     json.buffers.length !== 1 ||
     json.buffers[0].uri
@@ -246,6 +251,19 @@ export async function loadGLB(url) {
       if ('specularColorFactor' in specular && !Array.isArray(specular.specularColorFactor))
         throw Error('Invalid glTF specularColorFactor')
     }
+    const coat = material.extensions?.KHR_materials_clearcoat
+    if (coat !== undefined) {
+      if (!coat || typeof coat !== 'object' || Array.isArray(coat))
+        throw Error('Invalid KHR_materials_clearcoat')
+      if (
+        ['clearcoatTexture', 'clearcoatRoughnessTexture', 'clearcoatNormalTexture'].some(
+          (key) => key in coat,
+        )
+      )
+        throw Error('KHR_materials_clearcoat textures are not supported')
+      for (const key of ['clearcoatFactor', 'clearcoatRoughnessFactor'])
+        if (key in coat && typeof coat[key] !== 'number') throw Error('Invalid glTF ' + key)
+    }
     if (!['OPAQUE', 'MASK', 'BLEND'].includes(material.alphaMode || 'OPAQUE'))
       throw Error('Invalid glTF alpha mode')
     const textures = [
@@ -288,6 +306,8 @@ export async function loadGLB(url) {
           metallic: pbr.metallicFactor ?? 1,
           roughness: pbr.roughnessFactor ?? 1,
           specularFactor: specular?.specularFactor,
+          clearcoatFactor: coat?.clearcoatFactor,
+          clearcoatRoughnessFactor: coat?.clearcoatRoughnessFactor,
           specularColorFactor: specular?.specularColorFactor,
           alphaMode: material.alphaMode ?? 'OPAQUE',
           alphaCutoff: material.alphaCutoff ?? 0.5,

@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.10.1** uses SDL3 for desktop windows and bundles it in the C++ SDK. It provides macOS ARM64 and Windows x64 C++ SDKs and a WebGPU npm package. The Windows release was validated with DirectX 12 and Vulkan.
+Release **0.10.2** adds clearcoat factors for car paint and other coated materials. The desktop SDK bundles SDL3. It provides macOS ARM64 and Windows x64 C++ SDKs and a WebGPU npm package. The Windows release was validated with DirectX 12 and Vulkan.
 
 ## Features
 

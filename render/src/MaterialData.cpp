@@ -66,6 +66,8 @@ namespace render::detail
         range(m.roughness, 1);
         range(m.metallic, 1);
         range(m.specularFactor, 1);
+        range(m.clearcoatFactor, 1);
+        range(m.clearcoatRoughnessFactor, 1);
         for (float x : m.specularColorFactor)
             range(x, std::numeric_limits<float>::max());
         range(m.normalScale, 16);
@@ -132,9 +134,11 @@ namespace render::detail
             std::array<float, 48> record{};
             for (int k : {0, 5, 10, 15, 16, 21, 26, 31})
                 record[k] = 1;
-            // The first column of the world matrix is unused in material records.
+            // Material records reuse the first two columns of the unused world matrix.
             std::copy(m.specularColorFactor.begin(), m.specularColorFactor.end(), record.begin());
             record[3] = m.specularFactor;
+            record[4] = m.clearcoatFactor;
+            record[5] = m.clearcoatRoughnessFactor;
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
             record[36] = m.metallic;
             record[37] = m.roughness;

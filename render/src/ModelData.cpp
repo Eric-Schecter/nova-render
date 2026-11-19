@@ -70,7 +70,7 @@ namespace render::detail
             for (const auto& extension : list)
                 if (
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
-                  && extension != "KHR_materials_specular")
+                  && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -255,6 +255,27 @@ namespace render::detail
                             throw std::runtime_error("Invalid glTF specularColorFactor");
                         slot.specularColorFactor[k] = float(color.Get(k).GetNumberAsDouble());
                     }
+                }
+            }
+            const auto coat = mat.extensions.find("KHR_materials_clearcoat");
+            if (coat != mat.extensions.end())
+            {
+                const auto& extension = coat->second;
+                if (!extension.IsObject())
+                    throw std::runtime_error("Invalid KHR_materials_clearcoat");
+                if (extension.Has("clearcoatTexture") || extension.Has("clearcoatRoughnessTexture")
+                    || extension.Has("clearcoatNormalTexture"))
+                    throw std::runtime_error("KHR_materials_clearcoat textures are not supported");
+                for (const auto& [key, factor] :
+                     {std::pair{"clearcoatFactor", &slot.clearcoatFactor},
+                      std::pair{"clearcoatRoughnessFactor", &slot.clearcoatRoughnessFactor}})
+                {
+                    if (!extension.Has(key))
+                        continue;
+                    const auto& value = extension.Get(key);
+                    if (!value.IsNumber())
+                        throw std::runtime_error(std::string("Invalid glTF ") + key);
+                    *factor = float(value.GetNumberAsDouble());
                 }
             }
             slot.alphaMode   = mat.alphaMode == "MASK"    ? AlphaMode::Mask

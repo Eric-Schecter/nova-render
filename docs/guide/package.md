@@ -4,22 +4,22 @@ Project/repository: **Nova Render** / `nova-render`; CMake project: `NovaRender`
 
 Native uses a C++17 SDK and web uses an npm archive. Both use the CMake project version. Packaging commands generate local files without publishing. Downloads are in [GitHub Releases](https://github.com/Eric-Schecter/nova-render/releases).
 
-## Download 0.10.1
+## Download 0.10.2
 
-[Release v0.10.1](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.1) provides macOS ARM64 and Windows x64 Release C++ SDKs, a WebGPU npm archive, and SHA-256 checksums. The macOS SDK and Web package are paired in `manifest.json` for nova-editor. Both desktop SDKs bundle SDL3. Applications using `render::Window` keep the same API. Migrate code constructing a renderer from an external window to `render::Window`.
+[Release v0.10.2](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.2) provides macOS ARM64 and Windows x64 Release C++ SDKs, a WebGPU npm archive, and SHA-256 checksums. The macOS SDK and Web package are paired in `manifest.json` for nova-editor. Both desktop SDKs bundle SDL3. Applications using `render::Window` keep the same API. Migrate code constructing a renderer from an external window to `render::Window`.
 
 Download and verify the pair on macOS:
 
 ```sh
-mkdir -p nova-0.10.1
-cd nova-0.10.1
-release=https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.1
+mkdir -p nova-0.10.2
+cd nova-0.10.2
+release=https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.2
 curl -fL "$release/manifest.json" -o manifest.json
 curl -fL "$release/SHA256SUMS" -o SHA256SUMS
-curl -fL "$release/nova-render-sdk-0.10.1-darwin-arm64-appleclang-release.zip" -O
-curl -fL "$release/nova-render-web-0.10.1.tgz" -O
+curl -fL "$release/nova-render-sdk-0.10.2-darwin-arm64-appleclang-release.zip" -O
+curl -fL "$release/nova-render-web-0.10.2.tgz" -O
 shasum -a 256 -c SHA256SUMS
-unzip nova-render-sdk-0.10.1-darwin-arm64-appleclang-release.zip
+unzip nova-render-sdk-0.10.2-darwin-arm64-appleclang-release.zip
 ```
 
 Use the extracted SDK directory containing `include/`, `lib/` and `share/` as `CMAKE_PREFIX_PATH`. The SDK includes optional ImGui integration. Sample models and environments belong to the application.
@@ -29,11 +29,11 @@ Use the extracted SDK directory containing `include/`, `lib/` and `share/` as `C
 From the editor checkout, download and install the matching pair directly:
 
 ```sh
-pnpm sdk:install https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.1/manifest.json
+pnpm sdk:install https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.2/manifest.json
 pnpm sdk:verify
 ```
 
-Existing projects keep their locked version until explicitly updated. The updated nova-editor integration uses `pnpm sdk:update 0.10.1`; older editor versions need their SDK compatibility policy updated first. The installer validates platform, architecture, features, hashes and embedded source revisions before replacing packages. A local downloaded manifest also works.
+Existing projects keep their locked version until explicitly updated. The updated nova-editor integration uses `pnpm sdk:update 0.10.2`; older editor versions need their SDK compatibility policy updated first. The installer validates platform, architecture, features, hashes and embedded source revisions before replacing packages. A local downloaded manifest also works.
 
 ## Build a C++ SDK
 
@@ -78,12 +78,12 @@ Generate from the Nova repository:
 npm run pack:web
 ```
 
-This produces `build/packages/nova-render-web-0.10.1.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
+This produces `build/packages/nova-render-web-0.10.2.tgz` and its SHA-256 file. It contains renderer modules, precompiled WGSL, SMAA tables and notices, excluding the documentation site, models, HDR maps and compiler tools.
 
 In another project (or use a verified local `.tgz` path):
 
 ```sh
-npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.1/nova-render-web-0.10.1.tgz
+npm install https://github.com/Eric-Schecter/nova-render/releases/download/v0.10.2/nova-render-web-0.10.2.tgz
 npx nova-web-assets --out public/nova
 ```
 
@@ -104,7 +104,7 @@ Install the generated `.tgz`, not the documentation package at the repository ro
 ```sh
 node scripts/packaging/check-sdk.mjs /path/to/sdk.tar.gz metal Release
 node scripts/packaging/check-sdk.mjs /path/to/sdk.zip vulkan Release
-node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.10.1.tgz
+node scripts/packaging/check-web.mjs build/packages/nova-render-web-0.10.2.tgz
 ```
 
 Scripts copy consumers outside the repository. Native validation relocates the SDK, checks all imported library locations, then exercises two probes and a window. Web validation installs offline, copies assets and runs triangle/probe APIs in a real WebGPU browser.

@@ -36,6 +36,7 @@ namespace render
           emissiveTexture;
         float                specularFactor = 1;
         std::array<float, 3> specularColorFactor{1, 1, 1};
+        float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render
