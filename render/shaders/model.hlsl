@@ -608,8 +608,122 @@ float3 clearcoatEnvironment(SurfaceData s, float3 v)
     }
     return s.clearcoat.x * studio(r, roughness) * fresnel(nv, 0.04, 1);
 }
+// Rectangular emitters store their half extents in world._m30/_m31 and
+// their two planar axes in the first two world columns.
+float3 rectangleRight(InstanceData light)
+{
+    return float3(light.world._m00, light.world._m10, light.world._m20);
+}
+float3 rectangleUp(InstanceData light)
+{
+    return float3(light.world._m01, light.world._m11, light.world._m21);
+}
+float3 rectanglePosition(InstanceData light, float2 offset)
+{
+    return light.material.xyz + rectangleRight(light) * offset.x + rectangleUp(light) * offset.y;
+}
+float3 rectangleSample(InstanceData light, uint index, uint count)
+{
+    if (count == 1)
+        return light.material.xyz;
+    // A stratified rectangle sequence. Temporal Hybrid rotates the sequence
+    // over the emitter so penumbras converge at low per-frame sample counts.
+    float radical = .5 * float(index & 1) + .25 * float((index >> 1) & 1)
+                    + .125 * float((index >> 2) & 1) + .0625 * float((index >> 3) & 1);
+    float2 sequence = float2((float(index) + .5) / count, radical + .5 / count);
+    float frame = max(0, irradiance[6].w - 1);
+    float2 cell = frac(sequence + frame * float2(.61803399, .38196601)) * 2 - 1;
+    return rectanglePosition(light, cell * float2(light.world._m30, light.world._m31));
+}
+uint rectangleShadowSamples()
+{
+    return clamp(uint(irradiance[1].w > .5 ? irradiance[2].w
+                : instances[uint(irradiance[3].w) - 1].emissive.w), 1u, 16u);
+}
+float rectangleVisibility(InstanceData light, float3 position, float3 normal)
+{
+    float visibility = 0;
+    uint samples = rectangleShadowSamples();
+    [loop] for (uint i = 0; i < samples; ++i)
+        visibility += localLightVisibility(position, normal, rectangleSample(light, i, samples), 0);
+    return visibility / samples;
+}
+float rectangleRange(float distance, float range)
+{
+    return range > 0 ? pow(saturate(1 - pow(distance / range, 4)), 2) : 1;
+}
+float3 rectangleSpecular(InstanceData light, SurfaceData s, float3 v, float3 normal, float roughness,
+                         float3 f0, float f90, float planeDistance, bool castShadow)
+{
+    float nv = dot(normal, v);
+    if (nv <= 0)
+        return 0;
+    float3 ray = reflect(-v, normal);
+    float facing = -dot(ray, light.emissive.xyz);
+    if (facing <= .001 || dot(ray, s.geometricNormal) <= 0)
+        return 0;
+    float distance = planeDistance / facing;
+    float3 relative = s.position + distance * ray - light.material.xyz;
+    float2 coord = float2(dot(relative, rectangleRight(light)), dot(relative, rectangleUp(light)));
+    float2 halfExtent = float2(light.world._m30, light.world._m31);
+    // Broaden the projected rectangle by the width of the glossy lobe. Normalize
+    // the broadened footprint so narrow softboxes lose intensity as they blur.
+    float spread = max(.001, roughness * roughness * distance * .65);
+    float2 edge = smoothstep(-spread, spread, halfExtent - abs(coord));
+    float2 energy = halfExtent / (halfExtent + spread);
+    float response = edge.x * edge.y * energy.x * energy.y * rectangleRange(distance, light.material.w);
+    if (response <= 0)
+        return 0;
+    if (castShadow)
+        response *= localLightVisibility(s.position, s.geometricNormal,
+            rectanglePosition(light, clamp(coord, -halfExtent, halfExtent)), 0);
+    float2 brdf = environmentBRDF(roughness, saturate(nv));
+    return light.baseColor.rgb * light.baseColor.w * response * (f0 * brdf.x + f90 * brdf.y);
+}
+float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float coatTransmission,
+                           bool secondaryLighting)
+{
+    float planeDistance = dot(s.position - light.material.xyz, light.emissive.xyz);
+    if (planeDistance <= 0 || light.baseColor.w <= 0)
+        return 0;
+
+    float3 f0 = lerp(dielectricF0(s.specular), s.base, s.metallic);
+    float f90 = lerp(s.specular.a, 1, s.metallic);
+    float3 diffuse = 0;
+    bool castShadow = light.uv.z > .5;
+    uint samples = secondaryLighting ? 1 : castShadow ? rectangleShadowSamples() : 8;
+    if (s.metallic < 1)
+    {
+        [loop] for (uint i = 0; i < samples; ++i)
+        {
+            float3 samplePosition = rectangleSample(light, i, samples);
+            float3 delta = samplePosition - s.position;
+            float distanceSquared = dot(delta, delta);
+            float distance = sqrt(distanceSquared);
+            float3 l = delta / max(distance, 1e-5);
+            float weight = saturate(dot(s.normal, l)) * saturate(-dot(light.emissive.xyz, l))
+                           * rectangleRange(distance, light.material.w) / max(distanceSquared, .0001);
+            if (weight <= 0)
+                continue;
+            if (castShadow)
+                weight *= localLightVisibility(s.position, s.geometricNormal, samplePosition, 0);
+            float3 h = normalize(v + l);
+            diffuse += weight * (1 - diffuseFresnel(dot(v, h), fresnel(dot(v, h), f0, f90), s.specular));
+        }
+        diffuse *= light.world._m30 * light.world._m31 * (4.0 / (samples * 3.14159265))
+                   * light.baseColor.rgb * light.baseColor.w * (1 - s.metallic) * s.base;
+    }
+    float3 specular = rectangleSpecular(light, s, v, s.normal, s.roughness, f0, f90, planeDistance,
+                                        castShadow && !secondaryLighting);
+    float3 coat = 0;
+    if (s.clearcoat.x > 0)
+        coat = s.clearcoat.x * rectangleSpecular(light, s, v, s.coatNormal, max(.02, s.clearcoat.y),
+                                               .04.xxx, 1, planeDistance, castShadow && !secondaryLighting);
+    return (diffuse + specular) * coatTransmission + coat;
+}
+
 float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection,
-                       bool tracedClearcoat = false)
+                       bool tracedClearcoat = false, bool secondaryLighting = false)
 {
     float3 base = s.base;
     if (emissiveFactor.w < .5)
@@ -634,6 +748,11 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         {
             InstanceData source      = instances[offset + i];
             uint         type        = uint(source.emissive.w);
+            if (type == 3)
+            {
+                color += rectangleDirectLight(source, s, v, coatTransmission, secondaryLighting);
+                continue;
+            }
             float3       l           = source.emissive.xyz;
             float        attenuation = 1;
             if (type != 0)
@@ -909,7 +1028,14 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
                 InstanceData light = instances[offset + i];
                 if (light.uv.z <= .5 || light.baseColor.w <= 0)
                     continue;
-                if (uint(light.emissive.w) == 0)
+                uint type = uint(light.emissive.w);
+                if (type == 3)
+                {
+                    // The lighting pass integrates the emitter's visibility per sample.
+                    if (irradiance[5].w == float(i + 1))
+                        visibility[i] = rectangleVisibility(light, position, normal);
+                }
+                else if (type == 0)
                     visibility[i] = sceneVisibility(position, normal, light.emissive.xyz, light.uv.w);
                 else
                 {
@@ -1104,7 +1230,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
     hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, aoUV, 0).r, mat.material.w);
     hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
-    return surfaceRadiance(hit, 0, 0, -ray);
+    return surfaceRadiance(hit, 0, 0, -ray, false, true);
 }
 
 // Two buffers keep the previous update available while writing the next batch.

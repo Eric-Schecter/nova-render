@@ -28,7 +28,7 @@ renderer.setLights([
 
 Collections replace all direct lights atomically. IDs must be unique, nonempty UTF-8 strings of at most 128 bytes. Reads return copies. `enabled` defaults to true. An empty collection removes direct lighting, including the legacy studio fill; environment lighting remains independent. Changing lights resets temporal AA and transport accumulation without reloading geometry.
 
-- `type`: `Directional`, `Point`, `Spot` in C++; lowercase strings on web. Default: directional.
+- `type`: `Directional`, `Point`, `Spot`, `Rectangle` in C++; lowercase strings on web. Default: directional.
 - `color`: linear RGB in [0,1], default white. `intensity`: Nova relative multiplier in [0,100], default 1, not lumens or candela.
 - `position`: world-space XYZ, default zero. Used by point/spot lights.
 - `direction`: normalized by the SDK. Directional points **toward the source**; spot points **outward from the source**. Default [0,1,0]. A finite nonzero vector is required for directional/spot lights.
@@ -37,6 +37,12 @@ Collections replace all direct lights atomically. IDs must be unique, nonempty U
 - `castShadow`: default false. `shadowSoftness`: [0,4], default 1. Global `SetShadows` remains the shadow master switch and controls bias/sample count.
 
 Invalid values, duplicate IDs and excess counts throw before replacing the previous collection. Disabled entries still count toward the limit and are validated. Only type-applicable position/direction/range/cone fields are validated.
+
+## Rectangular emitters
+
+Use `LightType::Rectangle` in C++ or `type: 'rectangle'` on Web. Set `position` to the center, `direction` to the emitting surface normal, and `up` to the height axis. The SDK projects `up` onto the emitting plane and rejects parallel axes. `width` and `height` are in world units and default to 1. `intensity` scales emitted radiance, so increasing the area also increases total diffuse illumination at a fixed distance.
+
+Raster and Hybrid share one-sided rectangular-light shading. Unshadowed diffuse lighting integrates eight surface samples. Shadowed primary shading uses the configured shadow sample count and traces finite segments to the emitter. Raster uses the scene shadow settings. Hybrid uses its own `shadows` and `shadowSamples` settings. Hybrid secondary shading uses a single center sample for diffuse visibility and unshadowed glossy lighting to limit ray cost. Glints use a projected rectangular footprint with roughness-dependent falloff, including a separate clearcoat evaluation. The emitter is a light record and has no visible mesh in the primary view. The rectangle extents control the penumbra. The point/spot `shadowSoftness` setting does not change it. Capabilities report `rectangle` and `rectangleShadows`. Standalone Ray Tracing rejects enabled rectangle lights.
 
 ## Capabilities and scope
 

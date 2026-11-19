@@ -45,6 +45,9 @@ export function copySceneLights(input) {
       outerConeAngle: 0.6,
       castShadow: false,
       shadowSoftness: 1,
+      width: 1,
+      height: 1,
+      up: [0, 0, 1],
       ...value,
     }
     if (
@@ -55,7 +58,8 @@ export function copySceneLights(input) {
     )
       throw Error('Invalid or duplicate light id')
     ids.add(light.id)
-    if (!['directional', 'point', 'spot'].includes(light.type)) throw Error('Invalid light type')
+    if (!['directional', 'point', 'spot', 'rectangle'].includes(light.type))
+      throw Error('Invalid light type')
     if (typeof light.enabled !== 'boolean' || typeof light.castShadow !== 'boolean')
       throw Error('Invalid light flag')
     light.color = vec(light.color, 'color')
@@ -79,6 +83,16 @@ export function copySceneLights(input) {
       if (!Number.isFinite(length) || length < 1e-6) throw Error('Invalid light direction')
       light.direction = d.map((v) => v / length)
     }
+    if (light.type === 'rectangle') {
+      if (![light.width, light.height].every((v) => Number.isFinite(v) && v >= 1e-4 && v <= 1e4))
+        throw Error('Invalid rectangle size')
+      const up = vec(light.up, 'up')
+      const projection = up.reduce((sum, v, k) => sum + v * light.direction[k], 0)
+      const planar = up.map((v, k) => v - projection * light.direction[k])
+      const length = Math.hypot(...planar)
+      if (!Number.isFinite(length) || length < 1e-6) throw Error('Invalid light up')
+      light.up = planar.map((v) => v / length)
+    }
     if (
       light.type === 'spot' &&
       (!Number.isFinite(light.innerConeAngle) ||
@@ -90,6 +104,7 @@ export function copySceneLights(input) {
       throw Error('Invalid cone angles')
     return {
       ...light,
+      up: Array.isArray(light.up) ? [...light.up] : [0, 0, 1],
       position: Array.isArray(light.position) ? [...light.position] : [0, 0, 0],
       direction: Array.isArray(light.direction) ? [...light.direction] : [0, 1, 0],
     }
@@ -100,10 +115,16 @@ export function lightRecords(lights) {
   const records = new Float32Array(enabled.length * 48)
   enabled.forEach((light, i) => {
     const start = i * 48
+    if (light.type === 'rectangle') {
+      const [x, y, z] = light.direction
+      const [a, b, c] = light.up
+      records.set([y * c - z * b, z * a - x * c, x * b - y * a, light.width * 0.5], start)
+      records.set([...light.up, light.height * 0.5], start + 4)
+    }
     records.set([...light.color, light.intensity], start + 32)
     records.set([...light.position, light.range], start + 36)
     records.set(
-      [...light.direction, ['directional', 'point', 'spot'].indexOf(light.type)],
+      [...light.direction, ['directional', 'point', 'spot', 'rectangle'].indexOf(light.type)],
       start + 40,
     )
     records.set(

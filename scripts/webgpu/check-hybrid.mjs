@@ -440,6 +440,46 @@ try {
   for (let i = Math.floor(240 * 0.65) * 320 * 4; i < indirect.length; i += 4)
     colorSpill += indirect[i] - noBounce[i] > indirect[i + 1] - noBounce[i + 1] + 3
   if (colorSpill < 20) throw Error('Diffuse bounce did not transfer red light to the receiver')
+  await page.evaluate(() => {
+    r.setHybrid({ diffuseBounce: false, shadows: false })
+    r.setLights([])
+    window.rectangle = {
+      id: 'softbox',
+      type: 'rectangle',
+      position: [1, 1.2, -1.6],
+      direction: [0, -0.6, 1],
+      up: [0, 1, 0],
+      width: 2.5,
+      height: 0.6,
+      intensity: 7,
+      castShadow: true,
+    }
+  })
+  const rectangleOff = await capture('rectangle-off')
+  await page.evaluate(() => r.setLights([rectangle]))
+  const rectangleLit = await capture('rectangle-unshadowed')
+  await page.evaluate(() => r.setHybrid({ shadows: true }))
+  const rectangleShadow = await capture('rectangle-shadowed')
+  await page.evaluate(() => r.setLights([{ ...rectangle, castShadow: true, width: 0.25 }]))
+  const rectangleNarrow = await capture('rectangle-narrow')
+  if (
+    diff(rectangleOff, rectangleLit) < 1 ||
+    diff(rectangleLit, rectangleShadow) < 0.1 ||
+    diff(rectangleShadow, rectangleNarrow) < 0.1
+  )
+    throw Error('Rectangle size, lighting or finite shadows did not affect the scene')
+  if (
+    !(await page.evaluate(() => {
+      if (!r.getLightingCapabilities().rectangleShadows) return false
+      try {
+        r.setLights([{ ...rectangle, up: rectangle.direction }])
+      } catch {
+        return r.getLights()[0].width === 0.25
+      }
+      return false
+    }))
+  )
+    throw Error('Invalid rectangle orientation corrupted the light collection')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
@@ -465,6 +505,10 @@ try {
       'coat-half',
       'diffuse-bounce-off',
       'diffuse-bounce-on',
+      'rectangle-off',
+      'rectangle-unshadowed',
+      'rectangle-shadowed',
+      'rectangle-narrow',
       'ao-final',
       'ao-visibility',
       'single-off',

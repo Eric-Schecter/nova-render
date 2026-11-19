@@ -445,6 +445,45 @@ int main(int argc, char** argv)
                           > int(indirect.pixels[i + 1]) - int(noBounce.pixels[i + 1]) + 3;
         if (colorSpill < 20)
             throw std::runtime_error("Diffuse bounce did not transfer red light to the receiver");
+        SceneLight rectangle;
+        rectangle.id          = "softbox";
+        rectangle.type        = LightType::Rectangle;
+        rectangle.position    = {1, 1.2f, -1.6f};
+        rectangle.direction   = {0, -.6f, 1};
+        rectangle.up          = {0, 1, 0};
+        rectangle.width       = 2.5f;
+        rectangle.height      = .6f;
+        rectangle.intensity   = 7;
+        rectangle.castShadow  = true;
+        HybridSettings rectangleSettings;
+        rectangleSettings.shadows = false;
+        backend->SetHybrid(rectangleSettings);
+        backend->SetLights({});
+        auto dark = capture("rectangle-off");
+        backend->SetLights({rectangle});
+        auto lit = capture("rectangle-unshadowed");
+        rectangleSettings.shadows = true;
+        backend->SetHybrid(rectangleSettings);
+        auto rectangleShadow = capture("rectangle-shadowed");
+        rectangle.width = .25f;
+        backend->SetLights({rectangle});
+        auto narrow = capture("rectangle-narrow");
+        if (!backend->GetLightingCapabilities().rectangleShadows || Difference(dark, lit) < 1
+            || Difference(lit, rectangleShadow) < .1 || Difference(rectangleShadow, narrow) < .1)
+            throw std::runtime_error("Rectangle size, lighting or finite shadows did not affect the scene");
+        rectangle.up = rectangle.direction;
+        bool rejectedUp = false;
+        try
+        {
+            backend->SetLights({rectangle});
+        }
+        catch (const std::invalid_argument&)
+        {
+            rejectedUp = true;
+        }
+        if (!rejectedUp || Difference(narrow, capture("rectangle-unchanged")) > .01)
+            throw std::runtime_error("Invalid rectangle orientation corrupted the light collection");
+
         backend.reset();
         CloseTestWindow(window);
         QuitTestWindowHost();

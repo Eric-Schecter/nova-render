@@ -11,7 +11,8 @@ namespace render
     {
         Directional,
         Point,
-        Spot
+        Spot,
+        Rectangle
     };
     struct SceneLight
     {
@@ -21,13 +22,16 @@ namespace render
         std::array<float, 3> color{1, 1, 1};
         float                intensity = 1;
         std::array<float, 3> position{0, 0, 0};
-        // Directional: surface toward source. Spot: source outward, editor local -Z.
+        // Directional: surface toward source. Spot and Rectangle: source outward, editor local -Z.
         std::array<float, 3> direction{0, 1, 0};
         float                range          = 0;                          // World units; zero means unlimited.
         float                innerConeAngle = .35f, outerConeAngle = .6f; // Radian half angles.
         bool                 castShadow = false;
         // Directional disk radius: softness * .006 radians; point/spot: softness * .006 world units.
         float shadowSoftness = 1;
+        // Rectangle extents in world units, with up projected onto the emitter plane.
+        float width = 1, height = 1;
+        std::array<float, 3> up{0, 0, 1};
     };
     struct LightingCapabilities
     {
@@ -40,6 +44,7 @@ namespace render
         std::vector<LightType> sourceLightTypes;
         std::string estimator;
         std::string reason;
+        bool        rectangle = false, rectangleShadows = false;
     };
     inline std::vector<SceneLight> ValidateSceneLights(const std::vector<SceneLight>& input)
     {
@@ -54,7 +59,7 @@ namespace render
             };
             if (light.id.empty() || light.id.size() > 128 || !ids.insert(light.id).second)
                 fail("id");
-            if (static_cast<unsigned>(light.type) > 2)
+            if (static_cast<unsigned>(light.type) > 3)
                 fail("type");
             for (float c : light.color)
                 if (!std::isfinite(c) || c < 0 || c > 1)
@@ -82,6 +87,27 @@ namespace render
                     fail("direction");
                 for (float& v : light.direction)
                     v = float(v / length);
+            }
+            if (light.type == LightType::Rectangle)
+            {
+                if (!std::isfinite(light.width) || !std::isfinite(light.height)
+                    || light.width < 1e-4f || light.height < 1e-4f || light.width > 1e4f || light.height > 1e4f)
+                    fail("rectangle size");
+                double projection = 0;
+                for (unsigned k = 0; k < 3; ++k)
+                {
+                    if (!std::isfinite(light.up[k]))
+                        fail("up");
+                    projection += double(light.up[k]) * light.direction[k];
+                }
+                std::array<double, 3> up;
+                for (unsigned k = 0; k < 3; ++k)
+                    up[k] = light.up[k] - projection * light.direction[k];
+                const double length = std::hypot(up[0], up[1], up[2]);
+                if (!std::isfinite(length) || length < 1e-6)
+                    fail("up");
+                for (unsigned k = 0; k < 3; ++k)
+                    light.up[k] = float(up[k] / length);
             }
             if(light.type==LightType::Spot && (!std::isfinite(light.innerConeAngle)||!std::isfinite(light.outerConeAngle)||light.innerConeAngle<0||light.innerConeAngle>light.outerConeAngle||light.outerConeAngle>=1.5707963267948966))
                 fail("cone angles");

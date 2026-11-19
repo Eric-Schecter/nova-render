@@ -613,6 +613,8 @@ class Renderer {
         )
     }
     if (mode === 'ray-tracing') {
+      if (this.#lights?.some((light) => light.enabled && light.type === 'rectangle'))
+        throw Error('Rectangle lights require Raster or Hybrid')
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
       if (!this.#sceneModel && !this.#model?.triangles)
         throw Error('Path tracing requires a loaded model')
@@ -853,6 +855,11 @@ class Renderer {
     const capabilities = this.getLightingCapabilities()
     if (!capabilities.maxLights) throw Error(capabilities.reason)
     const next = copySceneLights(lights)
+    if (
+      this.#renderMode === 'ray-tracing' &&
+      next.some((light) => light.enabled && light.type === 'rectangle')
+    )
+      throw Error('Rectangle lights require Raster or Hybrid')
     this.#lights = next
     this.#resetAA()
     this.resetAccumulation()
@@ -878,6 +885,8 @@ class Renderer {
       directional: supported,
       point: supported,
       spot: supported,
+      rectangle: supported && this.#renderMode !== 'ray-tracing',
+      rectangleShadows: supported && this.#renderMode !== 'ray-tracing',
       maxLights: supported ? 16 : 0,
       directionalShadows: supported,
       pointShadows: supported,

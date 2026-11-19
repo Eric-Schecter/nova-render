@@ -217,6 +217,7 @@ namespace render::detail
             if ((pathAPI == GraphicsAPI::Metal || pathAPI == GraphicsAPI::Vulkan || pathAPI == GraphicsAPI::D3D12))
             {
                 c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
+                c.rectangle = c.rectangleShadows = mode != RenderMode::RayTracing;
                 c.maxLights                                                                              = 16;
                 c.shadowRequiresScene = mode == RenderMode::Raster;
                 c.estimator           = mode != RenderMode::RayTracing
@@ -232,11 +233,19 @@ namespace render::detail
                 c.reason = "Light collections require Metal, Vulkan or DX12";
             return c;
         }
+        static bool HasRectangleLights(const std::vector<SceneLight>& lights)
+        {
+            return std::any_of(lights.begin(), lights.end(), [](const SceneLight& light) {
+                return light.enabled && light.type == LightType::Rectangle;
+            });
+        }
         void SetLights(const std::vector<SceneLight>& values)
         {
             if (!GetLightingCapabilities().maxLights)
                 throw std::runtime_error(GetLightingCapabilities().reason);
-            auto next             = ValidateSceneLights(values);
+            auto next = ValidateSceneLights(values);
+            if (mode == RenderMode::RayTracing && HasRectangleLights(next))
+                throw std::invalid_argument("Rectangle lights require Raster or Hybrid");
             lights                = std::move(next);
             lightCollectionActive = true;
             RebuildRasterInstances();
@@ -349,6 +358,17 @@ namespace render::detail
                         record.baseColor[k] = light.color[k];
                         record.material[k]  = light.position[k];
                         record.emissive[k]  = light.direction[k];
+                    }
+                    if (light.type == LightType::Rectangle)
+                    {
+                        const auto right = glm::cross(glm::make_vec3(light.direction.data()), glm::make_vec3(light.up.data()));
+                        for (unsigned k = 0; k < 3; ++k)
+                        {
+                            record.world[k] = right[k];
+                            record.world[4 + k] = light.up[k];
+                        }
+                        record.world[3] = light.width * .5f;
+                        record.world[7] = light.height * .5f;
                     }
                     record.baseColor[3] = light.intensity;
                     record.material[3]  = light.range;
@@ -471,6 +491,8 @@ namespace render::detail
             }
             if (value == RenderMode::RayTracing)
             {
+                if (HasRectangleLights(lights))
+                    throw std::invalid_argument("Rectangle lights require Raster or Hybrid");
                 if (!scene.active && (!model || model->vertices.empty()))
                     throw std::invalid_argument("Load a model before path tracing");
                 const auto caps = GetCapabilities();
