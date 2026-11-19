@@ -334,6 +334,70 @@ try {
   if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
     throw Error('Reflected helmet lost normal map or material AO')
   await page.evaluate(async () => {
+    const helmet = r.getMaterials('helmet')[0]
+    await r.setScene(
+      [
+        { id: 'mirror', url: '/generated/MaterialQuad.glb' },
+        { id: 'helmet', url: '/generated/DamagedHelmet.glb' },
+      ],
+      [
+        {
+          id: 'ground',
+          assetId: 'mirror',
+          world: [2, 0, 0, 0, 0, 0, -2, 0, 0, 1, 0, 0, 0, -0.84, 0, 1],
+        },
+        {
+          id: 'subject',
+          assetId: 'helmet',
+          world: [0.65, 0, 0, 0, 0, 0.65, 0, 0, 0, 0, 0.65, 0, 0, 0.05, 0, 1],
+        },
+      ],
+    )
+    await r.setMaterial(0, helmet, 'helmet')
+    r.setHybrid({ clearcoatReflections: false })
+    window.configureCoat = (strength, tilted) =>
+      r.setMaterial(
+        0,
+        {
+          ...r.getMaterials('mirror')[0],
+          clearcoatFactor: 1,
+          clearcoatRoughnessFactor: strength,
+          roughness: 0.62,
+          baseColor: [0.85, 0.85, 0.85, 1],
+          metallic: 1,
+          clearcoatNormalTexture: tilted
+            ? { width: 1, height: 1, pixels: new Uint8Array([210, 128, 218, 255]) }
+            : null,
+        },
+        'mirror',
+      )
+    await configureCoat(0.02, false)
+  })
+  const coatEnvironment = await capture('coat-environment')
+  await page.evaluate(() => r.setHybrid({ clearcoatReflections: true }))
+  const coatSharp = await capture('coat-traced')
+  await page.evaluate(() => configureCoat(0.7, false))
+  const coatRough = await capture('coat-rough')
+  await page.evaluate(() => configureCoat(0.02, true))
+  const coatNormal = await capture('coat-normal')
+  if (
+    groundDelta(coatEnvironment, coatSharp) < 20 ||
+    groundDelta(coatSharp, coatRough) < 20 ||
+    groundDelta(coatSharp, coatNormal) < 20
+  )
+    throw Error('Hybrid coat ray did not use its own normal and roughness')
+  await page.evaluate(() =>
+    r.setHybrid({ halfResolutionReflections: true, reflectionDenoising: true }),
+  )
+  let coatHalf = await capture('coat-half')
+  for (let i = 0; i < 4; i++) coatHalf = await capture('coat-half')
+  if (groundDelta(coatEnvironment, coatHalf) < 20)
+    throw Error('Half-resolution denoising lost the traced coat')
+  await page.evaluate(() =>
+    r.setHybrid({ halfResolutionReflections: false, reflectionDenoising: false }),
+  )
+
+  await page.evaluate(async () => {
     const matrix = (x, y, z, tx, ty, tz) => [x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, tx, ty, tz, 1]
     await r.setScene(
       [
@@ -394,6 +458,11 @@ try {
       'reflected-material-mapped',
       'reflected-material-flat',
       'reflected-material-no-ao',
+      'coat-environment',
+      'coat-traced',
+      'coat-rough',
+      'coat-normal',
+      'coat-half',
       'diffuse-bounce-off',
       'diffuse-bounce-on',
       'ao-final',

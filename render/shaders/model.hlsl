@@ -608,7 +608,8 @@ float3 clearcoatEnvironment(SurfaceData s, float3 v)
     }
     return s.clearcoat.x * studio(r, roughness) * fresnel(nv, 0.04, 1);
 }
-float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection)
+float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection,
+                       bool tracedClearcoat = false)
 {
     float3 base = s.base;
     if (emissiveFactor.w < .5)
@@ -624,6 +625,8 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         collection = instances[header].uv.w > .5;
     }
     float3 color = 0;
+    float3 coatEnvironment = clearcoatEnvironment(s, v);
+    float3 baseEnvironment, diffuseAmbient;
     if (collection)
     {
         uint count = uint(instances[header].uv.y), offset = uint(instances[header].uv.z);
@@ -686,19 +689,23 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         float3 prefiltered =
           environmentTexture.SampleLevel(textureSampler, reflected, roughness * environmentParams.w).rgb;
         float2 brdf    = environmentBRDF(roughness, saturate(dot(n, v)));
-        float3 ambient = diffuseEnergy * diffuse * diffuseEnvironment(n) * environmentParams.z
-                         + lerp(prefiltered * (f0 * brdf.x + f90 * brdf.y) * environmentParams.z, raySpecular, reflectionMix);
-        color += ambient * ao * coatTransmission;
+        diffuseAmbient = diffuseEnergy * diffuse * diffuseEnvironment(n) * environmentParams.z;
+        baseEnvironment = prefiltered * (f0 * brdf.x + f90 * brdf.y) * environmentParams.z;
     }
     else
     {
         if (!collection)
             color += surfaceDirectLight(s, v, normalize(float3(1, 0.7, -1)), float3(1, 1.6, 2.7), coatTransmission);
-        color += (diffuse * (all(s.specular == 1) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4
-                  + lerp(studio(reflect(-v, n), roughness) * f, raySpecular, reflectionMix))
-                 * ao * coatTransmission;
+        diffuseAmbient = diffuse * (all(s.specular == 1) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4;
+        baseEnvironment = studio(reflect(-v, n), roughness) * f;
     }
-    color += s.emissive * coatTransmission + clearcoatEnvironment(s, v) * ao;
+    if (tracedClearcoat)
+        color += (diffuseAmbient * coatTransmission
+                  + lerp(baseEnvironment * coatTransmission + coatEnvironment, raySpecular, reflectionMix)) * ao;
+    else
+        color += ((diffuseAmbient + lerp(baseEnvironment, raySpecular, reflectionMix)) * coatTransmission
+                  + coatEnvironment) * ao;
+    color += s.emissive * coatTransmission;
     return color;
 }
 float4 shadeSurface(SurfaceData s)
@@ -1263,15 +1270,14 @@ float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
     return incoming * surface.base * (1 - surface.metallic) / samples;
 }
 
-float3 hybridReflection(SurfaceData primary, float rotation)
+float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n, float rough,
+                            float3 f0, float f90, float rotation)
 {
-    uint   header      = uint(irradiance[3].w) - 1;
     float  maxDistance = instances[header].world._m01;
     uint   samples     = uint(instances[header].world._m11);
-    float3 n = primary.normal, v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - primary.position);
     float3 tangent   = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
            bitangent = cross(n, tangent);
-    float  nv = max(.001, dot(n, v)), rough = max(.02, primary.roughness), a = rough * rough;
+    float  nv = max(.001, dot(n, v)), a = rough * rough;
     float3 sum = 0;
     [loop] for (uint j = 0; j < samples; ++j)
     {
@@ -1298,11 +1304,27 @@ float3 hybridReflection(SurfaceData primary, float rotation)
                 : studio(ray, 0);
         float k = pow(rough + 1, 2) / 8;
         float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
-        float3 f0 = lerp(dielectricF0(primary.specular), primary.base, primary.metallic);
-        float f90 = lerp(primary.specular.a, 1, primary.metallic);
         sum += radiance * fresnel(vh, f0, f90) * (g * vh / (nv * nh));
     }
     return sum / max(1, samples);
+}
+
+float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCoat)
+{
+    float3 v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
+    float3 reflection = 0;
+    const int lobes = traceCoat && s.clearcoat.x > 0 ? 2 : 1;
+    [loop] for (int lobe = 0; lobe < lobes; ++lobe)
+    {
+        bool coat = lobe != 0;
+        float3 f0 = coat ? .04.xxx : lerp(dielectricF0(s.specular), s.base, s.metallic);
+        float f90 = coat ? 1 : lerp(s.specular.a, 1, s.metallic);
+        float3 n = coat ? s.coatNormal : s.normal;
+        float roughness = max(.02, coat ? s.clearcoat.y : s.roughness);
+        float weight = coat ? s.clearcoat.x : traceCoat ? clearcoatTransmission(s, v) : 1;
+        reflection += weight * hybridReflectionLobe(s, header, v, n, roughness, f0, f90, rotation + lobe * 1.618);
+    }
+    return reflection;
 }
 
 float4 HybridReflectionPSMain(SkyOut input) : SV_Target
@@ -1334,12 +1356,18 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     s.specular = 1;
     if (pos.w > .5 && irradiance[3].w > pos.w)
         s.specular = materialSpecular(instances[uint(irradiance[3].w - 1 - pos.w)]);
-    return float4(hybridReflection(s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w))), 1);
+    float4 coat = gClearcoat.Load(pixel);
+    s.coatNormal = octDecode(coat.xy);
+    s.clearcoat = coat.zw;
+    uint header = uint(irradiance[3].w) - 1;
+    bool traceCoat = instances[header].world._m02 > .5;
+    return float4(hybridReflection(s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w)),
+                                   header, traceCoat), 1);
 }
 
 #if defined(NOVA_HALF_REFLECTIONS)
 [[vk::binding(32, 1)]] Texture2D<float4> hybridReflectionTexture : register(t32);
-bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, out float3 reflection)
+bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, bool traceCoat, out float3 reflection)
 {
     uint width, height;
     hybridReflectionTexture.GetDimensions(width, height);
@@ -1359,6 +1387,18 @@ bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, 
             float dz = abs((position.x - guideDepth.x) + (position.y - guideDepth.y));
             float alignment = min(dot(surface.normal, octDecode(guideNormal.xy)),
                                   dot(surface.geometricNormal, octDecode(guideNormal.zw)));
+            if (traceCoat)
+            {
+                float4 coat = gClearcoat.Load(guide);
+                if (abs(coat.z - surface.clearcoat.x) > .1)
+                    continue;
+                if (surface.clearcoat.x > 0)
+                {
+                    if (abs(coat.w - surface.clearcoat.y) > .1)
+                        continue;
+                    alignment = min(alignment, dot(surface.coatNormal, octDecode(coat.xy)));
+                }
+            }
             float weight = (sampleValue.a > 0 ? 1 : 0) * exp2(-120 * dz) * pow(saturate(alignment), 24);
             if (dz > .06 || alignment < .8 || abs(position.w - guideDepth.w) > .5)
                 weight = 0;
@@ -1435,12 +1475,13 @@ float4 DeferredPSMain(SkyOut input)
         float3 reflection = 0;
         float rotation = hybridRotation(uint2(input.position.xy));
         bool reflections = instances[header].world._m01 > 0;
+        bool traceCoat = reflections && instances[header].world._m02 > .5;
         if (reflections)
         {
 #if defined(NOVA_HALF_REFLECTIONS)
-            if (!upsampleHybridReflection(pixel.xy, pos, s, reflection))
+            if (!upsampleHybridReflection(pixel.xy, pos, s, traceCoat, reflection))
 #endif
-                reflection = hybridReflection(s, rotation);
+                reflection = hybridReflection(s, rotation, header, traceCoat);
             if (instances[header].world._m30 > 2.5)
                 return float4(displayRadiance(reflection), 1);
             reflectionMix = instances[header].world._m21;
@@ -1454,7 +1495,7 @@ float4 DeferredPSMain(SkyOut input)
         if (debug == 0 && (reflections || diffuseBounce || probes))
         {
             float3 viewDirection = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
-            float3 color = surfaceRadiance(s, reflection, reflectionMix, viewDirection);
+            float3 color = surfaceRadiance(s, reflection, reflectionMix, viewDirection, traceCoat);
 #if defined(NOVA_HYBRID_PROBES)
             if (probes && s.metallic < 1)
                 color += hybridSampleProbes(s.position, s.normal) * s.base * (1 - s.metallic)

@@ -322,6 +322,7 @@ namespace render::detail
             globals.world[5]     = float(hybrid.reflectionSamples);
             globals.world[6]     = hybrid.reflectionStrength;
             globals.world[7]     = hybrid.diffuseBounce ? 10.f : 0.f;
+            globals.world[8]     = hybrid.clearcoatReflections ? 1.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -933,6 +934,7 @@ namespace render::detail
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
               || previousHybrid.reflectionDenoising != hybrid.reflectionDenoising
+              || previousHybrid.clearcoatReflections != hybrid.clearcoatReflections
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {

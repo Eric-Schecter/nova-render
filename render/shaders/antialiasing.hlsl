@@ -201,7 +201,9 @@ float4 reflectionTemporal(int2 lowPixel)
         return 0;
     int3 pixel = int3(lowPixel * 2 - 1, 0);
     float4 depth = areaTex.Load(pixel), motion = motionTex.Load(pixel);
-    float2 encodedNormal = edgeTex.Load(pixel).xy;
+    float4 coat = aa[2].x > .5 ? searchTex.Load(pixel) : 0;
+    bool coated = coat.z > 0;
+    float2 encodedNormal = coated ? coat.xy : edgeTex.Load(pixel).xy;
     float currentDepth = depth.x + depth.y;
     if (aa[6].w > .5)
         return float4(encodedNormal, currentDepth, motion.w);
@@ -210,6 +212,8 @@ float4 reflectionTemporal(int2 lowPixel)
     if (current.a <= 0)
         return 0;
     float roughness = weightTex.Load(pixel).a;
+    if (coated)
+        roughness = min(roughness, coat.w);
     float3 normal = reflectionNormal(encodedNormal);
 
     // Use nearby samples from the same surface to limit isolated fireflies on rough materials.
@@ -225,8 +229,13 @@ float4 reflectionTemporal(int2 lowPixel)
         int3 guide = int3(tap * 2 - 1, 0);
         float4 tapDepth = areaTex.Load(guide);
         if (sampleValue.a <= 0 || abs(tapDepth.x + tapDepth.y - currentDepth) > .06
-            || abs(tapDepth.w - depth.w) > .5
-            || dot(normal, reflectionNormal(edgeTex.Load(guide).xy)) < .9)
+            || abs(tapDepth.w - depth.w) > .5)
+            continue;
+        float4 tapCoat = aa[2].x > .5 ? searchTex.Load(guide) : 0;
+        if (abs(tapCoat.z - coat.z) > .1 || (coated && abs(tapCoat.w - coat.w) > .1))
+            continue;
+        float2 tapNormal = coated ? tapCoat.xy : edgeTex.Load(guide).xy;
+        if (dot(normal, reflectionNormal(tapNormal)) < .9)
             continue;
         neighbors += sampleValue.rgb;
         upper = max(upper, sampleValue.rgb);

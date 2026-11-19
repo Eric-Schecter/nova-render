@@ -467,6 +467,17 @@ export function attachParameterPanel(
         )
         reflectionResolutionRow.prepend(reflectionResolutionToggle)
         renderer.append(reflectionResolutionRow)
+        const clearcoatRow = document.createElement('label'),
+          clearcoatToggle = document.createElement('input')
+        clearcoatRow.textContent = 'Trace clearcoat reflections'
+        clearcoatToggle.type = 'checkbox'
+        clearcoatToggle.checked = h.clearcoatReflections
+        clearcoatToggle.disabled = !h.reflections
+        clearcoatToggle.addEventListener('change', () =>
+          adapter.setHybrid({ clearcoatReflections: clearcoatToggle.checked }),
+        )
+        clearcoatRow.prepend(clearcoatToggle)
+        renderer.append(clearcoatRow)
         const reflectionDenoiseRow = document.createElement('label'),
           reflectionDenoiseToggle = document.createElement('input')
         reflectionDenoiseRow.textContent = 'Reflection temporal denoising'

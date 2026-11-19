@@ -28,6 +28,7 @@ namespace render
         bool       probeGI                = false;
         bool       halfResolutionReflections = false;
         bool       reflectionDenoising = false;
+        bool       clearcoatReflections = true;
     };
     struct HybridCapabilities
     {

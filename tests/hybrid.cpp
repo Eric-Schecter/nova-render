@@ -381,6 +381,42 @@ int main(int argc, char** argv)
         };
         if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
             throw std::runtime_error("Reflected helmet lost normal map or material AO");
+        const Matrix4 coatFloor{2, 0, 0, 0, 0, 0, -2, 0, 0, 1, 0, 0, 0, -.84f, 0, 1};
+        backend->SetScene(
+          {{"mirror", assets / "MaterialSample/Quad.glb"}, {"helmet", assets / "DamagedHelmet/DamagedHelmet.glb"}},
+          {{"ground", "mirror", coatFloor}, {"subject", "helmet", matrix(.65f, .65f, .65f, 0, .05f, 0)}});
+        backend->SetMaterial(0, helmet, "helmet");
+        mirror.clearcoatFactor = 1;
+        mirror.clearcoatRoughnessFactor = .02f;
+        mirror.roughness = .62f;
+        backend->SetMaterial(0, mirror, "mirror");
+        hitMaterials.clearcoatReflections = false;
+        backend->SetHybrid(hitMaterials);
+        auto coatEnvironment = capture("coat-environment");
+        hitMaterials.clearcoatReflections = true;
+        backend->SetHybrid(hitMaterials);
+        auto coatSharp = capture("coat-traced");
+        mirror.clearcoatRoughnessFactor = .7f;
+        backend->SetMaterial(0, mirror, "mirror");
+        auto coatRough = capture("coat-rough");
+        mirror.clearcoatRoughnessFactor = .02f;
+        mirror.clearcoatNormalTexture = Image{1, 1, {210, 128, 218, 255}};
+        backend->SetMaterial(0, mirror, "mirror");
+        auto coatNormal = capture("coat-normal");
+        if (groundDelta(coatEnvironment, coatSharp) < 20 || groundDelta(coatSharp, coatRough) < 20
+            || groundDelta(coatSharp, coatNormal) < 20)
+            throw std::runtime_error("Hybrid coat ray did not use its own normal and roughness");
+        hitMaterials.halfResolutionReflections = true;
+        hitMaterials.reflectionDenoising = true;
+        backend->SetHybrid(hitMaterials);
+        auto coatHalf = capture("coat-half");
+        for (int f = 0; f < 4; ++f)
+            coatHalf = capture("coat-half");
+        if (groundDelta(coatEnvironment, coatHalf) < 20)
+            throw std::runtime_error("Half-resolution denoising lost the traced coat");
+        mirror.clearcoatFactor = 0;
+        mirror.clearcoatNormalTexture = {};
+
         backend->SetScene(
           {{"mirror", assets / "SceneSample/Red.glb"}, {"wall", assets / "SceneSample/Red.glb"}},
           {{"ground", "mirror", matrix(2, .06f, 2, 0, -.9f, 0)}, {"wall", "wall", matrix(2, .9f, .06f, 0, 0, -1)}});

@@ -145,11 +145,21 @@ namespace render::detail
                     resolve->sources[4] = AARawMotion;
                     resolve->sources[5] = AAReflectionPreviousGuide;
                     resolve->sources[6] = AAModelPosition;
+                    if (hybridSettings.clearcoatReflections)
+                    {
+                        resolve->sources[7] = AAModelClearcoat;
+                        resolve->uniforms[2][0] = 1;
+                    }
                     auto* guide = add(30, AAReflectionPreviousGuide);
                     guide->sources[1] = AAModelNormal;
                     guide->sources[4] = AARawMotion;
                     guide->sources[6] = AAModelPosition;
                     guide->uniforms[6][3] = 1;
+                    if (hybridSettings.clearcoatReflections)
+                    {
+                        guide->sources[7] = AAModelClearcoat;
+                        guide->uniforms[2][0] = 1;
+                    }
                 }
                 auto* p = add(-5, sceneColor);
                 if (halfReflections)

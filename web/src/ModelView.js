@@ -401,6 +401,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ],
         4,
       )
+      record[8] = hybrid?.clearcoatReflections ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
       record.set(

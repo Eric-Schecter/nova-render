@@ -424,7 +424,8 @@ export async function createAntiAliasingView({
         if (denoiseReflections) {
           resolvedReflection = frames % 2 ? reflectionHistoryB : reflectionHistoryA
           const previous = frames % 2 ? reflectionHistoryA : reflectionHistoryB
-          add(30, resolvedReflection).sources.splice(
+          const resolve = add(30, resolvedReflection)
+          resolve.sources.splice(
             0,
             7,
             hybridReflectionTarget,
@@ -440,6 +441,10 @@ export async function createAntiAliasingView({
           guide.sources[4] = 18
           guide.sources[6] = 87
           guide.u[27] = 1
+          if (external.hybrid.clearcoatReflections) {
+            resolve.sources[7] = guide.sources[7] = modelClearcoatTarget
+            resolve.u[8] = guide.u[8] = 1
+          }
         }
         const p = add(-5, sceneColor)
         if (halfReflections) p.sources[9] = resolvedReflection
