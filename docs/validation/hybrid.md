@@ -122,3 +122,18 @@ node scripts/webgpu/check-hybrid-showroom.mjs \
 The A/B run loads the same five model instances and the project's main camera. It uses the same viewport, lights, AO, reflections, one shadow sample, one AO sample, and temporal reconstruction. It records median frame time after four warm-up frames for a fixed camera and a repeatable lateral camera move. Both captures must stay within 0.15/255 mean absolute channel error. Timing is recorded for per-device comparison. Captures and JSON are written to `build/validation/hybrid-showroom`.
 
 Hybrid skips BVH shadow traversal outside a local light's range or spotlight cone. Directional shadows and the selected-light raw visibility diagnostic retain their existing behavior.
+
+### WebGPU pass profiling
+
+The same showroom can be profiled without editing the installed SDK. Start the editor Web preview on port 5237 or set `NOVA_EDITOR_URL`. Use a Chrome WebGPU adapter that exposes `timestamp-query`.
+
+```sh
+node scripts/webgpu/profile-hybrid-showroom.mjs \
+  ../nova-editor/output/car-showroom-hybrid/showroom.zip
+```
+
+The profiler uses one frame scheduler, discards four warm-up frames, and records sixteen normal frames and eight serialized diagnostic frames per case. It runs fixed and moving cameras with full effects, AO off, reflections off, and both off. Each case keeps the shadow budget, resolution, main camera, and temporal mode fixed.
+
+`build/validation/hybrid-showroom/gpu-profile.json` reports normal frame timings separately from median GPU pass timings for G-buffer, shadows, combined lighting, temporal reconstruction, display, and other render passes. The diagnostic submits each pass separately and waits for completion to avoid overlapping timestamp windows on Metal-backed Chrome. Serialized timings describe isolated passes and should not be summed to predict a normal frame. Compare the lighting time across cases to estimate AO and reflection costs. These estimates include interactions between the effects. Submission-to-completion is a browser-side interval that includes GPU execution and completion notification. It is not a direct measure of queue residency, and the total frame time also includes work outside the instrumented passes.
+
+Apple M4 baseline for the 1269 × 845 editor canvas with all effects enabled. Normal frame medians were 88.0 ms still and 88.7 ms moving. With reflections disabled they were 22.0 ms still and 21.4 ms moving. In the serialized diagnostic, the combined lighting pass took 74.9/74.0 ms and shadows took 6.3/6.5 ms. These results identify reflections as the largest effect cost on this fixture. They do not isolate traversal from reflection-hit shading.
