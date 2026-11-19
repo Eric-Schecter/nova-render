@@ -83,6 +83,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     renderer.setHybrid({
       shadows: true,
       shadowSamples: 4,
+      diffuseBounce: true,
       reflections: true,
       reflectionSamples: 1,
       halfResolutionReflections: true,
