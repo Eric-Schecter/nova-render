@@ -285,19 +285,48 @@ export class SceneData {
       const first = index
       for (const i of effective)
         if (i.assetId === id) {
+          const normal = instanceNormal(i.world)
+          const invertible = normal.some((v) => v !== 0)
           const values = [
             ...i.world,
-            ...instanceNormal(i.world),
+            ...normal,
             ...m.data.baseColor,
             ...m.data.material,
             ...m.data.emissive,
             input.length,
             m.shadowFirst,
-            i.castShadow === false || instanceNormal(i.world).every((v) => v === 0) ? 0 : 1,
+            i.castShadow === false || !invertible ? 0 : 1,
             m.shadowNodes,
           ]
           if (m.data.animation) {
             values[28] = players.get(i.id).paletteOffset + 1
+          }
+          if (invertible && !m.data.animation && m.shadowNodes) {
+            const { minimum: low, maximum: high } = m.picking.nodes[0]
+            const center = low.map((x, k) => (x + high[k]) * 0.5)
+            const extent = low.map(
+              (x, k) => (high[k] - x) * 0.5 + 1e-5 * Math.max(1, Math.abs(x), Math.abs(high[k])),
+            )
+            const bounds = []
+            for (let k = 0; k < 3; k++) {
+              const position =
+                i.world[k] * center[0] +
+                i.world[k + 4] * center[1] +
+                i.world[k + 8] * center[2] +
+                i.world[k + 12]
+              const radius =
+                Math.abs(i.world[k]) * extent[0] +
+                Math.abs(i.world[k + 4]) * extent[1] +
+                Math.abs(i.world[k + 8]) * extent[2]
+              bounds.push(position - radius, position + radius)
+            }
+            if (bounds.every((v) => Number.isFinite(Math.fround(v)))) {
+              values[35] = -1
+              for (let k = 0; k < 3; k++) {
+                values[32 + k] = bounds[k * 2]
+                values[36 + k] = bounds[k * 2 + 1]
+              }
+            }
           }
           if (!values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
             throw Error('Instance transform overflows float32')

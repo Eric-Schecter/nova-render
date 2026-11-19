@@ -17,6 +17,27 @@ function replace(source, from, to) {
   if (!source.includes(from)) throw Error('SDK profiling anchor not found: ' + from)
   return source.replace(from, to)
 }
+const split = process.argv.includes('--reflection-split')
+const cheap = process.argv.includes('--cheap-hit')
+if (cheap && !split) throw Error('--cheap-hit requires --reflection-split')
+const shade = split
+  ? await compile(
+      cheap
+        ? replace(
+            source,
+            'radiance = hybridHitRadiance(instance, hitTri, bary, origin + ray * distance, ray);',
+            'radiance = float3(0.15, 0.2, 0.25) + 0.001 * (frac(distance) + bary.x + float((instance ^ hitTri) & 7u));',
+          )
+        : source,
+      {
+        model: true,
+        vertexEntry: 'SkyVSMain',
+        fragmentEntry: 'DeferredPSMain',
+        optimizeModel: true,
+        maxSourceBytes: 262144,
+      },
+    )
+  : null
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
@@ -30,6 +51,10 @@ try {
   await page.route('**/sdk/generated/model-hybrid-shadow.json', (route) =>
     route.fulfill({ json: shadow }),
   )
+  if (shade)
+    await page.route('**/sdk/generated/model-deferred.json', (route) =>
+      route.fulfill({ json: shade }),
+    )
   await page.route('**/sdk/src/Nova.js', async (route) => {
     let body = await (await route.fetch()).text()
     body = replace(
@@ -152,7 +177,7 @@ export async function createRenderer(options) {
     await profile.raw.waitIdle()
   })
   await page.getByRole('combobox', { name: '渲染模式' }).selectOption('hybrid')
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (split) => {
     const { raw } = profile
     const camera = raw.getViewCamera()
     const median = (values) => {
@@ -160,15 +185,21 @@ export async function createRenderer(options) {
       return (values[values.length / 2 - 1] + values[values.length / 2]) / 2
     }
     const cases = {}
+    const effects = split
+      ? [
+          ['full', true, true],
+          ['noReflections', true, false],
+        ]
+      : [
+          ['full', true, true],
+          ['noAO', false, true],
+          ['noReflections', true, false],
+          ['neither', false, false],
+        ]
     for (const moving of [false, true]) {
       const name = moving ? 'moving' : 'still'
       cases[name] = {}
-      for (const [label, ao, reflections] of [
-        ['full', true, true],
-        ['noAO', false, true],
-        ['noReflections', true, false],
-        ['neither', false, false],
-      ]) {
+      for (const [label, ao, reflections] of effects) {
         raw.setViewCamera(camera)
         raw.setHybrid({
           ambientOcclusion: ao,
@@ -231,10 +262,16 @@ export async function createRenderer(options) {
       samplesPerCase: { frame: 16, serialGpu: 8 },
       cases,
     }
-  })
+  }, split)
   const dir = resolve('build/validation/hybrid-showroom')
   await mkdir(dir, { recursive: true })
-  await writeFile(resolve(dir, 'gpu-profile.json'), JSON.stringify(result, null, 2) + '\n')
+  await writeFile(
+    resolve(
+      dir,
+      split ? (cheap ? 'reflection-cheap-hit.json' : 'reflection-full.json') : 'gpu-profile.json',
+    ),
+    JSON.stringify(result, null, 2) + '\n',
+  )
   console.log(JSON.stringify(result, null, 2))
 } finally {
   await browser.close()

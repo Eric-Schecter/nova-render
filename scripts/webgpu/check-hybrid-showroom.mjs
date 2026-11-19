@@ -45,6 +45,10 @@ try {
       const shader = shaders[new URL(route.request().url()).pathname.split('/').at(-1)]
       return shader ? route.fulfill({ json: shader }) : route.continue()
     })
+    if (name === 'after' && process.argv.includes('--instance-bounds'))
+      await page.route('**/sdk/src/SceneData.js', (route) =>
+        route.fulfill({ path: resolve('web/src/SceneData.js'), contentType: 'text/javascript' }),
+      )
     await page.route('**/sdk/src/Nova.js', async (route) => {
       const body =
         (await (await route.fetch()).text()).replace(

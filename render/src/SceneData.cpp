@@ -174,6 +174,29 @@ namespace render::detail
                     std::copy(m.data->baseColor.begin(), m.data->baseColor.end(), v.baseColor);
                     std::copy(m.data->material.begin(), m.data->material.end(), v.material);
                     std::copy(m.data->emissive.begin(), m.data->emissive.end(), v.emissive);
+                    // Static draw records do not use the material fields. Pack world-space BVH bounds there.
+                    if (!m.data->animation && m.shadowNodes && std::abs(determinant) > 1e-12f)
+                    {
+                        const auto& root = shadowRecords[m.shadowFirst];
+                        glm::dvec3  low(root.baseColor[0], root.baseColor[1], root.baseColor[2]);
+                        glm::dvec3  high(root.material[0], root.material[1], root.material[2]);
+                        const auto  center   = glm::dvec3(world[3]) + glm::dmat3(linear) * ((low + high) * .5);
+                        const auto  localPad = 1e-5 * glm::max(glm::dvec3(1), glm::max(glm::abs(low), glm::abs(high)));
+                        const auto  extent   = (high - low) * .5 + localPad;
+                        const auto  radius   = extent.x * glm::abs(glm::dvec3(world[0]))
+                                            + extent.y * glm::abs(glm::dvec3(world[1]))
+                                            + extent.z * glm::abs(glm::dvec3(world[2]));
+                        const glm::vec3 minimum(center - radius), maximum(center + radius);
+                        auto            finite = [](glm::vec3 a) {
+                            return std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(a.z);
+                        };
+                        if (finite(minimum) && finite(maximum))
+                        {
+                            std::copy_n(glm::value_ptr(minimum), 3, v.baseColor);
+                            std::copy_n(glm::value_ptr(maximum), 3, v.material);
+                            v.baseColor[3] = -1;
+                        }
+                    }
                     if (m.data->animation)
                         v.normal[12] = float(nextPlayers.at(i.id).paletteOffset + 1);
                     v.uv[0] = float(input.size());

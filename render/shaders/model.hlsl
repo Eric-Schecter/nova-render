@@ -926,6 +926,9 @@ bool hybridNearest(
     hitBary                   = 0;
     [loop] for (uint i = 0; i < uint(instances[header].emissive.x); ++i)
     {
+        if (instances[i].baseColor.w < 0
+            && !shadowBox(instances[i].baseColor.xyz, instances[i].material.xyz, origin, direction, distance))
+            continue;
         float3 translation = float3(instances[i].world._m03, instances[i].world._m13, instances[i].world._m23);
         float3 nx =
           float3(instances[i].normalMatrix._m00, instances[i].normalMatrix._m10, instances[i].normalMatrix._m20);

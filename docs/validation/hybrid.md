@@ -137,3 +137,22 @@ The profiler uses one frame scheduler, discards four warm-up frames, and records
 `build/validation/hybrid-showroom/gpu-profile.json` reports normal frame timings separately from median GPU pass timings for G-buffer, shadows, combined lighting, temporal reconstruction, display, and other render passes. The diagnostic submits each pass separately and waits for completion to avoid overlapping timestamp windows on Metal-backed Chrome. Serialized timings describe isolated passes and should not be summed to predict a normal frame. Compare the lighting time across cases to estimate AO and reflection costs. These estimates include interactions between the effects. Submission-to-completion is a browser-side interval that includes GPU execution and completion notification. It is not a direct measure of queue residency, and the total frame time also includes work outside the instrumented passes.
 
 Apple M4 baseline for the 1269 × 845 editor canvas with all effects enabled. Normal frame medians were 88.0 ms still and 88.7 ms moving. With reflections disabled they were 22.0 ms still and 21.4 ms moving. In the serialized diagnostic, the combined lighting pass took 74.9/74.0 ms and shadows took 6.3/6.5 ms. These results identify reflections as the largest effect cost on this fixture. They do not isolate traversal from reflection-hit shading.
+
+#### Reflection traversal and instance bounds
+
+Use `--reflection-split` on the profiler for the full reflection and reflection-disabled cases, then repeat with `--reflection-split --cheap-hit`. The cheap-hit diagnostic retains the closest hit, distance, and barycentrics, and substitutes a simple hit color. It measures the remaining traversal and ray setup together. Its output is for timing only.
+
+At 1269 × 845 on Apple M4 WebGPU, the isolated lighting pass measured 68.9/68.3 ms for still/moving views with full reflection, 59.8/62.7 ms with cheap hit shading, and approximately 8–11 ms with reflection disabled. These are separate diagnostic runs.
+
+The production path now tests conservative world-space bounds before transforming a ray into the instance BVH. Static instance bounds come from the existing local BVH root and are refreshed when transforms change. A/B verification uses the same viewport and per-effect ray budgets.
+
+```sh
+git show 243416e:render/shaders/model.hlsl > /tmp/nova-hybrid-bounds-baseline.hlsl
+node scripts/webgpu/check-hybrid-showroom.mjs \
+  ../nova-editor/output/car-showroom-hybrid/showroom.zip \
+  /tmp/nova-hybrid-bounds-baseline.hlsl --instance-bounds
+```
+
+The WebGPU fixture measured 81.9 → 75.0 ms still and 86.0 → 73.6 ms moving, with zero pixel difference in both captures.
+
+The 1800 × 1120 native Metal moving capture was pixel-identical in both test orders. The Metal renderer did not gain speed on this fixture. Fixed-camera medians were 73.4 → 75.0 ms and 72.1 → 79.7 ms, while moving medians were 89.1 → 92.1 ms and 94.1 → 94.3 ms. Metal and Vulkan passed the Hybrid and scene-render regressions.
