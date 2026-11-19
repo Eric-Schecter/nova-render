@@ -1,3 +1,4 @@
+import { modelVertexFloats } from './ModelVertex.js'
 // The current buffer holds the entire grid. Only the scheduled range is written;
 // a snapshot gives the update shader stable history for that range.
 export function createHybridProbes(device, pipeline, layout) {
@@ -87,14 +88,19 @@ export function probeSceneBounds(vertices, instances, draws) {
   const low = [Infinity, Infinity, Infinity]
   const high = [-Infinity, -Infinity, -Infinity]
   for (const draw of draws || [
-    { firstVertex: 0, vertexCount: vertices.length / 12, firstInstance: 0, instanceCount: 1 },
+    {
+      firstVertex: 0,
+      vertexCount: vertices.length / modelVertexFloats,
+      firstInstance: 0,
+      instanceCount: 1,
+    },
   ]) {
     const minimum = [Infinity, Infinity, Infinity]
     const maximum = [-Infinity, -Infinity, -Infinity]
     if (!draw.vertexCount) continue
     for (let i = draw.firstVertex; i < draw.firstVertex + draw.vertexCount; i++) {
       for (let k = 0; k < 3; k++) {
-        const value = vertices[i * 12 + k]
+        const value = vertices[i * modelVertexFloats + k]
         minimum[k] = Math.min(minimum[k], value)
         maximum[k] = Math.max(maximum[k], value)
       }

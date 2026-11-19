@@ -72,6 +72,8 @@ namespace render::detail
             range(x, std::numeric_limits<float>::max());
         range(m.normalScale, 16);
         range(m.occlusionStrength, 1);
+        if (m.occlusionTexCoord > 1)
+            throw std::invalid_argument("AO texture coordinate set must be 0 or 1");
         for (float x : m.emissive)
             range(x, 65504);
         for (const auto* image : maps(m))
@@ -139,6 +141,7 @@ namespace render::detail
             record[3] = m.specularFactor;
             record[4] = m.clearcoatFactor;
             record[5] = m.clearcoatRoughnessFactor;
+            record[6] = float(m.occlusionTexCoord);
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
             record[36] = m.metallic;
             record[37] = m.roughness;

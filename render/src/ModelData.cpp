@@ -54,8 +54,24 @@ namespace render::detail
         }
         glm::vec2 vec2(const tinygltf::Model& m, int a, size_t i)
         {
+            const auto& accessor  = m.accessors.at(a);
+            const int   component = accessor.componentType;
             glm::vec2 v;
-            std::memcpy(&v, element(m, a, i, TINYGLTF_TYPE_VEC2, TINYGLTF_COMPONENT_TYPE_FLOAT), 8);
+            if (component == TINYGLTF_COMPONENT_TYPE_FLOAT && !accessor.normalized)
+                std::memcpy(&v, element(m, a, i, TINYGLTF_TYPE_VEC2, component), sizeof(v));
+            else if (component == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE && accessor.normalized)
+            {
+                const auto* values = element(m, a, i, TINYGLTF_TYPE_VEC2, component);
+                v                  = glm::vec2(values[0], values[1]) / 255.f;
+            }
+            else if (component == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT && accessor.normalized)
+            {
+                uint16_t values[2];
+                std::memcpy(values, element(m, a, i, TINYGLTF_TYPE_VEC2, component), sizeof(values));
+                v = glm::vec2(values[0], values[1]) / 65535.f;
+            }
+            else
+                throw std::runtime_error("Unsupported glTF texture coordinate encoding");
             return v;
         }
     } // namespace
@@ -137,9 +153,16 @@ namespace render::detail
                     const auto glass     = dielectric(gltf.materials.at(p.material));
                     const int  position  = p.attributes.at("POSITION"),
                               uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
+                    const int   uv1      = p.attributes.count("TEXCOORD_1") ? p.attributes.at("TEXCOORD_1") : -1;
                     const auto& material = gltf.materials.at(p.material);
-                    if(uv<0 && (material.pbrMetallicRoughness.baseColorTexture.index>=0||material.pbrMetallicRoughness.metallicRoughnessTexture.index>=0||material.normalTexture.index>=0||material.occlusionTexture.index>=0||material.emissiveTexture.index>=0))
+                    const auto& pbr      = material.pbrMetallicRoughness;
+                    const auto& ao       = material.occlusionTexture;
+                    if (uv < 0 && (pbr.baseColorTexture.index >= 0 || pbr.metallicRoughnessTexture.index >= 0
+                        || material.normalTexture.index >= 0 || material.emissiveTexture.index >= 0
+                        || (ao.index >= 0 && ao.texCoord == 0)))
                         throw std::runtime_error("Textured material requires TEXCOORD_0");
+                    if (ao.index >= 0 && ao.texCoord == 1 && uv1 < 0)
+                        throw std::runtime_error("AO texture requires TEXCOORD_1");
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto count =
                       p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
@@ -176,10 +199,11 @@ namespace render::detail
                         const glm::vec3 pos = glm::vec3(matrix * glm::vec4(vec3(gltf, position, v), 1));
                         const glm::vec3 n   = glm::normalize(normals * localNormal);
                         const glm::vec2 t   = uv >= 0 ? vec2(gltf, uv, v) : glm::vec2(0);
+                        const glm::vec2 t1  = uv1 >= 0 ? vec2(gltf, uv1, v) : t;
                         for (int k = 0; k < 3; ++k)
                             if (!std::isfinite(pos[k]) || !std::isfinite(n[k]))
                                 throw std::runtime_error("Non-finite model data");
-                        if (!std::isfinite(t.x) || !std::isfinite(t.y))
+                        if (!std::isfinite(t.x) || !std::isfinite(t.y) || !std::isfinite(t1.x) || !std::isfinite(t1.y))
                             throw std::runtime_error("Non-finite texture coordinates");
                         minimum = glm::min(minimum, pos);
                         maximum = glm::max(maximum, pos);
@@ -188,7 +212,8 @@ namespace render::detail
                         result->vertices.push_back(
                           {{pos.x, pos.y, pos.z, float(p.material + 1)},
                            {n.x, n.y, n.z, glass[0]},
-                           {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]}});
+                           {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]},
+                           {t1.x, t1.y, 0, 0}});
                     }
                 }
             for (int child : node.children)
@@ -295,8 +320,11 @@ namespace render::detail
                 slot.emissive[k] = static_cast<float>(mat.emissiveFactor[k]);
             if (
               pbr.baseColorTexture.texCoord || mat.normalTexture.texCoord || pbr.metallicRoughnessTexture.texCoord
-              || mat.occlusionTexture.texCoord || mat.emissiveTexture.texCoord)
+              || mat.emissiveTexture.texCoord)
                 throw std::runtime_error("Only TEXCOORD_0 is supported");
+            if (mat.occlusionTexture.texCoord < 0 || mat.occlusionTexture.texCoord > 1)
+                throw std::runtime_error("AO texture coordinate set must be 0 or 1");
+            slot.occlusionTexCoord = uint32_t(mat.occlusionTexture.texCoord);
             const int textures[] = {
               pbr.baseColorTexture.index,
               mat.normalTexture.index,

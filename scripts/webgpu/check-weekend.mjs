@@ -28,8 +28,8 @@ try {
       const Nova = await import(root + '/Nova.js'),
         { loadGLB } = await import(root + '/ModelData.js')
       const data = await loadGLB('/generated/WeekendSpheres.glb')
-      const glass = data.vertices.filter((_, i) => i % 12 === 7 && data.vertices[i] > 0).length
-      if (!glass || data.vertices.length / 36 < 50000)
+      const glass = data.vertices.filter((_, i) => i % 16 === 7 && data.vertices[i] > 0).length
+      if (!glass || data.vertices.length / 48 < 50000)
         throw Error('Missing glass or sphere geometry')
       data.images.forEach((i) => i.bitmap?.close())
       const canvas = document.createElement('canvas')
@@ -70,7 +70,7 @@ try {
       })
       scene.setBudget({ samples: 4, milliseconds: 0 })
       window.scene = scene
-      return { triangles: data.vertices.length / 36, glassVertices: glass }
+      return { triangles: data.vertices.length / 48, glassVertices: glass }
     },
     '/@fs' + resolve('web/src'),
   )

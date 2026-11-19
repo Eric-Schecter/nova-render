@@ -59,7 +59,7 @@ try {
         }
         results.push(hit)
       }
-      const data = { vertices: new Float32Array(4096 * 36) }
+      const data = { vertices: new Float32Array(4096 * 48) }
       for (let i = 0; i < 4096; i++)
         for (let j = 0; j < 3; j++)
           data.vertices.set(
@@ -68,7 +68,7 @@ try {
               [i * 3 + 1, 0, 0],
               [i * 3, 1, 0],
             ][j],
-            i * 36 + j * 12,
+            i * 48 + j * 16,
           )
       const begin = performance.now(),
         mesh = new PickMesh(data)

@@ -1,3 +1,4 @@
+import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 import { createAnimationPlayer, evaluateAnimation, poseAnimationGeometry } from './AnimationData.js'
 import { PickMesh, pickScene } from './Picking.js'
@@ -62,7 +63,7 @@ export class SceneData {
     const minimum = [Infinity, Infinity, Infinity],
       maximum = [-Infinity, -Infinity, -Infinity],
       m = instance.world
-    for (let i = 0; i < data.vertices.length; i += 12)
+    for (let i = 0; i < data.vertices.length; i += modelVertexFloats)
       for (let k = 0; k < 3; ++k) {
         const p =
           m[k] * data.vertices[i] +
@@ -86,7 +87,7 @@ export class SceneData {
       for (const [instance, p] of this.players)
         if (p.assetId === id) {
           const vertices = this.poseGeometry(instance).vertices
-          for (let i = 0; i < vertices.length; i += 12)
+          for (let i = 0; i < vertices.length; i += modelVertexFloats)
             for (let k = 0; k < 3; ++k) {
               let value = vertices[i + k]
               if (this.sourceSpaces.get(id))
@@ -196,14 +197,15 @@ export class SceneData {
         for (const m of next.values()) vertexCount += m.data.vertices.length
         packed.vertices = new Float32Array(vertexCount)
         if ([...next.values()].some((m) => m.data.animation))
-          packed.skinInputs = new Uint8Array((vertexCount / 12) * 64)
+          packed.skinInputs = new Uint8Array((vertexCount / modelVertexFloats) * 64)
         let offset = 0
         for (const m of next.values()) {
-          m.first = offset / 12
-          m.count = m.data.vertices.length / 12
+          m.first = offset / modelVertexFloats
+          m.count = m.data.vertices.length / modelVertexFloats
           packed.vertices.set(m.data.vertices, offset)
-          if (m.data.skinInputs) packed.skinInputs.set(m.data.skinInputs, (offset / 12) * 64)
-          for (let i = offset + 3; i < offset + m.data.vertices.length; i += 12)
+          if (m.data.skinInputs)
+            packed.skinInputs.set(m.data.skinInputs, (offset / modelVertexFloats) * 64)
+          for (let i = offset + 3; i < offset + m.data.vertices.length; i += modelVertexFloats)
             packed.vertices[i] += packed.materials.length
           packed.materials.push(...m.data.materials)
           offset += m.data.vertices.length
@@ -220,7 +222,7 @@ export class SceneData {
         this.shadowRecords = new Float32Array(shadowCount)
         for (const m of next.values()) {
           this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
-          const offset = packed.vertices[m.first * 12 + 3] - m.data.vertices[3]
+          const offset = packed.vertices[m.first * modelVertexFloats + 3] - m.data.vertices[3]
           for (let row = m.shadowNodes; row < m.shadowData.length / 48; row++)
             this.shadowRecords[(m.shadowFirst + row) * 48 + 43] += offset
         }
@@ -338,7 +340,8 @@ export class SceneData {
           throw Error('Scene shadow BVHs exceed 64 MiB')
         instances[at + 45] = length / 48
         instances[at + 47] = nodes
-        const offset = this.model.vertices[mesh.first * 12 + 3] - mesh.data.vertices[3]
+        const offset =
+          this.model.vertices[mesh.first * modelVertexFloats + 3] - mesh.data.vertices[3]
         for (let row = nodes; row < rows.length / 48; row++) rows[row * 48 + 43] += offset
         chunks.push(rows)
         length += rows.length
@@ -439,8 +442,9 @@ export class SceneData {
       const m = this.meshes.get(i.assetId)
       count += m.count
     }
-    if (count * 48 > 128 * 1024 * 1024) throw Error('Ray scene geometry exceeds 128 MiB')
-    const vertices = new Float32Array(Math.max(36, count * 12))
+    if (count * modelVertexFloats * Float32Array.BYTES_PER_ELEMENT > 128 * 1024 * 1024)
+      throw Error('Ray scene geometry exceeds 128 MiB')
+    const vertices = new Float32Array(Math.max(modelTriangleFloats, count * modelVertexFloats))
     let offset = 0
     for (const i of this.pickInstances) {
       const mesh = this.meshes.get(i.assetId),
@@ -448,8 +452,8 @@ export class SceneData {
         n = instanceNormal(w)
       if (n.every((v) => v === 0)) continue
       for (let j = 0; j < mesh.count; j++) {
-        const at = (mesh.first + j) * 12,
-          v = this.model.vertices.subarray(at, at + 12)
+        const at = (mesh.first + j) * modelVertexFloats,
+          v = this.model.vertices.subarray(at, at + modelVertexFloats)
         vertices.set(v, offset)
         for (let k = 0; k < 3; k++)
           vertices[offset + k] = w[k] * v[0] + w[4 + k] * v[1] + w[8 + k] * v[2] + w[12 + k]
@@ -457,14 +461,14 @@ export class SceneData {
           length = Math.hypot(...normal)
         for (let k = 0; k < 3; k++) vertices[offset + 4 + k] = length ? normal[k] / length : 0
         vertices[offset + 10] = i.castShadow === false ? -1 : 0
-        offset += 12
+        offset += modelVertexFloats
       }
     }
     if (!offset) {
-      offset = 36
+      offset = modelTriangleFloats
       for (let i = 0; i < 3; i++) {
-        vertices[i * 12 + 3] = 1
-        vertices[i * 12 + 5] = 1
+        vertices[i * modelVertexFloats + 3] = 1
+        vertices[i * modelVertexFloats + 5] = 1
       }
     }
     const packed = vertices.slice(0, offset)

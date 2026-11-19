@@ -24,7 +24,7 @@ try {
         const data = await loadGLB('/generated/CornellBox.glb')
         let path
         try {
-          if (data.vertices.length / 36 !== 32) throw Error('Cornell geometry changed')
+          if (data.vertices.length / 48 !== 32) throw Error('Cornell geometry changed')
           path = await createPathView(device, data, '/generated/')
           const camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 },
             light = { direction: [0, 1, 2], color: [1, 1, 1], intensity: 3 },

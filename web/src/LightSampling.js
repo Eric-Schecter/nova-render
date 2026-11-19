@@ -1,3 +1,4 @@
+import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 // CPU distributions only; both native and web evaluate the same PDFs in pathtrace.hlsl.
 const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 const half = (h) =>
@@ -62,10 +63,10 @@ export function buildLightSampling(data, images, vertices, originalIds) {
   }
   const records = [],
     weights = []
-  for (let id = 0; id < vertices.length / 36; id++) {
-    const a = id * 36,
-      b = a + 12,
-      c = a + 24,
+  for (let id = 0; id < vertices.length / modelTriangleFloats; id++) {
+    const a = id * modelTriangleFloats,
+      b = a + modelVertexFloats,
+      c = b + modelVertexFloats,
       e = [0, 1, 2].map((k) => vertices[b + k] - vertices[a + k]),
       f = [0, 1, 2].map((k) => vertices[c + k] - vertices[a + k]),
       cross = [0, 1, 2].map(
@@ -95,7 +96,7 @@ export function buildLightSampling(data, images, vertices, originalIds) {
   records.sort((a, b) => a.original - b.original)
   records.forEach((r) => weights.push(r.weight))
   const distribution = cdf(weights),
-    count = vertices.length / 36
+    count = vertices.length / modelTriangleFloats
   // Header + emitter records + per-primitive PMFs + maximum 64² cubemap CDF.
   const words = new Uint32Array(8 + records.length * 4 + count + 6 * 64 * 64),
     floats = new Float32Array(words.buffer)

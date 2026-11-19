@@ -84,7 +84,8 @@ int main(int argc, char** argv)
                         const auto  expected  = ReferenceSkin(data);
                         const auto* actual    = static_cast<const float*>(output.contents);
                         const auto* reference = reinterpret_cast<const float*>(expected.data());
-                        for (size_t i = 0; i < expected.size() * 12; ++i)
+                        for (size_t i = 0; i < expected.size() * sizeof(render::detail::ModelVertex) / sizeof(float);
+                             ++i)
                         {
                             if (!std::isfinite(actual[i]))
                                 throw std::runtime_error("Nonfinite GPU skin result");

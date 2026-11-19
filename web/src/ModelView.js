@@ -1,3 +1,4 @@
+import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 import { createHybridProbes, probeSceneBounds } from './HybridProbes.js'
 import { PickMesh } from './Picking.js'
 import { lightRecords } from './Lighting.js'
@@ -57,7 +58,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     const makeBuffer = (bytes, usage, label) => {
       const buffer = device.createBuffer({
         label,
-        size: Math.max(48, bytes.byteLength),
+        size: Math.max(modelVertexFloats * Float32Array.BYTES_PER_ELEMENT, bytes.byteLength),
         usage: usage | GPUBufferUsage.COPY_DST,
       })
       resources.push(buffer)
@@ -603,14 +604,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                   draw.firstVertex,
                   draw.firstInstance,
                 )
-          } else pass.draw(data.vertices.length / 12)
+          } else pass.draw(data.vertices.length / modelVertexFloats)
         }
       },
       finishAA() {
         lastScene = currentScene?.slice()
         lastPalette = data.jointMatrices?.slice()
       },
-      triangles: data.vertices.length / 36,
+      triangles: data.vertices.length / modelTriangleFloats,
       get skinned() {
         return !!data.skinInputs?.byteLength
       },
@@ -797,7 +798,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                   draw.firstVertex,
                   draw.firstInstance,
                 )
-          } else pass.draw(data.vertices.length / 12)
+          } else pass.draw(data.vertices.length / modelVertexFloats)
         }
         pass.end()
         device.queue.submit([encoder.finish()])

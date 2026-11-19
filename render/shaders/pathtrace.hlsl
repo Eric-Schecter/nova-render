@@ -3,6 +3,7 @@ struct Vertex
     float4 position;
     float4 normal;
     float4 uv;
+    float4 uv1;
 };
 #ifdef NOVA_WEB_BVH
 struct BVHNode

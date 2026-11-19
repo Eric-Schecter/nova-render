@@ -1,3 +1,4 @@
+import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a, b) => [
   a[1] * b[2] - a[2] * b[1],
@@ -26,14 +27,14 @@ function box(low, high, o, d, limit) {
 }
 export class PickMesh {
   constructor(data) {
-    if (!data || data.vertices.length % 36) throw Error('Invalid picking geometry')
+    if (!data || data.vertices.length % modelTriangleFloats) throw Error('Invalid picking geometry')
     this.data = data
-    this.triangles = Array.from({ length: data.vertices.length / 36 }, (_, i) => i)
+    this.triangles = Array.from({ length: data.vertices.length / modelTriangleFloats }, (_, i) => i)
     this.nodes = []
     if (this.triangles.length) this.build(0, this.triangles.length)
   }
   point(triangle, vertex) {
-    const offset = triangle * 36 + vertex * 12
+    const offset = triangle * modelTriangleFloats + vertex * modelVertexFloats
     return Array.from(this.data.vertices.subarray(offset, offset + 3))
   }
   build(first, count) {
@@ -56,7 +57,8 @@ export class PickMesh {
         if (maximum[k] - minimum[k] > maximum[axis] - minimum[axis]) axis = k
       const centroid = (t) => {
         let v = 0
-        for (let j = 0; j < 3; j++) v += this.data.vertices[t * 36 + j * 12 + axis]
+        for (let j = 0; j < 3; j++)
+          v += this.data.vertices[t * modelTriangleFloats + j * modelVertexFloats + axis]
         return v
       }
       const sorted = this.triangles
@@ -93,7 +95,8 @@ export class PickMesh {
       const row = (this.nodes.length + i) * 48
       for (let j = 0; j < 3; j++) {
         records.set(this.point(t, j), row + 32 + j * 4)
-        const v = (t * 3 + j) * 12
+        const v = (t * 3 + j) * modelVertexFloats
+        records.set(this.data.vertices.subarray(v + 12, v + 14), row + j * 2)
         records[row + 43] = this.data.vertices[v + 3] - 1
         if (j < 2) {
           records[row + 44 + j * 2] = this.data.vertices[v + 8]

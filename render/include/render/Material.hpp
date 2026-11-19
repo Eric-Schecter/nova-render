@@ -1,6 +1,7 @@
 #pragma once
 #include "Image.hpp"
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -37,6 +38,7 @@ namespace render
         float                specularFactor = 1;
         std::array<float, 3> specularColorFactor{1, 1, 1};
         float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
+        uint32_t             occlusionTexCoord = 0; // 0 or 1 for the occlusion texture.
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

@@ -214,6 +214,46 @@ int main(int argc, char** argv)
                 difference += std::abs(int(diffuse[i]) - int(coated[i]));
             Require(difference > 1000, "Clearcoat factor did not affect raster shading");
         }
+        auto twoUV = std::make_shared<detail::ModelData>(*source);
+        for (auto& vertex : twoUV->vertices)
+        {
+            vertex.uv[0]  = .25f;
+            vertex.uv[1]  = .5f;
+            vertex.uv1[0] = .75f;
+            vertex.uv1[1] = .5f;
+        }
+        backend->LoadModel(twoUV);
+        auto ao             = backend->GetMaterials("")[0];
+        ao.occlusionTexture = Image{2, 1, {0, 0, 0, 255, 255, 255, 255, 255}};
+        for (auto pipeline : {RasterPipeline::Forward, RasterPipeline::Deferred})
+        {
+            backend->SetRasterSettings({pipeline});
+            ao.occlusionTexCoord = 0;
+            backend->SetMaterial(0, ao, "");
+            draw();
+            const auto uv0       = backend->GetRasterAAImage().pixels;
+            ao.occlusionTexCoord = 1;
+            backend->SetMaterial(0, ao, "");
+            draw();
+            const auto& uv1 = backend->GetRasterAAImage().pixels;
+            Require(!uv0.empty() && uv0.size() == uv1.size(), "AO readback unavailable");
+            size_t difference = 0;
+            for (size_t i = 0; i < uv0.size(); ++i)
+                difference += std::abs(int(uv0[i]) - int(uv1[i]));
+            Require(difference > 1000, "AO texture did not sample the second UV set");
+        }
+        auto invalidAO              = ao;
+        invalidAO.occlusionTexCoord = 2;
+        rejected                    = false;
+        try
+        {
+            backend->SetMaterial(0, invalidAO, "");
+        }
+        catch (const std::invalid_argument&)
+        {
+            rejected = true;
+        }
+        Require(rejected && backend->GetMaterials("")[0].occlusionTexCoord == 1, "Invalid AO UV selection accepted");
         backend->SetRasterSettings({});
         backend->SetAntiAliasing({AAMethod::Off});
         backend->LoadModel(source);

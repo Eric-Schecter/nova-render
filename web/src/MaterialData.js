@@ -31,6 +31,7 @@ export function validateMaterial(m) {
     metallic: m.metallic ?? 1,
     normalScale: m.normalScale ?? 1,
     occlusionStrength: m.occlusionStrength ?? 1,
+    occlusionTexCoord: m.occlusionTexCoord ?? 0,
     emissive: m.emissive ?? [0, 0, 0],
     specularFactor: m.specularFactor ?? 1,
     clearcoatFactor: m.clearcoatFactor ?? 0,
@@ -39,6 +40,8 @@ export function validateMaterial(m) {
   }
   if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean')
     throw Error('Invalid material alpha mode or sidedness')
+  if (![0, 1].includes(out.occlusionTexCoord))
+    throw Error('AO texture coordinate set must be 0 or 1')
   if (typeof out.name !== 'string') throw Error('Material name must be a string')
   const range = (x, max) => {
     if (typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > max)
@@ -137,6 +140,7 @@ export function packMaterials(data) {
     record[3] = m.specularFactor ?? 1
     record[4] = m.clearcoatFactor ?? 0
     record[5] = m.clearcoatRoughnessFactor ?? 0
+    record[6] = m.occlusionTexCoord ?? 0
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)

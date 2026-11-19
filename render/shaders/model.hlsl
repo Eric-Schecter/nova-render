@@ -9,6 +9,7 @@ struct Vertex
     float4 position;
     float4 normal;
     float4 uv;
+    float4 uv1;
 };
 [[vk::binding(0, 0)]] cbuffer Scene : register(b0)
 {
@@ -283,6 +284,7 @@ struct VertexOut
     nointerpolation float generatedNormal : TEXCOORD3;
     nointerpolation uint  instanceIndex : TEXCOORD4;
     nointerpolation float winding : TEXCOORD5;
+    float2 uv1 : TEXCOORD6;
 };
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -311,6 +313,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.worldPosition   = v.position.xyz;
     o.normal          = v.normal.xyz;
     o.uv              = v.uv.xy;
+    o.uv1             = v.uv1.xy;
     o.generatedNormal = v.uv.z;
     return o;
 }
@@ -458,11 +461,13 @@ SurfaceData sampleSurface(VertexOut input)
     float4 specular   = 1;
     float2 clearcoat  = 0;
     float2 uv         = input.uv;
+    float2 aoUV       = uv;
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
     if (lightDirection.w > .5)
     {
         InstanceData instance = instances[input.instanceIndex];
         uv                    = frac(uv) * instance.uv.xy + instance.uv.zw;
+        aoUV                  = instance.world._m21 > .5 ? frac(input.uv1) * instance.uv.xy + instance.uv.zw : uv;
         baseFactor            = instance.baseColor;
         matFactor             = instance.material;
         emissionFactor.rgb    = instance.emissive.rgb;
@@ -492,7 +497,7 @@ SurfaceData sampleSurface(VertexOut input)
     n                    = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
     float4      mr       = materialTexture.Sample(textureSampler, uv);
     float       metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
-    float       ao = lerp(1, occlusionTexture.Sample(textureSampler, uv).r, matFactor.w);
+    float       ao = lerp(1, occlusionTexture.Sample(textureSampler, aoUV).r, matFactor.w);
     SurfaceData result;
     result.useVisibility = 0;
     result.specular = specular;
@@ -898,6 +903,14 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float2 uv0 = tri.uv.xy, uv1 = tri.uv.zw;
     float2 uv2 = float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]);
     float2 uv  = frac(uv0 + (uv1 - uv0) * bary.x + (uv2 - uv0) * bary.y) * mat.uv.xy + mat.uv.zw;
+    float2 aoUV = uv;
+    if (mat.world._m21 > .5)
+    {
+        float2 a = float2(tri.world._m00, tri.world._m10);
+        float2 b = float2(tri.world._m20, tri.world._m30);
+        float2 c = float2(tri.world._m01, tri.world._m11);
+        aoUV = frac(a + (b - a) * bary.x + (c - a) * bary.y) * mat.uv.xy + mat.uv.zw;
+    }
     float3 localEdge1 = tri.material.xyz - tri.baseColor.xyz;
     float3 localEdge2 = tri.emissive.xyz - tri.baseColor.xyz;
     float3 worldNormal = normalize(mul(
@@ -930,7 +943,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
     hit.metallic  = saturate(mr.b * mat.material.x);
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
-    hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, uv, 0).r, mat.material.w);
+    hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, aoUV, 0).r, mat.material.w);
     hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
     return surfaceRadiance(hit, 0, 0, -ray);
 }

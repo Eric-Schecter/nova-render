@@ -1,3 +1,4 @@
+import { modelVertexFloats } from './ModelVertex.js'
 import { decodeMaterialImage } from './MaterialImage.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 import { cameraFromOrbit, cameraBasis } from './Camera.js'
@@ -92,10 +93,13 @@ export async function loadGLB(url) {
       v = json.bufferViews[a.bufferView]
     const size = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 }[a.componentType],
       stride = v.byteStride || size * components
+    const uvDivisor =
+      type === 'VEC2' && a.normalized ? { 5121: 255, 5123: 65535 }[a.componentType] : 0
     const start = (v.byteOffset || 0) + (a.byteOffset || 0) + i * stride
     if (
       a.sparse ||
-      a.normalized ||
+      (a.normalized && !uvDivisor) ||
+      (type === 'VEC2' && a.componentType !== 5126 && !uvDivisor) ||
       a.type !== type ||
       i >= a.count ||
       !size ||
@@ -110,8 +114,8 @@ export async function loadGLB(url) {
         : a.componentType === 5125
           ? raw.getUint32(start + k * size, true)
           : a.componentType === 5123
-            ? raw.getUint16(start + k * size, true)
-            : raw.getUint8(start + k),
+            ? raw.getUint16(start + k * size, true) / (uvDivisor || 1)
+            : raw.getUint8(start + k) / (uvDivisor || 1),
     )
   }
   const vertices = [],
@@ -143,11 +147,13 @@ export async function loadGLB(url) {
             pbr.baseColorTexture,
             pbr.metallicRoughnessTexture,
             mat.normalTexture,
-            mat.occlusionTexture,
+            mat.occlusionTexture && (mat.occlusionTexture.texCoord ?? 0) === 0,
             mat.emissiveTexture,
           ].some(Boolean)
         )
           throw Error('Textured material requires TEXCOORD_0')
+        if (mat.occlusionTexture?.texCoord === 1 && p.attributes.TEXCOORD_1 === undefined)
+          throw Error('AO texture requires TEXCOORD_1')
         const extensions = json.materials[p.material].extensions || {},
           transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
           ior = extensions.KHR_materials_ior?.ior ?? 1.5
@@ -170,7 +176,7 @@ export async function loadGLB(url) {
         const count = json.accessors[p.indices ?? p.attributes.POSITION].count
         const vertexIndex = (i) =>
           p.indices === undefined ? i : element(p.indices, i, 'SCALAR', 1)[0]
-        if (count % 3 || vertices.length / 12 + count > 10000000)
+        if (count % 3 || vertices.length / modelVertexFloats + count > 10000000)
           throw Error('Invalid or oversized mesh')
         function faceNormal(i) {
           const first = i - (i % 3),
@@ -196,7 +202,11 @@ export async function loadGLB(url) {
             uv =
               p.attributes.TEXCOORD_0 === undefined
                 ? [0, 0]
-                : element(p.attributes.TEXCOORD_0, index, 'VEC2', 2)
+                : element(p.attributes.TEXCOORD_0, index, 'VEC2', 2),
+            uv1 =
+              p.attributes.TEXCOORD_1 === undefined
+                ? uv
+                : element(p.attributes.TEXCOORD_1, index, 'VEC2', 2)
           const world = pos.map(
             (_, r) => m[r] * pos[0] + m[4 + r] * pos[1] + m[8 + r] * pos[2] + m[12 + r],
           )
@@ -206,7 +216,8 @@ export async function loadGLB(url) {
                 (cof[0][r] * normal[0] + cof[1][r] * normal[1] + cof[2][r] * normal[2]) / det,
             ),
           )
-          if (![...world, ...n, ...uv].every(Number.isFinite)) throw Error('Non-finite model data')
+          if (![...world, ...n, ...uv, ...uv1].every(Number.isFinite))
+            throw Error('Non-finite model data')
           for (let k = 0; k < 3; k++) {
             min[k] = Math.min(min[k], world[k])
             max[k] = Math.max(max[k], world[k])
@@ -219,6 +230,9 @@ export async function loadGLB(url) {
             ...uv,
             p.attributes.NORMAL === undefined ? 1 : 0,
             ior,
+            ...uv1,
+            0,
+            0,
           )
           animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex, normal)
         }
@@ -229,7 +243,7 @@ export async function loadGLB(url) {
   for (const root of json.scenes[json.scene || 0].nodes) visit(root, identity())
   const size = Math.max(...max.map((x, i) => x - min[i]))
   if (!vertices.length || !Number.isFinite(size) || size <= 0) throw Error('Empty model')
-  for (let i = 0; i < vertices.length; i += 12)
+  for (let i = 0; i < vertices.length; i += modelVertexFloats)
     for (let k = 0; k < 3; k++)
       vertices[i + k] = ((vertices[i + k] - (min[k] + max[k]) * 0.5) * 2) / size
   if (animation) {
@@ -287,7 +301,8 @@ export async function loadGLB(url) {
           images.push({ width: 1, height: 1, pixels: new Uint8Array(fallback[i]) })
           continue
         }
-        if ((textures[i].texCoord || 0) !== 0) throw Error('Only TEXCOORD_0 is supported')
+        if (i !== 3 && (textures[i].texCoord ?? 0) !== 0)
+          throw Error('Only AO textures support TEXCOORD_1')
         const image = json.images[json.textures[textures[i].index].source]
         if (image.bufferView === undefined) throw Error('GLB images must be embedded')
         const view = json.bufferViews[image.bufferView],
@@ -314,6 +329,7 @@ export async function loadGLB(url) {
           doubleSided: material.doubleSided ?? false,
           normalScale: material.normalTexture?.scale ?? 1,
           occlusionStrength: material.occlusionTexture?.strength ?? 1,
+          occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,
           emissive: material.emissiveFactor || [0, 0, 0],
           baseColorTexture: textures[0] ? images[0] : null,
           normalTexture: textures[1] ? images[1] : null,

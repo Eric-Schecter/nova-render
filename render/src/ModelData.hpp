@@ -16,6 +16,7 @@ namespace render::detail
         float position[4]; // xyz: position; w: one-based material slot (shader restores homogeneous w).
         float normal[4]; // xyz: normal; w: dielectric transmission fraction.
         float uv[4];     // xy: UV; z: generated flat-normal flag; w: dielectric IOR.
+        float uv1[4]{};  // xy: TEXCOORD_1, zw: reserved for storage alignment.
     };
     using ModelImage = render::Image;
     struct SkinInput
@@ -76,7 +77,7 @@ namespace render::detail
         float skyParams[4];         // background intensity, visibility
         float irradiance[9][4];
     };
-    static_assert(sizeof(ModelVertex) == 48, "HLSL vertex storage layout must match");
+    static_assert(sizeof(ModelVertex) == 64, "HLSL vertex storage layout must match");
     static_assert(sizeof(SceneUniforms) == 384, "HLSL scene uniform layout must match");
     void                             PackMaterials(ModelData& data);
     void                             ValidateMaterial(const Material& material);

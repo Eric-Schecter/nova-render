@@ -258,7 +258,7 @@ try {
           early,
           later,
           filteredError,
-          triangles: helmet.vertices.length / 36,
+          triangles: helmet.vertices.length / 48,
           nodes: buildBVH(helmet.vertices).count,
           png: canvas.toDataURL().split(',')[1],
         }

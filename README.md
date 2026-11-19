@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.10.2** adds clearcoat factors for car paint and other coated materials. The desktop SDK bundles SDL3. It provides a macOS ARM64 C++ SDK and a WebGPU npm package. The latest Windows x64 SDK is [0.10.1](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.1), validated with DirectX 12 and Vulkan.
+Release **0.10.3** adds a second UV set for baked AO textures. The desktop SDK bundles SDL3. It provides a macOS ARM64 C++ SDK and a WebGPU npm package. The latest Windows x64 SDK is [0.10.1](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.1), validated with DirectX 12 and Vulkan.
 
 ## Features
 

@@ -150,6 +150,8 @@ namespace render::detail
                     record[16] = vertex.uv[0];
                     record[21] = vertex.uv[1];
                 }
+                record[j * 2]     = vertex.uv1[0];
+                record[j * 2 + 1] = vertex.uv1[1];
                 record[43] = vertex.position[3] - 1;
             }
         }

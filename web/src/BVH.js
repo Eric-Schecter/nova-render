@@ -1,14 +1,19 @@
+import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 // Depth-first threaded BVH: escape links avoid a fixed GPU traversal stack.
 // Leaves reorder whole triangles; material/normal/UV data stay together.
 export function buildBVH(vertices) {
-  if (!(vertices instanceof Float32Array) || !vertices.length || vertices.length % 36)
+  if (
+    !(vertices instanceof Float32Array) ||
+    !vertices.length ||
+    vertices.length % modelTriangleFloats
+  )
     throw Error('BVH requires non-empty triangle vertices')
-  const triangles = Array.from({ length: vertices.length / 36 }, (_, id) => {
+  const triangles = Array.from({ length: vertices.length / modelTriangleFloats }, (_, id) => {
     const min = [Infinity, Infinity, Infinity],
       max = [-Infinity, -Infinity, -Infinity]
     for (let v = 0; v < 3; v++)
       for (let k = 0; k < 3; k++) {
-        const p = vertices[id * 36 + v * 12 + k]
+        const p = vertices[id * modelTriangleFloats + v * modelVertexFloats + k]
         if (!Number.isFinite(p)) throw Error('Non-finite BVH position')
         min[k] = Math.min(min[k], p)
         max[k] = Math.max(max[k], p)
@@ -59,7 +64,12 @@ export function buildBVH(vertices) {
     words[i * 12 + 8] = n.count
   })
   const reordered = new Float32Array(vertices.length)
-  ordered.forEach((id, i) => reordered.set(vertices.subarray(id * 36, id * 36 + 36), i * 36))
+  ordered.forEach((id, i) =>
+    reordered.set(
+      vertices.subarray(id * modelTriangleFloats, id * modelTriangleFloats + modelTriangleFloats),
+      i * modelTriangleFloats,
+    ),
+  )
   return {
     nodes: new Uint8Array(bytes),
     vertices: reordered,
