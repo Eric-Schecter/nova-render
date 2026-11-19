@@ -67,7 +67,15 @@ int main(int argc, char** argv)
         side.color      = {.88f, .95f, 1};
         hood.castShadow = true;
         side.castShadow = false;
-        window.SetLights({hood, side});
+        SceneLight fill = side;
+        fill.id         = "fill";
+        fill.position   = {2.9f, .85f, .35f};
+        fill.direction  = {-1, .14f, -.08f};
+        fill.width      = 4.4f;
+        fill.height     = 1.35f;
+        fill.intensity  = .55f;
+        fill.color      = {1, 1, 1};
+        window.SetLights({hood, side, fill});
         AntiAliasingSettings aa;
         aa.method = AAMethod::FXAA;
         window.SetAntiAliasing(aa);

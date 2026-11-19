@@ -67,6 +67,18 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
         color: [0.88, 0.95, 1],
         castShadow: false,
       },
+      {
+        id: 'fill',
+        type: 'rectangle',
+        position: [2.9, 0.85, 0.35],
+        direction: [-1, 0.14, -0.08],
+        up: [0, 1, 0],
+        width: 4.4,
+        height: 1.35,
+        intensity: 0.55,
+        color: [1, 1, 1],
+        castShadow: false,
+      },
     ])
     renderer.setHybrid({
       shadows: true,
