@@ -1,4 +1,5 @@
 #include "../common/ProceduralOptions.hpp"
+#include <chrono>
 #include <iostream>
 using namespace render;
 int main(int argc, char** argv)
@@ -45,6 +46,7 @@ int main(int argc, char** argv)
         settings.halfResolutionReflections = true;
         settings.reflectionDenoising       = false;
         settings.shadows                   = true;
+        settings.shadowSamples             = 4;
         window.SetHybrid(settings);
         SceneLight hood;
         hood.id         = "hood";
@@ -80,10 +82,31 @@ int main(int argc, char** argv)
         aa.method = AAMethod::FXAA;
         window.SetAntiAliasing(aa);
         window.EnableViewOrbitControls(5.784566f);
-        int frames = 0;
+        using Clock                      = std::chrono::steady_clock;
+        constexpr auto    settleDelay    = std::chrono::milliseconds(180);
+        auto              previousCamera = window.GetViewCamera();
+        Clock::time_point settleAt{};
+        int               frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
+        {
+            const auto now           = Clock::now();
+            const auto currentCamera = window.GetViewCamera();
+            if (
+              currentCamera.position != previousCamera.position
+              || currentCamera.orientation != previousCamera.orientation)
+            {
+                settleAt       = now + settleDelay;
+                previousCamera = currentCamera;
+            }
+            const unsigned shadowSamples = now < settleAt ? 2 : 4;
+            if (settings.shadowSamples != shadowSamples)
+            {
+                settings.shadowSamples = shadowSamples;
+                window.SetHybrid(settings);
+            }
             if (window.DrawFrame() == FrameResult::Rendered)
                 ++frames;
+        }
         window.WaitIdle();
         const auto errors = window.ValidationErrorCount();
         std::cout << "Rendered " << frames << " showroom frames; validation errors: " << errors << '\n';

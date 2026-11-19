@@ -82,6 +82,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     ])
     renderer.setHybrid({
       shadows: true,
+      shadowSamples: 4,
       reflections: true,
       reflectionSamples: 1,
       halfResolutionReflections: true,
@@ -90,7 +91,29 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     renderer.setRenderMode('hybrid')
     renderer.setAntiAliasing({ method: 'fxaa' })
     await renderer.drawFrame()
-    renderer.enableOrbitControls({ viewDistance: 5.784566, onError })
+    let settleTimer
+    renderer.enableOrbitControls({
+      viewDistance: 5.784566,
+      onError,
+      onChange() {
+        if (renderer.getHybrid().shadowSamples !== 2) renderer.setHybrid({ shadowSamples: 2 })
+        clearTimeout(settleTimer)
+        settleTimer = setTimeout(async () => {
+          try {
+            renderer.setHybrid({ shadowSamples: 4 })
+            await renderer.drawFrame()
+          } catch (error) {
+            const report = onError ?? console.error
+            report(error)
+          }
+        }, 180)
+      },
+    })
+    const dispose = renderer.dispose.bind(renderer)
+    renderer.dispose = () => {
+      clearTimeout(settleTimer)
+      dispose()
+    }
     return renderer
   } catch (error) {
     renderer.dispose()
