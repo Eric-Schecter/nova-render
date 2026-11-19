@@ -18,7 +18,7 @@ const cdfProbe = await compile(
     `
 [numthreads(1,1,1)] void MLTCDFProbe(uint3 id:SV_DispatchThreadID){outputImage[id.x]=mltSelectCDF(id.x==4?.999:float(id.x)*.25);}
 `,
-  { compute: true, computeEntry: 'MLTCDFProbe' },
+  { compute: true, maxSourceBytes: 128 * 1024, computeEntry: 'MLTCDFProbe' },
 )
 const folder = 'build/validation/mlt-analytic'
 await mkdir(folder, { recursive: true })
@@ -29,7 +29,9 @@ for (const [name, entry] of [
 ])
   await writeFile(
     folder + '/' + name + '.json',
-    JSON.stringify(await compile(analytic, { compute: true, computeEntry: entry })),
+    JSON.stringify(
+      await compile(analytic, { compute: true, maxSourceBytes: 128 * 1024, computeEntry: entry }),
+    ),
   )
 for (const name of ['pathtrace', 'pathpresent', 'denoise', 'photon-clear', 'photon-trace'])
   await copyFile('docs/public/generated/' + name + '.json', folder + '/' + name + '.json')
@@ -127,8 +129,8 @@ try {
       try {
         data = emptyModelData()
         data.vertices = new Float32Array([
-          -1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 1,
-          10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5,
+          -1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0,
+          1.5, 0, 0, 0, 0, 0, 1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0,
         ])
         view = await createPathView(device, data, analyticDirectory, { linearOutput: true })
         for (const probability of [0.3, 1]) {

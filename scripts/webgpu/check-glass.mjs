@@ -13,7 +13,7 @@ const probe = await compile(
  for(uint i=0;i<8192;i++){float3 l;float pdf;if(walkDirection(p,v,state,l,pdf))total+=pathF(p,v,l).x*abs(dot(p.geometric,l))/pdf;}
  outputImage[id.x]=asuint(total/8192);
 }`,
-  { compute: true, computeEntry: 'GlassProbe' },
+  { compute: true, maxSourceBytes: 128 * 1024, computeEntry: 'GlassProbe' },
 )
 const browser = await chromium.launch({
   channel: 'chrome',

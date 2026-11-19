@@ -11,7 +11,7 @@ const probe = await compile(
  uint offset=id.x*5; outputImage[offset]=found?1:0;outputImage[offset+1]=asuint(hit.distance);
  outputImage[offset+2]=hit.primitive;outputImage[offset+3]=asuint(hit.bary.x);outputImage[offset+4]=asuint(hit.bary.y);
 }`,
-  { compute: true },
+  { compute: true, maxSourceBytes: 128 * 1024 },
 )
 const browser = await chromium.launch({
   channel: 'chrome',
@@ -38,8 +38,8 @@ try {
       try {
         const data = emptyModelData()
         data.vertices = new Float32Array([
-          -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, -1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0,
-          0, 1, 0, 0.5, 1, 0, 0,
+          -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1,
+          0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0.5, 1, 0, 0, 0.5, 1, 0, 0,
         ])
         data.baseColor = [1, 0, 0, 1]
         const bvh = buildBVH(data.vertices)
