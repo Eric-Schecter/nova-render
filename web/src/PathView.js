@@ -104,6 +104,11 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     for (let i = 0; i < materialHeader.length / 16; i++)
       materialHeader.set(data.materialRecords.subarray(i * 48 + 32, i * 48 + 48), i * 16)
     let total = materialHeader.byteLength
+    const records = data.materialRecords ?? new Float32Array(0)
+    const coatCount = records.length / 48
+    const coated = Array.from({ length: coatCount }, (_, i) => records[i * 48 + 4]).some(
+      (x) => x > 0,
+    )
     for (const image of data.images.slice(0, 5)) {
       let pixels = image.pixels
       if (!pixels) {
@@ -116,7 +121,30 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       images.push(pixels)
       total += pixels.byteLength
     }
+    let coatOffset = 0
+    if (coated) {
+      coatOffset = total / 4
+      const wordsPerSlot = 15
+      const header = new Uint32Array(coatCount * wordsPerSlot)
+      const factors = new Float32Array(header.buffer)
+      const mapKeys = ['clearcoatTexture', 'clearcoatRoughnessTexture', 'clearcoatNormalTexture']
+      images.push(new Uint8Array(header.buffer))
+      total += header.byteLength
+      for (let i = 0; i < coatCount; i++) {
+        if (records[i * 48 + 4] <= 0) continue
+        const at = i * wordsPerSlot
+        factors.set(records.subarray(i * 48 + 4, i * 48 + 10), at)
+        for (const [slot, key] of mapKeys.entries()) {
+          const map = data.materials[i][key]
+          if (!map) continue
+          header.set([total / 4, map.width, map.height], at + 6 + slot * 3)
+          images.push(map.pixels)
+          total += map.pixels.byteLength
+        }
+      }
+    }
     const lights = buildLightSampling(data, images, bvh.vertices, bvh.originalIds)
+    lights.words[7] = coatOffset
     metadata[3] = total / 4
     // Distribution offsets are absolute words in the existing material buffer.
     for (const i of [1, 2, 3]) lights.words[i] += total / 4

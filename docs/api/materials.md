@@ -64,7 +64,7 @@ AO uses `occlusionTexCoord` (0 by default), which selects `TEXCOORD_0` or `TEXCO
 
 GLB loading supports the two factor properties of [KHR_materials_specular](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_specular). They affect Forward, Deferred and Hybrid PBR lighting on native and WebGPU. Assets using either specular texture property are rejected. Ray mode uses its existing material lighting.
 
-The same pipelines support [KHR_materials_clearcoat](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat). The coating responds to scene lights and environment reflections. In Hybrid, the base layer can use traced reflections and the coat samples the environment. Hybrid secondary hits sample all three maps. Ray mode uses the existing base material.
+The same pipelines support [KHR_materials_clearcoat](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat). The coating responds to scene lights and environment reflections. In Hybrid, the base layer can use traced reflections and the coat samples the environment. Hybrid secondary hits sample all three maps. Standalone Ray mode samples the same clearcoat maps on opaque materials. Its integrators share a GGX coat lobe, a matched mixture PDF, and Fresnel attenuation of the underlying BSDF and emission. The coat is a thin layer without its own refraction. The standalone path-tracing alpha restriction still applies.
 
 - `clearcoatTexture` multiplies the strength factor by its linear red channel.
 - `clearcoatRoughnessTexture` multiplies the roughness factor by its linear green channel.

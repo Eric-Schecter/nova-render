@@ -111,9 +111,8 @@ float4 imagePixel(uint4 image, int2 p)
     p      = (p % n + n) % n;
     return unpackColor(texels[image.x + uint(p.y) * image.y + uint(p.x)]);
 }
-float4 textureColor(uint index, float2 uv)
+float4 sampleImage(uint4 image, float2 uv)
 {
-    uint4  image = asuint(parameters[27 + index]);
     float2 p     = frac(uv) * float2(image.yz) - 0.5;
     int2   base  = int2(floor(p));
     float2 f     = frac(p);
@@ -121,6 +120,10 @@ float4 textureColor(uint index, float2 uv)
       lerp(imagePixel(image, base), imagePixel(image, base + int2(1, 0)), f.x),
       lerp(imagePixel(image, base + int2(0, 1)), imagePixel(image, base + 1), f.x),
       f.y);
+}
+float4 textureColor(uint index, float2 uv)
+{
+    return sampleImage(asuint(parameters[27 + index]), uv);
 }
 struct SurfaceMaterial
 {
@@ -450,6 +453,106 @@ float bsdfPdf(float3 n, float3 v, float3 l, float metal, float roughness)
     return (1 - probability) * nl / PI
            + probability * distribution(nh, roughness) * nh / max(4 * abs(dot(v, h)), 1e-20);
 }
+// Each optional coat slot starts with six material words, followed by three image descriptors.
+float4 coatMap(uint slot, uint index, float2 uv)
+{
+    uint at = slot + 6 + index * 3;
+    return sampleImage(uint4(texels[at], texels[at + 1], texels[at + 2], 0), uv);
+}
+struct PathVertex
+{
+    float3 position;
+    float3 geometric;
+    float3 normal;
+    float3 base;
+    float3 coatNormal;
+    float2 coat; // Strength and perceptual roughness.
+    float3 emission;
+    float3 beta;
+    float  metal;
+    float  roughness;
+    float  transmission;
+    float  ior;
+    uint   primitive;
+};
+// Thread-private storage shared by the sequential subpath/MIS helpers. Passing
+// whole path arrays by value would duplicate them at every connection.
+// BDPT densities use surface area; the fixed camera-ray density cancels.
+static PathVertex eyeVertices[9];
+static PathVertex lightVertices[9];
+PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
+{
+    Vertex a = vertices[hit.primitive * 3], b = vertices[hit.primitive * 3 + 1], c = vertices[hit.primitive * 3 + 2];
+    float3 bary = float3(1 - hit.bary.x - hit.bary.y, hit.bary);
+    float2 uv   = a.uv.xy * bary.x + b.uv.xy * bary.y + c.uv.xy * bary.z;
+    float3 e = b.position.xyz - a.position.xyz, f = c.position.xyz - a.position.xyz;
+    SurfaceMaterial mat       = surfaceMaterial(a);
+    float2          textureUV = materialUV(uv, mat);
+    PathVertex p;
+    p.position  = origin + direction * hit.distance;
+    p.geometric = normalize(cross(e, f));
+    p.normal    = normalize(a.normal.xyz * bary.x + b.normal.xyz * bary.y + c.normal.xyz * bary.z);
+    p.coatNormal = p.normal;
+    float2 du = b.uv.xy - a.uv.xy, dv = c.uv.xy - a.uv.xy;
+    float  det = du.x * dv.y - du.y * dv.x;
+    if (abs(det) > 1e-8)
+    {
+        float3 t = (e * dv.y - f * du.y) / det, bit = (-e * dv.x + f * du.x) / det;
+        t             = normalize(t - p.normal * dot(p.normal, t));
+        bit           = normalize(bit - p.normal * dot(p.normal, bit));
+        float3 mapped = textureColor(1, textureUV).xyz * 2 - 1;
+        mapped.xy *= mat.factors.z;
+        p.normal = normalize(t * mapped.x + bit * mapped.y + p.normal * mapped.z);
+    }
+    p.coat = 0;
+    uint coatHeader = texels[lightHeader() + 7];
+    if (coatHeader != 0)
+    {
+        uint at = coatHeader + (uint(max(1, a.position.w)) - 1) * 15;
+        p.coat = asfloat(uint2(texels[at], texels[at + 1]));
+        if (p.coat.x > 0)
+        {
+            uint mask = uint(asfloat(texels[at + 3])), sets = uint(asfloat(texels[at + 4]));
+            float2 uv1 = a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z;
+            if (mask & 1u)
+                p.coat.x *= coatMap(at, 0, (sets & 1u) ? uv1 : uv).r;
+            if (mask & 2u)
+                p.coat.y *= coatMap(at, 1, (sets & 2u) ? uv1 : uv).g;
+            if (mask & 4u)
+            {
+                bool secondSet = (sets & 4u) != 0;
+                float2 u = secondSet ? b.uv1.xy - a.uv1.xy : du;
+                float2 w = secondSet ? c.uv1.xy - a.uv1.xy : dv;
+                float3 n = p.coatNormal;
+                float3 t = cross(f, n) * u.x + cross(n, e) * w.x;
+                float3 bit = cross(f, n) * u.y + cross(n, e) * w.y;
+                float basis = max(dot(t, t), dot(bit, bit));
+                float3 mapped = coatMap(at, 2, secondSet ? uv1 : uv).xyz * 2 - 1;
+                float3 m = (t * mapped.x + bit * mapped.y) * (asfloat(texels[at + 5]) * rsqrt(max(basis, 1e-20)))
+                           + n * mapped.z;
+                if (basis > 1e-20 && dot(m, m) > 1e-12)
+                    p.coatNormal = normalize(m);
+            }
+            p.coat.y = clamp(p.coat.y, .06, 1);
+        }
+    }
+    p.base         = pow(max(textureColor(0, textureUV).rgb, 0), 2.2) * mat.base.rgb;
+    p.emission     = pow(max(textureColor(4, textureUV).rgb, 0), 2.2) * mat.emission.rgb;
+    float4 mr      = textureColor(2, textureUV);
+    p.metal        = saturate(mr.b * mat.factors.x);
+    p.roughness    = clamp(mr.g * mat.factors.y, .06, 1);
+    p.transmission = a.normal.w;
+    p.ior          = max(a.uv.w, 1.01);
+    p.beta         = 1;
+    p.primitive    = hit.primitive;
+    return p;
+}
+float3 pathEmission(PathVertex p, float3 outgoing)
+{
+    if (p.coat.x <= 0)
+        return p.emission;
+    return p.emission * (1 - p.coat.x * fresnel(abs(dot(p.coatNormal, outgoing)), .04).x);
+}
 bool sampleLight(
   float3     origin,
   inout uint state,
@@ -473,7 +576,6 @@ bool sampleLight(
         float  r = sqrt(random(state)), s = random(state);
         float3 bary     = float3(1 - r, r * (1 - s), r * s);
         float3 position = a.position.xyz * bary.x + b.position.xyz * bary.y + c.position.xyz * bary.z;
-        float2 uv       = a.uv.xy * bary.x + b.uv.xy * bary.y + c.uv.xy * bary.z;
         float3 delta    = position - origin;
         float  distance = length(delta);
         if (distance <= .002)
@@ -481,9 +583,14 @@ bool sampleLight(
         direction   = delta / distance;
         maxDistance = distance - .001;
         pdf         = emitterPdf(primitive, origin, position);
-        radiance    = emitters ? pow(max(textureColor(4, materialUV(uv, surfaceMaterial(a))).rgb, 0), 2.2)
-                                * surfaceMaterial(a).emission.rgb
-                               : float3(0, 0, 0);
+        if (emitters)
+        {
+            Hit source;
+            source.primitive = primitive;
+            source.bary = bary.yz;
+            source.distance = 0;
+            radiance = pathEmission(pathVertex(source, position, direction), -direction);
+        }
     }
     else
     {
@@ -500,60 +607,6 @@ bool sampleLight(
         radiance        = sky(direction) * parameters[13].z;
     }
     return pdf > 0;
-}
-// Finite-area-light BDPT, camera-conditioned strategies only (no camera splats).
-// Densities share surface-area measure; the fixed camera-ray density cancels.
-struct PathVertex
-{
-    float3 position;
-    float3 geometric;
-    float3 normal;
-    float3 base;
-    float3 emission;
-    float3 beta;
-    float  metal;
-    float  roughness;
-    float  transmission;
-    float  ior;
-    uint   primitive;
-};
-// Thread-private storage shared by the sequential subpath/MIS helpers. Passing
-// whole path arrays by value would duplicate them at every connection.
-static PathVertex eyeVertices[9];
-static PathVertex lightVertices[9];
-PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
-{
-    Vertex a = vertices[hit.primitive * 3], b = vertices[hit.primitive * 3 + 1], c = vertices[hit.primitive * 3 + 2];
-    float3 bary = float3(1 - hit.bary.x - hit.bary.y, hit.bary);
-    float2 uv   = a.uv.xy * bary.x + b.uv.xy * bary.y + c.uv.xy * bary.z;
-    float3 e = b.position.xyz - a.position.xyz, f = c.position.xyz - a.position.xyz;
-    SurfaceMaterial mat       = surfaceMaterial(a);
-    float2          textureUV = materialUV(uv, mat);
-    PathVertex p;
-    p.position  = origin + direction * hit.distance;
-    p.geometric = normalize(cross(e, f));
-    p.normal    = normalize(a.normal.xyz * bary.x + b.normal.xyz * bary.y + c.normal.xyz * bary.z);
-    float2 du = b.uv.xy - a.uv.xy, dv = c.uv.xy - a.uv.xy;
-    float  det = du.x * dv.y - du.y * dv.x;
-    if (abs(det) > 1e-8)
-    {
-        float3 t = (e * dv.y - f * du.y) / det, bit = (-e * dv.x + f * du.x) / det;
-        t             = normalize(t - p.normal * dot(p.normal, t));
-        bit           = normalize(bit - p.normal * dot(p.normal, bit));
-        float3 mapped = textureColor(1, textureUV).xyz * 2 - 1;
-        mapped.xy *= mat.factors.z;
-        p.normal = normalize(t * mapped.x + bit * mapped.y + p.normal * mapped.z);
-    }
-    p.base         = pow(max(textureColor(0, textureUV).rgb, 0), 2.2) * mat.base.rgb;
-    p.emission     = pow(max(textureColor(4, textureUV).rgb, 0), 2.2) * mat.emission.rgb;
-    float4 mr      = textureColor(2, textureUV);
-    p.metal        = saturate(mr.b * mat.factors.x);
-    p.roughness    = clamp(mr.g * mat.factors.y, .06, 1);
-    p.transmission = a.normal.w;
-    p.ior          = max(a.uv.w, 1.01);
-    p.beta         = 1;
-    p.primitive    = hit.primitive;
-    return p;
 }
 void pathFrame(PathVertex p, float3 v, out float3 n, out float3 g)
 {
@@ -616,23 +669,54 @@ void glassKernel(PathVertex p, float3 v, float3 l, out float value, out float pd
         value = (1 - f) * d * g * abs(lh * vh / (nl * nv * max(denom, 1e-20))) / (eta * eta);
     }
 }
-// Radiance BSDF expressed against geometric projected area. Reversing v/l for
-// light walking supplies the adjoint shading-normal correction, without assuming
-// a shading normal equals the geometric normal.
+float3 coatFrame(PathVertex p, float3 g)
+{
+    return dot(p.coatNormal, g) < 0 ? -p.coatNormal : p.coatNormal;
+}
+float coatProbability(PathVertex p, float3 n, float3 v)
+{
+    float cosine = dot(n, v);
+    return cosine > 0 ? p.coat.x * clamp(fresnel(cosine, .04).x, .1, .9) : 0;
+}
+float coatDistribution(float nh, float roughness)
+{
+    float a2 = pow(roughness, 4);
+    float q = 1 - nh * nh + nh * nh * a2;
+    return a2 / (PI * q * q);
+}
+// Both lobes are expressed against geometric projected area. Light walking
+// reverses evaluation directions to apply the adjoint shading-normal correction.
 float3 pathF(PathVertex p, float3 v, float3 l)
 {
-    float glassValue, glassPdf;
-    glassValue = 0;
-    glassPdf   = 0;
+    float glassValue = 0, glassPdf = 0;
     if (p.transmission > 0)
         glassKernel(p, v, l, glassValue, glassPdf);
-    float3 transmitted = p.transmission * glassValue;
+    float3 value = p.transmission * glassValue;
     float3 n, g;
     pathFrame(p, v, n, g);
     float cosine = dot(g, l);
-    if (cosine <= 1e-7 || dot(n, l) <= 0)
-        return transmitted;
-    return transmitted + (1 - p.transmission) * brdf(n, v, l, p.base, p.metal, p.roughness) * dot(n, l) / cosine;
+    float nl = dot(n, l);
+    if (cosine > 1e-7 && nl > 0)
+        value += (1 - p.transmission) * brdf(n, v, l, p.base, p.metal, p.roughness) * nl / cosine;
+    if (p.coat.x <= 0)
+        return value;
+    float3 nc = coatFrame(p, g);
+    float nv = dot(nc, v), ncL = dot(nc, l);
+    // Symmetric attenuation of the substrate keeps the layered kernel reciprocal.
+    float tV = 1 - p.coat.x * fresnel(abs(nv), .04).x;
+    float tL = 1 - p.coat.x * fresnel(abs(ncL), .04).x;
+    value *= sqrt(tV * tL);
+    if (cosine > 1e-7 && ncL > 0 && nv > 0)
+    {
+        float3 h = normalize(v + l);
+        float alpha2 = pow(p.coat.y, 4);
+        float gv = sqrt(alpha2 + (1 - alpha2) * nv * nv);
+        float gl = sqrt(alpha2 + (1 - alpha2) * ncL * ncL);
+        float visibility = .5 / max(ncL * gv + nv * gl, 1e-7);
+        value += p.coat.x * fresnel(dot(v, h), .04) * coatDistribution(saturate(dot(nc, h)), p.coat.y)
+                 * visibility * ncL / cosine;
+    }
+    return value;
 }
 float pathPdf(PathVertex p, float3 v, float3 l)
 {
@@ -641,7 +725,19 @@ float pathPdf(PathVertex p, float3 v, float3 l)
     float value = 0, pdf = 0;
     if (p.transmission > 0)
         glassKernel(p, v, l, value, pdf);
-    return p.transmission * pdf + (1 - p.transmission) * (dot(g, l) > 0 ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0);
+    bool reflection = dot(g, l) > 0;
+    float base = p.transmission * pdf + (1 - p.transmission) * (reflection ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0);
+    if (p.coat.x <= 0)
+        return base;
+    float3 nc = coatFrame(p, g);
+    float probability = coatProbability(p, nc, v), coat = 0;
+    if (reflection && probability > 0 && dot(nc, l) > 0)
+    {
+        float3 h = normalize(v + l);
+        float nh = saturate(dot(nc, h));
+        coat = coatDistribution(nh, p.coat.y) * nh / max(4 * dot(v, h), 1e-20);
+    }
+    return (1 - probability) * base + probability * coat;
 }
 float3 cosineDirection(float3 n, inout uint state)
 {
@@ -651,6 +747,22 @@ float3 cosineDirection(float3 n, inout uint state)
 }
 bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out float pdf)
 {
+    if (p.coat.x > 0)
+    {
+        float3 n, g;
+        pathFrame(p, v, n, g);
+        float3 nc = coatFrame(p, g);
+        if (random(state) < coatProbability(p, nc, v))
+        {
+            float q = random(state), phi = 2 * PI * random(state), a2 = pow(p.coat.y, 4);
+            float c = sqrt((1 - q) / ((1 - q) + a2 * q));
+            float3 t = normalize(cross(abs(nc.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), nc));
+            float3 h = nc * c + sqrt(max(0, 1 - c * c)) * (t * cos(phi) + cross(nc, t) * sin(phi));
+            l = reflect(-v, h);
+            pdf = dot(v, h) > 0 && dot(g, l) > 0 && dot(nc, l) > 0 ? pathPdf(p, v, l) : 0;
+            return pdf > 0;
+        }
+    }
     if (p.transmission > 0 && random(state) < p.transmission)
     {
         float3 n   = dot(p.geometric, v) > 0 ? p.geometric : -p.geometric;
@@ -869,7 +981,7 @@ float3 path(
         PathVertex surface = pathVertex(hit, origin, direction);
         float3     base    = surface.base;
         sum +=
-          (emitters && depth >= minScatters ? 1 : 0) * weight * surface.emission
+          (emitters && depth >= minScatters ? 1 : 0) * weight * pathEmission(surface, -direction)
           * (useMIS && depth > 0 ? misWeight(previousPdf, emitterPdf(hit.primitive, origin, surface.position)) : 1);
         if (
           depth == bounces
@@ -962,13 +1074,14 @@ bool sampleSource(inout uint state, out PathVertex emitter, out float3 origin, o
         emitter.beta = emitter.emission / pdf;
         direction    = cosineDirection(random(state) < .5 ? emitter.geometric : -emitter.geometric, state);
         origin       = pathOrigin(emitter, direction);
-        beta         = emitter.beta * (2 * PI);
+        beta         = pathEmission(emitter, direction) * (2 * PI / pdf);
     }
     else
     {
         uint index = localSourceIndex(selected - (area ? 1u : 0u)), at = 33 + 4 * index;
         emitter.position  = parameters[at + 1].xyz;
         emitter.primitive = 0xffffffffu - index;
+        emitter.coat      = 0;
         emitter.emission  = parameters[at].rgb * parameters[at].w;
         emitter.beta      = emitter.emission * groups;
         float4 axis       = parameters[at + 2];
@@ -1116,13 +1229,13 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
     }
     for (uint e = 0; e < eyeCount; ++e)
     {
-        if (texels[header] > 0 && e >= minScatters && any(eyeVertices[e].emission > 0))
-            result += eyeVertices[e].beta * eyeVertices[e].emission * connectionWeight(e + 1, 0);
-        if (e >= bounces)
-            continue;
         float3 v = normalize(origin - eyeVertices[e].position);
         if (e > 0)
             v = normalize(eyeVertices[e - 1].position - eyeVertices[e].position);
+        if (texels[header] > 0 && e >= minScatters && any(eyeVertices[e].emission > 0))
+            result += eyeVertices[e].beta * pathEmission(eyeVertices[e], v) * connectionWeight(e + 1, 0);
+        if (e >= bounces)
+            continue;
         for (uint l = 0; l < lightCount && e + l + 1 <= bounces; ++l)
         {
             if (e + l + 1 < minScatters)
@@ -1144,6 +1257,8 @@ float3 bidirectional(float3 origin, float3 direction, inout uint state, uint bou
             bool   deltaConnection = l == 0 && deltaSource(lightVertices[l]);
             bool   shadowEnabled   = true;
             float  sourceFactor    = abs(dot(lightVertices[l].geometric, -d));
+            if (l == 0 && !deltaConnection && lightVertices[l].coat.x > 0)
+                sourceFactor *= 1 - lightVertices[l].coat.x * fresnel(abs(dot(lightVertices[l].coatNormal, d)), .04).x;
             [branch] if (deltaConnection)
             {
                 uint   at = 33 + 4 * deltaIndex(lightVertices[l]);
@@ -1303,7 +1418,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
             break;
         PathVertex p      = pathVertex(hit, origin, direction);
         float      pdfHit = emitterPdf(hit.primitive, origin, p.position) / max(areaProbability(), 1e-20);
-        result += beta * p.emission * (depth == 0 ? 1 : misWeight(previousPdf, pdfHit));
+        result += beta * pathEmission(p, -direction) * (depth == 0 ? 1 : misWeight(previousPdf, pdfHit));
         if (depth == bounces)
             break;
         float3 v      = -direction;
@@ -1338,7 +1453,7 @@ float3 photonCamera(float3 origin, float3 direction, inout uint state, uint boun
                 float3 start = pathOrigin(p, l), segment = pathOrigin(light, -l) - start;
                 Hit    shadow;
                 if (!traceRay(start, normalize(segment), length(segment) - .0006, shadow, true))
-                    result += beta * f * abs(dot(p.geometric, l)) * light.emission / pdf
+                    result += beta * f * abs(dot(p.geometric, l)) * pathEmission(light, -l) / pdf
                               * (gather ? 1 : misWeight(pdf, pathPdf(p, v, l)));
             }
         }

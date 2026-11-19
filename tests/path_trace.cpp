@@ -165,6 +165,50 @@ int main(int argc, char** argv)
             throw std::runtime_error("Cornell red/green walls missing");
         const auto cornellPath = std::filesystem::path(argv[3]) / ("cornell-" + api + ".png");
         stbi_write_png(cornellPath.string().c_str(), 256, 256, 4, cornellImage.pixels.data(), 256 * 4);
+        const auto coatSource = render::detail::LoadGLB(assets / "ClearCoatTest/ClearCoatTest.glb");
+        auto       coatModel  = std::make_shared<render::detail::ModelData>(*coatSource);
+        // The sample has one alpha-blended reference tile. The ray path accepts opaque geometry.
+        for (auto& material : coatModel->materials)
+            material.alphaMode = render::AlphaMode::Opaque;
+        render::detail::PackMaterials(*coatModel);
+        sky                        = render::detail::LoadEnvironmentFile(assets / "Environment/studio_small_09.nenv");
+        camera.distance            = 2.62f;
+        light.intensity            = 0;
+        environment.showBackground = false;
+        settings.denoise           = false;
+        settings.maxBounces        = 2;
+        settings.lightSampling     = true;
+        uniforms                   = render::detail::MakeSceneUniforms(
+          *coatModel, camera, 1, render::LightingMode::PBR, light, sky.get(), environment);
+        auto captureCoat = [&](const auto& modelWithCoat, const std::string& name) {
+            for (int i = 0; i < 16; ++i)
+                session.Render(modelWithCoat, sky, uniforms, settings, {.09f, .09f, .09f, 1}, 256, 256);
+            const auto& frame = session.Render(modelWithCoat, sky, uniforms, settings, {.09f, .09f, .09f, 1}, 256, 256);
+            const auto  file  = std::filesystem::path(argv[3]) / ("clearcoat-" + api + "-" + name + ".png");
+            if (!stbi_write_png(file.string().c_str(), 256, 256, 4, frame.pixels.data(), 256 * 4))
+                throw std::runtime_error("Could not write clearcoat capture");
+            return frame.pixels;
+        };
+        const auto allMaps = captureCoat(coatModel, "all");
+        const std::array coatMaps = {
+          &render::Material::clearcoatTexture, &render::Material::clearcoatRoughnessTexture,
+          &render::Material::clearcoatNormalTexture};
+        const std::array mapNames = {"strength", "roughness", "normal"};
+        for (size_t slot = 0; slot < coatMaps.size(); ++slot)
+        {
+            auto variant = std::make_shared<render::detail::ModelData>(*coatModel);
+            const auto map = coatMaps[slot];
+            for (auto& material : variant->materials)
+                (material.*map).reset();
+            render::detail::PackMaterials(*variant);
+            const auto withoutMap = captureCoat(variant, std::string("no-") + mapNames[slot]);
+            size_t difference = 0;
+            for (size_t i = 0; i < allMaps.size(); ++i)
+                difference += std::abs(int(allMaps[i]) - int(withoutMap[i]));
+            if (difference < 1000)
+                throw std::runtime_error(std::string("Path tracing did not use clearcoat ") + mapNames[slot] + " map");
+            std::cout << "ClearCoatTest " << mapNames[slot] << " pixel delta " << difference << '\n';
+        }
         std::cout << "PASS red triangle pixels, accumulation, automatic/manual reset and textured HDR model at "
                   << session.Samples() << " samples\n";
     }

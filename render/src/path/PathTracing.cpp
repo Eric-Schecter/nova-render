@@ -109,7 +109,37 @@ namespace render::detail
                 data.images[i]      = {uint32_t(data.texels.size() / 4), texture.width, texture.height, 0};
                 data.texels.insert(data.texels.end(), texture.pixels.begin(), texture.pixels.end());
             }
+            // Optional material block referenced by word 7 of the light header.
+            uint32_t    coatOffset = 0;
+            const auto& records    = model->materialRecords;
+            if (std::any_of(records.begin(), records.end(), [](const auto& record) { return record[4] > 0; }))
+            {
+                coatOffset = uint32_t(data.texels.size() / 4);
+                // Only store maps attached to a slot. The raster atlases replicate
+                // empty tiles and may exceed the WebGPU path storage budget.
+                constexpr size_t wordsPerSlot = 15;
+                const std::array maps         = {
+                  &Material::clearcoatTexture, &Material::clearcoatRoughnessTexture, &Material::clearcoatNormalTexture};
+                data.texels.resize(data.texels.size() + records.size() * wordsPerSlot * 4);
+                for (size_t slot = 0; slot < records.size(); ++slot)
+                {
+                    if (records[slot][4] <= 0)
+                        continue;
+                    const size_t at = size_t(coatOffset) + slot * wordsPerSlot;
+                    std::memcpy(data.texels.data() + at * 4, records[slot].data() + 4, 6 * sizeof(float));
+                    for (size_t i = 0; i < maps.size(); ++i)
+                    {
+                        const auto& map = model->materials[slot].*maps[i];
+                        if (!map)
+                            continue;
+                        const uint32_t descriptor[] = {uint32_t(data.texels.size() / 4), map->width, map->height};
+                        std::memcpy(data.texels.data() + (at + 6 + i * 3) * 4, descriptor, sizeof(descriptor));
+                        data.texels.insert(data.texels.end(), map->pixels.begin(), map->pixels.end());
+                    }
+                }
+            }
             PrepareLightSampling(data, bool(environment));
+            std::memcpy(data.texels.data() + size_t(data.images[0][3] + 7) * 4, &coatOffset, sizeof(coatOffset));
             device->SetScene(data);
             imageInfo          = data.images;
             currentModel       = model;

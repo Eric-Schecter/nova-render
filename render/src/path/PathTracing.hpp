@@ -39,7 +39,7 @@ namespace render::detail
         std::array<std::array<uint32_t, 4>, 5> images{};
     };
     // Append to material texels: 8-word header, emitter CDF records, primitive PMFs, cubemap CDF.
-    // images[0].w points at the header; bindings and the legacy 512-byte parameter prefix stay fixed.
+    // images[0].w points at the header. PathSession uses its last word for the optional clearcoat block.
     void PrepareLightSampling(PathScene&, bool hdr);
     class PathDevice
     {
