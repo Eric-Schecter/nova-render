@@ -819,6 +819,19 @@ float3                                   surfacePosition(SkyOut input, float2 en
     return eyeExposure.xyz + cameraForward.xyz * depth + cameraRight.xyz * (ndc.x * cameraRight.w)
            + cameraUp.xyz * (ndc.y * abs(cameraUp.w));
 }
+bool localLightCastsAt(InstanceData light, float3 position)
+{
+    float3 delta = light.material.xyz - position;
+    float distance = length(delta);
+    if (light.material.w > 0 && distance >= light.material.w)
+        return false;
+    if (uint(light.emissive.w) != 2)
+        return true;
+    float3 direction = distance > .000001 ? delta / distance : float3(0, 1, 0);
+    float cone = dot(-direction, light.emissive.xyz);
+    // Smooth cones have zero weight at the boundary. A hard cone includes it.
+    return light.uv.x > light.uv.y + .000001 ? cone > light.uv.y : cone >= light.uv.y;
+}
 // Sixteen independent light visibilities, four light slots per target.
 struct HybridShadowTargets
 {
@@ -844,10 +857,17 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
             [loop] for (uint i = 0; i < count; i++)
             {
                 InstanceData light = instances[offset + i];
-                if (light.uv.z > .5 && light.baseColor.w > 0)
-                    visibility[i] = uint(light.emissive.w) == 0
-                                      ? sceneVisibility(position, normal, light.emissive.xyz, light.uv.w)
-                                      : localLightVisibility(position, normal, light.material.xyz, light.uv.w);
+                if (light.uv.z <= .5 || light.baseColor.w <= 0)
+                    continue;
+                if (uint(light.emissive.w) == 0)
+                    visibility[i] = sceneVisibility(position, normal, light.emissive.xyz, light.uv.w);
+                else
+                {
+                    // The selected-light diagnostic shows raw visibility outside the light influence too.
+                    bool showRawVisibility = irradiance[5].w == float(i + 1);
+                    if (showRawVisibility || localLightCastsAt(light, position))
+                        visibility[i] = localLightVisibility(position, normal, light.material.xyz, light.uv.w);
+                }
             }
         }
         else

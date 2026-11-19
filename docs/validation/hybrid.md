@@ -105,3 +105,20 @@ node scripts/webgpu/check-hybrid-reference.mjs --probe-comparison
 Metal, Vulkan and WebGPU dispatch the same HLSL update entry. They preserve untouched probes, update up to eight per frame and sample the cache during deferred lighting. The four-camera comparison warms up for 52 probe frames (four complete grid sweeps). The test preserves the off and per-pixel modes and compares all three image sets. Native metrics include synchronized presented frame times and render-only times, excluding swapchain presentation from the latter. Captures and timing JSON are in `build/validation/hybrid-gi-baseline`.
 
 On Apple M4 at 320 × 180, the four per-camera medians for per-pixel versus probes were 8.34–9.75 versus 4.89–8.21 ms on Metal and 9.52–10.64 versus 10.01–11.00 ms on Vulkan/MoltenVK, measured without native presentation. In Chrome WebGPU the synchronized frame medians were 10.30–14.10 versus 5.20–6.60 ms. Probe timings include the scheduled update every frame. The maximum native/Web mean RGB error among probe captures was 0.077/255. This comparison measures agreement across backends, not accuracy against ground truth.
+
+## CarConcept showroom acceptance
+
+Use the Carmine CarConcept showroom from nova-editor's `output/car-showroom-hybrid/showroom.zip`. The reference archive SHA-256 is `403db653403b44610e0c40af646916dc9c7ffc416b0e3cde0e374d82f84a3f42`. The original CarConcept attribution and the adaptation notes are in the showroom archive. Keep these application assets separate from the SDK and the existing reference scenes.
+
+Start the nova-editor Web preview and run from the renderer checkout. Set `NOVA_EDITOR_URL` if the editor uses a different port.
+
+```sh
+git show 676880a:render/shaders/model.hlsl > /tmp/nova-hybrid-shadow-baseline.hlsl
+node scripts/webgpu/check-hybrid-showroom.mjs \
+  ../nova-editor/output/car-showroom-hybrid/showroom.zip \
+  /tmp/nova-hybrid-shadow-baseline.hlsl
+```
+
+The A/B run loads the same five model instances and the project's main camera. It uses the same viewport, lights, AO, reflections, one shadow sample, one AO sample, and temporal reconstruction. It records median frame time after four warm-up frames for a fixed camera and a repeatable lateral camera move. Both captures must stay within 0.15/255 mean absolute channel error. Timing is recorded for per-device comparison. Captures and JSON are written to `build/validation/hybrid-showroom`.
+
+Hybrid skips BVH shadow traversal outside a local light's range or spotlight cone. Directional shadows and the selected-light raw visibility diagnostic retain their existing behavior.
