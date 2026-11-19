@@ -77,7 +77,9 @@ The output outside an active rectangle is cleared to the renderer's clear color.
 
 Existing `SetCamera(OrbitCamera)` / `setCamera(orbitSettings)` remain orbit-controller interfaces. `GetCamera` / `getCamera` returns their last orbit settings; use `GetViewCamera` / `getViewCamera` for the effective complete camera.
 
-`CameraFromOrbit` / exported `cameraFromOrbit` converts orbit settings to a complete camera. Calling the legacy setter or changing a built-in orbit control explicitly returns to orbit mode and its legacy lens defaults. Setting a full camera on `Window` or the browser renderer disables attached orbit navigation; custom camera controllers should update the complete camera directly. The bare native `Renderer` does not own input callbacks.
+`CameraFromOrbit` / exported `cameraFromOrbit` converts orbit settings to a complete camera. Calling the legacy setter or moving a legacy orbit control returns to orbit mode and its legacy lens defaults. Setting a full camera on `Window` or the browser renderer disables attached orbit navigation; custom camera controllers should update the complete camera directly. The bare native `Renderer` does not own input callbacks.
+
+For upright cameras, call `Window::EnableViewOrbitControls(distance)` or `enableOrbitControls({ viewDistance: distance })` after setting the full camera. The controller places the pivot `distance` units along the current view direction and preserves projection, FOV, clipping planes and exposure during drag and zoom. Distance must be in [1.5, 100].
 
 The built-in parameter panel remains an orbit-oriented convenience panel. A custom editor should drive the complete camera API instead of approximating roll, orthographic height or FOV through orbit distance.
 

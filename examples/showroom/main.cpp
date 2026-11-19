@@ -70,7 +70,7 @@ int main(int argc, char** argv)
         AntiAliasingSettings aa;
         aa.method = AAMethod::FXAA;
         window.SetAntiAliasing(aa);
-        window.EnableOrbitControls();
+        window.EnableViewOrbitControls(5.784566f);
         int frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
             if (window.DrawFrame() == FrameResult::Rendered)

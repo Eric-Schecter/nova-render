@@ -1,5 +1,6 @@
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <cmath>
 #include <iostream>
 #include <render/Window.hpp>
 #include <stdexcept>
@@ -105,6 +106,41 @@ int main(int argc, char** argv)
         require(
           after.yaw != before.yaw && after.pitch != before.pitch && after.distance < before.distance,
           "SDL mouse drag and wheel did not reach orbit controls");
+
+        render::OrbitCamera seed{44, 12, 5.8f, .85f, {0, .63f, 0}};
+        auto                view = render::CameraFromOrbit(seed);
+        view.verticalFov         = 40;
+        view.nearPlane           = .05f;
+        view.farPlane            = 150;
+        window.SetViewCamera(view);
+        window.EnableViewOrbitControls(seed.distance);
+        auto drag = [&](int dx) {
+            press.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+            push(press);
+            move.motion.xrel = float(dx);
+            move.motion.yrel = 0;
+            push(move);
+            press.type = SDL_EVENT_MOUSE_BUTTON_UP;
+            push(press);
+            require(window.PollEvents(), "Window closed during full-camera orbit");
+        };
+        drag(2);
+        const auto draggedView = window.GetViewCamera();
+        require(draggedView.position != view.position, "Full camera did not move on drag");
+        for (size_t i = 0; i < view.position.size(); ++i)
+            require(std::abs(draggedView.position[i] - view.position[i]) < .1f, "Initial drag snapped the camera");
+        drag(-2);
+        const auto returned = window.GetViewCamera();
+        for (size_t i = 0; i < view.position.size(); ++i)
+            require(std::abs(returned.position[i] - view.position[i]) < .0001f, "Second drag lost the orbit pose");
+        push(wheel);
+        require(window.PollEvents(), "Window closed during full-camera zoom");
+        const auto zoomed = window.GetViewCamera();
+        require(zoomed.position != returned.position && zoomed.orientation == returned.orientation,
+                "Full-camera zoom did not preserve orientation");
+        require(zoomed.verticalFov == view.verticalFov && zoomed.nearPlane == view.nearPlane
+                && zoomed.farPlane == view.farPlane && zoomed.exposure == view.exposure,
+                "Full-camera orbit changed the lens");
 
         unsigned                     panelFrames = 0;
         float                        panelWheel  = 0;

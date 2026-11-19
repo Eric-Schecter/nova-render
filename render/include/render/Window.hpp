@@ -110,6 +110,7 @@ namespace render
         void                    SetCamera(const OrbitCamera& camera);
         OrbitCamera             GetCamera() const;
         void                    EnableOrbitControls(bool enabled = true);
+        void                    EnableViewOrbitControls(float distance);
         GraphicsAPI             GetAPI() const;
         uint32_t                ValidationErrorCount() const;
 

@@ -78,7 +78,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     renderer.setRenderMode('hybrid')
     renderer.setAntiAliasing({ method: 'fxaa' })
     await renderer.drawFrame()
-    renderer.enableOrbitControls({ onError })
+    renderer.enableOrbitControls({ viewDistance: 5.784566, onError })
     return renderer
   } catch (error) {
     renderer.dispose()

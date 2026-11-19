@@ -13,7 +13,13 @@ export { modelRasterPipelines, gBufferViews } from './RasterPipeline.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
 import { packMaterials, validateMaterial, materialCapabilities } from './MaterialData.js'
 export { loadMaterialImage } from './MaterialData.js'
-import { copyViewCamera, cameraFromOrbit, copyViewport, resolveViewport } from './Camera.js'
+import {
+  cameraBasis,
+  copyViewCamera,
+  cameraFromOrbit,
+  copyViewport,
+  resolveViewport,
+} from './Camera.js'
 import { createViewportSurface } from './ViewportSurface.js'
 export { cameraFromOrbit } from './Camera.js'
 import { defaultPostProcessing, copyPostProcessing } from './PostProcessing.js'
@@ -324,6 +330,7 @@ class Renderer {
   #clear = [0.025, 0.035, 0.055, 1]
   #parameterPanel
   #orbitControls
+  #viewOrbit
   #renderTail = Promise.resolve()
   #lighting = 'unlit'
   #lights = null
@@ -935,6 +942,9 @@ class Renderer {
       throw Error('Camera settings must be an object')
     const camera = copyViewCamera({ ...this.getViewCamera(), ...value })
     this.disableOrbitControls()
+    this.#applyViewCamera(camera)
+  }
+  #applyViewCamera(camera) {
     if (this.#viewCamera && JSON.stringify(this.#viewCamera) === JSON.stringify(camera)) return
     const old = this.getViewCamera(),
       distanceSquared = old.position.reduce((sum, v, i) => sum + (v - camera.position[i]) ** 2, 0),
@@ -975,6 +985,7 @@ class Renderer {
     validateCamera(value)
     if (this.#viewCamera) this.#resetAA()
     this.#viewCamera = undefined
+    this.#viewOrbit = undefined
     if (
       Math.abs(value.yaw - this.#camera.yaw) > 20 ||
       Math.abs(value.pitch - this.#camera.pitch) > 20 ||
@@ -1061,21 +1072,57 @@ class Renderer {
   enableOrbitControls(options = {}) {
     this.#check()
     this.disableOrbitControls()
+    let orbit
+    const { viewDistance } = options
+    if (viewDistance !== undefined) {
+      const { c, forward } = cameraBasis(this.getViewCamera())
+      orbit = {
+        yaw: (Math.atan2(-forward[0], -forward[2]) * 180) / Math.PI,
+        pitch: Math.max(
+          -85,
+          Math.min(85, (Math.asin(Math.max(-1, Math.min(1, -forward[1]))) * 180) / Math.PI),
+        ),
+        distance: viewDistance,
+        exposure: c.exposure,
+        target: c.position.map((value, i) => value + forward[i] * viewDistance),
+      }
+      cameraFromOrbit(orbit)
+    }
     const controls = attachOrbitControls(this.#canvas, {
       ...options,
-      getCamera: () => this.getCamera(),
-      setCamera: (camera) => this.setCamera(camera),
+      getCamera: () => {
+        const current = this.#viewOrbit
+        return current ? { ...current, target: [...current.target] } : this.getCamera()
+      },
+      setCamera: (camera) => {
+        const current = this.#viewOrbit
+        if (!current) {
+          this.setCamera(camera)
+          return
+        }
+        if (
+          camera.yaw === current.yaw &&
+          camera.pitch === current.pitch &&
+          camera.distance === current.distance
+        )
+          return
+        const { position, orientation } = cameraFromOrbit(camera)
+        this.#applyViewCamera({ ...this.getViewCamera(), position, orientation })
+        this.#viewOrbit = camera
+      },
       drawFrame: () => this.drawFrame(),
     })
     this.#orbitControls = controls
+    this.#viewOrbit = orbit
     return () => {
       controls.dispose()
-      if (this.#orbitControls === controls) this.#orbitControls = undefined
+      if (this.#orbitControls === controls) this.disableOrbitControls()
     }
   }
   disableOrbitControls() {
     this.#orbitControls?.dispose()
     this.#orbitControls = undefined
+    this.#viewOrbit = undefined
   }
   async setShader({ source, vert, frag }) {
     this.#check()

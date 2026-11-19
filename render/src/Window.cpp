@@ -36,6 +36,7 @@ namespace render
         std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window{nullptr, SDL_DestroyWindow};
         bool                                                      closeRequested = false;
         std::unique_ptr<Renderer>                                 renderer;
+        std::optional<OrbitCamera>                                viewOrbit;
         bool                                                      orbitEnabled = false, dragging = false;
         bool                                                      closeOnEscape = true;
         std::exception_ptr                                        inputError;
@@ -58,7 +59,22 @@ namespace render
         {
             try
             {
-                renderer->SetCamera(change(renderer->GetCamera()));
+                if (!viewOrbit)
+                {
+                    renderer->SetCamera(change(renderer->GetCamera()));
+                    return;
+                }
+                const auto orbit = change(*viewOrbit);
+                if (
+                  orbit.yaw == viewOrbit->yaw && orbit.pitch == viewOrbit->pitch
+                  && orbit.distance == viewOrbit->distance)
+                    return;
+                auto       view  = renderer->GetViewCamera();
+                const auto pose  = CameraFromOrbit(orbit);
+                view.position    = pose.position;
+                view.orientation = pose.orientation;
+                renderer->SetViewCamera(view);
+                viewOrbit = orbit;
             }
             catch (...)
             {
@@ -249,8 +265,26 @@ namespace render
     }
     void Window::EnableOrbitControls(bool enabled)
     {
+        impl_->viewOrbit.reset();
         impl_->orbitEnabled = enabled;
         impl_->dragging     = false;
+    }
+    void Window::EnableViewOrbitControls(float distance)
+    {
+        const auto view         = GetViewCamera();
+        const auto [x, y, z, w] = view.orientation;
+        const std::array<float, 3> backward{2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)};
+        constexpr float            degrees = 57.29577951308232f;
+        OrbitCamera                orbit;
+        orbit.yaw      = std::atan2(backward[0], backward[2]) * degrees;
+        orbit.pitch    = std::clamp(std::asin(std::clamp(backward[1], -1.f, 1.f)) * degrees, -85.f, 85.f);
+        orbit.distance = distance;
+        orbit.exposure = view.exposure;
+        for (size_t i = 0; i < orbit.target.size(); ++i)
+            orbit.target[i] = view.position[i] - backward[i] * distance;
+        (void)CameraFromOrbit(orbit);
+        EnableOrbitControls();
+        impl_->viewOrbit = orbit;
     }
     void Window::SetLights(const std::vector<SceneLight>& lights)
     {
@@ -359,7 +393,7 @@ namespace render
     void Window::SetViewCamera(const Camera& camera)
     {
         impl_->renderer->SetViewCamera(camera);
-        impl_->orbitEnabled = false;
+        EnableOrbitControls(false);
     }
     Camera Window::GetViewCamera() const
     {
@@ -376,6 +410,7 @@ namespace render
     void Window::SetCamera(const OrbitCamera& camera)
     {
         impl_->renderer->SetCamera(camera);
+        impl_->viewOrbit.reset();
     }
     void Window::SetPostProcessing(const PostProcessingSettings& settings)
     {
