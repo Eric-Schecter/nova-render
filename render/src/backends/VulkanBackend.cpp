@@ -366,7 +366,7 @@ namespace render::detail
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
             external.bindGBuffer = [this](void* command, const std::array<void*, 10>& views, int program) {
-                auto                  activeSet = program == -5 ? gBufferSet : hybridGBufferSet;
+                auto activeSet = program == -5 ? gBufferSet : program == -6 ? oitColorSet : hybridGBufferSet;
                 VkDescriptorImageInfo images[10]{};
                 VkWriteDescriptorSet  writes[10]{};
                 for (uint32_t i = 0; i < views.size(); i++)

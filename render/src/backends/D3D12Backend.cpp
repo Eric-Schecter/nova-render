@@ -440,7 +440,7 @@ namespace render::detail
             external.device      = device.Get();
             external.bindGBuffer = [this](void*, const std::array<void*, 10>& views, int program) {
                 auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
-                handle.ptr += (program == -5 ? 11 : 21)
+                handle.ptr += (program == -5 ? 11 : program == -6 ? 31 : 21)
                               * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 for (size_t i = 0; i < views.size(); i++)
                 {
@@ -528,6 +528,12 @@ namespace render::detail
                     return;
                 }
                 const bool oit     = pass.program == -6;
+                if (oit)
+                {
+                    auto h = modelHeap->GetGPUDescriptorHandleForHeapStart();
+                    h.ptr += 31 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                    cmd->SetGraphicsRootDescriptorTable(9, h);
+                }
                 const bool gbuffer = pass.program == -4;
                 bool       motion  = pass.program == -2;
                 if (!gbuffer && !oit && environment && environmentSettings.showBackground)

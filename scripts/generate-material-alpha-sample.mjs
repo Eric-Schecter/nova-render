@@ -115,6 +115,9 @@ function glb(name, materials, planes, node = {}) {
       nodes: [{ mesh: 0, ...node }],
       meshes: [{ primitives }],
       materials,
+      ...(materials.some((m) => m.extensions?.KHR_materials_transmission)
+        ? { extensionsUsed: ['KHR_materials_transmission'] }
+        : {}),
       buffers: [{ byteLength: bin.length }],
       bufferViews: views,
       accessors,
@@ -153,4 +156,15 @@ const planes = [
 glb('Layers', mats, planes)
 glb('LayersReverse', mats, [...planes].reverse())
 glb('Mask', [material([1, 0.05, 0.02, 1], 'MASK', true, true)], [{}])
+const glass = material([1, 1, 1, 1], 'OPAQUE', true)
+glass.pbrMetallicRoughness.roughnessFactor = 0
+glass.extensions = { KHR_materials_transmission: { transmissionFactor: 1 } }
+glb(
+  'Transmission',
+  [material([1, 0.03, 0.02, 1]), glass],
+  [
+    { material: 0, z: -0.3, w: 1.6, h: 1.2 },
+    { material: 1, z: 0.4, w: 0.55, h: 0.65 },
+  ],
+)
 console.log('Material fixtures generated')

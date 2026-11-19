@@ -122,7 +122,7 @@ void UploadModel()
     modelUniform = uploadBuffer(512);
     D3D12_DESCRIPTOR_HEAP_DESC heap{};
     heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    heap.NumDescriptors = 31;
+    heap.NumDescriptors = 41;
     heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     checkHR(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&modelHeap)), "Create model texture heap");
     checkHR(allocator->Reset(), "Reset model allocator");

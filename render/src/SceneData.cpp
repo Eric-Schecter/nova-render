@@ -72,6 +72,7 @@ namespace render::detail
                 m.first     = uint32_t(packed->vertices.size());
                 m.count     = uint32_t(m.data->vertices.size());
                 auto offset = packed->materials.size();
+                packed->hasTransmission |= m.data->hasTransmission;
                 packed->vertices.insert(packed->vertices.end(), m.data->vertices.begin(), m.data->vertices.end());
                 for (size_t i = m.first; i < packed->vertices.size(); i++)
                     packed->vertices[i].position[3] += float(offset);

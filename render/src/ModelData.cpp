@@ -183,6 +183,7 @@ namespace render::detail
                     if (p.material < 0)
                         throw std::runtime_error("Missing material");
                     const auto glass     = dielectric(gltf.materials.at(p.material));
+                    result->hasTransmission |= glass[0] > 0;
                     const int  position  = p.attributes.at("POSITION"),
                               uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
                     const int   uv1      = p.attributes.count("TEXCOORD_1") ? p.attributes.at("TEXCOORD_1") : -1;

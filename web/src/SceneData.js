@@ -193,6 +193,7 @@ export class SceneData {
         }
         const packed = emptyModelData()
         packed.materials = []
+        packed.hasTransmission = [...next.values()].some((m) => m.data.hasTransmission)
         let vertexCount = 0
         for (const m of next.values()) vertexCount += m.data.vertices.length
         packed.vertices = new Float32Array(vertexCount)

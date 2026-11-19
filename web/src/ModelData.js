@@ -124,6 +124,7 @@ export async function loadGLB(url) {
     min = [Infinity, Infinity, Infinity],
     max = [-Infinity, -Infinity, -Infinity],
     active = new Set()
+  let hasTransmission = false
   function visit(index, parent) {
     if (!json.nodes[index] || active.has(index)) throw Error('Invalid scene graph')
     active.add(index)
@@ -175,6 +176,7 @@ export async function loadGLB(url) {
           ior > 3
         )
           throw Error('Dielectric requires transmission 0..1 and IOR 1.01..3')
+        hasTransmission ||= transmission > 0
         if (
           p.indices !== undefined &&
           ![5121, 5123, 5125].includes(json.accessors[p.indices].componentType)
@@ -363,6 +365,7 @@ export async function loadGLB(url) {
   }
   return packMaterials({
     animation,
+    hasTransmission,
     vertices: new Float32Array(vertices),
     sourceMinimum: min,
     sourceMaximum: max,

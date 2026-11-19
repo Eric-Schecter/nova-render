@@ -288,6 +288,7 @@ struct VertexOut
     nointerpolation uint  instanceIndex : TEXCOORD4;
     nointerpolation float winding : TEXCOORD5;
     float2 uv1 : TEXCOORD6;
+    nointerpolation float2 dielectric : TEXCOORD7;
 };
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -318,6 +319,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.uv              = v.uv.xy;
     o.uv1             = v.uv1.xy;
     o.generatedNormal = v.uv.z;
+    o.dielectric      = float2(v.normal.w, v.uv.w);
     return o;
 }
 float4 materialSpecular(InstanceData material)
@@ -453,6 +455,7 @@ struct SurfaceData
     float3 position, normal, geometricNormal, base, emissive;
     float  metallic, roughness, ao;
     float  opacity, alphaInfo;
+    float2 dielectric;
     float4 specular;
     float2 clearcoat;
     float3 coatNormal;
@@ -557,6 +560,7 @@ SurfaceData sampleSurface(VertexOut input)
     result.coatNormal = coatNormal;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
     result.opacity                                                                    = baseSample.a * baseFactor.a;
+    result.dielectric = emissiveFactor.w > .5 ? input.dielectric : 0;
     result.alphaInfo                                                                  = alphaInfo;
     result.position                                                                   = input.worldPosition;
     result.normal                                                                     = n;
@@ -723,7 +727,8 @@ void materialCoverage(inout SurfaceData s, bool face, float winding, bool transp
         discard;
     if (mode == 1 && s.opacity < frac(s.alphaInfo) * 4)
         discard;
-    if (transparent ? (mode != 2 || s.opacity <= 0) : mode == 2)
+    bool blended = mode == 2 || s.dielectric.x > 0;
+    if (transparent ? (!blended || (mode == 2 && s.opacity <= 0)) : blended)
         discard;
     if (!front)
     {
@@ -739,6 +744,38 @@ float4 PSMain(VertexOut input, bool face : SV_IsFrontFace)
     materialCoverage(s, face, input.winding, false);
     return shadeSurface(s);
 }
+[[vk::binding(17, 1)]] Texture2D<float4> gBase : register(t17);
+float3 glassRadiance(SurfaceData s, float2 pixel)
+{
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    float2 extent = float2(width, height);
+    float2 uv = pixel / extent;
+    // Thin glass uses the opaque scene at the projected surface. Roughness
+    // broadens that sample without requiring an extra full-resolution pass.
+    float3 transmitted = gBase.SampleLevel(textureSampler, uv, 0).rgb;
+    if (s.roughness > .1)
+    {
+        float radius = min(16, s.roughness * s.roughness * .02 * height);
+        const float2 taps[4] = {float2(-1, 0), float2(1, 0), float2(0, -1), float2(0, 1)};
+        [unroll] for (int i = 0; i < 4; ++i)
+            transmitted += gBase.SampleLevel(textureSampler,
+                clamp(uv + taps[i] * radius / extent, 1.5 / extent, 1 - 1.5 / extent), 0).rgb;
+        transmitted *= .2;
+    }
+
+    float3 view = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
+    float3 reflectedDirection = reflect(-view, s.normal);
+    float3 reflected = cameraForward.w > .5
+        ? environmentTexture.SampleLevel(textureSampler, environmentDirection(reflectedDirection),
+                                        s.roughness * environmentParams.w).rgb * environmentParams.z
+        : studio(reflectedDirection, s.roughness);
+    float f = (s.dielectric.y - 1) / (s.dielectric.y + 1);
+    float3 reflectance = fresnel(saturate(dot(s.normal, view)), (f * f).xxx, 1);
+    float3 reflection = applyFog(displayRadiance(reflected), s.position) * reflectance;
+    return transmitted * s.base * (1 - reflectance) + reflection;
+}
+
 struct OITOutput
 {
     float4 accumulation : SV_Target0;
@@ -751,7 +788,14 @@ OITOutput OITPSMain(VertexOut input, bool face : SV_IsFrontFace)
     float     depth  = max(0, dot(s.position - eyeExposure.xyz, cameraForward.xyz));
     float     weight = clamp(1 / (1 + .01 * depth * depth), .01, 1);
     OITOutput o;
-    o.accumulation = float4(shadeSurface(s).rgb * s.opacity * weight, s.opacity * weight);
+    float3 color = shadeSurface(s).rgb;
+    if (s.dielectric.x > 0)
+    {
+        color = lerp(color, glassRadiance(s, input.position.xy), s.dielectric.x * (1 - s.metallic));
+        if ((uint(s.alphaInfo) & 3) != 2)
+            s.opacity = 1;
+    }
+    o.accumulation = float4(color * s.opacity * weight, s.opacity * weight);
     o.revealage    = s.opacity.xxxx;
     return o;
 }
@@ -801,7 +845,6 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
     return o;
 }
-[[vk::binding(17, 1)]] Texture2D<float4> gBase : register(t17);
 [[vk::binding(18, 1)]] Texture2D<float4> gNormals : register(t18);
 [[vk::binding(19, 1)]] Texture2D<float4> gPosition : register(t19);
 [[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
@@ -1464,6 +1507,7 @@ struct MotionOut
     nointerpolation float winding : TEXCOORD4;
     float                 previousDepth : TEXCOORD5;
     nointerpolation float identity : TEXCOORD6;
+    nointerpolation float transmission : TEXCOORD7;
 };
 MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -1506,6 +1550,7 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.position      = o.current;
     o.previousDepth = dot(old.position.xyz - previousSceneRest[0].xyz, previousSceneRest[8].xyz);
     o.identity      = float(instanceId + 1);
+    o.transmission  = current.normal.w;
     return o;
 }
 float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
@@ -1524,7 +1569,8 @@ float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
     float opacity = baseTexture.Sample(textureSampler, uv).a * factor.a;
     uint  flags = uint(info), mode = flags & 3;
     bool  front = input.winding < 0 ? !face : face;
-    if (((flags & 4) == 0 && !front) || mode == 2 || (mode == 1 && opacity < frac(info) * 4))
+    if (((flags & 4) == 0 && !front) || mode == 2 || (mode == 1 && opacity < frac(info) * 4)
+        || (emissiveFactor.w > .5 && input.transmission > 0))
         discard;
     float2 current = input.current.xy / input.current.w * float2(.5, -.5) + .5,
            old     = input.previous.xy / input.previous.w * float2(.5, -.5) + .5;

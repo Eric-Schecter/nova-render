@@ -32,6 +32,7 @@ namespace render::detail
     {
         std::shared_ptr<const AnimationData> animation;
         uint64_t                             revision = 0;
+        bool                                 hasTransmission = false;
         std::array<float, 3>                 sourceMinimum{}, sourceMaximum{};
         std::vector<ModelVertex>             vertices;
         std::vector<Material>                materials;
@@ -52,6 +53,10 @@ namespace render::detail
                 if (m.alphaMode == AlphaMode::Blend)
                     return true;
         return false;
+    }
+    inline bool HasRasterTransparency(const ModelData* data)
+    {
+        return data && (data->hasTransmission || HasBlend(data));
     }
     inline bool HasAlpha(const ModelData* data)
     {

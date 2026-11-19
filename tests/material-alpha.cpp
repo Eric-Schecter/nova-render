@@ -183,6 +183,27 @@ int main(int argc, char** argv)
         if (backend->GetCapabilities().pathTracing)
             throw std::runtime_error("Alpha ray capability incorrectly true");
 
+        load("Transmission");
+        backend->SetLighting(LightingMode::PBR);
+        auto glass = draw("glass-forward");
+        auto center = (glass.height / 2 * glass.width + glass.width / 2) * 4;
+        if (glass.pixels[center] < glass.pixels[center + 1] + 35)
+            throw std::runtime_error("Opaque receiver is not visible through glass");
+        raster.pipeline = RasterPipeline::Deferred;
+        backend->SetRasterSettings(raster);
+        if (Difference(glass, draw("glass-deferred")) > .4)
+            throw std::runtime_error("Deferred glass does not match Forward");
+        raster.pipeline = RasterPipeline::Forward;
+        backend->SetRasterSettings(raster);
+        auto withoutPost = post;
+        withoutPost.enabled = false;
+        backend->SetPostProcessing(withoutPost);
+        auto defaultGlass = draw("glass-default");
+        if (defaultGlass.pixels[center] < defaultGlass.pixels[center + 1] + 35)
+            throw std::runtime_error("Default raster path did not composite glass");
+        backend->SetPostProcessing(post);
+        backend->SetLighting(LightingMode::Unlit);
+
         auto matrix = [](float x, float y, float z, float tx, float ty, float tz) {
             return std::array<float, 16>{x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, tx, ty, tz, 1};
         };

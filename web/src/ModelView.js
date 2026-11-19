@@ -197,6 +197,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         })),
       })
     const gBufferLayout = makeGBufferLayout(gBufferBindings)
+    const opaqueColorLayout = makeGBufferLayout([17])
     const halfGBufferLayout = canUseHalfReflections(device.limits)
       ? makeGBufferLayout(halfGBufferBindings)
       : null
@@ -242,7 +243,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             ? [layout, surfaceLayout, probeLayout]
             : deferred || hybridShadow || halfReflection
               ? [layout, surfaceLayout]
-              : [layout],
+              : oit
+                ? [layout, opaqueColorLayout]
+                : [layout],
         }),
         vertex: {
           module: vertex,
@@ -686,6 +689,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         const gbuffer = program === -4,
           oit = program === -6
         pass.setBindGroup(0, bindGroup)
+        if (oit)
+          pass.setBindGroup(
+            1,
+            device.createBindGroup({
+              layout: opaqueColorLayout,
+              entries: [{ binding: 17, resource: gbuffers[0].createView() }],
+            }),
+          )
         if (!gbuffer && !oit && environment && settings.showBackground) {
           pass.setPipeline(motion ? aaPipelines.skyMotion : aaPipelines['sky' + count])
           pass.draw(3)
