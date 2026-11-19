@@ -1,4 +1,4 @@
-add_executable(nova_ios_triangle MACOSX_BUNDLE main.cpp)
+add_executable(nova_ios_triangle MACOSX_BUNDLE ../mobile/main.cpp)
 target_link_libraries(nova_ios_triangle PRIVATE Nova::Render SDL3::SDL3)
 set(NOVA_IOS_BUNDLE_PLATFORM iPhoneOS)
 if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator|iPhoneSimulator")

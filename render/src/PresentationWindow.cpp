@@ -47,6 +47,8 @@ namespace render::detail
         {
 #ifdef _WIN32
             return SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#elif defined(__ANDROID__)
+            return SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
 #endif
         }
         return nullptr;

@@ -49,6 +49,27 @@ xcrun simctl launch --console-pty booted org.nova.render.ios-triangle
 
 Boot one iPhone simulator before running the last two commands. Rotate it using the Simulator controls, then return to the Home Screen and reopen the app. The triangle should remain visible after each transition. The target defaults to Metal raster rendering with the parameter panel disabled.
 
+## Android Vulkan triangle
+
+Use an Android SDK with platform 35, Build Tools 35.0.0, Platform Tools and NDK r27c. Set `JAVA_HOME` to a JDK, `ANDROID_HOME` to the SDK directory and `SDL3_SOURCE_DIR` to the SDL3 source matching the version resolved by vcpkg. The APK uses that release's SDLActivity Java sources and the same C++ triangle entry point as iOS.
+
+```sh
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+cmake -S . -B build/android \
+  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+  -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+  -DVCPKG_TARGET_TRIPLET=arm64-android \
+  -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=28 \
+  -DANDROID_PLATFORM=android-28 -DANDROID_ABI=arm64-v8a -DANDROID_STL=c++_static \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build/android --target nova_android_triangle
+examples/android/package.sh build/android
+adb install -r build/android/nova-triangle-debug.apk
+adb shell am start -n org.nova.render.triangle/.NovaActivity
+```
+
+Boot an ARM64 emulator with Vulkan enabled, or connect an ARM64 Android device. The packaging script signs a local debug APK using the SDK command-line tools.
+
 ## Browser examples
 
 With Node.js 22+ and DXC available, run `npm ci` then `npm run docs:dev`. `npm run docs:build` creates a static site with precompiled WGSL. Published [online examples](https://eric-schecter.github.io/nova-render/) need a WebGPU browser over HTTPS; HLSL editing is local-only.

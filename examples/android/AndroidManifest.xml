@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="org.nova.render.triangle" android:versionCode="1" android:versionName="1.0">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="true" />
+    <application android:label="Nova Triangle" android:allowBackup="false"
+                 android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+                 android:extractNativeLibs="false">
+        <activity android:name=".NovaActivity" android:exported="true"
+                  android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -51,6 +51,9 @@ namespace render::detail
             config = settings;
             initInstance();
             surface = CreateVulkanSurface(window, instance);
+#ifdef __ANDROID__
+            surfaceWindow = window.NativeHandle();
+#endif
             initDevice();
             initCommands();
         }
@@ -76,6 +79,10 @@ namespace render::detail
         VkDebugUtilsMessengerEXT   messenger        = VK_NULL_HANDLE;
         unsigned                   validationErrors = 0;
         VkSurfaceKHR               surface          = VK_NULL_HANDLE;
+#ifdef __ANDROID__
+        void*                      surfaceWindow    = nullptr;
+        bool                       surfaceLost      = false;
+#endif
         VkPhysicalDevice           physical         = VK_NULL_HANDLE;
         VkDevice                   device           = VK_NULL_HANDLE;
         uint32_t                   queueFamily      = 0;
@@ -660,6 +667,11 @@ namespace render::detail
             info.imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
             info.preTransform     = caps.currentTransform;
+#ifdef __ANDROID__
+            // Keep Nova viewports in the SDL window's orientation and let Android compose the rotation.
+            if (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+                info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+#endif
             for (auto alpha :
                  {VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
                   VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
@@ -890,6 +902,21 @@ namespace render::detail
         {
             if (!width || !height)
                 return FrameResult::Skipped;
+#ifdef __ANDROID__
+            const auto nativeWindow = window.NativeHandle();
+            if (!nativeWindow)
+                return FrameResult::Skipped;
+            if (surfaceLost || nativeWindow != surfaceWindow)
+            {
+                WaitIdle();
+                destroySwapchain();
+                DestroyVulkanSurface(window, instance, surface);
+                surface = VK_NULL_HANDLE;
+                surface = CreateVulkanSurface(window, instance);
+                surfaceWindow = nativeWindow;
+                surfaceLost = false;
+            }
+#endif
             if (model && !modelReady)
             {
                 try
@@ -1011,6 +1038,13 @@ namespace render::detail
             }
             uint32_t image  = 0;
             auto     result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &image);
+#ifdef __ANDROID__
+            if (result == VK_ERROR_SURFACE_LOST_KHR)
+            {
+                surfaceLost = true;
+                return FrameResult::Skipped;
+            }
+#endif
             if (result == VK_ERROR_OUT_OF_DATE_KHR)
             {
                 resized = true;
@@ -1080,6 +1114,13 @@ namespace render::detail
             present.pSwapchains        = &swapchain;
             present.pImageIndices      = &image;
             result                     = vkQueuePresentKHR(queue, &present);
+#ifdef __ANDROID__
+            if (result == VK_ERROR_SURFACE_LOST_KHR)
+            {
+                surfaceLost = true;
+                return FrameResult::Skipped;
+            }
+#endif
             if (result != VK_SUCCESS && result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR)
                 check(result, "Present");
             resized = suboptimal || result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR;

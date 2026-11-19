@@ -9,7 +9,6 @@ int main(int, char**)
     {
         render::WindowConfig config;
         config.title        = "Nova Triangle";
-        config.renderer.api = render::GraphicsAPI::Metal;
         render::Window          window(config);
         std::array<uint32_t, 2> lastSize{};
         while (window.PollEvents())
