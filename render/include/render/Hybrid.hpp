@@ -1,5 +1,7 @@
 #pragma once
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 namespace render
 {
@@ -10,6 +12,17 @@ namespace render
         AmbientOcclusion,
         Reflections
     };
+    struct HybridProbeBounds
+    {
+        std::array<float, 3> minimum, maximum;
+        bool operator==(const HybridProbeBounds& other) const
+        {
+            return minimum == other.minimum && maximum == other.maximum;
+        }
+        bool operator!=(const HybridProbeBounds& other) const { return !(*this == other); }
+    };
+    inline constexpr std::array<uint32_t, 3> HybridProbeGridDimensions{5, 4, 5};
+
     struct HybridSettings
     {
         bool       shadows          = true;
@@ -29,6 +42,7 @@ namespace render
         bool       halfResolutionReflections = false;
         bool       reflectionDenoising = false;
         bool       clearcoatReflections = true;
+        std::optional<HybridProbeBounds> probeBounds;
     };
     struct HybridCapabilities
     {

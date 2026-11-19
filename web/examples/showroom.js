@@ -1,5 +1,6 @@
 import { createRenderer } from '../src/Nova.js'
 import { instrumentRenderer } from './PerformancePanel.js'
+import { attachShowroomProbes } from './ShowroomProbes.js'
 
 export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, { onError } = {}) {
   const renderer = instrumentRenderer(await createRenderer({ canvas, shaderDirectory }), canvas)
@@ -84,6 +85,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       shadows: true,
       shadowSamples: 4,
       probeGI: true,
+      probeBounds: { minimum: [-2.65, -0.12, -3.25], maximum: [2.65, 1.95, 3.25] },
       reflections: true,
       reflectionSamples: 1,
       halfResolutionReflections: true,
@@ -110,9 +112,17 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
         }, 180)
       },
     })
+    const probes = attachShowroomProbes(canvas, renderer, renderer.getHybrid().probeBounds)
+    const draw = renderer.drawFrame.bind(renderer)
+    renderer.drawFrame = async () => {
+      const result = await draw()
+      if (result === 'rendered') probes.update()
+      return result
+    }
     const dispose = renderer.dispose.bind(renderer)
     renderer.dispose = () => {
       clearTimeout(settleTimer)
+      probes.dispose()
       dispose()
     }
     return renderer

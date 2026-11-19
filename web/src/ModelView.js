@@ -319,8 +319,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     async function updateProbes(lighting, light, environmentSettings) {
       probeEnabled = false
       if (!hybrid?.probeGI) return
-      probeBounds ||= probeSceneBounds(data.vertices, cachedBytes, sceneDraws)
-      if (!probeBounds) return
+      const bounds = hybrid.probeBounds
+        ? [hybrid.probeBounds.minimum, hybrid.probeBounds.maximum]
+        : (probeBounds ||= probeSceneBounds(data.vertices, cachedBytes, sceneDraws))
+      if (!bounds) return
       if (!probes) {
         const response = await fetch(
           new URL('model-probes.json', new URL(shaderURL, document.baseURI)),
@@ -366,13 +368,21 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       const key = JSON.stringify([lighting, light, environmentSettings])
       if (key !== probeLightingKey) probes.invalidate()
       probeLightingKey = key
-      probes.update(probeBounds, rasterGlobals, [
-        { binding: 0, resource: { buffer: uniform } },
-        ...textures.map((t, i) => ({ binding: modelTextureBinding(i), resource: t.createView() })),
-        { binding: 7, resource: sampler },
-        { binding: 8, resource: cube.createView({ dimension: 'cube' }) },
-        { binding: 14, resource: { buffer: instanceBuffer } },
-      ])
+      probes.update(
+        bounds,
+        rasterGlobals,
+        [
+          { binding: 0, resource: { buffer: uniform } },
+          ...textures.map((t, i) => ({
+            binding: modelTextureBinding(i),
+            resource: t.createView(),
+          })),
+          { binding: 7, resource: sampler },
+          { binding: 8, resource: cube.createView({ dimension: 'cube' }) },
+          { binding: 14, resource: { buffer: instanceBuffer } },
+        ],
+        hybrid.probeBounds ? 0 : 0.25,
+      )
       probeEnabled = true
     }
     function writeGlobals() {
@@ -486,7 +496,12 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     return {
       data,
       setHybrid(settings) {
-        if (hybrid?.probeGI !== settings?.probeGI) probes?.invalidate()
+        if (
+          hybrid !== settings &&
+          (hybrid?.probeGI !== settings?.probeGI ||
+            JSON.stringify(hybrid?.probeBounds) !== JSON.stringify(settings?.probeBounds))
+        )
+          probes?.invalidate()
         hybrid = settings
         writeGlobals()
         refreshSingleShadows()

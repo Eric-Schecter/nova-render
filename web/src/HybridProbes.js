@@ -1,8 +1,10 @@
 import { modelVertexFloats } from './ModelVertex.js'
 // The current buffer holds the entire grid. Only the scheduled range is written;
 // a snapshot gives the update shader stable history for that range.
+export const hybridProbeGridDimensions = Object.freeze([5, 4, 5])
+
 export function createHybridProbes(device, pipeline, layout) {
-  const dimensions = [5, 4, 5]
+  const dimensions = hybridProbeGridDimensions
   const count = dimensions.reduce((a, b) => a * b, 1)
   const size = count * 6 * 32
   const current = device.createBuffer({
@@ -32,10 +34,10 @@ export function createHybridProbes(device, pipeline, layout) {
     invalidate() {
       reset = true
     },
-    update(bounds, header, sceneResources) {
+    update(bounds, header, sceneResources, minimumExtent = 0.25) {
       if (!bounds) return
       const [minimum, maximum] = bounds
-      const extent = maximum.map((v, i) => Math.max(v - minimum[i], 0.25))
+      const extent = maximum.map((v, i) => Math.max(v - minimum[i], minimumExtent))
       const spacing = extent.map((v, i) => v / dimensions[i])
       const origin = minimum.map((v, i) => v + spacing[i] * 0.5)
       const encoder = device.createCommandEncoder()

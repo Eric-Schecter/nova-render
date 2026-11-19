@@ -40,3 +40,8 @@ Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settin
 Hybrid selects Deferred. Off, FXAA, SMAA and SSAA work; MSAA, TAA and AA split are rejected. Static instances and MASK coverage are supported. BLEND remains OIT, without shadow casting or ray-traced glass. Secondary reflection hits use material textures, including normal maps and material AO. The tangent frame comes from the hit triangle and its UVs, with geometric shading for degenerate UVs. Reflections use one bounce.
 
 Animated geometry, moving-instance motion vectors and hardware ray queries remain unsupported. The DDGI grid uses six lobes per probe and one bounce. It has no relocation, adaptive placement or recursive bounce, and DX12 does not expose probe mode. Scene edits conservatively reset history. Reconstruction uses combined color, without per-effect variance-guided spatial filtering.
+
+
+### Local probe bounds
+
+When DDGI is enabled, set `HybridSettings::probeBounds` in C++ or `probeBounds` in JavaScript to place the probe grid in a world-space box. Specify finite, ordered minimum and maximum coordinates on all three axes. For example, the CarConcept showroom uses `{ minimum: [-2.65, -0.12, -3.25], maximum: [2.65, 1.95, 3.25] }`. Leave the option unset in C++ or use `null` in JavaScript to derive the box from scene geometry. Changing the box resets the probe cache.

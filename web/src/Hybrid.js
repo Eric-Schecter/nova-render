@@ -8,6 +8,7 @@ export const defaultHybrid = () => ({
   reflections: false,
   diffuseBounce: false,
   probeGI: false,
+  probeBounds: null,
   reflectionDistance: 1000,
   reflectionStrength: 1,
   reflectionSamples: 1,
@@ -35,6 +36,7 @@ export function copyHybrid(value) {
           'reflections',
           'diffuseBounce',
           'probeGI',
+          'probeBounds',
           'reflectionDistance',
           'reflectionStrength',
           'reflectionSamples',
@@ -90,6 +92,24 @@ export function copyHybrid(value) {
     s.historyWeight > 0.98
   )
     throw Error('Invalid Hybrid settings')
+  if (s.probeBounds !== null) {
+    const { minimum, maximum } = s.probeBounds || {}
+    if (
+      ![minimum, maximum].every(
+        (values) =>
+          Array.isArray(values) &&
+          values.length === 3 &&
+          values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))),
+      ) ||
+      minimum.some(
+        (low, i) =>
+          Math.fround(low) >= Math.fround(maximum[i]) ||
+          !Number.isFinite(Math.fround(maximum[i] - low)),
+      )
+    )
+      throw Error('Invalid Hybrid probe bounds')
+    s.probeBounds = { minimum: [...minimum], maximum: [...maximum] }
+  }
   return s
 }
 export function hybridCapabilities(animated = false) {

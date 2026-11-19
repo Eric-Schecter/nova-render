@@ -56,13 +56,14 @@ namespace render::detail
         struct ProbeConfig
         {
             std::array<float, 4>    origin{}, spacingDistance{};
-            std::array<uint32_t, 4> dimensionsFirst{5, 4, 5, 0};
+            std::array<uint32_t, 4> dimensionsFirst{HybridProbeGridDimensions[0], HybridProbeGridDimensions[1], HybridProbeGridDimensions[2], 0};
             uint32_t                count = 0, sequence = 0;
             float                   weight = .85f;
             uint32_t                header = 0;
         };
         static_assert(sizeof(ProbeConfig) == 64);
-        static constexpr uint32_t ProbeCount = 100, ProbeBytes = 6 * 32;
+        static constexpr uint32_t ProbeCount = HybridProbeGridDimensions[0] * HybridProbeGridDimensions[1] * HybridProbeGridDimensions[2],
+                                  ProbeBytes = 6 * 32;
         uint32_t                  probeFirst = 0, probeSequence = 0;
         bool                      probeReset = true;
         ProbeConfig               probeConfig;
@@ -79,7 +80,12 @@ namespace render::detail
                     low  = glm::min(low, p);
                     high = glm::max(high, p);
                 };
-                if (scene.active)
+                if (hybrid.probeBounds)
+                {
+                    low  = glm::make_vec3(hybrid.probeBounds->minimum.data());
+                    high = glm::make_vec3(hybrid.probeBounds->maximum.data());
+                }
+                else if (scene.active)
                 {
                     for (const auto& draw : scene.draws)
                     {
@@ -108,7 +114,7 @@ namespace render::detail
                         include(glm::make_vec3(vertex.position));
                 if (!std::isfinite(low.x))
                     return false;
-                auto extent = glm::max(high - low, glm::vec3(.25f));
+                const auto extent = hybrid.probeBounds ? high - low : glm::max(high - low, glm::vec3(.25f));
                 for (int i = 0; i < 3; ++i)
                 {
                     probeConfig.spacingDistance[i] = extent[i] / probeConfig.dimensionsFirst[i];
@@ -140,7 +146,15 @@ namespace render::detail
                 throw std::invalid_argument("Invalid Hybrid settings");
             if (value.probeGI && pathAPI == GraphicsAPI::D3D12)
                 throw std::invalid_argument("DDGI requires Metal or Vulkan");
-            const bool resetProbes = hybrid.probeGI != value.probeGI;
+            if (value.probeBounds)
+                for (size_t i = 0; i < 3; ++i)
+                {
+                    const float low = value.probeBounds->minimum[i], high = value.probeBounds->maximum[i];
+                    if (!std::isfinite(low) || !std::isfinite(high) || !std::isfinite(high - low)
+                        || high <= low)
+                        throw std::invalid_argument("Invalid Hybrid probe bounds");
+                }
+            const bool resetProbes = hybrid.probeGI != value.probeGI || hybrid.probeBounds != value.probeBounds;
             hybrid = value;
             RebuildRasterInstances(resetProbes);
             rasterAA.Reset();
@@ -947,7 +961,7 @@ namespace render::detail
               hybrid,
               GetHybridCapabilities());
             if (
-              previousHybrid.shadows != hybrid.shadows || previousHybrid.shadowSamples != hybrid.shadowSamples
+              previousHybrid.probeBounds != hybrid.probeBounds || previousHybrid.shadows != hybrid.shadows || previousHybrid.shadowSamples != hybrid.shadowSamples
               || previousHybrid.view != hybrid.view || previousHybrid.shadowLight != hybrid.shadowLight
               || previousHybrid.ambientOcclusion != hybrid.ambientOcclusion
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
@@ -962,7 +976,8 @@ namespace render::detail
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {
-                RebuildRasterInstances(previousHybrid.probeGI != hybrid.probeGI);
+                RebuildRasterInstances(
+                  previousHybrid.probeGI != hybrid.probeGI || previousHybrid.probeBounds != hybrid.probeBounds);
                 rasterAA.Reset();
             }
             if (

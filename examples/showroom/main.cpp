@@ -1,6 +1,9 @@
 #include "../common/ProceduralOptions.hpp"
 #include <chrono>
 #include <iostream>
+#ifdef NOVA_EXAMPLE_UI
+#include "ProbeOverlay.hpp"
+#endif
 using namespace render;
 int main(int argc, char** argv)
 {
@@ -43,6 +46,7 @@ int main(int argc, char** argv)
         HybridSettings settings;
         settings.probeGI                   = window.GetHybridCapabilities().probeGI;
         settings.diffuseBounce             = !settings.probeGI;
+        settings.probeBounds               = HybridProbeBounds{{-2.65f, -.12f, -3.25f}, {2.65f, 1.95f, 3.25f}};
         settings.reflections               = true;
         settings.reflectionSamples         = 1;
         settings.halfResolutionReflections = true;
@@ -84,6 +88,16 @@ int main(int argc, char** argv)
         aa.method = AAMethod::FXAA;
         window.SetAntiAliasing(aa);
         window.EnableViewOrbitControls(5.784566f);
+#ifdef NOVA_EXAMPLE_UI
+        bool showProbes = false;
+        if (settings.probeGI)
+        {
+            ParameterPanelConfig panel;
+            panel.showBuiltinPanel = false;
+            panel.drawUI           = [&] { example::DrawProbeOverlay(window, *settings.probeBounds, showProbes); };
+            window.EnableParameterPanel(panel);
+        }
+#endif
         using Clock                      = std::chrono::steady_clock;
         constexpr auto    settleDelay    = std::chrono::milliseconds(180);
         auto              previousCamera = window.GetViewCamera();

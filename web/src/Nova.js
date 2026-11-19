@@ -69,7 +69,7 @@ class Renderer {
   #hybrid = defaultHybrid()
   getHybrid() {
     this.#check()
-    return { ...this.#hybrid }
+    return copyHybrid(this.#hybrid)
   }
   getHybridHistoryFrames() {
     this.#check()
