@@ -51,7 +51,10 @@ try {
     // An empty scene returns zero incoming light and the maximum distance for every ray.
     const scene = bind(0, [
       { binding: 0, resource: { buffer: buffer(new Float32Array(256), GPUBufferUsage.UNIFORM) } },
-      ...[2, 3, 4, 5, 6].map((binding) => ({ binding, resource: materials.createView() })),
+      ...[2, 3, 4, 5, 6, 28, 29, 30].map((binding) => ({
+        binding,
+        resource: materials.createView(),
+      })),
       { binding: 7, resource: device.createSampler() },
       { binding: 8, resource: environment.createView({ dimension: 'cube' }) },
       { binding: 14, resource: { buffer: buffer(new Float32Array(48), GPUBufferUsage.STORAGE) } },
