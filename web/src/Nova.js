@@ -4,6 +4,8 @@ import {
   copyRasterSettings,
   rasterCapabilities,
   canUseDeferred,
+  canUseHalfReflections,
+  halfReflectionTextureLimit,
   deferredLimits,
   gBufferViews,
 } from './RasterPipeline.js'
@@ -33,9 +35,10 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
     throw Error('WebGPU is unavailable. Use a supported browser over HTTPS or localhost.')
   const adapter = await navigator.gpu.requestAdapter()
   if (!adapter) throw Error('No WebGPU adapter available')
-  const device = await adapter.requestDevice({
-    requiredLimits: canUseDeferred(adapter.limits) ? deferredLimits : {},
-  })
+  const requiredLimits = canUseDeferred(adapter.limits) ? { ...deferredLimits } : {}
+  if (canUseHalfReflections(adapter.limits))
+    requiredLimits.maxSampledTexturesPerShaderStage = halfReflectionTextureLimit
+  const device = await adapter.requestDevice({ requiredLimits })
   const context = canvas.getContext('webgpu')
   if (!context) {
     device.destroy()
@@ -78,7 +81,10 @@ class Renderer {
   }
   setHybrid(value) {
     this.#check()
-    this.#hybrid = copyHybrid({ ...this.#hybrid, ...value })
+    const next = copyHybrid({ ...this.#hybrid, ...value })
+    if (next.halfResolutionReflections && !canUseHalfReflections(this.#device.limits))
+      throw Error('Half-resolution Hybrid reflections require 21 sampled textures per shader stage')
+    this.#hybrid = next
     this.#resetAA()
     if (this.#hybrid.probeGI) this.#continuePathTracing()
     this.#parameterPanel?.refresh()
@@ -86,6 +92,7 @@ class Renderer {
   getHybridCapabilities() {
     this.#check()
     const caps = hybridCapabilities(!!this.#model?.skinned)
+    caps.halfResolutionReflections = caps.supported && canUseHalfReflections(this.#device.limits)
     return canUseDeferred(this.#device.limits)
       ? caps
       : {

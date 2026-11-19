@@ -5,10 +5,15 @@ import { chromium } from 'playwright'
 import { compile } from './compiler.mjs'
 import { decode } from './Screenshot.mjs'
 
-const [archive, baseline] = process.argv.slice(2)
-if (!archive || !baseline)
-  throw Error('Usage: check-hybrid-showroom.mjs showroom.zip baseline-model.hlsl')
-const output = resolve('build/validation/hybrid-showroom')
+const [archive, baseline] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'))
+const halfReflections = process.argv.includes('--half-reflections')
+if (!archive || (!baseline && !halfReflections))
+  throw Error(
+    'Usage: check-hybrid-showroom.mjs showroom.zip [baseline-model.hlsl | --half-reflections]',
+  )
+const output = resolve(
+  halfReflections ? 'build/validation/hybrid-half-showroom' : 'build/validation/hybrid-showroom',
+)
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   channel: 'chrome',
@@ -17,16 +22,22 @@ const browser = await chromium.launch({
 })
 const results = []
 try {
-  for (const [name, path] of [
-    ['before', baseline],
-    ['after', 'render/shaders/model.hlsl'],
-  ]) {
+  const cases = halfReflections
+    ? [['full'], ['half']]
+    : [
+        ['before', baseline],
+        ['after', 'render/shaders/model.hlsl'],
+      ]
+  for (const [name, path] of cases) {
+    const usesCurrentSdk = halfReflections || name === 'after'
     const shaders = {}
-    const source = '#define NOVA_RASTER_AA 1\n' + (await readFile(path, 'utf8'))
-    for (const [shader, fragmentEntry] of [
-      ['model-hybrid-shadow', 'HybridShadowPSMain'],
-      ['model-deferred', 'DeferredPSMain'],
-    ]) {
+    const source = path && '#define NOVA_RASTER_AA 1\n' + (await readFile(path, 'utf8'))
+    for (const [shader, fragmentEntry] of halfReflections
+      ? []
+      : [
+          ['model-hybrid-shadow', 'HybridShadowPSMain'],
+          ['model-deferred', 'DeferredPSMain'],
+        ]) {
       shaders[shader + '.json'] = await compile(source, {
         model: true,
         vertexEntry: 'SkyVSMain',
@@ -41,17 +52,34 @@ try {
     })
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
-    await page.route('**/sdk/generated/model-*.json', (route) => {
-      const shader = shaders[new URL(route.request().url()).pathname.split('/').at(-1)]
-      return shader ? route.fulfill({ json: shader }) : route.continue()
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning' && msg.text().includes('Validation')) errors.push(msg.text())
     })
-    if (name === 'after' && process.argv.includes('--instance-bounds'))
-      await page.route('**/sdk/src/SceneData.js', (route) =>
-        route.fulfill({ path: resolve('web/src/SceneData.js'), contentType: 'text/javascript' }),
+    if (usesCurrentSdk)
+      await page.route('**/sdk/src/*.js', (route) =>
+        route.fulfill({
+          path: resolve('web/src', new URL(route.request().url()).pathname.split('/').at(-1)),
+          contentType: 'text/javascript',
+        }),
       )
+    if (name === 'after' && !process.argv.includes('--instance-bounds'))
+      await page.route('**/sdk/src/SceneData.js', (route) => route.continue())
+    await page.route('**/sdk/generated/model-*.json', (route) => {
+      const file = new URL(route.request().url()).pathname.split('/').at(-1)
+      if (shaders[file]) return route.fulfill({ json: shaders[file] })
+      if (usesCurrentSdk)
+        return route.fulfill({
+          path: resolve('docs/public/generated', file),
+          contentType: 'application/json',
+        })
+      return route.continue()
+    })
     await page.route('**/sdk/src/Nova.js', async (route) => {
       const body =
-        (await (await route.fetch()).text()).replace(
+        (usesCurrentSdk
+          ? await readFile('web/src/Nova.js', 'utf8')
+          : await (await route.fetch()).text()
+        ).replace(
           'export async function createRenderer(',
           'async function createRendererOriginal(',
         ) +
@@ -79,9 +107,10 @@ export async function createRenderer(options) {
       showroom.paused = true
     })
     await page.getByRole('combobox', { name: '渲染模式' }).selectOption('hybrid')
-    await page.evaluate(() => {
+    await page.evaluate((halfResolutionReflections) => {
       const { raw } = showroom
       raw.setHybrid({
+        halfResolutionReflections,
         shadowSamples: 1,
         aoSamples: 1,
         reflections: true,
@@ -106,7 +135,7 @@ export async function createRenderer(options) {
         times.sort((a, b) => a - b)
         return (times[7] + times[8]) / 2
       }
-    })
+    }, name === 'half')
     const timing = { name }
     const captures = {}
     for (const mode of ['still', 'moving']) {
@@ -135,7 +164,11 @@ export async function createRenderer(options) {
     assert.equal(a.height, b.height)
     assert.equal(a.channels, b.channels)
     mae[mode] = a.pixels.reduce((sum, x, i) => sum + Math.abs(x - b.pixels[i]), 0) / a.pixels.length
-    assert.ok(mae[mode] <= 0.15, mode + ' image MAE exceeded 0.15/255: ' + mae[mode])
+    const tolerance = halfReflections ? 5 : 0.15
+    assert.ok(
+      mae[mode] <= tolerance,
+      mode + ' image MAE exceeded ' + tolerance + '/255: ' + mae[mode],
+    )
   }
   await writeFile(
     resolve(output, 'web-report.json'),

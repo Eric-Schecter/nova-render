@@ -183,6 +183,13 @@ try {
   if (diff(reflection, reflectionOff) < 0.05) throw Error('Missing Hybrid reflections')
   await page.evaluate(() => r.setHybrid({ view: 'reflections' }))
   await capture('reflection-only')
+  await page.evaluate(() => r.setHybrid({ halfResolutionReflections: true }))
+  await capture('reflection-half-only')
+  await page.evaluate(() => r.setHybrid({ view: 'final' }))
+  const halfReflection = await capture('reflection-half-final')
+  if (diff(reflectionOff, halfReflection) < 0.05 || diff(reflection, halfReflection) > 5)
+    throw Error('Half-resolution reflection did not preserve reflection lighting')
+  await page.evaluate(() => r.setHybrid({ halfResolutionReflections: false }))
   await page.evaluate(() =>
     r.setHybrid({
       view: 'final',

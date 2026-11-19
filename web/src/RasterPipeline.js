@@ -32,6 +32,12 @@ export const deferredLimits = {
 export function canUseDeferred(limits) {
   return Object.entries(deferredLimits).every(([key, value]) => limits[key] >= value)
 }
+export const halfReflectionTextureLimit = deferredLimits.maxSampledTexturesPerShaderStage + 1
+export function canUseHalfReflections(limits) {
+  return (
+    canUseDeferred(limits) && limits.maxSampledTexturesPerShaderStage >= halfReflectionTextureLimit
+  )
+}
 export function rasterCapabilities(deferred = true) {
   return {
     forward: true,

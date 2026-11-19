@@ -455,6 +455,18 @@ export function attachParameterPanel(
           1,
           (v) => adapter.setHybrid({ reflectionSamples: v }),
         )
+        const reflectionResolutionRow = document.createElement('label'),
+          reflectionResolutionToggle = document.createElement('input')
+        reflectionResolutionRow.textContent = 'Half-resolution reflections'
+        reflectionResolutionToggle.type = 'checkbox'
+        reflectionResolutionToggle.checked = h.halfResolutionReflections
+        reflectionResolutionToggle.disabled =
+          !h.reflections || adapter.getHybridCapabilities?.()?.halfResolutionReflections === false
+        reflectionResolutionToggle.addEventListener('change', () =>
+          adapter.setHybrid({ halfResolutionReflections: reflectionResolutionToggle.checked }),
+        )
+        reflectionResolutionRow.prepend(reflectionResolutionToggle)
+        renderer.append(reflectionResolutionRow)
         const temporalRow = document.createElement('label'),
           temporalToggle = document.createElement('input')
         temporalRow.textContent = 'Hybrid temporal reconstruction'

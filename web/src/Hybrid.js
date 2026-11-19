@@ -11,6 +11,7 @@ export const defaultHybrid = () => ({
   reflectionDistance: 1000,
   reflectionStrength: 1,
   reflectionSamples: 1,
+  halfResolutionReflections: false,
   ambientOcclusion: false,
   aoRadius: 1,
   aoStrength: 1,
@@ -35,6 +36,7 @@ export function copyHybrid(value) {
           'reflectionDistance',
           'reflectionStrength',
           'reflectionSamples',
+          'halfResolutionReflections',
           'ambientOcclusion',
           'aoRadius',
           'aoStrength',
@@ -72,6 +74,7 @@ export function copyHybrid(value) {
     !Number.isFinite(s.reflectionStrength) ||
     s.reflectionStrength < 0 ||
     s.reflectionStrength > 1 ||
+    typeof s.halfResolutionReflections !== 'boolean' ||
     !Number.isInteger(s.reflectionSamples) ||
     s.reflectionSamples < 1 ||
     s.reflectionSamples > 16 ||

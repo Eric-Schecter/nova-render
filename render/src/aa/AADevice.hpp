@@ -78,7 +78,8 @@ namespace render::detail
         AAHybridOitAccum,
         AAHybridOitReveal,
         AAModelClearcoat = 102,
-        AAResourceCount  = 103
+        AAHybridReflection = 103,
+        AAResourceCount    = 104
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -98,7 +99,7 @@ namespace render::detail
         uint32_t                                                     queueFamily = 0;
         std::function<void(void*)>                                   beforeScene;
         std::function<void(const AAPass&, void*, void*)>             draw;
-        std::function<void(void*, const std::array<void*, 9>&, int)> bindGBuffer;
+        std::function<void(void*, const std::array<void*, 10>&, int)> bindGBuffer;
     };
     struct AASpec
     {
@@ -107,6 +108,8 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id == AAHybridReflection)
+            return {(w * (ss ? 2u : 1u) + 1) / 2 + 2, (h * (ss ? 2u : 1u) + 1) / 2 + 2, 1};
         if (id >= AAHybridPreviousNormal && id != AAModelClearcoat)
             return {w, h, 1};
         if (id >= AAModelBase)

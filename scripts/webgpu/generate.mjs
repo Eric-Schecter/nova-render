@@ -139,6 +139,8 @@ for (const [name, vertexEntry, fragmentEntry] of [
   ['model-gbuffer', 'VSMain', 'GBufferPSMain'],
   ['model-oit', 'VSMain', 'OITPSMain'],
   ['model-deferred', 'SkyVSMain', 'DeferredPSMain'],
+  ['model-deferred-half', 'SkyVSMain', 'DeferredPSMain'],
+  ['model-hybrid-reflection', 'SkyVSMain', 'HybridReflectionPSMain'],
   ['model-hybrid-shadow', 'SkyVSMain', 'HybridShadowPSMain'],
   ['sky-aa', 'SkyVSMain', 'SkyPSMain'],
   ['model-motion', 'MotionVSMain', 'MotionPSMain'],
@@ -146,11 +148,15 @@ for (const [name, vertexEntry, fragmentEntry] of [
 ]) {
   // The Hybrid visibility kernel needs inlining to retain storage-matrix layout
   // through Naga's function-local struct lowering. Covered by native/Web ray parity.
-  const data = await compile(rasterSource, {
+  const source =
+    name === 'model-deferred-half'
+      ? '#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource
+      : rasterSource
+  const data = await compile(source, {
     model: true,
     vertexEntry,
     fragmentEntry,
-    optimizeModel: ['model-hybrid-shadow', 'model-deferred'].includes(name),
+    optimizeModel: name.startsWith('model-hybrid-') || name.startsWith('model-deferred'),
   })
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
 }
@@ -166,12 +172,17 @@ const probeDeferred = await compile('#define NOVA_HYBRID_PROBES 1\n' + rasterSou
   fragmentEntry: 'DeferredPSMain',
   optimizeModel: true,
 })
+const probeDeferredHalf = await compile(
+  '#define NOVA_HYBRID_PROBES 1\n#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource,
+  { model: true, vertexEntry: 'SkyVSMain', fragmentEntry: 'DeferredPSMain', optimizeModel: true },
+)
 await writeFile(
   'docs/public/generated/model-probes.json',
   JSON.stringify({
     compute: probeUpdate.compute,
     vert: probeDeferred.vert,
     frag: probeDeferred.frag,
+    halfFrag: probeDeferredHalf.frag,
   }),
 )
 

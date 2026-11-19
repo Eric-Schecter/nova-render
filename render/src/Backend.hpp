@@ -927,6 +927,7 @@ namespace render::detail
               || previousHybrid.probeGI != hybrid.probeGI || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
+              || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {

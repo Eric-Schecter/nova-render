@@ -59,6 +59,7 @@ const halton = (index, base) => {
   return v
 }
 const modelClearcoatTarget = 102
+const hybridReflectionTarget = 103
 
 export async function createAntiAliasingView({
   canvas,
@@ -270,7 +271,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= modelClearcoatTarget; i++)
+    for (let i = 0; i <= hybridReflectionTarget; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -402,7 +403,17 @@ export async function createAntiAliasingView({
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
         }
+        const halfReflections =
+          external.hybrid?.reflections && external.hybrid.halfResolutionReflections
+        if (halfReflections) {
+          const reflection = add(-8, hybridReflectionTarget)
+          reflection.sources.splice(0, 4, 85, 86, 87, 88)
+          reflection.sources[8] = modelClearcoatTarget
+          reflection.u[4] *= 0.5
+          reflection.u[5] *= 0.5
+        }
         const p = add(-5, sceneColor)
+        if (halfReflections) p.sources[9] = hybridReflectionTarget
         if (external.hybrid) p.sources.splice(4, 4, 92, 93, 94, 95)
         p.sources.splice(0, 4, 85, 86, 87, 88)
         p.sources[8] = modelClearcoatTarget
@@ -545,7 +556,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= modelClearcoatTarget; i++) {
+    for (let i = 0; i <= hybridReflectionTarget; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -573,6 +584,11 @@ export async function createAntiAliasingView({
       if (i >= 96 && i !== modelClearcoatTarget) {
         tw = w
         th = h
+      }
+      if (i === hybridReflectionTarget) {
+        const scale = superSample ? 2 : 1
+        tw = Math.ceil((w * scale) / 2) + 2
+        th = Math.ceil((h * scale) / 2) + 2
       }
       if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
         textures[i].destroy()
@@ -637,7 +653,7 @@ export async function createAntiAliasingView({
     function render(p, index, present = false) {
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
       const scene =
-          p.program <= 0 ||
+          (p.program <= 0 && p.program !== -8) ||
           p.program === 9 ||
           p.program === 10 ||
           p.program === 16 ||
@@ -713,8 +729,8 @@ export async function createAntiAliasingView({
             p.program === -2,
             p.ms ? 4 : 1,
             p.program,
-            p.program === -5 || p.program === -7
-              ? p.sources.slice(0, 9).map((i) => textures[i])
+            p.program === -5 || p.program === -7 || p.program === -8
+              ? p.sources.slice(0, 10).map((i) => textures[i])
               : null,
           )
         pass.end()

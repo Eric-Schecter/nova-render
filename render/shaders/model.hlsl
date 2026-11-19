@@ -810,7 +810,7 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 [[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
 [[vk::binding(23, 1)]] Texture2D<float4> hybridShadow2 : register(t23);
 [[vk::binding(24, 1)]] Texture2D<float4> hybridShadow3 : register(t24);
-float3                                   surfacePosition(SkyOut input, float2 encodedDepth)
+float3 surfacePosition(SkyOut input, float2 encodedDepth)
 {
     float depth = exp2(encodedDepth.x + encodedDepth.y);
     if (cameraUp.w >= 0)
@@ -1258,6 +1258,72 @@ float3 hybridReflection(SurfaceData primary, float rotation)
     return sum / max(1, samples);
 }
 
+float4 HybridReflectionPSMain(SkyOut input) : SV_Target
+{
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    int2 extent = int2(width, height) - 2;
+    int2 local = int2(input.position.xy) - 1;
+    if (any(local < 0) || any(local >= (extent + 1) / 2))
+        return 0;
+    // The AA attachments reserve a one-pixel border around the active viewport.
+    int3 pixel = int3(local * 2 + 1, 0);
+    float4 base = gBase.Load(pixel);
+    if (base.w <= 0)
+        return 0;
+    float4 normals = gNormals.Load(pixel), pos = gPosition.Load(pixel);
+    // Convert the half-resolution pixel center to the representative full-resolution center.
+    input.uv = (input.uv * float2((extent + 1) / 2) * 2 - .5) / float2(extent);
+    float2 ndc = float2(input.uv.x * 2 - 1, 1 - input.uv.y * 2);
+    input.direction = cameraForward.xyz + ndc.x * cameraRight.w * cameraRight.xyz
+                      + ndc.y * cameraUp.w * cameraUp.xyz;
+    SurfaceData s = (SurfaceData)0;
+    s.base = base.rgb;
+    s.roughness = base.w;
+    s.normal = octDecode(normals.xy);
+    s.geometricNormal = octDecode(normals.zw);
+    s.position = surfacePosition(input, pos.xy);
+    s.metallic = gEmission.Load(pixel).w;
+    s.specular = 1;
+    if (pos.w > .5 && irradiance[3].w > pos.w)
+        s.specular = materialSpecular(instances[uint(irradiance[3].w - 1 - pos.w)]);
+    return float4(hybridReflection(s, hybridRotation(uint2(pixel.xy))), 1);
+}
+
+#if defined(NOVA_HALF_REFLECTIONS)
+[[vk::binding(32, 1)]] Texture2D<float4> hybridReflectionTexture : register(t32);
+bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, out float3 reflection)
+{
+    uint width, height;
+    hybridReflectionTexture.GetDimensions(width, height);
+    int2 last = int2(width, height) - 2;
+    float2 low = float2(pixel - 1) * .5 + 1;
+    int2 first = int2(low);
+    float2 fraction = frac(low);
+    float3 radiance = 0;
+    float weightSum = 0;
+    [unroll] for (int y = 0; y < 2; ++y)
+        [unroll] for (int x = 0; x < 2; ++x)
+        {
+            int2 tap = min(first + int2(x, y), last);
+            float4 sampleValue = hybridReflectionTexture.Load(int3(tap, 0));
+            int3 guide = int3(tap * 2 - 1, 0);
+            float4 guideDepth = gPosition.Load(guide), guideNormal = gNormals.Load(guide);
+            float dz = abs((position.x - guideDepth.x) + (position.y - guideDepth.y));
+            float alignment = min(dot(surface.normal, octDecode(guideNormal.xy)),
+                                  dot(surface.geometricNormal, octDecode(guideNormal.zw)));
+            float weight = sampleValue.a * exp2(-120 * dz) * pow(saturate(alignment), 24);
+            if (dz > .06 || alignment < .8 || abs(position.w - guideDepth.w) > .5)
+                weight = 0;
+            weight *= max(.02, (x == 0 ? 1 - fraction.x : fraction.x) * (y == 0 ? 1 - fraction.y : fraction.y));
+            radiance += sampleValue.rgb * weight;
+            weightSum += weight;
+        }
+    reflection = radiance / max(weightSum, .001);
+    return weightSum >= .001;
+}
+#endif
+
 float4 DeferredPSMain(SkyOut input)
   : SV_Target
 {
@@ -1324,7 +1390,10 @@ float4 DeferredPSMain(SkyOut input)
         bool reflections = instances[header].world._m01 > 0;
         if (reflections)
         {
-            reflection = hybridReflection(s, rotation);
+#if defined(NOVA_HALF_REFLECTIONS)
+            if (!upsampleHybridReflection(pixel.xy, pos, s, reflection))
+#endif
+                reflection = hybridReflection(s, rotation);
             if (instances[header].world._m30 > 2.5)
                 return float4(displayRadiance(reflection), 1);
             reflectionMix = instances[header].world._m21;

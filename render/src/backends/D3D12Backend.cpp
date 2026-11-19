@@ -374,7 +374,7 @@ namespace render::detail
 
 #include "D3D12Model.inc"
         ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow;
+          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaDeferredHalf;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
         ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
@@ -395,7 +395,7 @@ namespace render::detail
             blend.BlendOp = blend.BlendOpAlpha     = D3D12_BLEND_OP_ADD;
             blend.LogicOp                          = D3D12_LOGIC_OP_NOOP;
             blend.RenderTargetWriteMask            = D3D12_COLOR_WRITE_ENABLE_ALL;
-            info.DepthStencilState.DepthEnable     = TRUE;
+            info.DepthStencilState.DepthEnable     = std::string(file) != "model-hybrid-reflection";
             info.DepthStencilState.DepthWriteMask  = sky ? D3D12_DEPTH_WRITE_MASK_ZERO : D3D12_DEPTH_WRITE_MASK_ALL;
             info.DepthStencilState.DepthFunc       = sky ? D3D12_COMPARISON_FUNC_ALWAYS : D3D12_COMPARISON_FUNC_LESS;
             info.DepthStencilState.StencilReadMask = info.DepthStencilState.StencilWriteMask = 255;
@@ -428,7 +428,7 @@ namespace render::detail
                 }
             }
             info.RTVFormats[0]    = DXGI_FORMAT_R16G16B16A16_FLOAT;
-            info.DSVFormat        = DXGI_FORMAT_D32_FLOAT;
+            info.DSVFormat        = info.DepthStencilState.DepthEnable ? DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_UNKNOWN;
             info.SampleDesc.Count = samples;
             ComPtr<ID3D12PipelineState> result;
             checkHR(device->CreateGraphicsPipelineState(&info, IID_PPV_ARGS(&result)), "Create raster AA pipeline");
@@ -438,9 +438,9 @@ namespace render::detail
         {
             AAExternalScene external;
             external.device      = device.Get();
-            external.bindGBuffer = [this](void*, const std::array<void*, 9>& views, int program) {
+            external.bindGBuffer = [this](void*, const std::array<void*, 10>& views, int program) {
                 auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
-                handle.ptr += (program == -7 ? 20 : 11)
+                handle.ptr += (program == -5 ? 11 : 21)
                               * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 for (size_t i = 0; i < views.size(); i++)
                 {
@@ -504,13 +504,23 @@ namespace render::detail
                 cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                if (pass.program == -5 || pass.program == -7)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
-                    auto& active = pass.program == -7 ? aaHybridShadow : aaDeferred;
+                    const bool half = pass.program == -5 && pass.sources[9] == AAHybridReflection;
+                    auto& active = pass.program == -8 ? aaHybridReflection
+                                   : pass.program == -7 ? aaHybridShadow
+                                   : half               ? aaDeferredHalf
+                                                        : aaDeferred;
                     if (!active)
-                        active = AAPipeline(pass.program == -7 ? "model-hybrid-shadow" : "model-deferred", true, 1);
+                        active = AAPipeline(
+                          pass.program == -8   ? "model-hybrid-reflection"
+                          : pass.program == -7 ? "model-hybrid-shadow"
+                          : half               ? "model-deferred-half"
+                                               : "model-deferred",
+                          true,
+                          1);
                     auto h = modelHeap->GetGPUDescriptorHandleForHeapStart();
-                    h.ptr += (pass.program == -7 ? 20 : 11)
+                    h.ptr += (pass.program == -5 ? 11 : 21)
                              * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                     cmd->SetGraphicsRootDescriptorTable(9, h);
                     cmd->SetPipelineState(active.Get());

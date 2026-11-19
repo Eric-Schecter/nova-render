@@ -235,7 +235,15 @@ int main(int argc, char** argv)
         settings.view = HybridView::Reflections;
         backend->SetHybrid(settings);
         capture("reflection-only");
-        settings.view                   = HybridView::Final;
+        settings.halfResolutionReflections = true;
+        backend->SetHybrid(settings);
+        capture("reflection-half-only");
+        settings.view = HybridView::Final;
+        backend->SetHybrid(settings);
+        auto halfReflection = capture("reflection-half-final");
+        if (Difference(reflectionOff, halfReflection) < .05 || Difference(reflection, halfReflection) > 5)
+            throw std::runtime_error("Half-resolution reflection did not preserve reflection lighting");
+        settings.halfResolutionReflections = false;
         settings.ambientOcclusion       = true;
         settings.aoSamples              = 4;
         settings.reflectionSamples      = 1;

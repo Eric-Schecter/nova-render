@@ -281,9 +281,9 @@ namespace render::detail
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow;
+          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaDeferredHalf;
         id<MTLComputePipelineState> probeUpdatePipeline;
-        id<MTLRenderPipelineState>  probeDeferredPipeline;
+        id<MTLRenderPipelineState>  probeDeferredPipeline, probeDeferredHalf;
         id<MTLBuffer>               probeCurrent, probePrevious;
         bool                        probeFrame = false;
         void                        EncodeProbeUpdate(id<MTLCommandBuffer> command)
@@ -375,7 +375,8 @@ namespace render::detail
                       i == 0 ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
                 }
             }
-            desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+            if (std::string(file) != "model-hybrid-reflection.metallib")
+                desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
             desc.sampleCount                = samples;
             auto pipeline                   = [device newRenderPipelineStateWithDescriptor:desc error:&error];
             if (!pipeline)
@@ -390,10 +391,10 @@ namespace render::detail
             oitDepthState          = [device newDepthStencilStateWithDescriptor:d];
             AAExternalScene external;
             external.device      = (__bridge void*)device;
-            external.bindGBuffer = [](void* encoder, const std::array<void*, 9>& views, int program) {
+            external.bindGBuffer = [](void* encoder, const std::array<void*, 10>& views, int) {
                 auto e = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 for (size_t i = 0; i < views.size(); i++)
-                    [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:(i < 8 ? 17 + i : 31)];
+                    [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:(i < 8 ? 17 + i : 31 + i - 8)];
             };
             external.beforeScene = [this](void* command) { EncodeProbeUpdate((__bridge id<MTLCommandBuffer>)command); };
             external.draw        = [this](const AAPass& pass, void* encoder, void*) {
@@ -430,14 +431,23 @@ namespace render::detail
                 [e setFragmentTexture:environmentTexture atIndex:8];
                 [e setFragmentTexture:backgroundTexture atIndex:9];
                 [e setFragmentSamplerState:modelSampler atIndex:7];
-                if (pass.program == -5 || pass.program == -7)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
                     const bool probes = pass.program == -5 && probeFrame;
-                    auto& active = pass.program == -7 ? aaHybridShadow : probes ? probeDeferredPipeline : aaDeferred;
+                    const bool half = pass.program == -5 && pass.sources[9] == AAHybridReflection;
+                    auto& active = pass.program == -8 ? aaHybridReflection
+                                   : pass.program == -7 ? aaHybridShadow
+                                   : probes && half     ? probeDeferredHalf
+                                   : probes             ? probeDeferredPipeline
+                                   : half               ? aaDeferredHalf
+                                                        : aaDeferred;
                     if (!active)
                         active = AAPipeline(
-                          pass.program == -7 ? "model-hybrid-shadow.metallib"
+                          pass.program == -8 ? "model-hybrid-reflection.metallib"
+                          : pass.program == -7 ? "model-hybrid-shadow.metallib"
+                          : probes && half   ? "model-probe-deferred-half.metallib"
                           : probes           ? "model-probe-deferred.metallib"
+                          : half             ? "model-deferred-half.metallib"
                                              : "model-deferred.metallib",
                           1);
                     if (probes)
@@ -446,7 +456,7 @@ namespace render::detail
                         [e setFragmentBuffer:probeCurrent offset:0 atIndex:26];
                     }
                     [e setRenderPipelineState:active];
-                    [e setDepthStencilState:skyDepthState];
+                    [e setDepthStencilState:pass.program == -8 ? nil : skyDepthState];
                     [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                     return;
                 }

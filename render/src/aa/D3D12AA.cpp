@@ -479,7 +479,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if ((p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                    if (((p.program <= 0 && p.program != -8) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                          || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         int k         = p.program == 9                                          ? 3
@@ -571,7 +571,7 @@ namespace render::detail
                         continue;
                     }
                     const bool  scene =
-                      (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                      ((p.program <= 0 && p.program != -8) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool                  nativeScene = p.program < 0;
                     const int                   attachments = p.program == -4 ? 5
@@ -643,12 +643,12 @@ namespace render::detail
                         D3D12_RECT scissor{0, 0, LONG(target.width), LONG(target.height)};
                         commands->RSSetViewports(1, &viewport);
                         commands->RSSetScissorRects(1, &scissor);
-                        if (p.program == -5 || p.program == -7)
-                            for (int i = 0; i < 9; i++)
+                        if (p.program == -5 || p.program == -7 || p.program == -8)
+                            for (int i = 0; i < 10; i++)
                                 Transition(textures[p.sources[i]], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                        if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -7 || p.program == -8) && external.bindGBuffer)
                         {
-                            std::array<void*, 9> views{};
+                            std::array<void*, 10> views{};
                             for (size_t i = 0; i < views.size(); i++)
                                 views[i] = textures[p.sources[i]].resource.Get();
                             external.bindGBuffer(commands.Get(), views, p.program);

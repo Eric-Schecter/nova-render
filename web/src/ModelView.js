@@ -1,4 +1,4 @@
-import { canUseDeferred } from './RasterPipeline.js'
+import { canUseDeferred, canUseHalfReflections } from './RasterPipeline.js'
 import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 import { createHybridProbes, probeSceneBounds } from './HybridProbes.js'
 import { PickMesh } from './Picking.js'
@@ -12,6 +12,7 @@ import { fallbackEnvironment } from './EnvironmentData.js'
 
 const modelTextureBinding = (i) => (i < 5 ? i + 2 : i + 23)
 const gBufferBindings = [17, 18, 19, 20, 21, 22, 23, 24, 31]
+const halfGBufferBindings = [...gBufferBindings, 32]
 function cubeTexture(device, data) {
   const texture = device.createTexture({
     size: [data.mips[0].size, data.mips[0].size, 6],
@@ -187,20 +188,31 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 14, resource: { buffer: instanceBuffer } },
         ],
       })
-    const gBufferLayout = device.createBindGroupLayout({
-      entries: gBufferBindings.map((binding) => ({
-        binding,
-        visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float' },
-      })),
-    })
+    const makeGBufferLayout = (bindings) =>
+      device.createBindGroupLayout({
+        entries: bindings.map((binding) => ({
+          binding,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        })),
+      })
+    const gBufferLayout = makeGBufferLayout(gBufferBindings)
+    const halfGBufferLayout = canUseHalfReflections(device.limits)
+      ? makeGBufferLayout(halfGBufferBindings)
+      : null
     const probeLayout = device.createBindGroupLayout({
       entries: [
         { binding: 25, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 26, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
       ],
     })
-    let probes, probeDeferred, probeBounds, probeLightingKey, probeEnabled
+    let probes,
+      probeDeferred,
+      probeDeferredHalf,
+      probeShader,
+      probeBounds,
+      probeLightingKey,
+      probeEnabled
     let bindGroup = group(cube, backgroundCube)
     async function pipelineFor(
       shader,
@@ -213,6 +225,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       oit = false,
       hybridShadow = false,
       probe = false,
+      halfReflection = false,
+      halfCombine = false,
     ) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
@@ -221,18 +235,19 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         const errors = info.messages.filter((m) => m.type === 'error')
         if (errors.length) throw Error(errors.map((e) => e.message).join('\n'))
       }
+      const surfaceLayout = halfCombine ? halfGBufferLayout : gBufferLayout
       return device.createRenderPipelineAsync({
         layout: device.createPipelineLayout({
           bindGroupLayouts: probe
-            ? [layout, gBufferLayout, probeLayout]
-            : deferred || hybridShadow
-              ? [layout, gBufferLayout]
+            ? [layout, surfaceLayout, probeLayout]
+            : deferred || hybridShadow || halfReflection
+              ? [layout, surfaceLayout]
               : [layout],
         }),
         vertex: {
           module: vertex,
           entryPoint:
-            deferred || hybridShadow
+            deferred || hybridShadow || halfReflection
               ? 'SkyVSMain'
               : motion
                 ? sky
@@ -244,21 +259,23 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         },
         fragment: {
           module: fragment,
-          entryPoint: hybridShadow
-            ? 'HybridShadowPSMain'
-            : oit
-              ? 'OITPSMain'
-              : deferred
-                ? 'DeferredPSMain'
-                : gbuffer
-                  ? 'GBufferPSMain'
-                  : motion
-                    ? sky
-                      ? 'SkyMotionPSMain'
-                      : 'MotionPSMain'
-                    : sky
-                      ? 'SkyPSMain'
-                      : 'PSMain',
+          entryPoint: halfReflection
+            ? 'HybridReflectionPSMain'
+            : hybridShadow
+              ? 'HybridShadowPSMain'
+              : oit
+                ? 'OITPSMain'
+                : deferred
+                  ? 'DeferredPSMain'
+                  : gbuffer
+                    ? 'GBufferPSMain'
+                    : motion
+                      ? sky
+                        ? 'SkyMotionPSMain'
+                        : 'MotionPSMain'
+                      : sky
+                        ? 'SkyPSMain'
+                        : 'PSMain',
           targets: Array.from({ length: oit ? 2 : gbuffer ? 5 : hybridShadow ? 4 : 1 }, (_, i) => ({
             ...(oit
               ? {
@@ -279,11 +296,16 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
         multisample: { count: samples },
-        depthStencil: {
-          format: 'depth32float',
-          depthWriteEnabled: !sky && !deferred && !oit && !hybridShadow,
-          depthCompare: sky || deferred || hybridShadow ? 'always' : oit ? 'less-equal' : 'less',
-        },
+        ...(halfReflection
+          ? {}
+          : {
+              depthStencil: {
+                format: 'depth32float',
+                depthWriteEnabled: !sky && !deferred && !oit && !hybridShadow,
+                depthCompare:
+                  sky || deferred || hybridShadow ? 'always' : oit ? 'less-equal' : 'less',
+              },
+            }),
       })
     }
     const pipeline = await pipelineFor(shader)
@@ -301,16 +323,16 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           new URL('model-probes.json', new URL(shaderURL, document.baseURI)),
         )
         if (!response.ok) throw Error('Missing probe shader package')
-        const shaders = await response.json()
+        probeShader = await response.json()
         const compute = await device.createComputePipelineAsync({
           layout: 'auto',
           compute: {
-            module: device.createShaderModule({ code: shaders.compute }),
+            module: device.createShaderModule({ code: probeShader.compute }),
             entryPoint: 'HybridProbeUpdateCS',
           },
         })
         probeDeferred = await pipelineFor(
-          shaders,
+          probeShader,
           false,
           1,
           false,
@@ -323,6 +345,21 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         )
         probes = createHybridProbes(device, compute, probeLayout)
       }
+      if (hybrid.reflections && hybrid.halfResolutionReflections && !probeDeferredHalf)
+        probeDeferredHalf = await pipelineFor(
+          { vert: probeShader.vert, frag: probeShader.halfFrag },
+          false,
+          1,
+          false,
+          true,
+          false,
+          true,
+          false,
+          false,
+          true,
+          false,
+          true,
+        )
       const key = JSON.stringify([
         lighting,
         light,
@@ -526,6 +563,43 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           aaPipelines.motion = await pipelineFor(packages[2], false, 1, true, true)
           aaPipelines.skyMotion = await pipelineFor(packages[3], true, 1, true, true)
         }
+        if (hybrid?.reflections && hybrid.halfResolutionReflections && !aaPipelines.deferredHalf) {
+          const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
+          const [trace, combine] = await Promise.all(
+            ['model-hybrid-reflection', 'model-deferred-half'].map(async (name) => {
+              const response = await fetch(dir + name + '.json')
+              if (!response.ok) throw Error('Missing raster AA shader ' + name)
+              return response.json()
+            }),
+          )
+          aaPipelines.halfReflection = await pipelineFor(
+            trace,
+            true,
+            1,
+            false,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+          )
+          aaPipelines.deferredHalf = await pipelineFor(
+            combine,
+            false,
+            1,
+            false,
+            true,
+            false,
+            true,
+            false,
+            false,
+            false,
+            false,
+            true,
+          )
+        }
         currentScene = sceneUniforms(
           data,
           camera,
@@ -572,13 +646,15 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
       },
       drawAA(pass, motion, count, settings, program, gbuffers) {
-        if (program === -5 || program === -7) {
+        if (program === -5 || program === -7 || program === -8) {
+          const half = hybrid?.reflections && hybrid.halfResolutionReflections
+          const halfCombine = program === -5 && half
           pass.setBindGroup(0, bindGroup)
           pass.setBindGroup(
             1,
             device.createBindGroup({
-              layout: gBufferLayout,
-              entries: gBufferBindings.map((binding, i) => ({
+              layout: halfCombine ? halfGBufferLayout : gBufferLayout,
+              entries: (halfCombine ? halfGBufferBindings : gBufferBindings).map((binding, i) => ({
                 binding,
                 resource: gbuffers[i].createView(),
               })),
@@ -586,11 +662,17 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           )
           if (program === -5 && probeEnabled) pass.setBindGroup(2, probes.read)
           pass.setPipeline(
-            program === -7
-              ? aaPipelines.hybridShadow
-              : probeEnabled
-                ? probeDeferred
-                : aaPipelines.deferred,
+            program === -8
+              ? aaPipelines.halfReflection
+              : program === -7
+                ? aaPipelines.hybridShadow
+                : probeEnabled
+                  ? half
+                    ? probeDeferredHalf
+                    : probeDeferred
+                  : half
+                    ? aaPipelines.deferredHalf
+                    : aaPipelines.deferred,
           )
           pass.draw(3)
           return

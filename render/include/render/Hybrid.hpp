@@ -26,6 +26,7 @@ namespace render
         uint32_t   aoSamples              = 4;
         bool       diffuseBounce          = false;
         bool       probeGI                = false;
+        bool       halfResolutionReflections = false;
     };
     struct HybridCapabilities
     {

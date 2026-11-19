@@ -118,7 +118,20 @@ namespace render::detail
                         shadow->sources[i] = AAModelBase + i;
                     shadow->sources[8] = AAModelClearcoat;
                 }
+                const bool halfReflections = hybrid && hybridSettings.reflections
+                                             && hybridSettings.halfResolutionReflections;
+                if (halfReflections)
+                {
+                    auto* reflection = add(-8, AAHybridReflection);
+                    for (int i = 0; i < 4; i++)
+                        reflection->sources[i] = AAModelBase + i;
+                    reflection->sources[8] = AAModelClearcoat;
+                    reflection->uniforms[1][0] *= .5f;
+                    reflection->uniforms[1][1] *= .5f;
+                }
                 auto* p = add(-5, sceneColor);
+                if (halfReflections)
+                    p->sources[9] = AAHybridReflection;
                 if (hybrid)
                     for (int i = 0; i < 4; i++)
                         p->sources[4 + i] = AAHybridShadow0 + i;

@@ -323,11 +323,12 @@ void uploadModel()
     layoutInfo.bindingCount = uint32_t(bindings.size());
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
-    VkDescriptorSetLayoutBinding gBindings[9]{};
+    VkDescriptorSetLayoutBinding gBindings[10]{};
     for (int i = 0; i < 8; i++)
         gBindings[i] = {uint32_t(17 + i), VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     gBindings[8]            = {31, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    layoutInfo.bindingCount = 9;
+    gBindings[9]            = {32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    layoutInfo.bindingCount = 10;
     layoutInfo.pBindings    = gBindings;
     check(vkCreateDescriptorSetLayout(device,&layoutInfo,nullptr,&gBufferSetLayout),"Create G-buffer descriptor layout");
     VkDescriptorSetLayoutBinding probeBindings[] = {

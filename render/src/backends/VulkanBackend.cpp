@@ -106,7 +106,7 @@ namespace render::detail
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
-          aaDeferred{}, aaOit{}, aaHybridShadow{};
+          aaDeferred{}, aaOit{}, aaHybridShadow{}, aaHybridReflection{}, aaDeferredHalf{};
         VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
@@ -127,12 +127,14 @@ namespace render::detail
                                           : sky                               ? "SkyVSMain"
                                                                               : "VSMain");
             }
-            if (std::string(name) == "model-probe-deferred")
+            if (std::string(name).find("deferred") != std::string::npos)
                 stages[1].pName = "DeferredPSMain";
             if (std::string(name) == "model-oit")
                 stages[1].pName = "OITPSMain";
             if (std::string(name) == "model-hybrid-shadow")
                 stages[1].pName = "HybridShadowPSMain";
+            if (std::string(name) == "model-hybrid-reflection")
+                stages[1].pName = "HybridReflectionPSMain";
             VkPipelineVertexInputStateCreateInfo   input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
             VkPipelineInputAssemblyStateCreateInfo assembly{
               VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -146,7 +148,7 @@ namespace render::detail
             VkPipelineMultisampleStateCreateInfo sampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
             sampling.rasterizationSamples = samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
             VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-            depth.depthTestEnable  = VK_TRUE;
+            depth.depthTestEnable  = std::string(name) != "model-hybrid-reflection";
             depth.depthWriteEnable = !sky && std::string(name) != "model-oit";
             depth.depthCompareOp   = sky                                ? VK_COMPARE_OP_ALWAYS
                                      : std::string(name) == "model-oit" ? VK_COMPARE_OP_LESS_OR_EQUAL
@@ -194,7 +196,7 @@ namespace render::detail
             check(status, "Create raster AA pipeline");
             return result;
         }
-        VkPipeline probeDeferredPipeline = VK_NULL_HANDLE;
+        VkPipeline probeDeferredPipeline = VK_NULL_HANDLE, probeDeferredHalf = VK_NULL_HANDLE;
         bool       probeFrame            = false;
         void       EncodeProbeUpdate(VkCommandBuffer command)
         {
@@ -323,10 +325,10 @@ namespace render::detail
             external.physical    = reinterpret_cast<void*>(physical);
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
-            external.bindGBuffer = [this](void* command, const std::array<void*, 9>& views, int program) {
-                auto                  activeSet = program == -7 ? hybridGBufferSet : gBufferSet;
-                VkDescriptorImageInfo images[9]{};
-                VkWriteDescriptorSet  writes[9]{};
+            external.bindGBuffer = [this](void* command, const std::array<void*, 10>& views, int program) {
+                auto                  activeSet = program == -5 ? gBufferSet : hybridGBufferSet;
+                VkDescriptorImageInfo images[10]{};
+                VkWriteDescriptorSet  writes[10]{};
                 for (uint32_t i = 0; i < views.size(); i++)
                 {
                     images[i].imageView   = reinterpret_cast<VkImageView>(views[i]);
@@ -334,12 +336,14 @@ namespace render::detail
                     auto& w               = writes[i];
                     w                     = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                     w.dstSet              = activeSet;
-                    w.dstBinding          = i < 8 ? 17 + i : 31;
+                    w.dstBinding          = i < 8 ? 17 + i : 31 + i - 8;
                     w.descriptorCount     = 1;
                     w.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                     w.pImageInfo          = &images[i];
                 }
-                vkUpdateDescriptorSets(device, uint32_t(views.size()), writes, 0, nullptr);
+                // The reflection pass shares the shadow pass inputs.
+                if (program != -8)
+                    vkUpdateDescriptorSets(device, uint32_t(views.size()), writes, 0, nullptr);
                 vkCmdBindDescriptorSets(
                   reinterpret_cast<VkCommandBuffer>(command),
                   VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -404,17 +408,26 @@ namespace render::detail
                 if (pass.program!=-5 && (pass.target == AARawBaseline || ((pass.target == AARawColor || pass.program==-4) && !rasterSettings.split)))
                     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
-                if (pass.program == -5 || pass.program == -7)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
                     const bool probes = pass.program == -5 && probeFrame;
-                    auto& active = pass.program == -7 ? aaHybridShadow : probes ? probeDeferredPipeline : aaDeferred;
+                    const bool half = pass.program == -5 && pass.sources[9] == AAHybridReflection;
+                    auto& active = pass.program == -8 ? aaHybridReflection
+                                   : pass.program == -7 ? aaHybridShadow
+                                   : probes && half     ? probeDeferredHalf
+                                   : probes             ? probeDeferredPipeline
+                                   : half               ? aaDeferredHalf
+                                                        : aaDeferred;
                     if (probes)
                         vkCmdBindDescriptorSets(
                           cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 2, 1, &probeReadSet, 0, nullptr);
                     if (!active)
                         active = AAPipeline(
-                          pass.program == -7 ? "model-hybrid-shadow"
+                          pass.program == -8 ? "model-hybrid-reflection"
+                          : pass.program == -7 ? "model-hybrid-shadow"
+                          : probes && half   ? "model-probe-deferred-half"
                           : probes           ? "model-probe-deferred"
+                          : half             ? "model-deferred-half"
                                              : "model-deferred",
                           true,
                           1,
@@ -478,7 +491,10 @@ namespace render::detail
             release(aaGBuffer);
             release(aaDeferred);
             release(probeDeferredPipeline);
+            release(aaDeferredHalf);
+            release(probeDeferredHalf);
             release(aaHybridShadow);
+            release(aaHybridReflection);
             release(aaMotion);
             release(aaSkyMotion);
             destroyModelBuffer(aaPreviousUniform);

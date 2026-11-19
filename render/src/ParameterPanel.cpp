@@ -280,6 +280,7 @@ namespace render::detail
                     ImGui::Checkbox("Hybrid reflections", &hybrid.reflections);
                     ImGui::SliderFloat("Reflection distance", &hybrid.reflectionDistance, .1f, 1000.f);
                     ImGui::SliderFloat("Reflection strength", &hybrid.reflectionStrength, 0, 1);
+                    ImGui::Checkbox("Half-resolution reflections", &hybrid.halfResolutionReflections);
                     int reflectionSamples = int(hybrid.reflectionSamples);
                     if (ImGui::SliderInt("Reflection rays/pixel", &reflectionSamples, 1, 16))
                         hybrid.reflectionSamples = uint32_t(reflectionSamples);
