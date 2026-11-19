@@ -140,8 +140,9 @@ namespace render::detail
                 throw std::invalid_argument("Invalid Hybrid settings");
             if (value.probeGI && pathAPI == GraphicsAPI::D3D12)
                 throw std::invalid_argument("DDGI requires Metal or Vulkan");
+            const bool resetProbes = hybrid.probeGI != value.probeGI;
             hybrid = value;
-            RebuildRasterInstances();
+            RebuildRasterInstances(resetProbes);
             rasterAA.Reset();
         }
         HybridSettings GetHybrid() const { return hybrid; }
@@ -279,9 +280,10 @@ namespace render::detail
             if (SingleSkinnedShadows() && (singleBVHModel != model || singleBVHRevision != model->revision))
                 RebuildRasterInstances();
         }
-        void RebuildRasterInstances()
+        void RebuildRasterInstances(bool resetProbes = true)
         {
-            InvalidateProbes();
+            if (resetProbes)
+                InvalidateProbes();
             const bool skinned = SingleSkinnedShadows();
             const bool singleCaster =
               skinned || (mode == RenderMode::Hybrid && !scene.active && model && !model->vertices.empty());
@@ -960,7 +962,7 @@ namespace render::detail
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {
-                RebuildRasterInstances();
+                RebuildRasterInstances(previousHybrid.probeGI != hybrid.probeGI);
                 rasterAA.Reset();
             }
             if (

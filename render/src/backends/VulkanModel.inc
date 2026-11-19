@@ -341,7 +341,7 @@ void uploadModel()
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 42},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 52},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets       = 7;

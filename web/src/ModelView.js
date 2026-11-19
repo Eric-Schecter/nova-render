@@ -363,13 +363,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           false,
           true,
         )
-      const key = JSON.stringify([
-        lighting,
-        light,
-        environmentSettings,
-        hybrid.shadows,
-        hybrid.shadowSamples,
-      ])
+      const key = JSON.stringify([lighting, light, environmentSettings])
       if (key !== probeLightingKey) probes.invalidate()
       probeLightingKey = key
       probes.update(probeBounds, rasterGlobals, [
@@ -492,7 +486,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     return {
       data,
       setHybrid(settings) {
-        if (hybrid !== settings) probes?.invalidate()
+        if (hybrid?.probeGI !== settings?.probeGI) probes?.invalidate()
         hybrid = settings
         writeGlobals()
         refreshSingleShadows()

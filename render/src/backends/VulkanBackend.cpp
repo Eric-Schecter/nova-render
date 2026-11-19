@@ -263,7 +263,7 @@ namespace render::detail
                 std::memcpy(mapped, data, size);
                 vkUnmapMemory(device, buffer.memory);
             };
-            const uint32_t      bindings[] = {0, 2, 3, 4, 5, 6, 7, 8, 14};
+            const uint32_t      bindings[] = {0, 2, 3, 4, 5, 6, 7, 8, 14, 28, 29, 30};
             VkCopyDescriptorSet copies[std::size(bindings)]{};
             for (size_t i = 0; i < std::size(bindings); ++i)
             {

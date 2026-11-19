@@ -41,7 +41,8 @@ int main(int argc, char** argv)
         window.SetViewCamera(camera);
         window.SetRenderMode(RenderMode::Hybrid);
         HybridSettings settings;
-        settings.diffuseBounce             = true;
+        settings.probeGI                   = window.GetHybridCapabilities().probeGI;
+        settings.diffuseBounce             = !settings.probeGI;
         settings.reflections               = true;
         settings.reflectionSamples         = 1;
         settings.halfResolutionReflections = true;
