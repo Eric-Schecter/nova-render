@@ -279,13 +279,14 @@ namespace render::detail
                                    nativeScene = p.program < 0,
                                    baseline    = p.target == AABaseline || p.target == AARawBaseline;
                         const int attachments =
-                          (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)  ? 4
+                          p.program == -4                                                             ? 5
+                          : (p.program == 17 || p.program == 22 || p.program == -7)                   ? 4
                           : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
                                                                                                       : 1;
                         for (int a = 0; a < attachments; a++)
                         {
                             auto      c      = d.colorAttachments[a];
-                            const int target = p.target + a;
+                            const int target = p.program == -4 && a == 4 ? AAModelClearcoat : p.target + a;
                             c.texture        = textures
                               [p.multisampled ? (p.program == 17 ? AASsrMulti0
                                                  : nativeScene   ? AARawMultiColor
@@ -338,8 +339,8 @@ namespace render::detail
                             [e setDepthStencilState:depthState];
                             if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
                             {
-                                std::array<void*, 8> views{};
-                                for (int i = 0; i < 8; i++)
+                                std::array<void*, 9> views{};
+                                for (size_t i = 0; i < views.size(); i++)
                                     views[i] = (__bridge void*)textures[p.sources[i]];
                                 external.bindGBuffer((__bridge void*)e, views, p.program);
                             }

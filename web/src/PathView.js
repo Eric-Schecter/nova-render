@@ -104,7 +104,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     for (let i = 0; i < materialHeader.length / 16; i++)
       materialHeader.set(data.materialRecords.subarray(i * 48 + 32, i * 48 + 48), i * 16)
     let total = materialHeader.byteLength
-    for (const image of data.images) {
+    for (const image of data.images.slice(0, 5)) {
       let pixels = image.pixels
       if (!pixels) {
         const canvas = new OffscreenCanvas(image.width, image.height),

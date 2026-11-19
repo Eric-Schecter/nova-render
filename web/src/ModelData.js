@@ -5,6 +5,8 @@ import { cameraFromOrbit, cameraBasis } from './Camera.js'
 import { readAnimation } from './AnimationData.js'
 import { defaultEnvironment } from './EnvironmentData.js'
 import { defaultDirectionalLight } from './Lighting.js'
+
+const coatTextureKeys = ['clearcoatTexture', 'clearcoatRoughnessTexture', 'clearcoatNormalTexture']
 const identity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 export function multiply(a, b) {
   const out = Array(16).fill(0)
@@ -154,8 +156,13 @@ export async function loadGLB(url) {
           throw Error('Textured material requires TEXCOORD_0')
         if (mat.occlusionTexture?.texCoord === 1 && p.attributes.TEXCOORD_1 === undefined)
           throw Error('AO texture requires TEXCOORD_1')
-        const extensions = json.materials[p.material].extensions || {},
-          transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
+        const extensions = json.materials[p.material].extensions || {}
+        for (const key of coatTextureKeys) {
+          const info = extensions.KHR_materials_clearcoat?.[key]
+          if (info && p.attributes['TEXCOORD_' + (info.texCoord ?? 0)] === undefined)
+            throw Error('Clearcoat texture requires its declared TEXCOORD set')
+        }
+        const transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
           ior = extensions.KHR_materials_ior?.ior ?? 1.5
         if (extensions.KHR_materials_transmission?.transmissionTexture)
           throw Error('Transmission textures are not yet supported')
@@ -269,12 +276,14 @@ export async function loadGLB(url) {
     if (coat !== undefined) {
       if (!coat || typeof coat !== 'object' || Array.isArray(coat))
         throw Error('Invalid KHR_materials_clearcoat')
-      if (
-        ['clearcoatTexture', 'clearcoatRoughnessTexture', 'clearcoatNormalTexture'].some(
-          (key) => key in coat,
-        )
-      )
-        throw Error('KHR_materials_clearcoat textures are not supported')
+      for (const key of coatTextureKeys)
+        if (key in coat) {
+          const info = coat[key]
+          if (!info || !Number.isInteger(info.index) || info.index < 0)
+            throw Error('Invalid clearcoat texture index')
+          if (![0, 1].includes(info.texCoord ?? 0))
+            throw Error('Clearcoat coordinate set must be 0 or 1')
+        }
       for (const key of ['clearcoatFactor', 'clearcoatRoughnessFactor'])
         if (key in coat && typeof coat[key] !== 'number') throw Error('Invalid glTF ' + key)
     }
@@ -286,6 +295,7 @@ export async function loadGLB(url) {
       pbr.metallicRoughnessTexture,
       material.occlusionTexture,
       material.emissiveTexture,
+      ...coatTextureKeys.map((key) => coat?.[key]),
     ]
     const fallback = [
       [255, 255, 255, 255],
@@ -293,15 +303,18 @@ export async function loadGLB(url) {
       [255, 255, 255, 255],
       [255, 255, 255, 255],
       [0, 0, 0, 255],
+      [255, 255, 255, 255],
+      [255, 255, 255, 255],
+      [128, 128, 255, 255],
     ]
     const images = []
     try {
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < textures.length; i++) {
         if (!textures[i]) {
           images.push({ width: 1, height: 1, pixels: new Uint8Array(fallback[i]) })
           continue
         }
-        if (i !== 3 && (textures[i].texCoord ?? 0) !== 0)
+        if (i < 5 && i !== 3 && (textures[i].texCoord ?? 0) !== 0)
           throw Error('Only AO textures support TEXCOORD_1')
         const image = json.images[json.textures[textures[i].index].source]
         if (image.bufferView === undefined) throw Error('GLB images must be embedded')
@@ -323,6 +336,8 @@ export async function loadGLB(url) {
           specularFactor: specular?.specularFactor,
           clearcoatFactor: coat?.clearcoatFactor,
           clearcoatRoughnessFactor: coat?.clearcoatRoughnessFactor,
+          clearcoatNormalScale: coat?.clearcoatNormalTexture?.scale,
+          clearcoatTexCoords: coatTextureKeys.map((key) => coat?.[key]?.texCoord ?? 0),
           specularColorFactor: specular?.specularColorFactor,
           alphaMode: material.alphaMode ?? 'OPAQUE',
           alphaCutoff: material.alphaCutoff ?? 0.5,
@@ -336,6 +351,9 @@ export async function loadGLB(url) {
           metallicRoughnessTexture: textures[2] ? images[2] : null,
           occlusionTexture: textures[3] ? images[3] : null,
           emissiveTexture: textures[4] ? images[4] : null,
+          clearcoatTexture: textures[5] ? images[5] : null,
+          clearcoatRoughnessTexture: textures[6] ? images[6] : null,
+          clearcoatNormalTexture: textures[7] ? images[7] : null,
         }),
       )
     } catch (e) {
@@ -484,6 +502,9 @@ export function emptyModelData() {
     [255, 255, 255, 255],
     [255, 255, 255, 255],
     [0, 0, 0, 255],
+    [255, 255, 255, 255],
+    [255, 255, 255, 255],
+    [128, 128, 255, 255],
   ]
   return {
     vertices: new Float32Array(0),

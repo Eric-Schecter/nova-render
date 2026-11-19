@@ -39,6 +39,9 @@ namespace render
         std::array<float, 3> specularColorFactor{1, 1, 1};
         float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
         uint32_t             occlusionTexCoord = 0; // 0 or 1 for the occlusion texture.
+        std::optional<Image>    clearcoatTexture, clearcoatRoughnessTexture, clearcoatNormalTexture;
+        float                   clearcoatNormalScale = 1;
+        std::array<uint32_t, 3> clearcoatTexCoords{}; // Strength, roughness, normal.
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

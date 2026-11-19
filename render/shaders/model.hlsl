@@ -33,6 +33,9 @@ struct Vertex
 [[vk::binding(4, 0)]] Texture2D<float4>        materialTexture : register(t3);
 [[vk::binding(5, 0)]] Texture2D<float4>        occlusionTexture : register(t4);
 [[vk::binding(6, 0)]] Texture2D<float4>        emissiveTexture : register(t5);
+[[vk::binding(28, 0)]] Texture2D<float4> coatStrengthTexture : register(t28);
+[[vk::binding(29, 0)]] Texture2D<float4> coatRoughnessTexture : register(t29);
+[[vk::binding(30, 0)]] Texture2D<float4> coatNormalTexture : register(t30);
 [[vk::binding(7, 0)]] SamplerState             textureSampler : register(s0);
 [[vk::binding(8, 0)]] TextureCube<float4>      environmentTexture : register(t6);
 [[vk::binding(9, 0)]] TextureCube<float4>      backgroundTexture : register(t7);
@@ -452,14 +455,41 @@ struct SurfaceData
     float  opacity, alphaInfo;
     float4 specular;
     float2 clearcoat;
+    float3 coatNormal;
     float4 visibility0, visibility1, visibility2, visibility3;
     uint   useVisibility;
 };
+struct CoatUVs
+{
+    float2 strength, roughness, normal;
+    uint mask;
+    float scale;
+};
+CoatUVs clearcoatUVs(InstanceData material, float2 uv0, float2 uv1)
+{
+    CoatUVs p;
+    uint sets = uint(material.world._m02);
+    p.strength = (sets & 1u) ? uv1 : uv0;
+    p.roughness = (sets & 2u) ? uv1 : uv0;
+    p.normal = (sets & 4u) ? uv1 : uv0;
+    p.mask = uint(material.world._m31);
+    p.scale = material.world._m12;
+    return p;
+}
+float3 applyCoatNormal(float3 n, float3 map, float scale, float3 dp1, float3 dp2, float2 duv1, float2 duv2)
+{
+    float3 t = cross(dp2, n) * duv1.x + cross(n, dp1) * duv2.x;
+    float3 b = cross(dp2, n) * duv1.y + cross(n, dp1) * duv2.y;
+    float basis = max(dot(t, t), dot(b, b));
+    float3 perturbed = (t * map.x + b * map.y) * (scale * rsqrt(max(basis, 1e-20))) + n * map.z;
+    return (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
+}
 SurfaceData sampleSurface(VertexOut input)
 {
     float  alphaInfo  = .125;
     float4 specular   = 1;
     float2 clearcoat  = 0;
+    InstanceData materialRecord = (InstanceData)0;
     float2 uv         = input.uv;
     float2 aoUV       = uv;
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
@@ -474,6 +504,7 @@ SurfaceData sampleSurface(VertexOut input)
         alphaInfo             = instance.emissive.w;
         specular              = materialSpecular(instance);
         clearcoat             = materialClearcoat(instance);
+        materialRecord        = instance;
     }
     float4 baseSample = baseTexture.Sample(textureSampler, uv);
     float3 base       = baseSample.rgb * baseFactor.rgb;
@@ -487,6 +518,27 @@ SurfaceData sampleSurface(VertexOut input)
             face = normalize(face);
             n    = dot(face, n) < 0 ? -face : face;
         }
+    }
+    float3 coatNormal = n;
+    CoatUVs coatUV = clearcoatUVs(materialRecord, input.uv, input.uv1);
+    float2 coatDX = ddx(coatUV.normal), coatDY = ddy(coatUV.normal);
+    float2 strengthDX = ddx(coatUV.strength), strengthDY = ddy(coatUV.strength);
+    float2 roughDX = ddx(coatUV.roughness), roughDY = ddy(coatUV.roughness);
+    if (clearcoat.x > 0)
+    {
+        float2 atlasNormalUV = frac(coatUV.normal) * materialRecord.uv.xy + materialRecord.uv.zw;
+        if (coatUV.mask & 1u)
+            clearcoat.x *= coatStrengthTexture.SampleGrad(textureSampler,
+                frac(coatUV.strength) * materialRecord.uv.xy + materialRecord.uv.zw,
+                strengthDX * materialRecord.uv.xy, strengthDY * materialRecord.uv.xy).r;
+        if (coatUV.mask & 2u)
+            clearcoat.y *= coatRoughnessTexture.SampleGrad(textureSampler,
+                frac(coatUV.roughness) * materialRecord.uv.xy + materialRecord.uv.zw,
+                roughDX * materialRecord.uv.xy, roughDY * materialRecord.uv.xy).g;
+        if (coatUV.mask & 4u)
+            coatNormal = applyCoatNormal(n, coatNormalTexture.SampleGrad(textureSampler, atlasNormalUV,
+                coatDX * materialRecord.uv.xy, coatDY * materialRecord.uv.xy).xyz * 2 - 1,
+                coatUV.scale, dp1, dp2, coatDX, coatDY);
     }
     float2 duv1 = ddx(input.uv), duv2 = ddy(input.uv);
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
@@ -502,6 +554,7 @@ SurfaceData sampleSurface(VertexOut input)
     result.useVisibility = 0;
     result.specular = specular;
     result.clearcoat = clearcoat;
+    result.coatNormal = coatNormal;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
     result.opacity                                                                    = baseSample.a * baseFactor.a;
     result.alphaInfo                                                                  = alphaInfo;
@@ -524,21 +577,21 @@ float hybridVisibility(SurfaceData s, uint index)
 }
 float clearcoatTransmission(SurfaceData s, float3 v)
 {
-    return 1 - s.clearcoat.x * fresnel(dot(s.geometricNormal, v), 0.04, 1).x;
+    return 1 - s.clearcoat.x * fresnel(dot(s.coatNormal, v), 0.04, 1).x;
 }
 float3 surfaceDirectLight(SurfaceData s, float3 v, float3 l, float3 radiance, float transmission)
 {
     float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance);
     if (s.clearcoat.x > 0)
         color = color * transmission + s.clearcoat.x * directLight(
-          s.geometricNormal, v, l, 0.04, 1, max(.06, s.clearcoat.y), 1, radiance);
+          s.coatNormal, v, l, 0.04, 1, max(.06, s.clearcoat.y), 1, radiance);
     return color;
 }
 float3 clearcoatEnvironment(SurfaceData s, float3 v)
 {
     if (s.clearcoat.x <= 0)
         return 0;
-    float3 n = s.geometricNormal;
+    float3 n = s.coatNormal;
     float3 r = reflect(-v, n);
     float roughness = max(.06, s.clearcoat.y);
     float nv = saturate(dot(n, v));
@@ -676,6 +729,7 @@ void materialCoverage(inout SurfaceData s, bool face, float winding, bool transp
     {
         s.normal          = -s.normal;
         s.geometricNormal = -s.geometricNormal;
+        s.coatNormal = -s.coatNormal;
     }
 }
 float4 PSMain(VertexOut input, bool face : SV_IsFrontFace)
@@ -725,6 +779,7 @@ struct ModelGBuffer
     float4 normals : SV_Target1;
     float4 positionAO : SV_Target2;
     float4 emissiveMetallic : SV_Target3;
+    float4 clearcoat : SV_Target4;
 };
 ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 {
@@ -743,12 +798,14 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
                          ? irradiance[3].w - 1 - float(input.instanceIndex) : 0;
     o.positionAO       = float4(high, depth - high, s.ao, slotDistance);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
+    o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
     return o;
 }
 [[vk::binding(17, 1)]] Texture2D<float4> gBase : register(t17);
 [[vk::binding(18, 1)]] Texture2D<float4> gNormals : register(t18);
 [[vk::binding(19, 1)]] Texture2D<float4> gPosition : register(t19);
 [[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
+[[vk::binding(31, 1)]] Texture2D<float4> gClearcoat : register(t31);
 [[vk::binding(21, 1)]] Texture2D<float4> hybridShadow0 : register(t21);
 [[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
 [[vk::binding(23, 1)]] Texture2D<float4> hybridShadow2 : register(t23);
@@ -762,11 +819,18 @@ float3                                   surfacePosition(SkyOut input, float2 en
     return eyeExposure.xyz + cameraForward.xyz * depth + cameraRight.xyz * (ndc.x * cameraRight.w)
            + cameraUp.xyz * (ndc.y * abs(cameraUp.w));
 }
-// Sixteen independent light visibilities; no single scalar shadow factor is shared across lights.
-ModelGBuffer HybridShadowPSMain(SkyOut input)
+// Sixteen independent light visibilities, four light slots per target.
+struct HybridShadowTargets
 {
-    int3         pixel = int3(int2(input.position.xy), 0);
-    ModelGBuffer output;
+    float4 slots0 : SV_Target0;
+    float4 slots1 : SV_Target1;
+    float4 slots2 : SV_Target2;
+    float4 slots3 : SV_Target3;
+};
+HybridShadowTargets HybridShadowPSMain(SkyOut input)
+{
+    int3 pixel = int3(int2(input.position.xy), 0);
+    HybridShadowTargets output;
     float        visibility[16];
     [unroll] for (uint j = 0; j < 16; j++) visibility[j] = 1;
     if (gBase.Load(pixel).w > 0 && irradiance[4].w > .5 && irradiance[3].w > .5)
@@ -789,10 +853,10 @@ ModelGBuffer HybridShadowPSMain(SkyOut input)
         else
             visibility[0] = sceneVisibility(position, normal, lightDirection.xyz, globals.emissive.z);
     }
-    output.baseRoughness    = float4(visibility[0], visibility[1], visibility[2], visibility[3]);
-    output.normals          = float4(visibility[4], visibility[5], visibility[6], visibility[7]);
-    output.positionAO       = float4(visibility[8], visibility[9], visibility[10], visibility[11]);
-    output.emissiveMetallic = float4(visibility[12], visibility[13], visibility[14], visibility[15]);
+    output.slots0 = float4(visibility[0], visibility[1], visibility[2], visibility[3]);
+    output.slots1 = float4(visibility[4], visibility[5], visibility[6], visibility[7]);
+    output.slots2 = float4(visibility[8], visibility[9], visibility[10], visibility[11]);
+    output.slots3 = float4(visibility[12], visibility[13], visibility[14], visibility[15]);
     return output;
 }
 float3 diagnosticLinear(float3 c)
@@ -902,15 +966,13 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
     float2 uv0 = tri.uv.xy, uv1 = tri.uv.zw;
     float2 uv2 = float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]);
-    float2 uv  = frac(uv0 + (uv1 - uv0) * bary.x + (uv2 - uv0) * bary.y) * mat.uv.xy + mat.uv.zw;
-    float2 aoUV = uv;
-    if (mat.world._m21 > .5)
-    {
-        float2 a = float2(tri.world._m00, tri.world._m10);
-        float2 b = float2(tri.world._m20, tri.world._m30);
-        float2 c = float2(tri.world._m01, tri.world._m11);
-        aoUV = frac(a + (b - a) * bary.x + (c - a) * bary.y) * mat.uv.xy + mat.uv.zw;
-    }
+    float2 uv1a = float2(tri.world._m00, tri.world._m10);
+    float2 uv1b = float2(tri.world._m20, tri.world._m30);
+    float2 uv1c = float2(tri.world._m01, tri.world._m11);
+    float2 tex0 = uv0 + (uv1 - uv0) * bary.x + (uv2 - uv0) * bary.y;
+    float2 tex1 = uv1a + (uv1b - uv1a) * bary.x + (uv1c - uv1a) * bary.y;
+    float2 uv   = frac(tex0) * mat.uv.xy + mat.uv.zw;
+    float2 aoUV = mat.world._m21 > .5 ? frac(tex1) * mat.uv.xy + mat.uv.zw : uv;
     float3 localEdge1 = tri.material.xyz - tri.baseColor.xyz;
     float3 localEdge2 = tri.emissive.xyz - tri.baseColor.xyz;
     float3 worldNormal = normalize(mul(
@@ -922,7 +984,27 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     hit.position = position;
     hit.specular = materialSpecular(mat);
     hit.clearcoat = materialClearcoat(mat);
-    hit.normal = hit.geometricNormal = worldNormal;
+    hit.normal = hit.geometricNormal = hit.coatNormal = worldNormal;
+    if (hit.clearcoat.x > 0)
+    {
+        CoatUVs coatUV = clearcoatUVs(mat, tex0, tex1);
+        if (coatUV.mask & 1u)
+            hit.clearcoat.x *= coatStrengthTexture.SampleLevel(textureSampler,
+                frac(coatUV.strength) * mat.uv.xy + mat.uv.zw, 0).r;
+        if (coatUV.mask & 2u)
+            hit.clearcoat.y *= coatRoughnessTexture.SampleLevel(textureSampler,
+                frac(coatUV.roughness) * mat.uv.xy + mat.uv.zw, 0).g;
+        if (coatUV.mask & 4u)
+        {
+            bool uvSet = uint(mat.world._m02) & 4u;
+            float3 coatMap = coatNormalTexture.SampleLevel(textureSampler,
+                frac(coatUV.normal) * mat.uv.xy + mat.uv.zw, 0).xyz * 2 - 1;
+            hit.coatNormal = applyCoatNormal(worldNormal, coatMap, coatUV.scale,
+                mul((float3x3)instances[instance].world, localEdge1),
+                mul((float3x3)instances[instance].world, localEdge2),
+                uvSet ? uv1b - uv1a : uv1 - uv0, uvSet ? uv1c - uv1a : uv2 - uv0);
+        }
+    }
     float2 deltaUV1 = uv1 - uv0, deltaUV2 = uv2 - uv0;
     float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
     if (abs(uvDet) > 1e-8 && mat.material.z != 0)
@@ -1195,12 +1277,13 @@ float4 DeferredPSMain(SkyOut input)
     s.emissive        = emission.rgb;
     s.metallic        = emission.w;
     s.specular        = 1;
-    s.clearcoat       = 0;
+    float4 coat       = gClearcoat.Load(pixel);
+    s.coatNormal      = octDecode(coat.xy);
+    s.clearcoat       = coat.zw;
     if (pos.w > .5 && irradiance[3].w > pos.w)
     {
         InstanceData material = instances[uint(irradiance[3].w - 1 - pos.w)];
         s.specular = materialSpecular(material);
-        s.clearcoat = materialClearcoat(material);
     }
     if (s.useVisibility)
     {

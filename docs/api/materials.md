@@ -55,16 +55,21 @@ await renderer.setMaterial(0, sceneMaterial, 'helmet')
 - `doubleSided`: default false. Back faces are discarded; double-sided back faces flip both geometric and mapped normals. Mirrored instances and negative baked node transforms preserve the authored front side.
 - `roughness`, `metallic`: 0–1, both default 1. Lighting must be PBR to see their effect.
 - `specularFactor`: dielectric reflection strength, 0–1, default 1. `specularColorFactor`: non-negative linear RGB multiplier for dielectric F0, default white. The metal reflection is unchanged.
-- `clearcoatFactor` and `clearcoatRoughnessFactor`: clear coat strength and roughness, each 0–1 and default 0. The top layer uses the geometric normal and a separate dielectric reflection over the base material.
+- `clearcoatFactor` and `clearcoatRoughnessFactor`: clear coat strength and roughness, each 0–1 and default 0. The top layer has a separate dielectric reflection over the base material.
 - `normalScale`: 0–16, default 1. `occlusionStrength`: 0–1, default 1.
 - `emissive`: linear RGB, 0–65504, default black.
 - `baseColorTexture`, `normalTexture`, `metallicRoughnessTexture`, `occlusionTexture`, `emissiveTexture`: optional RGBA8 images with `width`, `height`, `pixels`. Each dimension is 1–8192. Base color and emissive maps are sRGB; other maps are linear. Metallic/roughness uses B/G channels, occlusion uses R. Missing maps use white, or a neutral tangent-space normal.
 
-AO uses `occlusionTexCoord` (0 by default), which selects `TEXCOORD_0` or `TEXCOORD_1` in Forward, Deferred and Hybrid. The GLB importer reads `occlusionTexture.texCoord` and requires the specified coordinates on the primitive. When a runtime material selects UV1 on geometry without UV1, sampling falls back to UV0. Other texture maps use `TEXCOORD_0`. UV accessors support float and normalized unsigned byte or short, with repeat sampling. Multiple slots share an atlas: tiles are capped at 2048 pixels and automatically reduced to fit the 8192-pixel / 512 MiB five-map atlas budget; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression and transmission texture editing are not included.
+AO uses `occlusionTexCoord` (0 by default), which selects `TEXCOORD_0` or `TEXCOORD_1` in Forward, Deferred and Hybrid. The GLB importer reads `occlusionTexture.texCoord` and requires the specified coordinates on the primitive. When a runtime material selects UV1 on geometry without UV1, sampling falls back to UV0. Other core texture maps use `TEXCOORD_0`. UV accessors support float and normalized unsigned byte or short, with repeat sampling. Multiple slots share an atlas: tiles are capped at 2048 pixels and automatically reduced to fit the 8192-pixel / 512 MiB material atlas budget; at most 128 slots per packed model/scene. A single-slot model retains its original image resolution. Compression and transmission texture editing are not included.
 
 GLB loading supports the two factor properties of [KHR_materials_specular](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_specular). They affect Forward, Deferred and Hybrid PBR lighting on native and WebGPU. Assets using either specular texture property are rejected. Ray mode uses its existing material lighting.
 
-The same pipelines support the factor properties of [KHR_materials_clearcoat](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat). The coating responds to scene lights and environment reflections. In Hybrid, the base layer can use traced reflections and the coat samples the environment. Assets with clear coat textures are rejected. Ray mode uses the existing base material.
+The same pipelines support [KHR_materials_clearcoat](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat). The coating responds to scene lights and environment reflections. In Hybrid, the base layer can use traced reflections and the coat samples the environment. Hybrid secondary hits sample all three maps. Ray mode uses the existing base material.
+
+- `clearcoatTexture` multiplies the strength factor by its linear red channel.
+- `clearcoatRoughnessTexture` multiplies the roughness factor by its linear green channel.
+- `clearcoatNormalTexture` perturbs only the coat normal using linear RGB in a tangent frame derived from geometry and UVs. `clearcoatNormalScale` scales its tangent-plane components and defaults to 1.
+- `clearcoatTexCoords` defaults to `[0, 0, 0]` and selects UV0 or UV1 independently for strength, roughness, and normal. The importer reads each map's `texCoord` field. Runtime edits use the same material slot setters as base material edits.
 
 ## Update behavior
 

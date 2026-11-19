@@ -5,6 +5,9 @@ export const materialTextureKeys = [
   'metallicRoughnessTexture',
   'occlusionTexture',
   'emissiveTexture',
+  'clearcoatTexture',
+  'clearcoatRoughnessTexture',
+  'clearcoatNormalTexture',
 ]
 const defaults = [
   [255, 255, 255, 255],
@@ -12,6 +15,9 @@ const defaults = [
   [255, 255, 255, 255],
   [255, 255, 255, 255],
   [255, 255, 255, 255],
+  [255, 255, 255, 255],
+  [255, 255, 255, 255],
+  [128, 128, 255, 255],
 ].map((pixels) => ({ width: 1, height: 1, pixels: new Uint8Array(pixels) }))
 export async function loadMaterialImage(url) {
   const response = await fetch(url)
@@ -36,10 +42,22 @@ export function validateMaterial(m) {
     specularFactor: m.specularFactor ?? 1,
     clearcoatFactor: m.clearcoatFactor ?? 0,
     clearcoatRoughnessFactor: m.clearcoatRoughnessFactor ?? 0,
+    clearcoatNormalScale: m.clearcoatNormalScale ?? 1,
+    clearcoatTexCoords: Array.from(m.clearcoatTexCoords ?? [0, 0, 0]),
     specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
   }
   if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean')
     throw Error('Invalid material alpha mode or sidedness')
+  if (
+    !Number.isFinite(out.clearcoatNormalScale) ||
+    !Number.isFinite(Math.fround(out.clearcoatNormalScale))
+  )
+    throw Error('Clearcoat normal scale must be finite')
+  if (
+    out.clearcoatTexCoords.length !== 3 ||
+    out.clearcoatTexCoords.some((uv) => uv !== 0 && uv !== 1)
+  )
+    throw Error('Clearcoat coordinate set must be 0 or 1')
   if (![0, 1].includes(out.occlusionTexCoord))
     throw Error('AO texture coordinate set must be 0 or 1')
   if (typeof out.name !== 'string') throw Error('Material name must be a string')
@@ -102,9 +120,13 @@ export function packMaterials(data) {
   data.baseColor = [...first.baseColor]
   data.material = [first.metallic, first.roughness, first.normalScale, first.occlusionStrength]
   data.emissive = [...first.emissive, 0]
+  const texturedCoat = materials.some(
+    (m) => m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture,
+  )
+  const mapCount = texturedCoat ? materialTextureKeys.length : 5
   let tile = 1
   for (const m of materials)
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < mapCount; k++) {
       const im = m[materialTextureKeys[k]] || defaults[k]
       tile = Math.max(tile, im.width, im.height)
     }
@@ -117,17 +139,19 @@ export function packMaterials(data) {
   while (
     atlas &&
     tile > 1 &&
-    (width > 8192 || height > 8192 || width * height * 20 > 512 * 1024 * 1024)
+    (width > 8192 || height > 8192 || width * height * mapCount * 4 > 512 * 1024 * 1024)
   ) {
     tile = Math.max(1, Math.floor(tile / 2))
     stride = tile + 4
     width = cols * stride
     height = rows * stride
   }
-  if (atlas && (width > 8192 || height > 8192 || width * height * 20 > 512 * 1024 * 1024))
+  if (atlas && (width > 8192 || height > 8192 || width * height * mapCount * 4 > 512 * 1024 * 1024))
     throw Error('Material atlas exceeds 512 MiB / 8192px limit')
   data.images = atlas
-    ? defaults.map(() => ({ width, height, pixels: new Uint8Array(width * height * 4) }))
+    ? defaults.map((image, k) =>
+        k < mapCount ? { width, height, pixels: new Uint8Array(width * height * 4) } : image,
+      )
     : materialTextureKeys.map((key, k) => first[key] || defaults[k])
   data.materialRecords = new Float32Array(materials.length * 48)
   materials.forEach((m, i) => {
@@ -141,6 +165,13 @@ export function packMaterials(data) {
     record[4] = m.clearcoatFactor ?? 0
     record[5] = m.clearcoatRoughnessFactor ?? 0
     record[6] = m.occlusionTexCoord ?? 0
+    record[7] =
+      (m.clearcoatTexture ? 1 : 0) |
+      (m.clearcoatRoughnessTexture ? 2 : 0) |
+      (m.clearcoatNormalTexture ? 4 : 0)
+    const uv = m.clearcoatTexCoords ?? [0, 0, 0]
+    record[8] = uv[0] | (uv[1] << 1) | (uv[2] << 2)
+    record[9] = m.clearcoatNormalScale ?? 1
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)
@@ -155,7 +186,7 @@ export function packMaterials(data) {
       44,
     )
     if (atlas)
-      for (let k = 0; k < 5; k++) {
+      for (let k = 0; k < mapCount; k++) {
         const src = m[materialTextureKeys[k]] || defaults[k],
           dst = data.images[k].pixels
         for (let py = 0; py < stride; py++)

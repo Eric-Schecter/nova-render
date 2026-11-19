@@ -11,7 +11,7 @@ struct ModelTexture
 };
 ModelBuffer                 modelVertices, modelUniform, modelStaging, modelSkin, modelJoints, sceneInstanceBuffer;
 size_t                      sceneInstanceBytes = 0;
-std::array<ModelTexture, 5> modelTextures;
+std::array<ModelTexture, 8> modelTextures;
 ModelTexture                modelDepth, environmentCube, backgroundCube, pathDisplay;
 uint32_t                    pathWidth = 0, pathHeight = 0;
 VkSampler                   modelSampler   = VK_NULL_HANDLE;
@@ -202,7 +202,7 @@ void uploadModel()
     modelBuffer(modelUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     sceneInstanceBytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
     modelBuffer(sceneInstanceBuffer, sceneInstanceBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    for (size_t i = 0; i < 5; ++i)
+    for (size_t i = 0; i < modelTextures.size(); ++i)
     {
         const auto                     mips = MaterialMipmaps(model->images[i], i);
         const auto&                    src  = mips[0];
@@ -293,7 +293,7 @@ void uploadModel()
     vkGetPhysicalDeviceProperties(physical, &properties);
     sampler.maxAnisotropy = std::min(8.f, properties.limits.maxSamplerAnisotropy);
     check(vkCreateSampler(device, &sampler, nullptr, &modelSampler), "Create model sampler");
-    std::array<VkDescriptorSetLayoutBinding, 16> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 19> bindings{};
     for (uint32_t i = 0; i < 14; ++i)
     {
         bindings[i].binding         = i == 13 ? 14 : i;
@@ -312,14 +312,22 @@ void uploadModel()
     bindings[14] = {
       15, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     bindings[15] = {16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+    for (uint32_t i = 0; i < 3; ++i)
+        bindings[16 + i] = {
+          28 + i,
+          VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+          1,
+          VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
+          nullptr};
     VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 16;
+    layoutInfo.bindingCount = uint32_t(bindings.size());
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
-    VkDescriptorSetLayoutBinding gBindings[8]{};
+    VkDescriptorSetLayoutBinding gBindings[9]{};
     for (int i = 0; i < 8; i++)
         gBindings[i] = {uint32_t(17 + i), VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    layoutInfo.bindingCount = 8;
+    gBindings[8]            = {31, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    layoutInfo.bindingCount = 9;
     layoutInfo.pBindings    = gBindings;
     check(vkCreateDescriptorSetLayout(device,&layoutInfo,nullptr,&gBufferSetLayout),"Create G-buffer descriptor layout");
     VkDescriptorSetLayoutBinding probeBindings[] = {
@@ -352,8 +360,8 @@ void uploadModel()
       {modelSkin.buffer, 0, VK_WHOLE_SIZE},
       {modelJoints.buffer, 0, VK_WHOLE_SIZE},
       {sceneInstanceBuffer.buffer, 0, VK_WHOLE_SIZE}};
-    std::array<VkDescriptorImageInfo, 9> images{};
-    std::array<VkWriteDescriptorSet, 14> writes{};
+    std::array<VkDescriptorImageInfo, 12> images{};
+    std::array<VkWriteDescriptorSet, 17>  writes{};
     for (uint32_t i = 0; i < 14; ++i)
     {
         auto& w           = writes[i];
@@ -379,6 +387,23 @@ void uploadModel()
                                            : modelTextures[i - 2].view;
             w.pImageInfo = &image;
         }
+    }
+    for (uint32_t i = 0; i < 3; ++i)
+    {
+        auto& image       = images[9 + i];
+        image.imageView   = modelTextures[5 + i].view;
+        image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        writes[14 + i]    = {
+          VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          nullptr,
+          modelSet,
+          28 + i,
+          0,
+          1,
+          VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+          &image,
+          nullptr,
+          nullptr};
     }
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     modelReady = true;

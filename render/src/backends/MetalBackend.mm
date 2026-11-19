@@ -211,8 +211,8 @@ namespace render::detail
                     [encoder setVertexBuffer:vertices offset:0 atIndex:1];
                     [encoder setVertexBuffer:skinInputs offset:0 atIndex:11];
                     [encoder setVertexBuffer:jointPalette offset:0 atIndex:12];
-                    for (NSUInteger i = 0; i < 5; ++i)
-                        [encoder setFragmentTexture:modelTextures[i] atIndex:2 + i];
+                    for (NSUInteger i = 0; i < modelTextures.size(); ++i)
+                        [encoder setFragmentTexture:modelTextures[i] atIndex:(i < 5 ? 2 + i : 28 + i - 5)];
                     [encoder setFragmentSamplerState:modelSampler atIndex:7];
                     [encoder setFragmentTexture:environmentTexture atIndex:8];
                     [encoder setFragmentTexture:backgroundTexture atIndex:9];
@@ -332,8 +332,8 @@ namespace render::detail
             [encoder setBytes:&probeConfig length:sizeof(probeConfig) atIndex:25];
             [encoder setBuffer:probePrevious offset:0 atIndex:26];
             [encoder setBuffer:probeCurrent offset:0 atIndex:27];
-            for (NSUInteger i = 0; i < 5; ++i)
-                [encoder setTexture:modelTextures[i] atIndex:2 + i];
+            for (NSUInteger i = 0; i < modelTextures.size(); ++i)
+                [encoder setTexture:modelTextures[i] atIndex:(i < 5 ? 2 + i : 28 + i - 5)];
             [encoder setTexture:environmentTexture atIndex:8];
             [encoder setSamplerState:modelSampler atIndex:7];
             [encoder dispatchThreadgroups:MTLSizeMake((probeConfig.count * 6 + 31) / 32, 1, 1)
@@ -361,6 +361,8 @@ namespace render::detail
             if (std::string(file) == "model-gbuffer.metallib" || std::string(file) == "model-hybrid-shadow.metallib")
                 for (int i = 1; i < 4; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
+            if (std::string(file) == "model-gbuffer.metallib")
+                desc.colorAttachments[4].pixelFormat = MTLPixelFormatRGBA16Float;
             if (std::string(file) == "model-oit.metallib")
             {
                 desc.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
@@ -388,10 +390,10 @@ namespace render::detail
             oitDepthState          = [device newDepthStencilStateWithDescriptor:d];
             AAExternalScene external;
             external.device      = (__bridge void*)device;
-            external.bindGBuffer = [](void* encoder, const std::array<void*, 8>& views, int program) {
+            external.bindGBuffer = [](void* encoder, const std::array<void*, 9>& views, int program) {
                 auto e = (__bridge id<MTLRenderCommandEncoder>)encoder;
-                for (int i = 0; i < 8; i++)
-                    [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:17 + i];
+                for (size_t i = 0; i < views.size(); i++)
+                    [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:(i < 8 ? 17 + i : 31)];
             };
             external.beforeScene = [this](void* command) { EncodeProbeUpdate((__bridge id<MTLCommandBuffer>)command); };
             external.draw        = [this](const AAPass& pass, void* encoder, void*) {
@@ -423,8 +425,8 @@ namespace render::detail
                 [e setVertexBuffer:aaPreviousPalette offset:0 atIndex:16];
                 [e setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                 [e setFragmentBuffer:sceneInstanceBuffer offset:0 atIndex:14];
-                for (NSUInteger i = 0; i < 5; i++)
-                    [e setFragmentTexture:modelTextures[i] atIndex:2 + i];
+                for (NSUInteger i = 0; i < modelTextures.size(); i++)
+                    [e setFragmentTexture:modelTextures[i] atIndex:(i < 5 ? 2 + i : 28 + i - 5)];
                 [e setFragmentTexture:environmentTexture atIndex:8];
                 [e setFragmentTexture:backgroundTexture atIndex:9];
                 [e setFragmentSamplerState:modelSampler atIndex:7];
@@ -519,7 +521,7 @@ namespace render::detail
         id<MTLRenderPipelineState>    modelPipeline;
         id<MTLDepthStencilState>      depthState;
         id<MTLTexture>                depth;
-        std::array<id<MTLTexture>, 5> modelTextures{};
+        std::array<id<MTLTexture>, 8> modelTextures{};
         id<MTLSamplerState>           modelSampler;
         void                          UploadPathImage(const ModelImage& image)
         {
@@ -583,7 +585,7 @@ namespace render::detail
                   jointPalette.contents,
                   model->jointMatrices.data(),
                   model->jointMatrices.size() * sizeof(JointMatrix));
-            for (size_t i = 0; i < 5; ++i)
+            for (size_t i = 0; i < modelTextures.size(); ++i)
             {
                 const auto  levels  = MaterialMipmaps(model->images[i], i);
                 const auto& image   = levels[0];

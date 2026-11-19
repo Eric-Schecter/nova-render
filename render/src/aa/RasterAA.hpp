@@ -116,6 +116,7 @@ namespace render::detail
                     auto* shadow = add(-7, AAHybridShadow0);
                     for (int i = 0; i < 4; i++)
                         shadow->sources[i] = AAModelBase + i;
+                    shadow->sources[8] = AAModelClearcoat;
                 }
                 auto* p = add(-5, sceneColor);
                 if (hybrid)
@@ -123,6 +124,7 @@ namespace render::detail
                         p->sources[4 + i] = AAHybridShadow0 + i;
                 for (int i = 0; i < 4; i++)
                     p->sources[i] = AAModelBase + i;
+                p->sources[8] = AAModelClearcoat;
             }
             else
                 add(-1, sceneColor)->multisampled = settings.method == AAMethod::MSAA;

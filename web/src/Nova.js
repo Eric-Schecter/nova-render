@@ -3,6 +3,8 @@ import {
   defaultRasterSettings,
   copyRasterSettings,
   rasterCapabilities,
+  canUseDeferred,
+  deferredLimits,
   gBufferViews,
 } from './RasterPipeline.js'
 export { modelRasterPipelines, gBufferViews } from './RasterPipeline.js'
@@ -31,7 +33,9 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
     throw Error('WebGPU is unavailable. Use a supported browser over HTTPS or localhost.')
   const adapter = await navigator.gpu.requestAdapter()
   if (!adapter) throw Error('No WebGPU adapter available')
-  const device = await adapter.requestDevice()
+  const device = await adapter.requestDevice({
+    requiredLimits: canUseDeferred(adapter.limits) ? deferredLimits : {},
+  })
   const context = canvas.getContext('webgpu')
   if (!context) {
     device.destroy()
@@ -81,7 +85,15 @@ class Renderer {
   }
   getHybridCapabilities() {
     this.#check()
-    return hybridCapabilities(!!this.#model?.skinned)
+    const caps = hybridCapabilities(!!this.#model?.skinned)
+    return canUseDeferred(this.#device.limits)
+      ? caps
+      : {
+          ...caps,
+          supported: false,
+          reason:
+            'Hybrid requires 40 color bytes per sample and 20 sampled textures per shader stage.',
+        }
   }
   #rasterSettings = defaultRasterSettings()
   getRasterSettings() {
@@ -90,11 +102,15 @@ class Renderer {
   }
   getRasterCapabilities() {
     this.#check()
-    return rasterCapabilities()
+    return rasterCapabilities(canUseDeferred(this.#device.limits))
   }
   setRasterSettings(value) {
     this.#check()
     const next = copyRasterSettings({ ...this.#rasterSettings, ...value })
+    if (next.pipeline === 'deferred' && !canUseDeferred(this.#device.limits))
+      throw Error(
+        'Deferred requires 40 color bytes per sample and 20 sampled textures per shader stage',
+      )
     if (this.#renderMode === 'hybrid' && next.pipeline !== 'deferred')
       throw Error('Hybrid requires Deferred raster visibility')
     if (next.pipeline === 'deferred' && this.#aaSettings.method === 'msaa')

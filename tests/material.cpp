@@ -254,6 +254,47 @@ int main(int argc, char** argv)
             rejected = true;
         }
         Require(rejected && backend->GetMaterials("")[0].occlusionTexCoord == 1, "Invalid AO UV selection accepted");
+        const auto assetRoot = std::filesystem::path(argv[2]);
+        auto       coatTest  = detail::LoadGLB(assetRoot / "ClearCoatTest/ClearCoatTest.glb");
+        backend->LoadModel(coatTest);
+        backend->LoadEnvironment(detail::LoadEnvironmentFile(assetRoot / "Environment/studio_small_09.nenv"));
+        OrbitCamera coatCamera;
+        coatCamera.distance = 2.55f;
+        coatCamera.yaw = coatCamera.pitch = 0;
+        backend->SetCamera(coatCamera);
+        backend->SetAntiAliasing({AAMethod::FXAA});
+        backend->SetRasterSettings({RasterPipeline::Deferred});
+        const auto       coatMaterials = backend->GetMaterials("");
+        const std::array coatMaps      = {
+          &Material::clearcoatTexture, &Material::clearcoatRoughnessTexture, &Material::clearcoatNormalTexture};
+        draw();
+        const auto allMaps = backend->GetRasterAAImage().pixels;
+        Require(!allMaps.empty(), "Clearcoat readback unavailable");
+        for (auto map : coatMaps)
+        {
+            size_t count = 0;
+            for (size_t slot = 0; slot < coatMaterials.size(); ++slot)
+                if (coatMaterials[slot].*map)
+                {
+                    auto updated = coatMaterials[slot];
+                    (updated.*map).reset();
+                    backend->SetMaterial(slot, updated, "");
+                    ++count;
+                }
+            Require(count > 0, "Clearcoat map lost on GLB import");
+            draw();
+            const auto& masked = backend->GetRasterAAImage().pixels;
+            Require(masked.size() == allMaps.size(), "Clearcoat readback dimensions changed");
+            size_t difference = 0;
+            for (size_t i = 0; i < allMaps.size(); ++i)
+                difference += std::abs(int(allMaps[i]) - int(masked[i]));
+            Require(difference > 1000, "Clearcoat map did not affect deferred shading");
+            for (size_t slot = 0; slot < coatMaterials.size(); ++slot)
+                if (coatMaterials[slot].*map)
+                    backend->SetMaterial(slot, coatMaterials[slot], "");
+        }
+        backend->LoadEnvironment(nullptr);
+        backend->SetViewCamera(camera);
         backend->SetRasterSettings({});
         backend->SetAntiAliasing({AAMethod::Off});
         backend->LoadModel(source);

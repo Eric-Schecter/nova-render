@@ -77,7 +77,8 @@ namespace render::detail
         AAHybridCurrentDepth,
         AAHybridOitAccum,
         AAHybridOitReveal,
-        AAResourceCount = 102
+        AAModelClearcoat = 102,
+        AAResourceCount  = 103
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
     struct AAPass
@@ -97,7 +98,7 @@ namespace render::detail
         uint32_t                                                     queueFamily = 0;
         std::function<void(void*)>                                   beforeScene;
         std::function<void(const AAPass&, void*, void*)>             draw;
-        std::function<void(void*, const std::array<void*, 8>&, int)> bindGBuffer;
+        std::function<void(void*, const std::array<void*, 9>&, int)> bindGBuffer;
     };
     struct AASpec
     {
@@ -106,7 +107,7 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
-        if (id >= AAHybridPreviousNormal)
+        if (id >= AAHybridPreviousNormal && id != AAModelClearcoat)
             return {w, h, 1};
         if (id >= AAModelBase)
             return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};
@@ -176,6 +177,8 @@ namespace render::detail
                 for (int i = 1; i < 4; i++)
                     used[p.target + i] = true;
             }
+            if (p.program == -4)
+                used[AAModelClearcoat] = true;
             if (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
                 used[p.target + 1] = true;
             if (p.multisampled)

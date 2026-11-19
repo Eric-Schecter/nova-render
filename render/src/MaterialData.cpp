@@ -36,20 +36,26 @@ namespace render::detail
 {
     namespace
     {
-        const std::array<Image, 5> defaults{
+        const std::array<Image, 8> defaults{
           {{1, 1, {255, 255, 255, 255}},
            {1, 1, {128, 128, 255, 255}},
            {1, 1, {255, 255, 255, 255}},
            {1, 1, {255, 255, 255, 255}},
-           {1, 1, {255, 255, 255, 255}}}};
-        std::array<const Image*, 5> maps(const Material& m)
+           {1, 1, {255, 255, 255, 255}},
+           {1, 1, {255, 255, 255, 255}},
+           {1, 1, {255, 255, 255, 255}},
+           {1, 1, {128, 128, 255, 255}}}};
+        std::array<const Image*, 8> maps(const Material& m)
         {
             return {
               m.baseColorTexture ? &*m.baseColorTexture : &defaults[0],
               m.normalTexture ? &*m.normalTexture : &defaults[1],
               m.metallicRoughnessTexture ? &*m.metallicRoughnessTexture : &defaults[2],
               m.occlusionTexture ? &*m.occlusionTexture : &defaults[3],
-              m.emissiveTexture ? &*m.emissiveTexture : &defaults[4]};
+              m.emissiveTexture ? &*m.emissiveTexture : &defaults[4],
+              m.clearcoatTexture ? &*m.clearcoatTexture : &defaults[5],
+              m.clearcoatRoughnessTexture ? &*m.clearcoatRoughnessTexture : &defaults[6],
+              m.clearcoatNormalTexture ? &*m.clearcoatNormalTexture : &defaults[7]};
         }
     } // namespace
     void ValidateMaterial(const Material& m)
@@ -68,6 +74,11 @@ namespace render::detail
         range(m.specularFactor, 1);
         range(m.clearcoatFactor, 1);
         range(m.clearcoatRoughnessFactor, 1);
+        if (!std::isfinite(m.clearcoatNormalScale))
+            throw std::invalid_argument("Clearcoat normal scale must be finite");
+        for (auto uv : m.clearcoatTexCoords)
+            if (uv > 1)
+                throw std::invalid_argument("Clearcoat coordinate set must be 0 or 1");
         for (float x : m.specularColorFactor)
             range(x, std::numeric_limits<float>::max());
         range(m.normalScale, 16);
@@ -89,9 +100,11 @@ namespace render::detail
         if (data.materials.size() > 128)
             throw std::invalid_argument("At most 128 material slots are supported");
         uint32_t tile = 1;
+        bool     texturedCoat = false;
         for (const auto& m : data.materials)
         {
             ValidateMaterial(m);
+            texturedCoat |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture);
             for (auto* im : maps(m))
                 tile = std::max({tile, im->width, im->height});
         }
@@ -108,17 +121,24 @@ namespace render::detail
         if (atlas)
         {
             // Large models plus small helper materials must fit the same bounded atlas.
-            while (tile > 1 && (w > 8192 || h > 8192 || uint64_t(w) * h * 20 > 512ull * 1024 * 1024))
+            while (tile > 1
+                   && (w > 8192 || h > 8192 || uint64_t(w) * h * (texturedCoat ? 32 : 20) > 512ull * 1024 * 1024))
             {
                 tile   = std::max(1u, tile / 2);
                 stride = tile + 4;
                 w      = cols * stride;
                 h      = rows * stride;
             }
-            if (w > 8192 || h > 8192 || uint64_t(w) * h * 20 > 512ull * 1024 * 1024)
+            if (w > 8192 || h > 8192 || uint64_t(w) * h * (texturedCoat ? 32 : 20) > 512ull * 1024 * 1024)
                 throw std::runtime_error("Material atlas exceeds 512 MiB / 8192px limit");
-            for (auto& image : data.images)
+            for (size_t k = 0; k < data.images.size(); ++k)
             {
+                auto& image = data.images[k];
+                if (k >= 5 && !texturedCoat)
+                {
+                    image = defaults[k];
+                    continue;
+                }
                 image.width  = w;
                 image.height = h;
                 image.pixels.assign(size_t(w) * h * 4, 0);
@@ -127,7 +147,7 @@ namespace render::detail
         else
         {
             auto images = maps(first);
-            for (int k = 0; k < 5; k++)
+            for (size_t k = 0; k < data.images.size(); k++)
                 data.images[k] = *images[k];
         }
         for (size_t i = 0; i < data.materials.size(); i++)
@@ -142,6 +162,12 @@ namespace render::detail
             record[4] = m.clearcoatFactor;
             record[5] = m.clearcoatRoughnessFactor;
             record[6] = float(m.occlusionTexCoord);
+            record[7] = float(
+              (m.clearcoatTexture ? 1 : 0) | (m.clearcoatRoughnessTexture ? 2 : 0)
+              | (m.clearcoatNormalTexture ? 4 : 0));
+            record[8] =
+              float(m.clearcoatTexCoords[0] | (m.clearcoatTexCoords[1] << 1) | (m.clearcoatTexCoords[2] << 2));
+            record[9] = m.clearcoatNormalScale;
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
             record[36] = m.metallic;
             record[37] = m.roughness;
@@ -157,8 +183,10 @@ namespace render::detail
                 record[46]  = (x + 2.5f) / w;
                 record[47]  = (y + 2.5f) / h;
                 auto images = maps(m);
-                for (int k = 0; k < 5; k++)
+                for (size_t k = 0; k < data.images.size(); k++)
                 {
+                    if (k >= 5 && !texturedCoat)
+                        break;
                     const auto& src = *images[k];
                     auto&       dst = data.images[k];
                     for (uint32_t py = 0; py < stride; py++)

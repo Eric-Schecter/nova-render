@@ -58,6 +58,8 @@ const halton = (index, base) => {
   }
   return v
 }
+const modelClearcoatTarget = 102
+
 export async function createAntiAliasingView({
   canvas,
   shaderDirectory = '/generated/',
@@ -268,7 +270,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i < 102; i++)
+    for (let i = 0; i <= modelClearcoatTarget; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -398,10 +400,12 @@ export async function createAntiAliasingView({
         if (external.hybrid) {
           const shadow = add(-7, 92)
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
+          shadow.sources[8] = modelClearcoatTarget
         }
         const p = add(-5, sceneColor)
         if (external.hybrid) p.sources.splice(4, 4, 92, 93, 94, 95)
         p.sources.splice(0, 4, 85, 86, 87, 88)
+        p.sources[8] = modelClearcoatTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
         add(-6, 89)
@@ -528,6 +532,7 @@ export async function createAntiAliasingView({
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
       if (p.program === -6) used.add(p.target + 1)
+      if (p.program === -4) used.add(modelClearcoatTarget)
       if (p.program === 17 || p.program === -4 || p.program === -7) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
       }
@@ -540,7 +545,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i < 102; i++) {
+    for (let i = 0; i <= modelClearcoatTarget; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -560,12 +565,12 @@ export async function createAntiAliasingView({
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
-      if (i >= 85 && i < 96) {
+      if ((i >= 85 && i < 96) || i === modelClearcoatTarget) {
         const scale = superSample ? 2 : 1
         tw = w * scale + 2
         th = h * scale + 2
       }
-      if (i >= 96) {
+      if (i >= 96 && i !== modelClearcoatTarget) {
         tw = w
         th = h
       }
@@ -642,17 +647,23 @@ export async function createAntiAliasingView({
       const colorAttachments = Array.from(
         {
           length:
-            p.program === 17 || p.program === -4 || p.program === -7
-              ? 4
-              : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
-                ? 2
-                : 1,
+            p.program === -4
+              ? 5
+              : p.program === 17 || p.program === -7
+                ? 4
+                : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
+                  ? 2
+                  : 1,
         },
         (_, a) => ({
           view: present
             ? context.getCurrentTexture().createView()
             : textures[
-                p.ms ? (p.program === 17 ? 46 : native ? 19 : MC) + a : p.target + a
+                p.ms
+                  ? (p.program === 17 ? 46 : native ? 19 : MC) + a
+                  : p.program === -4 && a === 4
+                    ? modelClearcoatTarget
+                    : p.target + a
               ].createView(),
           ...(p.ms ? { resolveTarget: textures[p.target + a].createView() } : {}),
           clearValue:
@@ -703,7 +714,7 @@ export async function createAntiAliasingView({
             p.ms ? 4 : 1,
             p.program,
             p.program === -5 || p.program === -7
-              ? p.sources.slice(0, 8).map((i) => textures[i])
+              ? p.sources.slice(0, 9).map((i) => textures[i])
               : null,
           )
         pass.end()

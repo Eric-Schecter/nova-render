@@ -40,7 +40,7 @@ namespace render::detail
         std::vector<SkinInput>               skinInputs;
         std::vector<JointMatrix>             jointMatrices;
         // Base color, normal, metallic/roughness, occlusion, emissive.
-        std::array<ModelImage, 5> images;
+        std::array<ModelImage, 8> images;
         std::array<float, 4>      baseColor{1, 1, 1, 1};
         std::array<float, 4>      material{1, 1, 1, 1}; // metallic, roughness, normal scale, AO strength
         std::array<float, 4>      emissive{0, 0, 0, 0};

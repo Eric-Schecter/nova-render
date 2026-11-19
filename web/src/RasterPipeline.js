@@ -25,18 +25,25 @@ export function copyRasterSettings(value) {
   if (s.pipeline === 'forward' && s.view !== 'final') throw Error('G-buffer views require Deferred')
   return s
 }
-export function rasterCapabilities() {
+export const deferredLimits = {
+  maxColorAttachmentBytesPerSample: 40,
+  maxSampledTexturesPerShaderStage: 20,
+}
+export function canUseDeferred(limits) {
+  return Object.entries(deferredLimits).every(([key, value]) => limits[key] >= value)
+}
+export function rasterCapabilities(deferred = true) {
   return {
     forward: true,
-    deferred: true,
-    gBuffer: true,
+    deferred,
+    gBuffer: deferred,
     forwardPlus: false,
     clusteredForward: false,
     deferredMSAA: false,
     opaqueOnly: false,
     deferredRequiresModel: true,
     debugBypassesAAAndPost: true,
-    gBufferTargets: 4,
-    gBufferBytesPerPixel: 32,
+    gBufferTargets: deferred ? 5 : 0,
+    gBufferBytesPerPixel: deferred ? 40 : 0,
   }
 }

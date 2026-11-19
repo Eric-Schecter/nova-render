@@ -74,6 +74,38 @@ namespace render::detail
                 throw std::runtime_error("Unsupported glTF texture coordinate encoding");
             return v;
         }
+        constexpr std::array coatTextureKeys{"clearcoatTexture", "clearcoatRoughnessTexture", "clearcoatNormalTexture"};
+        struct CoatTexture
+        {
+            int      index = -1;
+            uint32_t uv    = 0;
+            float    scale = 1;
+        };
+        CoatTexture readCoatTexture(const tinygltf::Value& extension, size_t k)
+        {
+            CoatTexture result;
+            const auto* key = coatTextureKeys[k];
+            if (!extension.Has(key))
+                return result;
+            const auto& info = extension.Get(key);
+            if (!info.IsObject() || !info.Get("index").IsInt() || info.Get("index").GetNumberAsInt() < 0)
+                throw std::runtime_error("Invalid clearcoat texture index");
+            result.index = info.Get("index").GetNumberAsInt();
+            if (info.Has("texCoord"))
+            {
+                const auto& uv = info.Get("texCoord");
+                if (!uv.IsInt() || uv.GetNumberAsInt() < 0 || uv.GetNumberAsInt() > 1)
+                    throw std::runtime_error("Clearcoat coordinate set must be 0 or 1");
+                result.uv = uint32_t(uv.GetNumberAsInt());
+            }
+            if (k == 2 && info.Has("scale"))
+            {
+                if (!info.Get("scale").IsNumber())
+                    throw std::runtime_error("Invalid clearcoat normal scale");
+                result.scale = float(info.Get("scale").GetNumberAsDouble());
+            }
+            return result;
+        }
     } // namespace
     std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path)
     {
@@ -163,6 +195,14 @@ namespace render::detail
                         throw std::runtime_error("Textured material requires TEXCOORD_0");
                     if (ao.index >= 0 && ao.texCoord == 1 && uv1 < 0)
                         throw std::runtime_error("AO texture requires TEXCOORD_1");
+                    if (const auto coat = material.extensions.find("KHR_materials_clearcoat");
+                        coat != material.extensions.end())
+                        for (size_t k = 0; k < coatTextureKeys.size(); ++k)
+                        {
+                            const auto info = readCoatTexture(coat->second, k);
+                            if (info.index >= 0 && (info.uv ? uv1 : uv) < 0)
+                                throw std::runtime_error("Clearcoat texture requires its declared TEXCOORD set");
+                        }
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto count =
                       p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
@@ -282,15 +322,19 @@ namespace render::detail
                     }
                 }
             }
+            std::array<CoatTexture, 3> coatMaps;
             const auto coat = mat.extensions.find("KHR_materials_clearcoat");
             if (coat != mat.extensions.end())
             {
                 const auto& extension = coat->second;
                 if (!extension.IsObject())
                     throw std::runtime_error("Invalid KHR_materials_clearcoat");
-                if (extension.Has("clearcoatTexture") || extension.Has("clearcoatRoughnessTexture")
-                    || extension.Has("clearcoatNormalTexture"))
-                    throw std::runtime_error("KHR_materials_clearcoat textures are not supported");
+                for (size_t k = 0; k < coatMaps.size(); ++k)
+                {
+                    coatMaps[k]                = readCoatTexture(extension, k);
+                    slot.clearcoatTexCoords[k] = coatMaps[k].uv;
+                }
+                slot.clearcoatNormalScale = coatMaps[2].scale;
                 for (const auto& [key, factor] :
                      {std::pair{"clearcoatFactor", &slot.clearcoatFactor},
                       std::pair{"clearcoatRoughnessFactor", &slot.clearcoatRoughnessFactor}})
@@ -325,28 +369,31 @@ namespace render::detail
             if (mat.occlusionTexture.texCoord < 0 || mat.occlusionTexture.texCoord > 1)
                 throw std::runtime_error("AO texture coordinate set must be 0 or 1");
             slot.occlusionTexCoord = uint32_t(mat.occlusionTexture.texCoord);
-            const int textures[] = {
+            const int textures[]   = {
               pbr.baseColorTexture.index,
               mat.normalTexture.index,
               pbr.metallicRoughnessTexture.index,
               mat.occlusionTexture.index,
-              mat.emissiveTexture.index};
-            const std::array<std::array<unsigned char, 4>, 5> fallback = {
-              {{255, 255, 255, 255}, {128, 128, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255}, {0, 0, 0, 255}}};
+              mat.emissiveTexture.index,
+              coatMaps[0].index,
+              coatMaps[1].index,
+              coatMaps[2].index};
             std::optional<Image>* maps[] = {
               &slot.baseColorTexture,
               &slot.normalTexture,
               &slot.metallicRoughnessTexture,
               &slot.occlusionTexture,
-              &slot.emissiveTexture};
+              &slot.emissiveTexture,
+              &slot.clearcoatTexture,
+              &slot.clearcoatRoughnessTexture,
+              &slot.clearcoatNormalTexture};
             slot.metallic          = factors[0];
             slot.roughness         = factors[1];
             slot.normalScale       = factors[2];
             slot.occlusionStrength = factors[3];
-            for (int i = 0; i < 5; ++i)
+            for (size_t i = 0; i < std::size(textures); ++i)
             {
                 ModelImage dst;
-                dst.pixels.assign(fallback[i].begin(), fallback[i].end());
                 if (textures[i] < 0)
                     continue;
                 const auto& image = gltf.images.at(gltf.textures.at(textures[i]).source);
@@ -393,9 +440,16 @@ namespace render::detail
     {
         static const auto empty = [] {
             auto                                              data   = std::make_shared<ModelData>();
-            const std::array<std::array<unsigned char, 4>, 5> colors = {
-              {{255, 255, 255, 255}, {128, 128, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255}, {0, 0, 0, 255}}};
-            for (size_t i = 0; i < 5; ++i)
+            const std::array<std::array<unsigned char, 4>, 8> colors = {
+              {{255, 255, 255, 255},
+               {128, 128, 255, 255},
+               {255, 255, 255, 255},
+               {255, 255, 255, 255},
+               {0, 0, 0, 255},
+               {255, 255, 255, 255},
+               {255, 255, 255, 255},
+               {128, 128, 255, 255}}};
+            for (size_t i = 0; i < colors.size(); ++i)
                 data->images[i].pixels.assign(colors[i].begin(), colors[i].end());
             return data;
         }();

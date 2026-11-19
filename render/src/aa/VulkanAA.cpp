@@ -90,7 +90,7 @@ namespace render::detail
             VkDescriptorSetLayout            computeSetLayout{};
             VkPipeline                       pipelines[30]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
-              surfaceMSPass{}, externalLoadPass{}, oitPass{}, surfaceLoadPass{};
+              surfaceMSPass{}, externalLoadPass{}, oitPass{}, surfaceLoadPass{}, modelGBufferPass{};
             VkSampler    linear{}, point{};
             Texture      textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             Buffer       uniforms, readback;
@@ -228,9 +228,10 @@ namespace render::detail
               bool borrowedScene = false,
               bool surface       = false,
               bool depthLoad     = false,
-              bool oit           = false)
+              bool oit           = false,
+              bool modelGBuffer  = false)
             {
-                const uint32_t                       n = surface ? 4 : oit ? 2 : borrowedScene ? 1 : scene ? 2 : 1;
+                const uint32_t n = modelGBuffer ? 5 : surface ? 4 : oit ? 2 : borrowedScene ? 1 : scene ? 2 : 1;
                 std::vector<VkAttachmentDescription> attachments;
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -265,7 +266,7 @@ namespace render::detail
                     a.initialLayout = a.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                     attachments.push_back(a);
                 }
-                VkAttachmentReference colors[4]{}, resolves[4]{},
+                VkAttachmentReference colors[5]{}, resolves[5]{},
                   depthRef{uint32_t(attachments.size() - 1), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -729,6 +730,7 @@ namespace render::detail
                 externalMSPass   = MakePass(true, true, true);
                 surfaceLoadPass  = MakePass(true, false, false, true, true);
                 surfacePass      = MakePass(true, false, false, true);
+                modelGBufferPass = MakePass(true, false, false, false, false, false, true);
                 surfaceMSPass    = MakePass(true, true, false, true);
                 for (int i = 0; i < 30; i++)
                     pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, config) : Pipeline(i, false, config);
@@ -803,7 +805,8 @@ namespace render::detail
                       surfaceMSPass,
                       externalLoadPass,
                       oitPass,
-                      surfaceLoadPass})
+                      surfaceLoadPass,
+                      modelGBufferPass})
                     if (p)
                         api.vkDestroyRenderPass(device, p, nullptr);
                 for (auto s : {linear, point})
@@ -975,10 +978,11 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool nativeScene = p.program < 0;
-                    const int  attachments =
-                      (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)  ? 4
-                       : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
-                                                                                                   : 1;
+                    const int                attachments = p.program == -4                                           ? 5
+                                                           : (p.program == 17 || p.program == 22 || p.program == -7) ? 4
+                                                           : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
+                                                             ? 2
+                                                             : 1;
                     auto&                    target = textures[p.target];
                     std::vector<VkImageView> views;
                     for (int a = 0; a < attachments; a++)
@@ -988,7 +992,8 @@ namespace render::detail
                                              : nativeScene   ? AARawMultiColor
                                                              : AAMultiColor)
                                               + a
-                                          : p.target + a];
+                           : p.program == -4 && a == 4 ? AAModelClearcoat
+                                                       : p.target + a];
                         Transition(t, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
                         views.push_back(t.view);
                     }
@@ -1045,7 +1050,8 @@ namespace render::detail
                         }
                     }
                     api.vkUpdateDescriptorSets(device, 19, writes.data(), 0, nullptr);
-                    VkRenderPass            renderPass = (p.program == 17 || p.program == 22 || p.program == -4)
+                    VkRenderPass            renderPass = p.program == -4 ? modelGBufferPass
+                                                         : (p.program == 17 || p.program == 22)
                                                            ? (p.multisampled ? surfaceMSPass : surfacePass)
                                                          : p.program == -7 ? surfaceLoadPass
                                                          : p.program == -6 ? oitPass
@@ -1105,8 +1111,8 @@ namespace render::detail
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
                         if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
                         {
-                            std::array<void*, 8> views{};
-                            for (int i = 0; i < 8; i++)
+                            std::array<void*, 9> views{};
+                            for (size_t i = 0; i < views.size(); i++)
                                 views[i] = reinterpret_cast<void*>(textures[p.sources[i]].view);
                             external.bindGBuffer(command, views, p.program);
                         }

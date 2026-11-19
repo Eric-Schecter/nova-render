@@ -6,7 +6,7 @@ uint32_t                              pathWidth = 0, pathHeight = 0;
 ComPtr<ID3D12PipelineState>           skyPipeline;
 ComPtr<ID3D12Resource> modelVertices, modelUniform, modelDepth, modelSkin, modelJoints, sceneInstanceBuffer;
 size_t                 sceneInstanceBytes = 0;
-std::array<ComPtr<ID3D12Resource>, 5> modelTextures, modelUploads;
+std::array<ComPtr<ID3D12Resource>, 8>  modelTextures, modelUploads;
 ComPtr<ID3D12DescriptorHeap>          modelHeap, modelDepthHeap;
 ComPtr<ID3D12RootSignature>           modelRoot;
 ComPtr<ID3D12PipelineState>           modelPipeline;
@@ -122,14 +122,14 @@ void UploadModel()
     modelUniform = uploadBuffer(512);
     D3D12_DESCRIPTOR_HEAP_DESC heap{};
     heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    heap.NumDescriptors = 16;
+    heap.NumDescriptors = 29;
     heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     checkHR(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&modelHeap)), "Create model texture heap");
     checkHR(allocator->Reset(), "Reset model allocator");
     checkHR(commands->Reset(allocator.Get(), nullptr), "Begin model upload");
     auto       handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
     const auto stride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    for (size_t i = 0; i < 5; ++i)
+    for (size_t i = 0; i < modelTextures.size(); ++i)
     {
         const auto          levels = MaterialMipmaps(model->images[i], i);
         const auto&         image  = levels[0];
@@ -193,9 +193,11 @@ void UploadModel()
         view.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
         view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         view.Texture2D.MipLevels     = UINT(levels.size());
-        device->CreateShaderResourceView(modelTextures[i].Get(), &view, handle);
-        handle.ptr += stride;
+        auto textureHandle           = modelHeap->GetCPUDescriptorHandleForHeapStart();
+        textureHandle.ptr += (i < 5 ? i : 8 + i - 5) * stride;
+        device->CreateShaderResourceView(modelTextures[i].Get(), &view, textureHandle);
     }
+    handle.ptr += 5 * stride;
     const auto& env = environment ? *environment : FallbackEnvironment();
     UploadEnvironmentCube(handle, env.mips, environmentCube, environmentUpload);
     handle.ptr += stride;
@@ -215,16 +217,22 @@ void UploadModel()
     backgroundUpload.Reset();
     for (auto& upload : modelUploads)
         upload.Reset();
-    D3D12_DESCRIPTOR_RANGE range{};
+    D3D12_DESCRIPTOR_RANGE ranges[2]{};
+    auto&                  range = ranges[0];
     range.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors     = 8;
     range.BaseShaderRegister = 1;
+    ranges[1]                    = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 28, 0, 8};
     D3D12_ROOT_PARAMETER params[10]{};
-    D3D12_DESCRIPTOR_RANGE gRange{};
+    D3D12_DESCRIPTOR_RANGE gRanges[2]{};
+    auto&                  gRange                 = gRanges[0];
     gRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     gRange.NumDescriptors     = 8;
     gRange.BaseShaderRegister = 17;
-    params[9].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[9].DescriptorTable={1,&gRange};params[9].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
+    gRanges[1]                                    = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 31, 0, 8};
+    params[9].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    params[9].DescriptorTable                     = {2, gRanges};
+    params[9].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
     params[5].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_SRV;
     params[5].Descriptor.ShaderRegister           = 11;
     params[5].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
@@ -235,8 +243,8 @@ void UploadModel()
     params[1].Descriptor.ShaderRegister           = 0;
     params[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_VERTEX;
     params[2].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    params[2].DescriptorTable.NumDescriptorRanges = 1;
-    params[2].DescriptorTable.pDescriptorRanges   = &range;
+    params[2].DescriptorTable.NumDescriptorRanges = 2;
+    params[2].DescriptorTable.pDescriptorRanges   = ranges;
     params[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
     for (UINT i = 0; i < 2; ++i)
     {

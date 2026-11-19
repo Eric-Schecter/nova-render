@@ -1,3 +1,4 @@
+import { canUseDeferred } from './RasterPipeline.js'
 import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 import { createHybridProbes, probeSceneBounds } from './HybridProbes.js'
 import { PickMesh } from './Picking.js'
@@ -8,6 +9,9 @@ import { createAnimationPlayer, poseAnimationGeometry } from './AnimationData.js
 import { createPathView } from './PathView.js'
 import { loadGLB, sceneUniforms } from './ModelData.js'
 import { fallbackEnvironment } from './EnvironmentData.js'
+
+const modelTextureBinding = (i) => (i < 5 ? i + 2 : i + 23)
+const gBufferBindings = [17, 18, 19, 20, 21, 22, 23, 24, 31]
 function cubeTexture(device, data) {
   const texture = device.createTexture({
     size: [data.mips[0].size, data.mips[0].size, 6],
@@ -129,7 +133,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         },
         { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         ...textures.map((_, i) => ({
-          binding: i + 2,
+          binding: modelTextureBinding(i),
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float' },
         })),
@@ -170,7 +174,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 16, resource: { buffer: previousPalette } },
           { binding: 0, resource: { buffer: uniform } },
           { binding: 1, resource: { buffer: vertices } },
-          ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
+          ...textures.map((t, i) => ({
+            binding: modelTextureBinding(i),
+            resource: t.createView(),
+          })),
           { binding: 7, resource: sampler },
           { binding: 8, resource: texture.createView({ dimension: 'cube' }) },
           { binding: 9, resource: background.createView({ dimension: 'cube' }) },
@@ -181,7 +188,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ],
       })
     const gBufferLayout = device.createBindGroupLayout({
-      entries: [17, 18, 19, 20, 21, 22, 23, 24].map((binding) => ({
+      entries: gBufferBindings.map((binding) => ({
         binding,
         visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float' },
@@ -252,7 +259,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                     : sky
                       ? 'SkyPSMain'
                       : 'PSMain',
-          targets: Array.from({ length: oit ? 2 : gbuffer || hybridShadow ? 4 : 1 }, (_, i) => ({
+          targets: Array.from({ length: oit ? 2 : gbuffer ? 5 : hybridShadow ? 4 : 1 }, (_, i) => ({
             ...(oit
               ? {
                   blend:
@@ -327,7 +334,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       probeLightingKey = key
       probes.update(probeBounds, rasterGlobals, [
         { binding: 0, resource: { buffer: uniform } },
-        ...textures.map((t, i) => ({ binding: i + 2, resource: t.createView() })),
+        ...textures.map((t, i) => ({ binding: modelTextureBinding(i), resource: t.createView() })),
         { binding: 7, resource: sampler },
         { binding: 8, resource: cube.createView({ dimension: 'cube' }) },
         { binding: 14, resource: { buffer: instanceBuffer } },
@@ -483,25 +490,35 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             aaPipelines['model' + count] = await pipelineFor(packages[0], false, count, false, true)
             aaPipelines['sky' + count] = await pipelineFor(packages[1], true, count, false, true)
           }
-          aaPipelines.gbuffer = await pipelineFor(packages[4], false, 1, false, true, true)
-          aaPipelines.deferred = await pipelineFor(packages[5], false, 1, false, true, false, true)
+          if (canUseDeferred(device.limits)) {
+            aaPipelines.gbuffer = await pipelineFor(packages[4], false, 1, false, true, true)
+            aaPipelines.deferred = await pipelineFor(
+              packages[5],
+              false,
+              1,
+              false,
+              true,
+              false,
+              true,
+            )
+            aaPipelines.hybridShadow = await pipelineFor(
+              packages[7],
+              false,
+              1,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+            )
+          }
           aaPipelines.oit = await pipelineFor(
             packages[6],
             false,
             1,
             false,
             true,
-            false,
-            false,
-            true,
-          )
-          aaPipelines.hybridShadow = await pipelineFor(
-            packages[7],
-            false,
-            1,
-            false,
-            true,
-            false,
             false,
             false,
             true,
@@ -561,7 +578,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             1,
             device.createBindGroup({
               layout: gBufferLayout,
-              entries: [17, 18, 19, 20, 21, 22, 23, 24].map((binding, i) => ({
+              entries: gBufferBindings.map((binding, i) => ({
                 binding,
                 resource: gbuffers[i].createView(),
               })),
