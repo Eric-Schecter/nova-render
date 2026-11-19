@@ -103,9 +103,8 @@ namespace render
                 case SDL_EVENT_MOUSE_WHEEL:
                     if (event.wheel.windowID == id && orbitEnabled && !renderer->UIWantsMouse())
                     {
-                        const float y =
-                          event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event.wheel.y : event.wheel.y;
-                        UpdateCamera([&](OrbitCamera c) { return detail::ZoomOrbit(c, -y * 100.0); });
+                        // SDL's delta already follows the system scroll direction.
+                        UpdateCamera([&](OrbitCamera c) { return detail::ZoomOrbit(c, -event.wheel.y * 100.0); });
                     }
                     break;
                 }
