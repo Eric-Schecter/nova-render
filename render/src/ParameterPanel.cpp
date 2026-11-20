@@ -275,6 +275,9 @@ namespace render::detail
                     ImGui::Checkbox("DDGI probes", &hybrid.probeGI);
                     ImGui::BeginDisabled(!hybrid.probeGI);
                     ImGui::Checkbox("DDGI sky lighting", &hybrid.probeSkyLighting);
+                    ImGui::BeginDisabled(!hybrid.probeSkyLighting);
+                    ImGui::Checkbox("DDGI multi-bounce", &hybrid.probeMultiBounce);
+                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::BeginDisabled(hybrid.probeGI);

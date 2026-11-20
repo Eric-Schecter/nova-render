@@ -382,6 +382,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           { binding: 14, resource: { buffer: instanceBuffer } },
         ],
         hybrid.probeBounds ? 0 : 0.25,
+        !!environment && hybrid.probeSkyLighting && hybrid.probeMultiBounce,
       )
       probeEnabled = true
     }
@@ -407,6 +408,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       )
       record[8] = hybrid?.clearcoatReflections ? 1 : 0
       record[10] = hybrid?.probeSkyLighting ? 1 : 0
+      record[11] = hybrid?.probeMultiBounce ? 1 : 0
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
@@ -502,6 +504,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           hybrid !== settings &&
           (hybrid?.probeGI !== settings?.probeGI ||
             hybrid?.probeSkyLighting !== settings?.probeSkyLighting ||
+            hybrid?.probeMultiBounce !== settings?.probeMultiBounce ||
             JSON.stringify(hybrid?.probeBounds) !== JSON.stringify(settings?.probeBounds))
         )
           probes?.invalidate()

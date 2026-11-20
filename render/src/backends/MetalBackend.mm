@@ -318,12 +318,14 @@ namespace render::detail
             auto blit = [command blitCommandEncoder];
             if (reset)
                 [blit fillBuffer:probeCurrent range:NSMakeRange(0, ProbeCount * ProbeBytes) value:0];
-            const auto offset = probeConfig.dimensionsFirst[3] * ProbeBytes;
+            const bool feedback = hybrid.probeSkyLighting && hybrid.probeMultiBounce && bool(environment);
+            const auto offset   = feedback ? 0 : probeConfig.dimensionsFirst[3] * ProbeBytes;
+            const auto bytes    = (feedback ? ProbeCount : probeConfig.count) * ProbeBytes;
             [blit copyFromBuffer:probeCurrent
                     sourceOffset:offset
                         toBuffer:probePrevious
                destinationOffset:offset
-                            size:probeConfig.count * ProbeBytes];
+                            size:bytes];
             [blit endEncoding];
             auto encoder = [command computeCommandEncoder];
             [encoder setComputePipelineState:probeUpdatePipeline];

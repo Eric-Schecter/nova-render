@@ -34,7 +34,7 @@ export function createHybridProbes(device, pipeline, layout) {
     invalidate() {
       reset = true
     },
-    update(bounds, header, sceneResources, minimumExtent = 0.25) {
+    update(bounds, header, sceneResources, minimumExtent = 0.25, multiBounce = false) {
       if (!bounds) return
       const [minimum, maximum] = bounds
       const extent = maximum.map((v, i) => Math.max(v - minimum[i], minimumExtent))
@@ -57,12 +57,13 @@ export function createHybridProbes(device, pipeline, layout) {
       ints[15] = header
       device.queue.writeBuffer(config, 0, configData)
       const bytesPerProbe = 6 * 32
+      const offset = multiBounce ? 0 : first * bytesPerProbe
       encoder.copyBufferToBuffer(
         current,
-        first * bytesPerProbe,
+        offset,
         previous,
-        first * bytesPerProbe,
-        batchCount * bytesPerProbe,
+        offset,
+        multiBounce ? size : batchCount * bytesPerProbe,
       )
       const pass = encoder.beginComputePass()
       pass.setPipeline(pipeline)

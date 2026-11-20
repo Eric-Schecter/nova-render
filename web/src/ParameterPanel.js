@@ -410,6 +410,19 @@ export function attachParameterPanel(
         probeSkyRow.prepend(probeSkyToggle)
         renderer.append(probeSkyRow)
         fields.set('hybrid_probeSkyLighting', { input: probeSkyToggle })
+        const multiBounceRow = document.createElement('label'),
+          multiBounceToggle = document.createElement('input')
+        multiBounceRow.textContent = 'DDGI multi-bounce'
+        multiBounceToggle.type = 'checkbox'
+        multiBounceToggle.setAttribute('aria-label', 'DDGI multi-bounce')
+        multiBounceToggle.checked = h.probeMultiBounce
+        multiBounceToggle.disabled = !h.probeGI || !h.probeSkyLighting
+        multiBounceToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ probeMultiBounce: multiBounceToggle.checked })),
+        )
+        multiBounceRow.prepend(multiBounceToggle)
+        renderer.append(multiBounceRow)
+        fields.set('hybrid_probeMultiBounce', { input: multiBounceToggle })
         const bounceRow = document.createElement('label'),
           bounceToggle = document.createElement('input')
         bounceRow.textContent = 'Diffuse bounce'
@@ -909,9 +922,11 @@ export function attachParameterPanel(
         else field.input.value = value
         if (field.output) field.output.textContent = String(value)
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
-        if (name === 'probeSkyLighting')
+        if (name === 'probeSkyLighting' || name === 'probeMultiBounce')
           field.input.disabled =
-            !adapter.getHybridCapabilities().probeGI || !adapter.getHybrid().probeGI
+            adapter.getHybridCapabilities?.()?.probeGI === false ||
+            !adapter.getHybrid().probeGI ||
+            (name === 'probeMultiBounce' && !adapter.getHybrid().probeSkyLighting)
         if (name === 'shadowLight')
           field.input.closest('label').style.display =
             adapter.getHybrid().view === 'shadows' ? '' : 'none'

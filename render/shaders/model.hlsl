@@ -1213,7 +1213,18 @@ float hybridRotation(uint2 pixel)
 {
     return hybridFrameRotation(pixel, irradiance[6].w);
 }
-float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 position, float3 ray)
+float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out float coverage);
+float3 probeDiffuseRadiance(SurfaceData surface, float3 view, float3 irradiance)
+{
+    float nv = saturate(dot(surface.normal, view));
+    float3 f0 = lerp(dielectricF0(surface.specular), surface.base, surface.metallic);
+    float3 f = fresnel(nv, f0, lerp(surface.specular.a, 1, surface.metallic));
+    return irradiance * saturate(surface.base) * (1 - surface.metallic)
+           * (1 - diffuseFresnel(nv, f, surface.specular)) * surface.ao
+           * clearcoatTransmission(surface, view);
+}
+float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 position, float3 ray,
+                         bool probeFeedback = false)
 {
     InstanceData tri = instances[hitTri];
     InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
@@ -1280,7 +1291,15 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
     hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, aoUV, 0).r, mat.material.w);
     hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
-    return surfaceRadiance(hit, 0, 0, -ray, false, true);
+    float coverage = 0;
+    float3 bounce = 0;
+    if (probeFeedback && emissiveFactor.w > .5 && hit.metallic < 1)
+    {
+        float3 cached = hybridSampleProbes(hit.position, hit.normal, true, coverage);
+        // Conservative feedback limits accumulation through light leaks in the coarse grid.
+        bounce = .65 * probeDiffuseRadiance(hit, -ray, cached);
+    }
+    return surfaceRadiance(hit, 0, 0, -ray, false, true, coverage) + bounce;
 }
 
 // Two buffers keep the previous update available while writing the next batch.
@@ -1328,6 +1347,7 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
     float3 incoming = 0;
     float2 moments = 0;
     bool sampleSky = cameraForward.w > .5 && instances[probeSceneHeader].world._m22 > .5;
+    bool probeFeedback = sampleSky && instances[probeSceneHeader].world._m32 > .5;
     [loop] for (uint j = 0; j < sampleCount; ++j)
     {
         float u = (j + .5) / sampleCount, phi = rotation + j * 2.39996323;
@@ -1336,7 +1356,7 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
         uint instance, hitTriangle;
         float2 bary;
         if (hybridNearest(probeSceneHeader, origin, ray, distance, instance, hitTriangle, bary))
-            incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray);
+            incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray, probeFeedback);
         else if (sampleSky)
             incoming += environmentTexture.SampleLevel(
               textureSampler, environmentDirection(ray), 0).rgb * environmentParams.z;
@@ -1757,10 +1777,7 @@ float4 DeferredPSMain(SkyOut input)
                 {
                     skyCoverage = coverage;
                     // The probe irradiance already includes sky visibility. Keep direct light and specular IBL.
-                    float nv = saturate(dot(s.normal, viewDirection));
-                    float3 f0 = lerp(dielectricF0(s.specular), s.base, s.metallic);
-                    float3 f = fresnel(nv, f0, lerp(s.specular.a, 1, s.metallic));
-                    probeDiffuse *= (1 - diffuseFresnel(nv, f, s.specular)) * s.ao;
+                    probeDiffuse = probeDiffuseRadiance(s, viewDirection, probeLight);
                 }
             }
 #endif

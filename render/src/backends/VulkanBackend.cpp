@@ -300,8 +300,10 @@ namespace render::detail
                   VK_PIPELINE_STAGE_TRANSFER_BIT,
                   VK_ACCESS_TRANSFER_READ_BIT);
             }
-            const VkDeviceSize offset = probeConfig.dimensionsFirst[3] * ProbeBytes;
-            VkBufferCopy       copy{offset, offset, probeConfig.count * ProbeBytes};
+            const bool         feedback = hybrid.probeSkyLighting && hybrid.probeMultiBounce && bool(environment);
+            const VkDeviceSize offset   = feedback ? 0 : probeConfig.dimensionsFirst[3] * ProbeBytes;
+            const VkDeviceSize bytes    = (feedback ? ProbeCount : probeConfig.count) * ProbeBytes;
+            VkBufferCopy       copy{offset, offset, bytes};
             vkCmdCopyBuffer(command, probeCurrent.buffer, probePrevious.buffer, 1, &copy);
             barrier(
               VK_PIPELINE_STAGE_TRANSFER_BIT,

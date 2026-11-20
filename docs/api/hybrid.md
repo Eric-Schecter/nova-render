@@ -32,6 +32,7 @@ Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settin
 - Diffuse bounce: `diffuseBounce` defaults to false. Four cosine-weighted rays per opaque PBR pixel gather one bounce of shaded surface radiance within ten scene units. Misses leave the existing environment lighting in place. This adds local color spill, with no probe cache.
 - DDGI probes: `probeGI` defaults to false. Metal, Vulkan and WebGPU update up to eight probes per frame in a 5 × 4 × 5 grid fitted to scene bounds. Deferred lighting blends neighboring probes using directional hit-distance moments to reduce leaking. With probes on, the per-pixel bounce is bypassed. A scene, material or lighting change restarts the probe cache.
 - Enable `probeSkyLighting` with `probeGI` to sample the loaded environment on probe-ray misses. Valid probe coverage blends in visibility-aware diffuse lighting and blends out diffuse IBL. Specular IBL remains active. The option defaults to false and changing it rebuilds the probe cache.
+- Enable `probeMultiBounce` with DDGI sky lighting and a loaded environment to feed the previous probe cache into diffuse shading at probe-ray hits. It defaults to false. Updates read a stable snapshot, reuse depth visibility, and apply 65% feedback to limit energy buildup. Changing the option rebuilds the cache.
 - History: `temporalReconstruction` defaults to false; `historyWeight` is 0–0.98 (default 0.9). Reprojection uses depth, normal and instance rejection, neighborhood clamping and motion-dependent weighting before post processing and final AA. Transparent OIT overlays are composited afterward.
 
 `view` selects `Final`, `Shadows`, `AmbientOcclusion` or `Reflections` in C++; Web uses `'final'`, `'shadows'`, `'ambient-occlusion'`, `'reflections'`. Diagnostics bypass AA/post. `shadowLight` selects active-light index 0–15; unused slots are fully visible.
@@ -42,7 +43,7 @@ Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settin
 
 Hybrid selects Deferred. Off, FXAA, SMAA and SSAA work; MSAA, TAA and AA split are rejected. Static instances and MASK coverage are supported. BLEND remains OIT, without shadow casting or ray-traced glass. Secondary reflection hits use material textures, including normal maps and material AO. The tangent frame comes from the hit triangle and its UVs, with geometric shading for degenerate UVs. Reflections use one bounce.
 
-Animated geometry, moving-instance motion vectors and hardware ray queries remain unsupported. The DDGI grid uses six lobes per probe and one bounce. It has no relocation, adaptive placement or recursive bounce, and DX12 does not expose probe mode. Scene edits conservatively reset history. Full-frame reconstruction uses combined color. Independent shadow reconstruction filters visibility in time. Half-resolution reflections also use a spatial filter.
+Animated geometry, moving-instance motion vectors and hardware ray queries remain unsupported. The DDGI grid uses six lobes per probe. It has no relocation or adaptive placement, and DX12 does not expose probe mode. Scene edits conservatively reset history. Full-frame reconstruction uses combined color. Independent shadow reconstruction filters visibility in time. Half-resolution reflections also use a spatial filter.
 
 
 ### Local probe bounds
