@@ -75,6 +75,8 @@ Forward, Deferred and Hybrid PBR use the GLB scalar `KHR_materials_transmission`
 
 `hybridReflectionStrength` optionally overrides the scene-wide reflection blend for an opaque or alpha-masked material slot in Hybrid. The value ranges from 0 (environment specular) to 1 (scene-traced specular). Omit it in C++ or use `null` on Web to inherit the scene-wide value.
 
+The Web GLB loader also reads `material.extras.novaHybridReflectionStrength`. This installs the override during scene creation, which avoids repacking the scene and reuploading its textures for an immediate material edit.
+
 ## Update behavior
 
 Setters validate factors, slot IDs and image storage before replacing material data. Invalid input preserves the last successful state. Loading a new model/scene replaces its slots; transform-only scene updates preserve edits. Geometry, source-space bounds and picking results stay unchanged. Animation time is retained, and temporal AA/ray accumulation resets after an edit.

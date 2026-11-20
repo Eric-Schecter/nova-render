@@ -60,11 +60,11 @@ def generate(output):
             "indices": 2,
             "material": 0,
         }]}],
-        "materials": [{"pbrMetallicRoughness": {
+        "materials": [{"extras": {"novaHybridReflectionStrength": 1}, "pbrMetallicRoughness": {
             "baseColorFactor": [0.13, 0.13, 0.13, 1],
             "baseColorTexture": {"index": 0},
             "metallicFactor": 0,
-            "roughnessFactor": 1,
+            "roughnessFactor": 0.35,
         }}],
         "textures": [{"source": 0}],
         "images": [{"bufferView": 4, "mimeType": "image/png"}],

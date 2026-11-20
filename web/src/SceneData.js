@@ -164,76 +164,58 @@ export class SceneData {
     const key = JSON.stringify([...referenced].sort().map((id) => [id, paths.get(id)]))
     if (!this.model || key !== this.key) {
       const next = new Map()
-      const fresh = []
-      try {
-        for (const id of [...referenced].sort()) {
-          const previous = this.meshes.get(id)
-          const data =
-            previous?.url === paths.get(id) ? previous.data : await loadGLB(paths.get(id))
-          if (data !== previous?.data) {
-            fresh.push(data)
-            for (const image of data.images)
-              if (image.bitmap) {
-                const canvas = new OffscreenCanvas(image.width, image.height)
-                const context = canvas.getContext('2d')
-                context.drawImage(image.bitmap, 0, 0)
-                image.pixels = new Uint8Array(
-                  context.getImageData(0, 0, image.width, image.height).data,
-                )
-                image.bitmap.close()
-                delete image.bitmap
-              }
-          }
-          if (data.animation && !data.skinInputs) createAnimationPlayer(data)
-          next.set(id, {
-            data,
-            url: paths.get(id),
-            picking: previous?.data === data ? previous.picking : new PickMesh(data),
-          })
-        }
-        const packed = emptyModelData()
-        packed.materials = []
-        packed.hasTransmission = [...next.values()].some((m) => m.data.hasTransmission)
-        let vertexCount = 0
-        for (const m of next.values()) vertexCount += m.data.vertices.length
-        packed.vertices = new Float32Array(vertexCount)
-        if ([...next.values()].some((m) => m.data.animation))
-          packed.skinInputs = new Uint8Array((vertexCount / modelVertexFloats) * 64)
-        let offset = 0
-        for (const m of next.values()) {
-          m.first = offset / modelVertexFloats
-          m.count = m.data.vertices.length / modelVertexFloats
-          packed.vertices.set(m.data.vertices, offset)
-          if (m.data.skinInputs)
-            packed.skinInputs.set(m.data.skinInputs, (offset / modelVertexFloats) * 64)
-          for (let i = offset + 3; i < offset + m.data.vertices.length; i += modelVertexFloats)
-            packed.vertices[i] += packed.materials.length
-          packed.materials.push(...m.data.materials)
-          offset += m.data.vertices.length
-        }
-        packMaterials(packed)
-        let shadowCount = 0
-        for (const m of next.values()) {
-          m.shadowFirst = shadowCount / 48
-          m.shadowData = m.picking.shadowRecords()
-          m.shadowNodes = m.picking.nodes.length
-          shadowCount += m.shadowData.length
-        }
-        if (shadowCount * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
-        this.shadowRecords = new Float32Array(shadowCount)
-        for (const m of next.values()) {
-          this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
-          const offset = packed.vertices[m.first * modelVertexFloats + 3] - m.data.vertices[3]
-          for (let row = m.shadowNodes; row < m.shadowData.length / 48; row++)
-            this.shadowRecords[(m.shadowFirst + row) * 48 + 43] += offset
-        }
-        this.model = packed
-        this.meshes = next
-        this.key = key
-      } catch (e) {
-        fresh.forEach((data) => data.images.forEach((i) => i.bitmap?.close()))
-        throw e
+      for (const id of [...referenced].sort()) {
+        const previous = this.meshes.get(id)
+        const data =
+          previous?.url === paths.get(id)
+            ? previous.data
+            : await loadGLB(paths.get(id), { pack: false })
+        if (data.animation && !data.skinInputs) createAnimationPlayer(data)
+        next.set(id, {
+          data,
+          url: paths.get(id),
+          picking: previous?.data === data ? previous.picking : new PickMesh(data),
+        })
       }
+      const packed = emptyModelData()
+      packed.materials = []
+      packed.hasTransmission = [...next.values()].some((m) => m.data.hasTransmission)
+      let vertexCount = 0
+      for (const m of next.values()) vertexCount += m.data.vertices.length
+      packed.vertices = new Float32Array(vertexCount)
+      if ([...next.values()].some((m) => m.data.animation))
+        packed.skinInputs = new Uint8Array((vertexCount / modelVertexFloats) * 64)
+      let offset = 0
+      for (const m of next.values()) {
+        m.first = offset / modelVertexFloats
+        m.count = m.data.vertices.length / modelVertexFloats
+        packed.vertices.set(m.data.vertices, offset)
+        if (m.data.skinInputs)
+          packed.skinInputs.set(m.data.skinInputs, (offset / modelVertexFloats) * 64)
+        for (let i = offset + 3; i < offset + m.data.vertices.length; i += modelVertexFloats)
+          packed.vertices[i] += packed.materials.length
+        packed.materials.push(...m.data.materials)
+        offset += m.data.vertices.length
+      }
+      packMaterials(packed)
+      let shadowCount = 0
+      for (const m of next.values()) {
+        m.shadowFirst = shadowCount / 48
+        m.shadowData = m.picking.shadowRecords()
+        m.shadowNodes = m.picking.nodes.length
+        shadowCount += m.shadowData.length
+      }
+      if (shadowCount * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
+      this.shadowRecords = new Float32Array(shadowCount)
+      for (const m of next.values()) {
+        this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
+        const offset = packed.vertices[m.first * modelVertexFloats + 3] - m.data.vertices[3]
+        for (let row = m.shadowNodes; row < m.shadowData.length / 48; row++)
+          this.shadowRecords[(m.shadowFirst + row) * 48 + 43] += offset
+      }
+      this.model = packed
+      this.meshes = next
+      this.key = key
     }
     const spaces = new Map(assets.map((a) => [a.id, !!a.sourceSpace]))
     const effective = input.map((i) => {
@@ -288,12 +270,17 @@ export class SceneData {
         if (i.assetId === id) {
           const normal = instanceNormal(i.world)
           const invertible = normal.some((v) => v !== 0)
+          const material = m.data.materials[0]
           const values = [
             ...i.world,
             ...normal,
-            ...m.data.baseColor,
-            ...m.data.material,
-            ...m.data.emissive,
+            ...material.baseColor,
+            material.metallic,
+            material.roughness,
+            material.normalScale,
+            material.occlusionStrength,
+            ...material.emissive,
+            0,
             input.length,
             m.shadowFirst,
             i.castShadow === false || !invertible ? 0 : 1,
@@ -519,7 +506,6 @@ export class SceneData {
       throw Error('Unknown scene material slot')
     const data = { ...m.data, materials: [...m.data.materials] }
     data.materials[slot] = validateMaterial(material)
-    packMaterials(data)
     this.meshes = new Map(this.meshes)
     this.meshes.set(id, { ...m, data })
     this.model = null
@@ -535,7 +521,6 @@ export class SceneData {
     this.rayKey = ''
     this.shadowRecords = new Float32Array(0)
     this.pickInstances = []
-    for (const m of this.meshes.values()) m.data.images.forEach((i) => i.bitmap?.close())
     this.meshes = new Map()
     this.sourceSpaces = new Map()
     this.key = ''

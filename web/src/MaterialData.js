@@ -195,17 +195,23 @@ export function packMaterials(data) {
       for (let k = 0; k < mapCount; k++) {
         const src = m[materialTextureKeys[k]] || defaults[k],
           dst = data.images[k].pixels
-        for (let py = 0; py < stride; py++)
-          for (let px = 0; px < stride; px++) {
-            const sx = Math.round(
-                Math.max(0, Math.min(1, (px - 2) / Math.max(1, tile - 1))) * (src.width - 1),
-              ),
-              sy = Math.round(
-                Math.max(0, Math.min(1, (py - 2) / Math.max(1, tile - 1))) * (src.height - 1),
-              ),
-              from = (sy * src.width + sx) * 4
-            dst.set(src.pixels.subarray(from, from + 4), ((y + py) * width + x + px) * 4)
+        const coordinate = (p, size) =>
+          Math.round(Math.max(0, Math.min(1, (p - 2) / Math.max(1, tile - 1))) * (size - 1))
+        const columns = Int32Array.from(
+          { length: stride },
+          (_, px) => coordinate(px, src.width) * 4,
+        )
+        for (let py = 0; py < stride; py++) {
+          const sourceRow = coordinate(py, src.height) * src.width * 4
+          let to = ((y + py) * width + x) * 4
+          for (const column of columns) {
+            const from = sourceRow + column
+            dst[to++] = src.pixels[from]
+            dst[to++] = src.pixels[from + 1]
+            dst[to++] = src.pixels[from + 2]
+            dst[to++] = src.pixels[from + 3]
           }
+        }
       }
   })
   return data

@@ -89,12 +89,6 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
         { id: 'floor', assetId: 'floor' },
       ],
     )
-    const [floorMaterial] = renderer.getMaterials('floor')
-    await renderer.setMaterial(
-      0,
-      { ...floorMaterial, roughness: 0.35, hybridReflectionStrength: 1 },
-      'floor',
-    )
     async function applyLighting(lighting) {
       const outdoors = lighting === 'quarry'
       await renderer.loadEnvironment(assets + (outdoors ? 'QuarryClouds.bin' : 'CleanStudio.bin'))

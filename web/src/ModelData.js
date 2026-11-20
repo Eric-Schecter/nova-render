@@ -48,7 +48,7 @@ export function nodeMatrix(n) {
     1,
   ]
 }
-export async function loadGLB(url) {
+export async function loadGLB(url, { pack = true } = {}) {
   const response = await fetch(url)
   if (!response.ok) throw Error('Load GLB: HTTP ' + response.status)
   const bytes = await response.arrayBuffer(),
@@ -261,6 +261,7 @@ export async function loadGLB(url) {
   }
   if (json.materials.length > 128) throw Error('At most 128 material slots are supported')
   const materials = []
+  const decodedImages = new Map()
   for (const material of json.materials) {
     const pbr = material.pbrMetallicRoughness || {}
     const specular = material.extensions?.KHR_materials_specular
@@ -299,78 +300,65 @@ export async function loadGLB(url) {
       material.emissiveTexture,
       ...coatTextureKeys.map((key) => coat?.[key]),
     ]
-    const fallback = [
-      [255, 255, 255, 255],
-      [128, 128, 255, 255],
-      [255, 255, 255, 255],
-      [255, 255, 255, 255],
-      [0, 0, 0, 255],
-      [255, 255, 255, 255],
-      [255, 255, 255, 255],
-      [128, 128, 255, 255],
-    ]
     const images = []
-    try {
-      for (let i = 0; i < textures.length; i++) {
-        if (!textures[i]) {
-          images.push({ width: 1, height: 1, pixels: new Uint8Array(fallback[i]) })
-          continue
-        }
-        if (i < 5 && i !== 3 && (textures[i].texCoord ?? 0) !== 0)
-          throw Error('Only AO textures support TEXCOORD_1')
-        const image = json.images[json.textures[textures[i].index].source]
+    for (const [i, texture] of textures.entries()) {
+      if (!texture) continue
+      if (i < 5 && i !== 3 && (texture.texCoord ?? 0) !== 0)
+        throw Error('Only AO textures support TEXCOORD_1')
+      const source = json.textures[texture.index].source
+      if (!decodedImages.has(source)) {
+        const image = json.images[source]
         if (image.bufferView === undefined) throw Error('GLB images must be embedded')
         const view = json.bufferViews[image.bufferView],
           offset = view.byteOffset || 0
         if (offset + view.byteLength > bin.byteLength) throw Error('Image out of bounds')
-        images.push(
-          await decodeMaterialImage(
-            new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
-          ),
+        const decoded = await decodeMaterialImage(
+          new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
         )
+        decodedImages.set(source, decoded)
       }
-      materials.push(
-        validateMaterial({
-          name: material.name || '',
-          baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
-          metallic: pbr.metallicFactor ?? 1,
-          roughness: pbr.roughnessFactor ?? 1,
-          specularFactor: specular?.specularFactor,
-          clearcoatFactor: coat?.clearcoatFactor,
-          clearcoatRoughnessFactor: coat?.clearcoatRoughnessFactor,
-          clearcoatNormalScale: coat?.clearcoatNormalTexture?.scale,
-          clearcoatTexCoords: coatTextureKeys.map((key) => coat?.[key]?.texCoord ?? 0),
-          specularColorFactor: specular?.specularColorFactor,
-          alphaMode: material.alphaMode ?? 'OPAQUE',
-          alphaCutoff: material.alphaCutoff ?? 0.5,
-          doubleSided: material.doubleSided ?? false,
-          normalScale: material.normalTexture?.scale ?? 1,
-          occlusionStrength: material.occlusionTexture?.strength ?? 1,
-          occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,
-          emissive: material.emissiveFactor || [0, 0, 0],
-          baseColorTexture: textures[0] ? images[0] : null,
-          normalTexture: textures[1] ? images[1] : null,
-          metallicRoughnessTexture: textures[2] ? images[2] : null,
-          occlusionTexture: textures[3] ? images[3] : null,
-          emissiveTexture: textures[4] ? images[4] : null,
-          clearcoatTexture: textures[5] ? images[5] : null,
-          clearcoatRoughnessTexture: textures[6] ? images[6] : null,
-          clearcoatNormalTexture: textures[7] ? images[7] : null,
-        }),
-      )
-    } catch (e) {
-      for (const im of images) im.bitmap?.close()
-      throw e
+      images[i] = decodedImages.get(source)
     }
+    materials.push(
+      validateMaterial({
+        name: material.name || '',
+        baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
+        metallic: pbr.metallicFactor ?? 1,
+        roughness: pbr.roughnessFactor ?? 1,
+        hybridReflectionStrength: material.extras?.novaHybridReflectionStrength,
+        specularFactor: specular?.specularFactor,
+        clearcoatFactor: coat?.clearcoatFactor,
+        clearcoatRoughnessFactor: coat?.clearcoatRoughnessFactor,
+        clearcoatNormalScale: coat?.clearcoatNormalTexture?.scale,
+        clearcoatTexCoords: coatTextureKeys.map((key) => coat?.[key]?.texCoord ?? 0),
+        specularColorFactor: specular?.specularColorFactor,
+        alphaMode: material.alphaMode ?? 'OPAQUE',
+        alphaCutoff: material.alphaCutoff ?? 0.5,
+        doubleSided: material.doubleSided ?? false,
+        normalScale: material.normalTexture?.scale ?? 1,
+        occlusionStrength: material.occlusionTexture?.strength ?? 1,
+        occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,
+        emissive: material.emissiveFactor || [0, 0, 0],
+        baseColorTexture: textures[0] ? images[0] : null,
+        normalTexture: textures[1] ? images[1] : null,
+        metallicRoughnessTexture: textures[2] ? images[2] : null,
+        occlusionTexture: textures[3] ? images[3] : null,
+        emissiveTexture: textures[4] ? images[4] : null,
+        clearcoatTexture: textures[5] ? images[5] : null,
+        clearcoatRoughnessTexture: textures[6] ? images[6] : null,
+        clearcoatNormalTexture: textures[7] ? images[7] : null,
+      }),
+    )
   }
-  return packMaterials({
+  const data = {
     animation,
     hasTransmission,
     vertices: new Float32Array(vertices),
     sourceMinimum: min,
     sourceMaximum: max,
     materials,
-  })
+  }
+  return pack ? packMaterials(data) : data
 }
 
 export function validateCamera(c) {
