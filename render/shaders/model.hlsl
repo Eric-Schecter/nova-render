@@ -149,7 +149,7 @@ bool shadowBox(float3 low, float3 high, float3 origin, float3 direction, float m
     }
     return true;
 }
-bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase)
+bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase, bool shadowOnly)
 {
     float3 a = tri.baseColor.xyz, e = tri.material.xyz - a, f = tri.emissive.xyz - a, p = cross(direction, f);
     float  determinant = dot(e, p);
@@ -167,6 +167,9 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
         return false;
     InstanceData material = instances[materialBase + uint(tri.emissive.w)];
     uint         flags = uint(material.emissive.w), mode = flags & 3;
+    // Fully transmitting dielectrics should not block opaque visibility rays.
+    if (shadowOnly && tri.world._m21 >= 1 && material.material.x == 0)
+        return false;
     if (mode == 2 || ((flags & 4) == 0 && determinant <= 0))
         return false;
     if (mode == 1)
@@ -219,7 +222,7 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
                                                               localOrigin,
                                                               localDirection,
                                                               maxDistance,
-                                                              uint(instance.uv.x))) return true;
+                                                              uint(instance.uv.x), shadowOnly)) return true;
             node = uint(box.baseColor.w);
         }
     }
@@ -896,6 +899,23 @@ float3 glassRadiance(SurfaceData s, float2 pixel)
         ? environmentTexture.SampleLevel(textureSampler, environmentDirection(reflectedDirection),
                                         s.roughness * environmentParams.w).rgb * environmentParams.z
         : studio(reflectedDirection, s.roughness);
+    // The environment contains only distant lighting. Local softboxes must also
+    // contribute to the reflection of a transmitting surface.
+    if (emissiveFactor.w > .5 && irradiance[3].w > .5)
+    {
+        uint header = uint(irradiance[3].w) - 1;
+        uint count = uint(instances[header].uv.y), offset = uint(instances[header].uv.z);
+        [loop] for (uint i = 0; i < count; ++i)
+        {
+            InstanceData light = instances[offset + i];
+            if (uint(light.emissive.w) != 3 || light.baseColor.w <= 0)
+                continue;
+            float planeDistance = dot(s.position - light.material.xyz, light.emissive.xyz);
+            if (planeDistance > 0)
+                reflected += rectangleSpecular(light, s, view, s.normal, s.roughness, 1.xxx, 1,
+                                               planeDistance, light.uv.z > .5);
+        }
+    }
     float f = (s.dielectric.y - 1) / (s.dielectric.y + 1);
     float3 reflectance = fresnel(saturate(dot(s.normal, view)), (f * f).xxx, 1);
     float3 reflection = applyFog(displayRadiance(reflected), s.position) * reflectance;
@@ -1134,7 +1154,7 @@ bool hybridNearest(
             {
                 uint         index = root + uint(box.uv.z) + t;
                 InstanceData tri   = instances[index];
-                if (!shadowTriangle(tri, o, d, distance, uint(instances[i].uv.x)))
+                if (!shadowTriangle(tri, o, d, distance, uint(instances[i].uv.x), false))
                     continue;
                 float3 e = tri.material.xyz - tri.baseColor.xyz, f = tri.emissive.xyz - tri.baseColor.xyz;
                 float3 p = cross(d, f), q = cross(o - tri.baseColor.xyz, e);

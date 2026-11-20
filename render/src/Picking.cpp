@@ -135,6 +135,7 @@ namespace render::detail
         for (size_t t = 0; t < triangles_.size(); t++)
         {
             auto& record = records[nodes_.size() + t];
+            record[6] = data_->vertices[size_t(triangles_[t]) * 3].normal[3];
             for (int j = 0; j < 3; j++)
             {
                 const auto& vertex = data_->vertices[size_t(triangles_[t]) * 3 + j];

@@ -93,6 +93,7 @@ export class PickMesh {
     if (this.nodes.length) escape(0, this.nodes.length)
     this.triangles.forEach((t, i) => {
       const row = (this.nodes.length + i) * 48
+      records[row + 6] = this.data.vertices[t * 3 * modelVertexFloats + 7]
       for (let j = 0; j < 3; j++) {
         records.set(this.point(t, j), row + 32 + j * 4)
         const v = (t * 3 + j) * modelVertexFloats
