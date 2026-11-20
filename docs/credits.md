@@ -57,6 +57,6 @@ The pinned release archive is checksum-verified during documentation preparation
 
 ## CarConcept showroom
 
-CarConcept model and textures by Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Nova uses the Carmine paint, bakes UV transforms, omits unused variants and iridescence, and approximates extended emissive strength. Embedded logos retain their Khronos terms. [Upstream asset and notices](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept).
+CarConcept model and textures by Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Nova uses the Carmine paint, bakes UV transforms, omits unused variants and iridescence, and approximates extended emissive strength and reduces the normal-map strength on selected paint and interior materials. Embedded logos retain their Khronos terms. [Upstream asset and notices](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept).
 
 The quarry environment is a Nova bake of `Quarry_Clouds_4k` from the [Google Cloud Immersive Stream for XR template](https://github.com/GoogleCloudPlatform/immersive-stream-for-xr-templates), distributed with its [Apache 2.0 license](https://github.com/GoogleCloudPlatform/immersive-stream-for-xr-templates/blob/main/LICENSE).
