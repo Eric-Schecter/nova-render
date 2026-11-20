@@ -281,7 +281,7 @@ namespace render::detail
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaDeferredHalf;
+          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaProbeReflection, aaDeferredHalf;
         id<MTLComputePipelineState> probeUpdatePipeline;
         id<MTLRenderPipelineState>  probeDeferredPipeline, probeDeferredHalf;
         id<MTLBuffer>               probeCurrent, probePrevious;
@@ -377,7 +377,8 @@ namespace render::detail
                       i == 0 ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
                 }
             }
-            if (std::string(file) != "model-hybrid-reflection.metallib")
+            if (std::string_view(file) != "model-hybrid-reflection.metallib"
+                && std::string_view(file) != "model-probe-reflection.metallib")
                 desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
             desc.sampleCount                = samples;
             auto pipeline                   = [device newRenderPipelineStateWithDescriptor:desc error:&error];
@@ -435,22 +436,26 @@ namespace render::detail
                 [e setFragmentSamplerState:modelSampler atIndex:7];
                 if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
-                    const bool probes = pass.program == -5 && probeFrame;
+                    const bool probeReflection = pass.program == -8 && probeFrame && environment
+                                                 && hybrid.probeSkyLighting && hybrid.probeReflectionLighting;
+                    const bool probes = (pass.program == -5 && probeFrame) || probeReflection;
                     const bool half = pass.program == -5 && pass.sources[9] != AADummy;
-                    auto& active = pass.program == -8 ? aaHybridReflection
-                                   : pass.program == -7 ? aaHybridShadow
-                                   : probes && half     ? probeDeferredHalf
-                                   : probes             ? probeDeferredPipeline
-                                   : half               ? aaDeferredHalf
-                                                        : aaDeferred;
+                    auto&      active = probeReflection      ? aaProbeReflection
+                                        : pass.program == -8 ? aaHybridReflection
+                                        : pass.program == -7 ? aaHybridShadow
+                                        : probes && half     ? probeDeferredHalf
+                                        : probes             ? probeDeferredPipeline
+                                        : half               ? aaDeferredHalf
+                                                             : aaDeferred;
                     if (!active)
                         active = AAPipeline(
-                          pass.program == -8 ? "model-hybrid-reflection.metallib"
+                          probeReflection      ? "model-probe-reflection.metallib"
+                          : pass.program == -8 ? "model-hybrid-reflection.metallib"
                           : pass.program == -7 ? "model-hybrid-shadow.metallib"
-                          : probes && half   ? "model-probe-deferred-half.metallib"
-                          : probes           ? "model-probe-deferred.metallib"
-                          : half             ? "model-deferred-half.metallib"
-                                             : "model-deferred.metallib",
+                          : probes && half     ? "model-probe-deferred-half.metallib"
+                          : probes             ? "model-probe-deferred.metallib"
+                          : half               ? "model-deferred-half.metallib"
+                                               : "model-deferred.metallib",
                           1);
                     if (probes)
                     {

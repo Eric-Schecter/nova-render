@@ -184,6 +184,12 @@ const probeDeferredHalf = await compile(
   '#define NOVA_HYBRID_PROBES 1\n#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource,
   { model: true, vertexEntry: 'SkyVSMain', fragmentEntry: 'DeferredPSMain', optimizeModel: true },
 )
+const probeReflection = await compile('#define NOVA_HYBRID_PROBES 1\n' + rasterSource, {
+  model: true,
+  vertexEntry: 'SkyVSMain',
+  fragmentEntry: 'HybridReflectionPSMain',
+  optimizeModel: true,
+})
 await writeFile(
   'docs/public/generated/model-probes.json',
   JSON.stringify({
@@ -191,6 +197,7 @@ await writeFile(
     vert: probeDeferred.vert,
     frag: probeDeferred.frag,
     halfFrag: probeDeferredHalf.frag,
+    reflectionFrag: probeReflection.frag,
   }),
 )
 

@@ -1224,7 +1224,7 @@ float3 probeDiffuseRadiance(SurfaceData surface, float3 view, float3 irradiance)
            * clearcoatTransmission(surface, view);
 }
 float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 position, float3 ray,
-                         bool probeFeedback = false)
+                         float probeFeedback = 0)
 {
     InstanceData tri = instances[hitTri];
     InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
@@ -1293,11 +1293,11 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
     float coverage = 0;
     float3 bounce = 0;
-    if (probeFeedback && emissiveFactor.w > .5 && hit.metallic < 1)
+    if (probeFeedback > 0 && emissiveFactor.w > .5 && hit.metallic < 1)
     {
         float3 cached = hybridSampleProbes(hit.position, hit.normal, true, coverage);
         // Conservative feedback limits accumulation through light leaks in the coarse grid.
-        bounce = .65 * probeDiffuseRadiance(hit, -ray, cached);
+        bounce = probeFeedback * probeDiffuseRadiance(hit, -ray, cached);
     }
     return surfaceRadiance(hit, 0, 0, -ray, false, true, coverage) + bounce;
 }
@@ -1356,7 +1356,7 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
         uint instance, hitTriangle;
         float2 bary;
         if (hybridNearest(probeSceneHeader, origin, ray, distance, instance, hitTriangle, bary))
-            incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray, probeFeedback);
+            incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray, probeFeedback ? .65 : 0);
         else if (sampleSky)
             incoming += environmentTexture.SampleLevel(
               textureSampler, environmentDirection(ray), 0).rgb * environmentParams.z;
@@ -1522,7 +1522,12 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
                 hitDistance += distance;
                 ++hitCount;
             }
-            radiance = hybridHitRadiance(instance, hitTri, bary, origin + ray * distance, ray);
+            float probeWeight = 0;
+#if defined(NOVA_HYBRID_PROBES)
+            if (probeDimensionsFirst.x > 0 && cameraForward.w > .5 && instances[header].world._m03 > .5)
+                probeWeight = 1;
+#endif
+            radiance = hybridHitRadiance(instance, hitTri, bary, origin + ray * distance, ray, probeWeight);
         }
         else
             radiance =

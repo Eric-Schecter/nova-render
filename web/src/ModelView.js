@@ -210,6 +210,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     let probes,
       probeDeferred,
       probeDeferredHalf,
+      probeReflectionPipeline,
       probeShader,
       probeBounds,
       probeLightingKey,
@@ -365,6 +366,27 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           false,
           true,
         )
+      if (
+        hybrid.reflections &&
+        hybrid.halfResolutionReflections &&
+        hybrid.probeSkyLighting &&
+        hybrid.probeReflectionLighting &&
+        environment &&
+        !probeReflectionPipeline
+      )
+        probeReflectionPipeline = await pipelineFor(
+          { vert: probeShader.vert, frag: probeShader.reflectionFrag },
+          false,
+          1,
+          false,
+          true,
+          false,
+          false,
+          false,
+          false,
+          true,
+          true,
+        )
       const key = JSON.stringify([lighting, light, environmentSettings])
       if (key !== probeLightingKey) probes.invalidate()
       probeLightingKey = key
@@ -409,6 +431,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       record[8] = hybrid?.clearcoatReflections ? 1 : 0
       record[10] = hybrid?.probeSkyLighting ? 1 : 0
       record[11] = hybrid?.probeMultiBounce ? 1 : 0
+      record[12] = hybrid?.probeSkyLighting && hybrid.probeReflectionLighting ? 1 : 0
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
@@ -698,10 +721,18 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
               })),
             }),
           )
-          if (program === -5 && probeEnabled) pass.setBindGroup(2, probes.read)
+          const probeReflection =
+            program === -8 &&
+            probeEnabled &&
+            environment &&
+            hybrid.probeSkyLighting &&
+            hybrid.probeReflectionLighting
+          if ((program === -5 && probeEnabled) || probeReflection) pass.setBindGroup(2, probes.read)
           pass.setPipeline(
             program === -8
-              ? aaPipelines.halfReflection
+              ? probeReflection
+                ? probeReflectionPipeline
+                : aaPipelines.halfReflection
               : program === -7
                 ? aaPipelines.hybridShadow
                 : probeEnabled
