@@ -8,6 +8,8 @@ Use Parameters to switch Raster / Hybrid, toggle shadows, AO, reflections, DDGI 
 
 Shared HLSL implements shadows, AO, one-bounce GGX reflections and one-bounce diffuse indirect light through a GPU shader BVH, followed by temporal reconstruction. Select Global Illumination Test and toggle DDGI probes to compare the cached lighting with the per-pixel Diffuse bounce mode. Hardware ray queries remain unavailable. Reference scenes retain their original geometry, materials and camera presets with validation lighting. Reflections Test uses a baked Hosek–Wilkie sky and sun direction from the reference implementation; the shared six-lobe probe grid is an approximation of the reference application’s lighting. Resources are credited in the footer. [Hybrid API](../api/hybrid) · [Validation](../validation/hybrid).
 
+Reflections Test starts with two reflection rays per pixel and enables half-resolution temporal reflection denoising when supported. The sky remains visible at full brightness while its contribution to scene lighting is reduced.
+
 The [CarConcept showroom acceptance test](../validation/hybrid#carconcept-showroom-acceptance) uses the nova-editor scene to check image parity and frame time with a fixed camera and a moving camera.
 
 Open the [CarConcept showroom](./car-showroom) for the neutral studio lighting example.

@@ -15,6 +15,7 @@ export async function createHybridScenes(renderer, canvas, shaderDirectory, opti
     orbit,
     lens,
     orbitControls,
+    previousReflectionSettings,
     disposed = false,
     loading = false
   const check = () => {
@@ -123,6 +124,29 @@ export async function createHybridScenes(renderer, canvas, shaderDirectory, opti
           next.environment ? new URL(next.environment, directory).href : null,
         )
         check()
+      }
+      if (id === 'reflections-test' && current?.id !== id) {
+        const { reflectionSamples, halfResolutionReflections, reflectionDenoising } =
+          renderer.getHybrid()
+        const { intensity } = renderer.getEnvironment()
+        previousReflectionSettings = {
+          reflectionSamples,
+          halfResolutionReflections,
+          reflectionDenoising,
+          intensity,
+        }
+        const canDenoise = renderer.getHybridCapabilities().halfResolutionReflections
+        renderer.setHybrid({
+          reflectionSamples: 2,
+          halfResolutionReflections: canDenoise,
+          reflectionDenoising: canDenoise,
+        })
+        renderer.setEnvironment({ ...renderer.getEnvironment(), intensity: 0.78 })
+      } else if (id !== 'reflections-test' && previousReflectionSettings) {
+        const { intensity, ...hybrid } = previousReflectionSettings
+        renderer.setHybrid(hybrid)
+        renderer.setEnvironment({ ...renderer.getEnvironment(), intensity })
+        previousReflectionSettings = undefined
       }
       current = next
       renderer.setLighting('pbr')
