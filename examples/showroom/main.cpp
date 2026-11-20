@@ -32,6 +32,8 @@ int main(int argc, char** argv)
           {car, {"floor", "floor"}});
         window.LoadEnvironment(assets / "CleanStudio.nenv");
         EnvironmentSettings environment;
+        // Align the equirectangular HDRI with the UE reference capture.
+        environment.rotation       = -90;
         environment.showBackground = false;
         window.SetEnvironment(environment);
         Camera camera;

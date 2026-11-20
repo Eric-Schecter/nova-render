@@ -24,7 +24,8 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     )
     await renderer.loadEnvironment(assets + 'CleanStudio.bin')
     renderer.setEnvironment({
-      rotation: 0,
+      // Match the equirectangular HDRI orientation of the UE reference.
+      rotation: -90,
       intensity: 1,
       backgroundIntensity: 1,
       showBackground: false,
