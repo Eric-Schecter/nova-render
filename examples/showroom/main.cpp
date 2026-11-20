@@ -30,6 +30,9 @@ int main(int argc, char** argv)
         window.SetScene(
           {{"car", assets / "CarConcept.glb", true}, {"floor", assets / "Ground.glb", true}},
           {car, {"floor", "floor"}});
+        auto floorMaterial = window.GetMaterials("floor").at(0);
+        floorMaterial.hybridReflectionStrength = 1.f;
+        window.SetMaterial(0, floorMaterial, "floor");
         window.LoadEnvironment(assets / "CleanStudio.nenv");
         EnvironmentSettings environment;
         // Align the equirectangular HDRI with the UE reference capture.

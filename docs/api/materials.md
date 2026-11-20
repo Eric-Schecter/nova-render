@@ -73,6 +73,8 @@ Forward, Deferred and Hybrid PBR use the GLB scalar `KHR_materials_transmission`
 - `clearcoatNormalTexture` perturbs only the coat normal using linear RGB in a tangent frame derived from geometry and UVs. `clearcoatNormalScale` scales its tangent-plane components and defaults to 1.
 - `clearcoatTexCoords` defaults to `[0, 0, 0]` and selects UV0 or UV1 independently for strength, roughness, and normal. The importer reads each map's `texCoord` field. Runtime edits use the same material slot setters as base material edits.
 
+`hybridReflectionStrength` optionally overrides the scene-wide reflection blend for an opaque or alpha-masked material slot in Hybrid. The value ranges from 0 (environment specular) to 1 (scene-traced specular). Omit it in C++ or use `null` on Web to inherit the scene-wide value.
+
 ## Update behavior
 
 Setters validate factors, slot IDs and image storage before replacing material data. Invalid input preserves the last successful state. Loading a new model/scene replaces its slots; transform-only scene updates preserve edits. Geometry, source-space bounds and picking results stay unchanged. Animation time is retained, and temporal AA/ray accumulation resets after an edit.

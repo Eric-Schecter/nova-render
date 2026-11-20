@@ -1602,10 +1602,12 @@ float4 DeferredPSMain(SkyOut input)
     float4 coat       = gClearcoat.Load(pixel);
     s.coatNormal      = octDecode(coat.xy);
     s.clearcoat       = coat.zw;
+    float reflectionOverride = -1;
     if (pos.w > .5 && irradiance[3].w > pos.w)
     {
         InstanceData material = instances[uint(irradiance[3].w - 1 - pos.w)];
         s.specular = materialSpecular(material);
+        reflectionOverride = material.world._m32;
     }
     if (s.useVisibility)
     {
@@ -1630,7 +1632,7 @@ float4 DeferredPSMain(SkyOut input)
                 reflection = hybridReflection(s, rotation, header, traceCoat);
             if (instances[header].world._m30 > 2.5)
                 return float4(displayRadiance(reflection), 1);
-            reflectionMix = instances[header].world._m21;
+            reflectionMix = reflectionOverride >= 0 ? reflectionOverride : instances[header].world._m21;
         }
         bool diffuseBounce = instances[header].world._m31 > 0 && emissiveFactor.w > .5;
 #if defined(NOVA_HYBRID_PROBES)

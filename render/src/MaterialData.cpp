@@ -72,6 +72,8 @@ namespace render::detail
         range(m.roughness, 1);
         range(m.metallic, 1);
         range(m.specularFactor, 1);
+        if (m.hybridReflectionStrength)
+            range(*m.hybridReflectionStrength, 1);
         range(m.clearcoatFactor, 1);
         range(m.clearcoatRoughnessFactor, 1);
         if (!std::isfinite(m.clearcoatNormalScale))
@@ -156,7 +158,7 @@ namespace render::detail
             std::array<float, 48> record{};
             for (int k : {0, 5, 10, 15, 16, 21, 26, 31})
                 record[k] = 1;
-            // Material records reuse the first two columns of the unused world matrix.
+            // Material records reuse the unused world matrix.
             std::copy(m.specularColorFactor.begin(), m.specularColorFactor.end(), record.begin());
             record[3] = m.specularFactor;
             record[4] = m.clearcoatFactor;
@@ -167,7 +169,8 @@ namespace render::detail
               | (m.clearcoatNormalTexture ? 4 : 0));
             record[8] =
               float(m.clearcoatTexCoords[0] | (m.clearcoatTexCoords[1] << 1) | (m.clearcoatTexCoords[2] << 2));
-            record[9] = m.clearcoatNormalScale;
+            record[9]  = m.clearcoatNormalScale;
+            record[11] = m.hybridReflectionStrength.value_or(-1.f);
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
             record[36] = m.metallic;
             record[37] = m.roughness;

@@ -40,6 +40,7 @@ export function validateMaterial(m) {
     occlusionTexCoord: m.occlusionTexCoord ?? 0,
     emissive: m.emissive ?? [0, 0, 0],
     specularFactor: m.specularFactor ?? 1,
+    hybridReflectionStrength: m.hybridReflectionStrength ?? null,
     clearcoatFactor: m.clearcoatFactor ?? 0,
     clearcoatRoughnessFactor: m.clearcoatRoughnessFactor ?? 0,
     clearcoatNormalScale: m.clearcoatNormalScale ?? 1,
@@ -89,6 +90,10 @@ export function validateMaterial(m) {
   ]) {
     range(out[key], max)
     out[key] = Math.fround(out[key])
+  }
+  if (out.hybridReflectionStrength !== null) {
+    range(out.hybridReflectionStrength, 1)
+    out.hybridReflectionStrength = Math.fround(out.hybridReflectionStrength)
   }
   for (const key of materialTextureKeys) {
     const im = m[key]
@@ -159,7 +164,7 @@ export function packMaterials(data) {
       x = (i % cols) * stride,
       y = Math.floor(i / cols) * stride
     for (const k of [0, 5, 10, 15, 16, 21, 26, 31]) record[k] = 1
-    // Material records reuse the first two columns of the unused world matrix.
+    // Material records reuse the unused world matrix.
     record.set(m.specularColorFactor ?? [1, 1, 1], 0)
     record[3] = m.specularFactor ?? 1
     record[4] = m.clearcoatFactor ?? 0
@@ -172,6 +177,7 @@ export function packMaterials(data) {
     const uv = m.clearcoatTexCoords ?? [0, 0, 0]
     record[8] = uv[0] | (uv[1] << 1) | (uv[2] << 2)
     record[9] = m.clearcoatNormalScale ?? 1
+    record[11] = m.hybridReflectionStrength ?? -1
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)
