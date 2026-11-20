@@ -128,6 +128,7 @@ export class SceneData {
         },
     )
     const paths = new Map()
+    const strategies = new Map()
     for (const a of assets) {
       if (
         !a ||
@@ -136,10 +137,12 @@ export class SceneData {
         paths.has(a.id) ||
         typeof a.url !== 'string' ||
         !a.url ||
-        (a.sourceSpace !== undefined && typeof a.sourceSpace !== 'boolean')
+        (a.sourceSpace !== undefined && typeof a.sourceSpace !== 'boolean') ||
+        (a.bvh !== undefined && a.bvh !== 'sah' && a.bvh !== 'median')
       )
-        throw Error('Scene assets require unique nonempty IDs, URLs and a boolean sourceSpace')
+        throw Error('Invalid scene asset ID, URL, sourceSpace or BVH strategy')
       paths.set(a.id, a.url)
+      strategies.set(a.id, a.bvh ?? 'median')
     }
     const ids = new Set(),
       referenced = new Set()
@@ -161,7 +164,9 @@ export class SceneData {
       ids.add(i.id)
       referenced.add(i.assetId)
     }
-    const key = JSON.stringify([...referenced].sort().map((id) => [id, paths.get(id)]))
+    const key = JSON.stringify(
+      [...referenced].sort().map((id) => [id, paths.get(id), strategies.get(id)]),
+    )
     if (!this.model || key !== this.key) {
       const next = new Map()
       for (const id of [...referenced].sort()) {
@@ -171,10 +176,15 @@ export class SceneData {
             ? previous.data
             : await loadGLB(paths.get(id), { pack: false })
         if (data.animation && !data.skinInputs) createAnimationPlayer(data)
+        const strategy = strategies.get(id)
         next.set(id, {
           data,
+          strategy,
           url: paths.get(id),
-          picking: previous?.data === data ? previous.picking : new PickMesh(data),
+          picking:
+            previous?.data === data && previous.strategy === strategy
+              ? previous.picking
+              : new PickMesh(data, strategy),
         })
       }
       const packed = emptyModelData()

@@ -1,4 +1,5 @@
 import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
+import { buildSceneSAH } from './SceneBVH.js'
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a, b) => [
   a[1] * b[2] - a[2] * b[1],
@@ -26,12 +27,13 @@ function box(low, high, o, d, limit) {
   return true
 }
 export class PickMesh {
-  constructor(data) {
+  constructor(data, strategy = 'median') {
     if (!data || data.vertices.length % modelTriangleFloats) throw Error('Invalid picking geometry')
     this.data = data
     this.triangles = Array.from({ length: data.vertices.length / modelTriangleFloats }, (_, i) => i)
     this.nodes = []
-    if (this.triangles.length) this.build(0, this.triangles.length)
+    if (strategy === 'sah') buildSceneSAH(data.vertices, this.triangles, this.nodes)
+    else if (this.triangles.length) this.build(0, this.triangles.length)
   }
   point(triangle, vertex) {
     const offset = triangle * modelTriangleFloats + vertex * modelVertexFloats

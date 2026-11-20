@@ -77,7 +77,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     renderer.setLighting('pbr')
     await renderer.setScene(
       [
-        { id: 'car', url: assets + 'CarConcept.glb', sourceSpace: true },
+        { id: 'car', url: assets + 'CarConcept.glb', sourceSpace: true, bvh: 'sah' },
         { id: 'floor', url: assets + 'Ground.glb', sourceSpace: true },
       ],
       [
