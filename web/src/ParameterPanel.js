@@ -383,6 +383,18 @@ export function attachParameterPanel(
         slider(renderer, 'hybrid_aoSamples', 'AO rays/pixel', 'AO rays per pixel', 1, 32, 1, (v) =>
           adapter.setHybrid({ aoSamples: v }),
         )
+        const halfAORow = document.createElement('label'),
+          halfAOToggle = document.createElement('input')
+        halfAORow.textContent = 'Half-resolution Hybrid AO'
+        halfAOToggle.type = 'checkbox'
+        halfAOToggle.setAttribute('aria-label', 'Half-resolution Hybrid AO')
+        halfAOToggle.checked = h.halfResolutionAO
+        halfAOToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ halfResolutionAO: halfAOToggle.checked })),
+        )
+        halfAORow.prepend(halfAOToggle)
+        renderer.append(halfAORow)
+        fields.set('hybrid_halfResolutionAO', { input: halfAOToggle })
         const probeRow = document.createElement('label'),
           probeToggle = document.createElement('input')
         probeRow.textContent = 'DDGI probes'
@@ -971,6 +983,8 @@ export function attachParameterPanel(
         if (typeof value === 'boolean') field.input.checked = value
         else field.input.value = value
         if (field.output) field.output.textContent = String(value)
+        if (name === 'halfResolutionAO')
+          field.input.disabled = !adapter.getHybrid().ambientOcclusion
         if (name === 'mirrorReflections') field.input.disabled = !adapter.getHybrid().reflections
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
         if (

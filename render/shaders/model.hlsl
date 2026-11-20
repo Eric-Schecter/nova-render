@@ -1668,6 +1668,27 @@ float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCo
     return reflection;
 }
 
+float4 HybridAOPSMain(SkyOut input) : SV_Target
+{
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    int2 extent = int2(width, height) - 2;
+    int2 local = int2(input.position.xy) - 1;
+    if (any(local < 0) || any(local >= (extent + 1) / 2))
+        return 0;
+    int3 pixel = int3(local * 2 + 1, 0);
+    if (gBase.Load(pixel).w <= 0)
+        return 0;
+    input.uv = (float2(local * 2) + .5) / float2(extent);
+    float2 ndc = input.uv * float2(2, -2) + float2(-1, 1);
+    input.direction = cameraForward.xyz + ndc.x * cameraRight.w * cameraRight.xyz
+                      + ndc.y * cameraUp.w * cameraUp.xyz;
+    float3 normal = octDecode(gNormals.Load(pixel).zw);
+    float3 position = surfacePosition(input, gPosition.Load(pixel).xy);
+    float angle = hybridFrameRotation(uint2(pixel.xy), -skyParams.z);
+    return float4(hybridAO(position, normal, angle), 0, 0, 1);
+}
+
 float4 HybridReflectionPSMain(SkyOut input) : SV_Target
 {
     uint width, height;
@@ -1835,7 +1856,8 @@ float4 DeferredPSMain(SkyOut input)
     }
     if (s.useVisibility)
     {
-        float ao = hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
+        // The independent AO pass has already multiplied material occlusion in the position attachment.
+        float ao = skyParams.z < -.5 ? 1 : hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
         if (irradiance[3].w > .5 && abs(instances[uint(irradiance[3].w) - 1].world._m30 - 2) < .1)
             return float4(diagnosticLinear(ao.xxx), 1);
         s.ao *= ao;

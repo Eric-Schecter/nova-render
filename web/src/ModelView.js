@@ -265,7 +265,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         fragment: {
           module: fragment,
           entryPoint: halfReflection
-            ? 'HybridReflectionPSMain'
+            ? halfReflection === 'ao'
+              ? 'HybridAOPSMain'
+              : 'HybridReflectionPSMain'
             : hybridShadow
               ? 'HybridShadowPSMain'
               : oit
@@ -678,6 +680,31 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           hybrid.shadowTemporalReconstruction &&
           hybrid.view === 'final' &&
           rasterSettings?.view === 'final'
+        const halfAO =
+          hybrid?.ambientOcclusion &&
+          hybrid.halfResolutionAO &&
+          hybrid.view === 'final' &&
+          rasterSettings?.view === 'final'
+        if (halfAO && !aaPipelines.hybridAO) {
+          const r = await fetch(
+            shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1) + 'model-hybrid-ao.json',
+          )
+          if (!r.ok) throw Error('Missing Hybrid AO shader')
+          aaPipelines.hybridAO = await pipelineFor(
+            await r.json(),
+            false,
+            1,
+            false,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            'ao',
+          )
+        }
+        currentScene[58] = halfAO ? -(frames + 1) : 0
         currentScene[87] = hybrid?.temporalReconstruction
           ? frames + 1
           : denoiseReflections
@@ -720,7 +747,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         uniforms.splice(60, 4, ...previous.subarray(16, 20))
       },
       drawAA(pass, motion, count, settings, program, gbuffers) {
-        if (program === -5 || program === -7 || program === -8) {
+        if (program === -5 || program === -7 || program === -8 || program === -9) {
           const half = hybrid?.reflections && hybrid.halfResolutionReflections
           const halfCombine = program === -5 && half
           pass.setBindGroup(0, bindGroup)
@@ -742,19 +769,21 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             (hybrid.probeReflectionLighting || hybrid.probeRoughReflections)
           if ((program === -5 && probeEnabled) || probeReflection) pass.setBindGroup(2, probes.read)
           pass.setPipeline(
-            program === -8
-              ? probeReflection
-                ? probeReflectionPipeline
-                : aaPipelines.halfReflection
-              : program === -7
-                ? aaPipelines.hybridShadow
-                : probeEnabled
-                  ? half
-                    ? probeDeferredHalf
-                    : probeDeferred
-                  : half
-                    ? aaPipelines.deferredHalf
-                    : aaPipelines.deferred,
+            program === -9
+              ? aaPipelines.hybridAO
+              : program === -8
+                ? probeReflection
+                  ? probeReflectionPipeline
+                  : aaPipelines.halfReflection
+                : program === -7
+                  ? aaPipelines.hybridShadow
+                  : probeEnabled
+                    ? half
+                      ? probeDeferredHalf
+                      : probeDeferred
+                    : half
+                      ? aaPipelines.deferredHalf
+                      : aaPipelines.deferred,
           )
           pass.draw(3)
           return

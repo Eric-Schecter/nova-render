@@ -898,7 +898,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if (((p.program <= 0 && p.program != -8) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                    if (((p.program <= 0 && p.program != -8 && p.program != -9) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                          || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         int k         = p.program == 9                                          ? 3
@@ -975,7 +975,7 @@ namespace render::detail
                         continue;
                     }
                     bool scene =
-                      ((p.program <= 0 && p.program != -8) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                      ((p.program <= 0 && p.program != -8 && p.program != -9) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool nativeScene = p.program < 0;
                     const int                attachments = p.program == -4                                           ? 5
@@ -1056,7 +1056,7 @@ namespace render::detail
                                                          : p.program == -7 ? surfaceLoadPass
                                                          : p.program == -6 ? oitPass
                                                          : p.program == -5 ? externalLoadPass
-                                                         : p.program == -8 ? postPass
+                                                         : (p.program == -8 || p.program == -9) ? postPass
                                                          : nativeScene ? (p.multisampled ? externalMSPass : externalPass)
                                                          : (p.program == 9 || p.program == 23 || p.program == 27) ? externalPass
                                                          : scene ? (p.multisampled ? msPass : scenePass)
@@ -1110,7 +1110,7 @@ namespace render::detail
                         VkRect2D scissor{{0, 0}, {target.width, target.height}};
                         api.vkCmdSetViewport(command, 0, 1, &viewport);
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
-                        if ((p.program == -5 || p.program == -6 || p.program == -7 || p.program == -8) && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -6 || p.program == -7 || p.program == -8 || p.program == -9) && external.bindGBuffer)
                         {
                             std::array<void*, 10> views{};
                             for (size_t i = 0; i < views.size(); i++)

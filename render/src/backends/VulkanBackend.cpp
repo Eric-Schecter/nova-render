@@ -106,7 +106,7 @@ namespace render::detail
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
-          aaDeferred{}, aaOit{}, aaHybridShadow{}, aaHybridReflection{}, aaProbeReflection{}, aaDeferredHalf{};
+          aaDeferred{}, aaOit{}, aaHybridShadow{}, aaHybridReflection{}, aaHybridAO{}, aaProbeReflection{}, aaDeferredHalf{};
         VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
@@ -137,6 +137,9 @@ namespace render::detail
                                      || std::string_view(name) == "model-probe-reflection";
             if (reflectionPass)
                 stages[1].pName = "HybridReflectionPSMain";
+            const bool aoPass = std::string_view(name) == "model-hybrid-ao";
+            if (aoPass)
+                stages[1].pName = "HybridAOPSMain";
             VkPipelineVertexInputStateCreateInfo   input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
             VkPipelineInputAssemblyStateCreateInfo assembly{
               VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -150,7 +153,7 @@ namespace render::detail
             VkPipelineMultisampleStateCreateInfo sampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
             sampling.rasterizationSamples = samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
             VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-            depth.depthTestEnable  = !reflectionPass;
+            depth.depthTestEnable  = !reflectionPass && !aoPass;
             depth.depthWriteEnable = !sky && std::string(name) != "model-oit";
             depth.depthCompareOp   = sky                                ? VK_COMPARE_OP_ALWAYS
                                      : std::string(name) == "model-oit" ? VK_COMPARE_OP_LESS_OR_EQUAL
@@ -392,7 +395,7 @@ namespace render::detail
                     w.pImageInfo          = &images[i];
                 }
                 // The reflection pass shares the shadow pass inputs.
-                if (program != -8)
+                if (program != -8 && program != -9)
                     vkUpdateDescriptorSets(device, uint32_t(views.size()), writes, 0, nullptr);
                 vkCmdBindDescriptorSets(
                   reinterpret_cast<VkCommandBuffer>(command),
@@ -423,7 +426,7 @@ namespace render::detail
                     return;
                 }
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
-                if (pass.program == -5 || pass.program == -7 || pass.program == -8)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9)
                 {
                     const bool probeReflection = pass.program == -8 && probeFrame && environment
                                                  && hybrid.probeSkyLighting
@@ -431,7 +434,8 @@ namespace render::detail
                     const bool probes = (pass.program == -5 && probeFrame) || probeReflection;
                     const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto&      active = probeReflection      ? aaProbeReflection
-                                        : pass.program == -8 ? aaHybridReflection
+                                        : pass.program == -9 ? aaHybridAO
+                                   : pass.program == -8 ? aaHybridReflection
                                         : pass.program == -7 ? aaHybridShadow
                                         : probes && half     ? probeDeferredHalf
                                         : probes             ? probeDeferredPipeline
@@ -443,6 +447,7 @@ namespace render::detail
                     if (!active)
                         active = AAPipeline(
                           probeReflection      ? "model-probe-reflection"
+                          : pass.program == -9 ? "model-hybrid-ao"
                           : pass.program == -8 ? "model-hybrid-reflection"
                           : pass.program == -7 ? "model-hybrid-shadow"
                           : probes && half     ? "model-probe-deferred-half"
@@ -515,6 +520,7 @@ namespace render::detail
             release(probeDeferredHalf);
             release(aaHybridShadow);
             release(aaHybridReflection);
+            release(aaHybridAO);
             release(aaProbeReflection);
             release(aaMotion);
             release(aaSkyMotion);

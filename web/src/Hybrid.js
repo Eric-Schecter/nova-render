@@ -24,6 +24,7 @@ export const defaultHybrid = () => ({
   reflectionHitReprojection: false,
   clearcoatReflections: true,
   ambientOcclusion: false,
+  halfResolutionAO: false,
   aoRadius: 1,
   aoStrength: 1,
   aoSamples: 4,
@@ -60,6 +61,7 @@ export function copyHybrid(value) {
           'reflectionHitReprojection',
           'clearcoatReflections',
           'ambientOcclusion',
+          'halfResolutionAO',
           'aoRadius',
           'aoStrength',
           'aoSamples',
@@ -79,6 +81,7 @@ export function copyHybrid(value) {
     s.shadowLight < 0 ||
     s.shadowLight > 15 ||
     typeof s.ambientOcclusion !== 'boolean' ||
+    typeof s.halfResolutionAO !== 'boolean' ||
     !Number.isFinite(s.aoRadius) ||
     s.aoRadius <= 0 ||
     s.aoRadius > 10000 ||

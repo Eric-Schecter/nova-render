@@ -281,7 +281,7 @@ namespace render::detail
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaProbeReflection, aaDeferredHalf;
+          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaHybridAO, aaProbeReflection, aaDeferredHalf;
         id<MTLComputePipelineState> probeUpdatePipeline, probeSharedUpdatePipeline;
         id<MTLRenderPipelineState>  probeDeferredPipeline, probeDeferredHalf;
         id<MTLBuffer>               probeCurrent, probePrevious;
@@ -383,7 +383,8 @@ namespace render::detail
                 }
             }
             if (std::string_view(file) != "model-hybrid-reflection.metallib"
-                && std::string_view(file) != "model-probe-reflection.metallib")
+                && std::string_view(file) != "model-probe-reflection.metallib"
+                && std::string_view(file) != "model-hybrid-ao.metallib")
                 desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
             desc.sampleCount                = samples;
             auto pipeline                   = [device newRenderPipelineStateWithDescriptor:desc error:&error];
@@ -439,7 +440,7 @@ namespace render::detail
                 [e setFragmentTexture:environmentTexture atIndex:8];
                 [e setFragmentTexture:backgroundTexture atIndex:9];
                 [e setFragmentSamplerState:modelSampler atIndex:7];
-                if (pass.program == -5 || pass.program == -7 || pass.program == -8)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9)
                 {
                     const bool probeReflection = pass.program == -8 && probeFrame && environment
                                                  && hybrid.probeSkyLighting
@@ -447,7 +448,8 @@ namespace render::detail
                     const bool probes = (pass.program == -5 && probeFrame) || probeReflection;
                     const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto&      active = probeReflection      ? aaProbeReflection
-                                        : pass.program == -8 ? aaHybridReflection
+                                        : pass.program == -9 ? aaHybridAO
+                                   : pass.program == -8 ? aaHybridReflection
                                         : pass.program == -7 ? aaHybridShadow
                                         : probes && half     ? probeDeferredHalf
                                         : probes             ? probeDeferredPipeline
@@ -456,6 +458,7 @@ namespace render::detail
                     if (!active)
                         active = AAPipeline(
                           probeReflection      ? "model-probe-reflection.metallib"
+                          : pass.program == -9 ? "model-hybrid-ao.metallib"
                           : pass.program == -8 ? "model-hybrid-reflection.metallib"
                           : pass.program == -7 ? "model-hybrid-shadow.metallib"
                           : probes && half     ? "model-probe-deferred-half.metallib"

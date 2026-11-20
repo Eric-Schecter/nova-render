@@ -298,6 +298,81 @@ bool reflectionVirtualHistory(int2 lowPixel, int2 extent, float4 depth, float en
     return true;
 }
 
+float4 hybridAOResolve(int2 pixel)
+{
+    uint width, height;
+    areaTex.GetDimensions(width, height);
+    int2 extent = int2(width, height) - 2;
+    int2 last = (extent + 1) / 2;
+    if (aa[2].w > 2.5)
+    {
+        float4 position = areaTex.Load(int3(pixel, 0));
+        if (any(pixel < 1) || any(pixel > extent) || weightTex.Load(int3(pixel, 0)).w <= 0)
+            return position;
+        float2 low = (float2(pixel) - 1) * .5 + 1;
+        int2 first = int2(low);
+        float2 f = frac(low);
+        float3 normal = reflectionNormal(edgeTex.Load(int3(pixel, 0)).zw);
+        float weighted = 0, mass = 0;
+        [unroll] for (int y = 0; y <= 1; ++y)
+            [unroll] for (int x = 0; x <= 1; ++x)
+            {
+                int2 tap = min(first + int2(x, y), last);
+                int3 guide = int3(tap * 2 - 1, 0);
+                float4 ao = colorTex.Load(int3(tap, 0));
+                float4 depth = areaTex.Load(guide);
+                float dz = abs((position.x - depth.x) + (position.y - depth.y));
+                float alignment = dot(normal, reflectionNormal(edgeTex.Load(guide).zw));
+                if (ao.a <= 0 || dz > .055 || alignment < .9 || abs(position.w - depth.w) > .5)
+                    continue;
+                float w = max(.025, (x == 0 ? 1 - f.x : f.x) * (y == 0 ? 1 - f.y : f.y));
+                w *= exp2(-120 * dz) * pow(saturate(alignment), 16);
+                weighted += ao.x * w;
+                mass += w;
+            }
+        if (mass > .001)
+            position.z *= saturate(weighted / mass);
+        return position;
+    }
+
+    if (any(pixel < 1) || any(pixel > last))
+        return 0;
+    int3 guide = int3(pixel * 2 - 1, 0);
+    float2 encoded = edgeTex.Load(guide).zw;
+    float4 motion = motionTex.Load(guide);
+    float4 position = areaTex.Load(guide);
+    if (aa[2].w > 1.5)
+        return float4(encoded, position.x + position.y, motion.w);
+    float4 current = colorTex.Load(int3(pixel, 0));
+    if (current.a <= 0 || aa[3].x < .5 || motion.w < .5)
+        return current;
+    float2 previousPixel = float2(pixel) + motion.xy * float2(extent) * .5;
+    int2 first = int2(floor(previousPixel));
+    float2 f = frac(previousPixel);
+    float weighted = 0, mass = 0, age = 0;
+    float3 normal = reflectionNormal(encoded);
+    [unroll] for (int y = 0; y <= 1; ++y)
+        [unroll] for (int x = 0; x <= 1; ++x)
+        {
+            int2 tap = first + int2(x, y);
+            if (any(tap < 1) || any(tap > last))
+                continue;
+            float4 old = oldMotionTex.Load(int3(tap, 0));
+            float4 value = historyTex.Load(int3(tap, 0));
+            if (value.a <= 0 || abs(old.w - motion.w) > .25 || abs(old.z - motion.z) > .04
+                || dot(normal, reflectionNormal(old.xy)) < .92)
+                continue;
+            float w = (x == 0 ? 1 - f.x : f.x) * (y == 0 ? 1 - f.y : f.y);
+            weighted += value.x * w;
+            age += value.a * w;
+            mass += w;
+        }
+    if (mass < .2)
+        return current;
+    age /= mass;
+    return float4(lerp(current.x, weighted / mass, min(.85, age / (age + 1))), 0, 0, min(age + 1, 16));
+}
+
 float4 reflectionTemporal(int2 lowPixel)
 {
     uint width, height;
@@ -517,6 +592,8 @@ float4 PSMain(Varying i)
     float3 resolved = lerp(current.rgb, history, aa[3].y);
     return aa[6].w > .5 ? float4(resolved, current.a) : rgbL(resolved);
 #elif AA_PASS == 30
+    if (aa[2].w > .5)
+        return hybridAOResolve(int2(i.position.xy));
     return reflectionTemporal(int2(i.position.xy));
 #elif AA_PASS == 8
     uv       = .5 + (uv - .5) / aa[3].z;

@@ -238,6 +238,18 @@ int main(int argc, char** argv)
         auto ao = capture("ao-final");
         if (Difference(sceneShadow, ao) < .05)
             throw std::runtime_error("Missing Hybrid AO");
+        settings.halfResolutionAO = true;
+        backend->SetHybrid(settings);
+        const auto firstAO = capture("ao-half-first");
+        const auto halfAO = capture("ao-half-history");
+        if (backend->GetHybridHistoryFrames() != 2 || Difference(sceneShadow, halfAO) < .05
+            || Difference(ao, halfAO) > 5)
+            throw std::runtime_error("Independent half-resolution AO failed");
+        backend->ResetHybridHistory();
+        const auto resetAO = capture("ao-half-reset");
+        if (Difference(resetAO, firstAO) > .01 || backend->GetHybridHistoryFrames() != 1)
+            throw std::runtime_error("AO history did not reset");
+        settings.halfResolutionAO = false;
         settings.view = HybridView::AmbientOcclusion;
         backend->SetHybrid(settings);
         capture("ao-visibility");

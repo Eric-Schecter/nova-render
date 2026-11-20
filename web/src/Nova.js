@@ -190,6 +190,7 @@ class Renderer {
     const h = this.#hybrid
     return (
       h.temporalReconstruction ||
+      (h.ambientOcclusion && h.halfResolutionAO) ||
       (h.shadows && h.shadowTemporalReconstruction) ||
       (h.reflections &&
         h.halfResolutionReflections &&

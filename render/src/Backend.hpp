@@ -165,7 +165,8 @@ namespace render::detail
         HybridSettings GetHybrid() const { return hybrid; }
         bool           HasHybridTemporalHistory() const
         {
-            return hybrid.temporalReconstruction || (hybrid.shadows && hybrid.shadowTemporalReconstruction)
+            return hybrid.temporalReconstruction || (hybrid.ambientOcclusion && hybrid.halfResolutionAO)
+                   || (hybrid.shadows && hybrid.shadowTemporalReconstruction)
                    || (hybrid.reflections && hybrid.halfResolutionReflections && hybrid.reflectionDenoising && hybrid.reflectionHitReprojection);
         }
         uint32_t       GetHybridHistoryFrames() const
@@ -883,6 +884,9 @@ namespace render::detail
                                              && hybrid.shadowTemporalReconstruction && hybrid.view == HybridView::Final
                                              && modelRaster.view == GBufferView::Final;
                 const float frame = float(rasterAA.frames + 1);
+                rasterAA.current.skyParams[2] =
+                  mode == RenderMode::Hybrid && hybrid.ambientOcclusion && hybrid.halfResolutionAO
+                    && hybrid.view == HybridView::Final && modelRaster.view == GBufferView::Final ? -frame : 0.f;
                 rasterAA.current.irradiance[5][3] =
                   hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : (temporalShadows ? -frame : 0.f);
                 rasterAA.current.irradiance[6][3] =
@@ -984,6 +988,7 @@ namespace render::detail
               || previousHybrid.shadowSamples != hybrid.shadowSamples || previousHybrid.view != hybrid.view
               || previousHybrid.shadowLight != hybrid.shadowLight
               || previousHybrid.ambientOcclusion != hybrid.ambientOcclusion
+              || previousHybrid.halfResolutionAO != hybrid.halfResolutionAO
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
               || previousHybrid.reflectionDistance != hybrid.reflectionDistance

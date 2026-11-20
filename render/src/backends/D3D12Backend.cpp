@@ -374,7 +374,7 @@ namespace render::detail
 
 #include "D3D12Model.inc"
         ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaDeferredHalf;
+          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaHybridAO, aaDeferredHalf;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
         ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
@@ -395,7 +395,7 @@ namespace render::detail
             blend.BlendOp = blend.BlendOpAlpha     = D3D12_BLEND_OP_ADD;
             blend.LogicOp                          = D3D12_LOGIC_OP_NOOP;
             blend.RenderTargetWriteMask            = D3D12_COLOR_WRITE_ENABLE_ALL;
-            info.DepthStencilState.DepthEnable     = std::string(file) != "model-hybrid-reflection";
+            info.DepthStencilState.DepthEnable     = std::string_view(file) != "model-hybrid-reflection" && std::string_view(file) != "model-hybrid-ao";
             info.DepthStencilState.DepthWriteMask  = sky ? D3D12_DEPTH_WRITE_MASK_ZERO : D3D12_DEPTH_WRITE_MASK_ALL;
             info.DepthStencilState.DepthFunc       = sky ? D3D12_COMPARISON_FUNC_ALWAYS : D3D12_COMPARISON_FUNC_LESS;
             info.DepthStencilState.StencilReadMask = info.DepthStencilState.StencilWriteMask = 255;
@@ -504,16 +504,18 @@ namespace render::detail
                 cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                if (pass.program == -5 || pass.program == -7 || pass.program == -8)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9)
                 {
                     const bool half = pass.program == -5 && pass.sources[9] != AADummy;
-                    auto& active = pass.program == -8 ? aaHybridReflection
+                    auto& active = pass.program == -9 ? aaHybridAO
+                                   : pass.program == -8 ? aaHybridReflection
                                    : pass.program == -7 ? aaHybridShadow
                                    : half               ? aaDeferredHalf
                                                         : aaDeferred;
                     if (!active)
                         active = AAPipeline(
-                          pass.program == -8   ? "model-hybrid-reflection"
+                          pass.program == -9 ? "model-hybrid-ao"
+                          : pass.program == -8 ? "model-hybrid-reflection"
                           : pass.program == -7 ? "model-hybrid-shadow"
                           : half               ? "model-deferred-half"
                                                : "model-deferred",

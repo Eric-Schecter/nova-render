@@ -148,6 +148,7 @@ for (const [name, vertexEntry, fragmentEntry] of [
   ['model-oit', 'VSMain', 'OITPSMain'],
   ['model-deferred', 'SkyVSMain', 'DeferredPSMain'],
   ['model-deferred-half', 'SkyVSMain', 'DeferredPSMain'],
+  ['model-hybrid-ao', 'SkyVSMain', 'HybridAOPSMain'],
   ['model-hybrid-reflection', 'SkyVSMain', 'HybridReflectionPSMain'],
   ['model-hybrid-shadow', 'SkyVSMain', 'HybridShadowPSMain'],
   ['sky-aa', 'SkyVSMain', 'SkyPSMain'],

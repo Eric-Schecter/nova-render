@@ -187,6 +187,16 @@ try {
   })
   const ao = await capture('ao-final')
   if (diff(ao, shadow) < 0.05) throw Error('Missing Hybrid AO')
+  await page.evaluate(() => r.setHybrid({ halfResolutionAO: true }))
+  await capture('ao-half-first')
+  const halfAO = await capture('ao-half-history')
+  if (
+    (await page.evaluate(() => r.getHybridHistoryFrames())) !== 2 ||
+    diff(shadow, halfAO) < 0.05 ||
+    diff(ao, halfAO) > 5
+  )
+    throw Error('Independent half-resolution AO failed')
+  await page.evaluate(() => r.setHybrid({ halfResolutionAO: false }))
   await page.evaluate(() => r.setHybrid({ view: 'ambient-occlusion' }))
   await capture('ao-visibility')
   await page.evaluate(async () => {
@@ -562,6 +572,8 @@ try {
       'rectangle-shadowed',
       'rectangle-narrow',
       'ao-final',
+      'ao-half-first',
+      'ao-half-history',
       'ao-visibility',
       'single-off',
       'single-shadow',
