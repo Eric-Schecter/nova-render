@@ -21,7 +21,7 @@ def paving_texture():
     pixels = bytearray()
     angle = math.radians(12)
     cos_angle, sin_angle = math.cos(angle), math.sin(angle)
-    joint_width = 0.026
+    joint_width = 0.041
     for row in range(SIZE):
         pixels.append(0)
         z = ((row + 0.5) / SIZE * 2 - 1) * HALF_FLOOR
@@ -33,7 +33,7 @@ def paving_texture():
                     dx, dz = x - wheel_x, z - wheel_z
                     inner = math.exp(-((dx / 0.18) ** 2) - (dz / 0.23) ** 2)
                     outer = math.exp(-((dx / 0.33) ** 2) - (dz / 0.32) ** 2)
-                    shade = max(shade, 0.55 * inner + 0.18 * outer)
+                    shade = max(shade, 0.53 * inner + 0.23 * outer)
             u = x * cos_angle - z * sin_angle + 0.6
             v = x * sin_angle + z * cos_angle + 0.9
             course = math.floor(v / 2.8)
@@ -42,9 +42,10 @@ def paving_texture():
             across, along = u % 3.6, v % 2.8
             distance = min(across, 3.6 - across, along, 2.8 - along)
             joint = math.exp(-(distance / joint_width) ** 2)
-            tone = 0.93 + 0.035 * math.sin(slab * 2.4 + course * 1.7)
+            tone = 0.89 + 0.078 * math.sin(slab * 2.4 + course * 1.7)
+            mottling = 0.018 * math.sin(3.2 * x - 2.1 * z) * math.cos(4.3 * z + 1.7 * x)
             grain = 0.009 * math.sin(16 * x + 9 * z) * math.sin(7 * x - 18 * z)
-            luminance = (tone + grain) * (1 - 0.22 * joint) * (1 - shade)
+            luminance = (tone + mottling + grain) * (1 - 0.31 * joint) * (1 - shade)
             srgb = 1.055 * luminance ** (1 / 2.4) - 0.055
             channel = round(srgb * 255)
             pixels.extend((channel, channel, channel))
@@ -78,7 +79,7 @@ def generate(output):
             "baseColorFactor": [0.19, 0.175, 0.15, 1],
             "baseColorTexture": {"index": 0},
             "metallicFactor": 0,
-            "roughnessFactor": 0.52,
+            "roughnessFactor": 0.46,
         }}],
         "textures": [{"source": 0}],
         "images": [{"bufferView": 4, "mimeType": "image/png"}],
