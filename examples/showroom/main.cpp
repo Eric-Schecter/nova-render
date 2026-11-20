@@ -35,12 +35,6 @@ int main(int argc, char** argv)
         floorMaterial.roughness = .35f;
         floorMaterial.hybridReflectionStrength = 1.f;
         window.SetMaterial(0, floorMaterial, "floor");
-        window.LoadEnvironment(assets / "CleanStudio.nenv");
-        EnvironmentSettings environment;
-        // Align the equirectangular HDRI with the UE reference capture.
-        environment.rotation       = -90;
-        environment.showBackground = false;
-        window.SetEnvironment(environment);
         Camera camera;
         camera.position    = {4.0087951f, 1.6122328f, 4.052369f};
         camera.orientation = {-.078989f, .37879612f, .03246848f, .92153135f};
@@ -62,9 +56,22 @@ int main(int argc, char** argv)
         settings.shadows                   = true;
         settings.shadowSamples             = 4;
         window.SetHybrid(settings);
-        bool warmSideLighting = true;
-        bool appliedWarmSideLighting = warmSideLighting;
-        window.SetLights(example::ShowroomLights(warmSideLighting));
+        auto lighting = example::ShowroomLighting::QuarryDaylight;
+        auto applyLighting = [&] {
+            const bool outdoors = lighting == example::ShowroomLighting::QuarryDaylight;
+            window.LoadEnvironment(assets / (outdoors ? "QuarryClouds.nenv" : "CleanStudio.nenv"));
+            EnvironmentSettings environment;
+            environment.rotation            = -90;
+            environment.intensity           = outdoors ? .6f : 1.f;
+            environment.backgroundIntensity = outdoors ? .9f : 1.f;
+            environment.showBackground      = outdoors;
+            window.SetEnvironment(environment);
+            post.exposureEV = outdoors ? 1.39f : 0.f;
+            window.SetPostProcessing(post);
+            window.SetLights(example::ShowroomLights(lighting));
+        };
+        applyLighting();
+        auto appliedLighting = lighting;
         AntiAliasingSettings aa;
         aa.method = AAMethod::FXAA;
         window.SetAntiAliasing(aa);
@@ -75,7 +82,7 @@ int main(int argc, char** argv)
             ParameterPanelConfig panel;
             panel.showBuiltinPanel = false;
             panel.drawUI           = [&] {
-                example::DrawProbeOverlay(window, *settings.probeBounds, settings.probeGI, showProbes, warmSideLighting);
+                example::DrawProbeOverlay(window, *settings.probeBounds, settings.probeGI, showProbes, lighting);
             };
             window.EnableParameterPanel(panel);
         }
@@ -87,10 +94,10 @@ int main(int argc, char** argv)
         int               frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
         {
-            if (appliedWarmSideLighting != warmSideLighting)
+            if (appliedLighting != lighting)
             {
-                window.SetLights(example::ShowroomLights(warmSideLighting));
-                appliedWarmSideLighting = warmSideLighting;
+                applyLighting();
+                appliedLighting = lighting;
             }
             const auto now           = Clock::now();
             const auto currentCamera = window.GetViewCamera();

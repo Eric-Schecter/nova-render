@@ -4,10 +4,27 @@
 
 namespace example
 {
-    inline std::vector<render::SceneLight> ShowroomLights(bool warmSideLighting)
+    enum class ShowroomLighting
+    {
+        QuarryDaylight,
+        WarmSide,
+        Studio
+    };
+
+    inline std::vector<render::SceneLight> ShowroomLights(ShowroomLighting lighting)
     {
         using render::LightType;
         using render::SceneLight;
+        if (lighting == ShowroomLighting::QuarryDaylight)
+        {
+            SceneLight sun;
+            sun.id             = "quarry-sun";
+            sun.direction      = {.2015632f, .6754053f, -.7093659f};
+            sun.intensity      = .68f;
+            sun.castShadow     = true;
+            sun.shadowSoftness = .779f;
+            return {sun};
+        }
         SceneLight hood;
         hood.id         = "hood";
         hood.type       = LightType::Rectangle;
@@ -37,7 +54,7 @@ namespace example
         fill.height     = 1.35f;
         fill.intensity  = .55f;
         fill.color      = {1, 1, 1};
-        if (warmSideLighting)
+        if (lighting == ShowroomLighting::WarmSide)
         {
             hood.intensity = 1.65f;
             hood.color     = {.58f, .76f, 1.f};

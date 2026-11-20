@@ -2,7 +2,20 @@ import { createRenderer } from '../src/Nova.js'
 import { instrumentRenderer } from './PerformancePanel.js'
 import { attachShowroomProbes } from './ShowroomProbes.js'
 
-function showroomLights(warmSideLighting) {
+function showroomLights(lighting) {
+  if (lighting === 'quarry') {
+    return [
+      {
+        id: 'quarry-sun',
+        type: 'directional',
+        direction: [0.2015632, 0.6754053, -0.7093659],
+        intensity: 0.68,
+        castShadow: true,
+        shadowSoftness: 0.779,
+      },
+    ]
+  }
+
   const [hood, side, fill] = [
     {
       id: 'hood',
@@ -41,7 +54,7 @@ function showroomLights(warmSideLighting) {
       castShadow: false,
     },
   ]
-  if (warmSideLighting) {
+  if (lighting === 'warm') {
     Object.assign(hood, { intensity: 1.65, color: [0.58, 0.76, 1] })
     Object.assign(side, {
       position: [3.15, 1.55, -1.15],
@@ -82,20 +95,25 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       { ...floorMaterial, roughness: 0.35, hybridReflectionStrength: 1 },
       'floor',
     )
-    await renderer.loadEnvironment(assets + 'CleanStudio.bin')
-    renderer.setEnvironment({
-      // Match the equirectangular HDRI orientation of the UE reference.
-      rotation: -90,
-      intensity: 1,
-      backgroundIntensity: 1,
-      showBackground: false,
-    })
-    renderer.setPostProcessing({
-      enabled: true,
-      bloom: false,
-      autoExposure: false,
-      toneMapping: 'aces',
-    })
+    async function applyLighting(lighting) {
+      const outdoors = lighting === 'quarry'
+      await renderer.loadEnvironment(assets + (outdoors ? 'QuarryClouds.bin' : 'CleanStudio.bin'))
+      renderer.setEnvironment({
+        rotation: -90,
+        intensity: outdoors ? 0.6 : 1,
+        backgroundIntensity: outdoors ? 0.9 : 1,
+        showBackground: outdoors,
+      })
+      renderer.setPostProcessing({
+        enabled: true,
+        bloom: false,
+        autoExposure: false,
+        toneMapping: 'aces',
+        exposureEV: outdoors ? 1.39 : 0,
+      })
+      renderer.setLights(showroomLights(lighting))
+    }
+    await applyLighting('quarry')
     renderer.setViewCamera({
       position: [4.0087951, 1.6122328, 4.052369],
       orientation: [-0.078989, 0.37879612, 0.03246848, 0.92153135],
@@ -104,7 +122,6 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       farPlane: 150,
       exposure: 0.85,
     })
-    renderer.setLights(showroomLights(true))
     renderer.setHybrid({
       shadows: true,
       shadowSamples: 4,
@@ -139,14 +156,28 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     })
     const control = document.createElement('label')
     control.style.display = 'block'
-    const lighting = document.createElement('input')
-    lighting.type = 'checkbox'
-    lighting.checked = true
-    lighting.addEventListener('change', () => {
-      renderer.setLights(showroomLights(lighting.checked))
-      renderer.drawFrame().catch(onError ?? console.error)
+    const lighting = document.createElement('select')
+    for (const [value, label] of [
+      ['quarry', 'Quarry daylight'],
+      ['warm', 'Warm side'],
+      ['studio', 'Studio'],
+    ])
+      lighting.add(new Option(label, value))
+    let appliedLighting = lighting.value
+    lighting.addEventListener('change', async () => {
+      lighting.disabled = true
+      try {
+        await applyLighting(lighting.value)
+        appliedLighting = lighting.value
+        await renderer.drawFrame()
+      } catch (error) {
+        lighting.value = appliedLighting
+        ;(onError ?? console.error)(error)
+      } finally {
+        lighting.disabled = false
+      }
     })
-    control.append(lighting, ' Warm side lighting')
+    control.append('Lighting ', lighting)
     canvas.parentElement.before(control)
     const probes = attachShowroomProbes(canvas, renderer, renderer.getHybrid().probeBounds)
     const draw = renderer.drawFrame.bind(renderer)

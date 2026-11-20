@@ -1,6 +1,8 @@
 # CarConcept showroom
 
-The default lighting uses a warm side softbox and a cool overhead fill. Turn off **Warm side lighting** to compare with the original studio lights from the same camera. Both presets share the studio HDRI, exposure, layered Carmine paint and baked tire contact shadows. The studio HDRI uses a −90° Nova yaw to align its lighting with the Unreal reference. Drag to orbit or scroll to zoom. Run the native example from the repository root with `./build/nova_showroom --api metal` or `--api vulkan`.
+The **Lighting** selector defaults to **Quarry daylight**, based on the Google Autos demo's outdoor HDRI and directional light. Switch to **Warm side** to compare the warm softbox and cool overhead fill, or to **Studio** for the original studio lighting. The presets share the camera, layered Carmine paint, floor and baked tire contact shadows. Quarry uses the HDRI as a distant backdrop around the showroom floor. Drag to orbit or scroll to zoom. Run the native example from the repository root with `./build/nova_showroom --api metal` or `--api vulkan`.
+
+Quarry daylight uses environment intensity 0.6, directional intensity 0.68 and +1.39 EV post exposure. These values match the UE outdoor reference on an 18% horizontal gray card with the display curves bypassed. The combined linear luminance measured 0.222 in Nova and 0.219 in UE. The studio presets use their original exposure.
 
 The showroom blends 25% scene-traced specular with 75% environment specular on the car. The floor material uses 100% scene-traced specular to show a clear reflection of the car.
 

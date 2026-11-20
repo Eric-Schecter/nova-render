@@ -46,7 +46,7 @@ for (const name of ['venice_sunset', 'kloppenheim_06', 'studio_small_09']) {
 }
 
 await mkdir('docs/public/generated/showroom', { recursive: true })
-for (const name of ['CarConcept.glb', 'Ground.glb', 'CleanStudio.nenv']) {
+for (const name of ['CarConcept.glb', 'Ground.glb', 'CleanStudio.nenv', 'QuarryClouds.nenv']) {
   await writeFile(
     'docs/public/generated/showroom/' + name.replace('.nenv', '.bin'),
     await readFile('assets/CarConcept/' + name),

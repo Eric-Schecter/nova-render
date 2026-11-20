@@ -12,3 +12,9 @@ python3 scripts/generate-clean-studio.py build/clean-studio.hdr
 ```
 
 The showroom tunes Paint 1 Carmine's base roughness from 0.25 to 0.42. Its clearcoat and all other CarConcept material fields retain the imported values. The floor has a baked contact mask under the four tires, aligned to the lowest tread vertices in this parked pose. The showroom seats all four treads on the floor, with up to 1.5 mm of tread overlap and about 87 mm of minimum body clearance. Regenerate it with `python3 scripts/generate-showroom-ground.py` from the repository root.
+
+`QuarryClouds.nenv` was baked from `Quarry_Clouds_4k`, exported as Radiance HDR from the Google Cloud [Immersive Stream for XR template](https://github.com/GoogleCloudPlatform/immersive-stream-for-xr-templates/tree/2fd931c) under the included `QuarryClouds.LICENSE`. The source texture is in `Content/Demos/Features/CommonAssets/Materials` within the Unreal project. The exported HDR has SHA-256 `839ce1dd504120b20322058d9ed99cf0096ab572372dbeed723183b17a400758`.
+
+```sh
+./build/nova_environment_bake Quarry_Clouds_4k.hdr assets/CarConcept/QuarryClouds.nenv 128 256 Quarry_Clouds_4k.hdr 512
+```

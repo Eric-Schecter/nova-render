@@ -1,4 +1,5 @@
 #pragma once
+#include "Lighting.hpp"
 #include <cmath>
 #include <glm/gtc/quaternion.hpp>
 #include <imgui.h>
@@ -7,13 +8,15 @@
 namespace example
 {
     inline void DrawProbeOverlay(const render::Window& window, const render::HybridProbeBounds& bounds,
-                                 bool probeGI, bool& visible, bool& warmSideLighting)
+                                 bool probeGI, bool& visible, ShowroomLighting& lighting)
     {
         ImGui::SetNextWindowPos({12, 12}, ImGuiCond_Once);
         ImGui::SetNextWindowBgAlpha(.75f);
         if (ImGui::Begin("Showroom", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
         {
-            ImGui::Checkbox("Warm side lighting", &warmSideLighting);
+            int selected = int(lighting);
+            if (ImGui::Combo("Lighting", &selected, "Quarry daylight\0Warm side\0Studio\0"))
+                lighting = ShowroomLighting(selected);
             if (probeGI)
                 ImGui::Checkbox("Show DDGI probes", &visible);
         }
