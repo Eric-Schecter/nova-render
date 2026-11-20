@@ -16,5 +16,6 @@ The showroom tunes Paint 1 Carmine's base roughness from 0.25 to 0.42. Paint 1 C
 `QuarryClouds.nenv` was baked from `Quarry_Clouds_4k`, exported as Radiance HDR from the Google Cloud [Immersive Stream for XR template](https://github.com/GoogleCloudPlatform/immersive-stream-for-xr-templates/tree/2fd931c) under the included `QuarryClouds.LICENSE`. The source texture is in `Content/Demos/Features/CommonAssets/Materials` within the Unreal project. The exported HDR has SHA-256 `839ce1dd504120b20322058d9ed99cf0096ab572372dbeed723183b17a400758`.
 
 ```sh
-./build/nova_environment_bake Quarry_Clouds_4k.hdr assets/CarConcept/QuarryClouds.nenv 128 256 Quarry_Clouds_4k.hdr 512
+python3 scripts/generate-quarry-sky.py Quarry_Clouds_4k.hdr build/QuarrySky.hdr
+./build/nova_environment_bake Quarry_Clouds_4k.hdr assets/CarConcept/QuarryClouds.nenv 128 256 build/QuarrySky.hdr 512
 ```
