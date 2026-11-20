@@ -50,6 +50,7 @@ int main(int argc, char** argv)
         settings.diffuseBounce             = !settings.probeGI;
         settings.probeBounds               = HybridProbeBounds{{-2.65f, -.12f, -3.25f}, {2.65f, 1.95f, 3.25f}};
         settings.reflections               = true;
+        settings.reflectionStrength        = .25f;
         settings.reflectionSamples         = 1;
         settings.halfResolutionReflections = true;
         settings.reflectionDenoising       = false;
