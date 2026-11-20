@@ -1370,8 +1370,12 @@ float3 hybridSampleProbes(float3 position, float3 normal)
     if (any(dimensions == 0))
         return 0;
     float3 rel = (position - probeOrigin.xyz) / probeSpacingDistance.xyz;
-    if (any(rel < -.5) || any(rel > float3(dimensions) - .5))
+    float3 edge = min(rel + .5, float3(dimensions) - .5 - rel);
+    float edgeDistance = min(edge.x, min(edge.y, edge.z));
+    if (edgeDistance <= 0)
         return 0;
+    // Fade from the outermost probe centers to the boundary of the volume.
+    float boundaryWeight = smoothstep(0, .5, edgeDistance);
 
     float3 grid = clamp(rel, 0, float3(dimensions - 1));
     uint3 first = uint3(floor(grid));
@@ -1403,7 +1407,7 @@ float3 hybridSampleProbes(float3 position, float3 normal)
         // Keep blocked probes in the denominator so normalization cannot restore leaked light.
         weightTotal += weight * irradiance.w;
     }
-    return weightTotal > 0 ? total / weightTotal : 0;
+    return weightTotal > 0 ? total * (boundaryWeight / weightTotal) : 0;
 }
 
 #if defined(NOVA_PROBE_SAMPLE_VALIDATION)

@@ -117,10 +117,12 @@ try {
     }
     const positions = new Float32Array([
       0.01, 0, 0, 0, -1, 0, 0, 0, 0.45, 0, 0, 0, -1, 0, 0, 0, 0.6, 0, 0, 0, -1, 0, 0, 0, 0.01, 0, 0,
-      0, 0, 1, 0, 0,
+      0, 0, 1, 0, 0, -0.25, 0, 0, 0, 1, 0, 0, 0, -0.5, 0, 0, 0, 1, 0, 0, 0,
     ])
     const data = new Float32Array(6 * 8)
     for (let i = 0; i < 6; i++) data.set([i + 1, 0, 0, 1, 0.02, 0.0004, 0, 0], i * 8)
+    data.set([1, 1], 8 + 4)
+    const queryCount = positions.length / 8
     const settings = new Float32Array(16)
     settings.set([1, 1, 1, 1], 4)
     // Write the integer fields directly into the mapped buffer.
@@ -131,9 +133,12 @@ try {
     })
     const memory = uniform.getMappedRange()
     new Float32Array(memory).set(settings)
-    new Uint32Array(memory).set([1, 1, 1, 0, 4], 8)
+    new Uint32Array(memory).set([1, 1, 1, 0, queryCount], 8)
     uniform.unmap()
-    const output = make(new Float32Array(16), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC)
+    const output = make(
+      new Float32Array(queryCount * 4),
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    )
     const group = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(2),
       entries: [
@@ -144,7 +149,7 @@ try {
       ].map(([binding, buffer]) => ({ binding, resource: { buffer } })),
     })
     const readback = device.createBuffer({
-      size: 64,
+      size: queryCount * 16,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     })
     const encoder = device.createCommandEncoder()
@@ -153,12 +158,20 @@ try {
     pass.setBindGroup(2, group)
     pass.dispatchWorkgroups(1)
     pass.end()
-    encoder.copyBufferToBuffer(output, 0, readback, 0, 64)
+    encoder.copyBufferToBuffer(output, 0, readback, 0, queryCount * 16)
     device.queue.submit([encoder.finish()])
     await readback.mapAsync(GPUMapMode.READ)
     const rgb = new Float32Array(readback.getMappedRange())
-    if (rgb[0] !== 2 || rgb[4] >= 0.0001 || rgb[8] !== 0 || rgb[12] !== 1.5)
+    const nearCenterFade = 0.98 * 0.98 * (3 - 2 * 0.98)
+    if (
+      Math.abs(rgb[0] - 2 * nearCenterFade) > 1e-6 ||
+      rgb[4] >= 0.0001 ||
+      rgb[8] !== 0 ||
+      Math.abs(rgb[12] - 1.5 * nearCenterFade) > 1e-6
+    )
       throw Error('Probe directional weighting or occlusion failed: ' + Array.from(rgb))
+    if (rgb[16] !== 0.5 || rgb[20] !== 0)
+      throw Error('Probe volume falloff failed: ' + Array.from(rgb))
     readback.unmap()
     device.destroy()
   }, sampling)
