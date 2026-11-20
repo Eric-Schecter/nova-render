@@ -1,6 +1,6 @@
 # CarConcept showroom
 
-The showroom uses a neutral studio HDRI with two rectangular softboxes, a low front-side fill, layered Carmine paint and baked tire contact shadows. The studio HDRI uses a −90° Nova yaw to align its lighting with the Unreal reference. Drag to orbit or scroll to zoom. Run the native example from the repository root with `./build/nova_showroom --api metal` or `--api vulkan`.
+The default lighting uses a warm side softbox and a cool overhead fill. Turn off **Warm side lighting** to compare with the original studio lights from the same camera. Both presets share the studio HDRI, exposure, layered Carmine paint and baked tire contact shadows. The studio HDRI uses a −90° Nova yaw to align its lighting with the Unreal reference. Drag to orbit or scroll to zoom. Run the native example from the repository root with `./build/nova_showroom --api metal` or `--api vulkan`.
 
 The showroom blends 25% scene-traced specular with 75% environment specular on the car. The floor material uses 100% scene-traced specular to show a clear reflection of the car.
 

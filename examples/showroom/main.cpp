@@ -1,4 +1,5 @@
 #include "../common/ProceduralOptions.hpp"
+#include "Lighting.hpp"
 #include <chrono>
 #include <iostream>
 #ifdef NOVA_EXAMPLE_UI
@@ -61,47 +62,21 @@ int main(int argc, char** argv)
         settings.shadows                   = true;
         settings.shadowSamples             = 4;
         window.SetHybrid(settings);
-        SceneLight hood;
-        hood.id         = "hood";
-        hood.type       = LightType::Rectangle;
-        hood.position   = {-.4f, 3.25f, 1.15f};
-        hood.direction  = {0, -1, 0};
-        hood.up         = {0, 0, 1};
-        hood.width      = 4.7f;
-        hood.height     = 1.4f;
-        hood.intensity  = 2.5f;
-        hood.color      = {1, .94f, .86f};
-        SceneLight side = hood;
-        side.id         = "side";
-        side.position   = {3.15f, 1.25f, -.35f};
-        side.direction  = {-1, -.15f, 0};
-        side.up         = {0, 1, 0};
-        side.width      = 5.1f;
-        side.height     = .55f;
-        side.intensity  = 3.2f;
-        side.color      = {.88f, .95f, 1};
-        hood.castShadow = true;
-        side.castShadow = false;
-        SceneLight fill = side;
-        fill.id         = "fill";
-        fill.position   = {2.9f, .85f, -.65f};
-        fill.direction  = {-1, .14f, -.08f};
-        fill.width      = 5.8f;
-        fill.height     = 1.35f;
-        fill.intensity  = .55f;
-        fill.color      = {1, 1, 1};
-        window.SetLights({hood, side, fill});
+        bool warmSideLighting = true;
+        bool appliedWarmSideLighting = warmSideLighting;
+        window.SetLights(example::ShowroomLights(warmSideLighting));
         AntiAliasingSettings aa;
         aa.method = AAMethod::FXAA;
         window.SetAntiAliasing(aa);
         window.EnableViewOrbitControls(5.784566f);
 #ifdef NOVA_EXAMPLE_UI
         bool showProbes = false;
-        if (settings.probeGI)
         {
             ParameterPanelConfig panel;
             panel.showBuiltinPanel = false;
-            panel.drawUI           = [&] { example::DrawProbeOverlay(window, *settings.probeBounds, showProbes); };
+            panel.drawUI           = [&] {
+                example::DrawProbeOverlay(window, *settings.probeBounds, settings.probeGI, showProbes, warmSideLighting);
+            };
             window.EnableParameterPanel(panel);
         }
 #endif
@@ -112,6 +87,11 @@ int main(int argc, char** argv)
         int               frames = 0;
         while ((!options.frameLimit || frames < options.frameLimit) && window.PollEvents())
         {
+            if (appliedWarmSideLighting != warmSideLighting)
+            {
+                window.SetLights(example::ShowroomLights(warmSideLighting));
+                appliedWarmSideLighting = warmSideLighting;
+            }
             const auto now           = Clock::now();
             const auto currentCamera = window.GetViewCamera();
             if (

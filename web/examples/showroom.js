@@ -2,6 +2,60 @@ import { createRenderer } from '../src/Nova.js'
 import { instrumentRenderer } from './PerformancePanel.js'
 import { attachShowroomProbes } from './ShowroomProbes.js'
 
+function showroomLights(warmSideLighting) {
+  const [hood, side, fill] = [
+    {
+      id: 'hood',
+      type: 'rectangle',
+      position: [-0.4, 3.25, 1.15],
+      direction: [0, -1, 0],
+      up: [0, 0, 1],
+      width: 4.7,
+      height: 1.4,
+      intensity: 2.5,
+      color: [1, 0.94, 0.86],
+      castShadow: true,
+    },
+    {
+      id: 'side',
+      type: 'rectangle',
+      position: [3.15, 1.25, -0.35],
+      direction: [-1, -0.15, 0],
+      up: [0, 1, 0],
+      width: 5.1,
+      height: 0.55,
+      intensity: 3.2,
+      color: [0.88, 0.95, 1],
+      castShadow: false,
+    },
+    {
+      id: 'fill',
+      type: 'rectangle',
+      position: [2.9, 0.85, -0.65],
+      direction: [-1, 0.14, -0.08],
+      up: [0, 1, 0],
+      width: 5.8,
+      height: 1.35,
+      intensity: 0.55,
+      color: [1, 1, 1],
+      castShadow: false,
+    },
+  ]
+  if (warmSideLighting) {
+    Object.assign(hood, { intensity: 1.65, color: [0.58, 0.76, 1] })
+    Object.assign(side, {
+      position: [3.15, 1.55, -1.15],
+      direction: [-1, -0.22, 0.08],
+      width: 5.7,
+      height: 0.7,
+      intensity: 5,
+      color: [1, 0.65, 0.32],
+    })
+    Object.assign(fill, { intensity: 0.35, color: [0.63, 0.78, 1] })
+  }
+  return [hood, side, fill]
+}
+
 export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, { onError } = {}) {
   const renderer = instrumentRenderer(await createRenderer({ canvas, shaderDirectory }), canvas)
   const assets = shaderDirectory + 'showroom/'
@@ -50,44 +104,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       farPlane: 150,
       exposure: 0.85,
     })
-    renderer.setLights([
-      {
-        id: 'hood',
-        type: 'rectangle',
-        position: [-0.4, 3.25, 1.15],
-        direction: [0, -1, 0],
-        up: [0, 0, 1],
-        width: 4.7,
-        height: 1.4,
-        intensity: 2.5,
-        color: [1, 0.94, 0.86],
-        castShadow: true,
-      },
-      {
-        id: 'side',
-        type: 'rectangle',
-        position: [3.15, 1.25, -0.35],
-        direction: [-1, -0.15, 0],
-        up: [0, 1, 0],
-        width: 5.1,
-        height: 0.55,
-        intensity: 3.2,
-        color: [0.88, 0.95, 1],
-        castShadow: false,
-      },
-      {
-        id: 'fill',
-        type: 'rectangle',
-        position: [2.9, 0.85, -0.65],
-        direction: [-1, 0.14, -0.08],
-        up: [0, 1, 0],
-        width: 5.8,
-        height: 1.35,
-        intensity: 0.55,
-        color: [1, 1, 1],
-        castShadow: false,
-      },
-    ])
+    renderer.setLights(showroomLights(true))
     renderer.setHybrid({
       shadows: true,
       shadowSamples: 4,
@@ -120,6 +137,17 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
         }, 180)
       },
     })
+    const control = document.createElement('label')
+    control.style.display = 'block'
+    const lighting = document.createElement('input')
+    lighting.type = 'checkbox'
+    lighting.checked = true
+    lighting.addEventListener('change', () => {
+      renderer.setLights(showroomLights(lighting.checked))
+      renderer.drawFrame().catch(onError ?? console.error)
+    })
+    control.append(lighting, ' Warm side lighting')
+    canvas.parentElement.before(control)
     const probes = attachShowroomProbes(canvas, renderer, renderer.getHybrid().probeBounds)
     const draw = renderer.drawFrame.bind(renderer)
     renderer.drawFrame = async () => {
@@ -130,6 +158,7 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
     const dispose = renderer.dispose.bind(renderer)
     renderer.dispose = () => {
       clearTimeout(settleTimer)
+      control.remove()
       probes.dispose()
       dispose()
     }

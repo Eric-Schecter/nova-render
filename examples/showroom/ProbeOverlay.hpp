@@ -6,12 +6,17 @@
 
 namespace example
 {
-    inline void DrawProbeOverlay(const render::Window& window, const render::HybridProbeBounds& bounds, bool& visible)
+    inline void DrawProbeOverlay(const render::Window& window, const render::HybridProbeBounds& bounds,
+                                 bool probeGI, bool& visible, bool& warmSideLighting)
     {
         ImGui::SetNextWindowPos({12, 12}, ImGuiCond_Once);
         ImGui::SetNextWindowBgAlpha(.75f);
-        if (ImGui::Begin("DDGI", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
-            ImGui::Checkbox("Show DDGI probes", &visible);
+        if (ImGui::Begin("Showroom", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+        {
+            ImGui::Checkbox("Warm side lighting", &warmSideLighting);
+            if (probeGI)
+                ImGui::Checkbox("Show DDGI probes", &visible);
+        }
         ImGui::End();
         if (!visible)
             return;
