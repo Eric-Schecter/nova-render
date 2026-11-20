@@ -188,7 +188,7 @@ try {
   const ao = await capture('ao-final')
   if (diff(ao, shadow) < 0.05) throw Error('Missing Hybrid AO')
   await page.evaluate(() => r.setHybrid({ halfResolutionAO: true }))
-  await capture('ao-half-first')
+  const firstHalfAO = await capture('ao-half-first')
   const halfAO = await capture('ao-half-history')
   if (
     (await page.evaluate(() => r.getHybridHistoryFrames())) !== 2 ||
@@ -196,7 +196,10 @@ try {
     diff(ao, halfAO) > 5
   )
     throw Error('Independent half-resolution AO failed')
-  await page.evaluate(() => r.setHybrid({ halfResolutionAO: false }))
+  await page.evaluate(() => r.setHybrid({ blueNoiseAO: true }))
+  const blueAO = await capture('ao-half-blue-noise')
+  if (diff(blueAO, firstHalfAO) <= 0.0001) throw Error('Blue-noise AO did not change ray sampling')
+  await page.evaluate(() => r.setHybrid({ halfResolutionAO: false, blueNoiseAO: false }))
   await page.evaluate(() => r.setHybrid({ view: 'ambient-occlusion' }))
   await capture('ao-visibility')
   await page.evaluate(async () => {
@@ -574,6 +577,7 @@ try {
       'ao-final',
       'ao-half-first',
       'ao-half-history',
+      'ao-half-blue-noise',
       'ao-visibility',
       'single-off',
       'single-shadow',

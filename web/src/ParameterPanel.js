@@ -395,6 +395,18 @@ export function attachParameterPanel(
         halfAORow.prepend(halfAOToggle)
         renderer.append(halfAORow)
         fields.set('hybrid_halfResolutionAO', { input: halfAOToggle })
+        const blueNoiseAORow = document.createElement('label'),
+          blueNoiseAOToggle = document.createElement('input')
+        blueNoiseAORow.textContent = 'AO blue noise'
+        blueNoiseAOToggle.type = 'checkbox'
+        blueNoiseAOToggle.setAttribute('aria-label', 'AO blue noise')
+        blueNoiseAOToggle.checked = h.blueNoiseAO
+        blueNoiseAOToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ blueNoiseAO: blueNoiseAOToggle.checked })),
+        )
+        blueNoiseAORow.prepend(blueNoiseAOToggle)
+        renderer.append(blueNoiseAORow)
+        fields.set('hybrid_blueNoiseAO', { input: blueNoiseAOToggle })
         const probeRow = document.createElement('label'),
           probeToggle = document.createElement('input')
         probeRow.textContent = 'DDGI probes'
@@ -985,6 +997,9 @@ export function attachParameterPanel(
         if (field.output) field.output.textContent = String(value)
         if (name === 'halfResolutionAO')
           field.input.disabled = !adapter.getHybrid().ambientOcclusion
+        if (name === 'blueNoiseAO')
+          field.input.disabled =
+            !adapter.getHybrid().ambientOcclusion || !adapter.getHybrid().halfResolutionAO
         if (name === 'mirrorReflections') field.input.disabled = !adapter.getHybrid().reflections
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
         if (

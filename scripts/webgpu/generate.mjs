@@ -161,7 +161,13 @@ for (const [name, vertexEntry, fragmentEntry] of [
     name === 'model-deferred-half'
       ? '#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource
       : rasterSource
-  const data = await compile(source, {
+  const shaderSource =
+    name === 'model-hybrid-ao'
+      ? '#define NOVA_HYBRID_AO_PASS 1\n' +
+        (await readFile('render/shaders/ao-blue-noise.hlsli', 'utf8')) +
+        source
+      : source
+  const data = await compile(shaderSource, {
     model: true,
     vertexEntry,
     fragmentEntry,

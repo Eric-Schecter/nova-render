@@ -249,6 +249,12 @@ int main(int argc, char** argv)
         const auto resetAO = capture("ao-half-reset");
         if (Difference(resetAO, firstAO) > .01 || backend->GetHybridHistoryFrames() != 1)
             throw std::runtime_error("AO history did not reset");
+        settings.blueNoiseAO = true;
+        backend->SetHybrid(settings);
+        const auto blueAO = capture("ao-half-blue-noise");
+        if (Difference(blueAO, firstAO) <= .0001)
+            throw std::runtime_error("Blue-noise AO did not change ray sampling");
+        settings.blueNoiseAO = false;
         settings.halfResolutionAO = false;
         settings.view = HybridView::AmbientOcclusion;
         backend->SetHybrid(settings);

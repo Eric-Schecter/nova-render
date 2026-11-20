@@ -1686,6 +1686,10 @@ float4 HybridAOPSMain(SkyOut input) : SV_Target
     float3 normal = octDecode(gNormals.Load(pixel).zw);
     float3 position = surfacePosition(input, gPosition.Load(pixel).xy);
     float angle = hybridFrameRotation(uint2(pixel.xy), -skyParams.z);
+#if defined(NOVA_HYBRID_AO_PASS)
+    if (irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m33 > .5)
+        angle = novaBluePhase(uint2(local), uint(-skyParams.z - 1));
+#endif
     return float4(hybridAO(position, normal, angle), 0, 0, 1);
 }
 

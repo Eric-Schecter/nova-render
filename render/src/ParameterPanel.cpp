@@ -268,6 +268,9 @@ namespace render::detail
                     ImGui::Checkbox("Hybrid ambient occlusion", &hybrid.ambientOcclusion);
                     ImGui::BeginDisabled(!hybrid.ambientOcclusion);
                     ImGui::Checkbox("Half-resolution Hybrid AO", &hybrid.halfResolutionAO);
+                    ImGui::BeginDisabled(!hybrid.halfResolutionAO);
+                    ImGui::Checkbox("AO blue noise", &hybrid.blueNoiseAO);
+                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::SliderFloat("AO radius", &hybrid.aoRadius, .01f, 10.f);
                     ImGui::SliderFloat("AO strength", &hybrid.aoStrength, 0, 4);

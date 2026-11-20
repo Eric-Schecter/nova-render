@@ -34,7 +34,7 @@ if(APPLE)
     endif()
 endif()
 foreach(shader_name triangle model skybox model-motion sky-motion model-gbuffer model-deferred model-oit model-hybrid-shadow model-hybrid-ao model-hybrid-reflection model-probe-deferred model-deferred-half model-probe-deferred-half model-probe-reflection model-probe-update model-probe-update-shared)
-if(shader_name STREQUAL "skybox" OR shader_name MATCHES "motion$" OR shader_name MATCHES "^model-(gbuffer|deferred|deferred-half|oit|hybrid-shadow|hybrid-ao|hybrid-reflection|probe-deferred|probe-deferred-half|probe-reflection|probe-update|probe-update-shared)$")
+if(shader_name STREQUAL "skybox" OR shader_name MATCHES "motion$" OR shader_name MATCHES "^model-(gbuffer|deferred|deferred-half|oit|hybrid-shadow|hybrid-reflection|probe-deferred|probe-deferred-half|probe-reflection|probe-update|probe-update-shared)$")
     set(_hlsl "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl")
 else()
     set(_hlsl "${PROJECT_SOURCE_DIR}/render/shaders/${shader_name}.hlsl")
@@ -42,6 +42,12 @@ endif()
 set(METAL_AIR)
 set(_nova_stages vert frag)
 set(_nova_shader_defines)
+set(_nova_shader_extra_deps)
+if(shader_name STREQUAL "model-hybrid-ao")
+    set(_nova_shader_extra_deps
+        "${PROJECT_SOURCE_DIR}/render/shaders/ao-blue-noise.hlsli"
+        "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl")
+endif()
 if(shader_name MATCHES "^model-probe-update(-shared)?$")
     set(_nova_stages comp)
     if(shader_name STREQUAL "model-probe-update-shared")
@@ -119,7 +125,7 @@ foreach(stage IN LISTS _nova_stages)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
                 ${_nova_shader_defines} ${vulkan_options} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
-            DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+            DEPENDS "${_hlsl}" ${_nova_shader_extra_deps} "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     endif()
     if(WIN32)
@@ -127,7 +133,7 @@ foreach(stage IN LISTS _nova_stages)
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12=1 ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
-            DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+            DEPENDS "${_hlsl}" ${_nova_shader_extra_deps} "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     elseif(APPLE)
         # Metal uses D3D's Y convention: never reuse the Y-inverted Vulkan module.
@@ -138,7 +144,7 @@ foreach(stage IN LISTS _nova_stages)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
                 ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${spv}" "${_hlsl}"
-            DEPENDS "${_hlsl}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+            DEPENDS "${_hlsl}" ${_nova_shader_extra_deps} "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         add_custom_command(OUTPUT "${msl}"
             COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${spv}" --msl ${NOVA_METAL_PLATFORM_ARGS} --msl-version 20100 --msl-decoration-binding
                 --rename-entry-point ${entry} ${msl_entry} ${stage} --output "${msl}"

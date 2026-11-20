@@ -363,6 +363,7 @@ namespace render::detail
             globals.world[12]    = hybrid.probeSkyLighting && hybrid.probeReflectionLighting ? 1.f : 0.f;
             globals.world[13]    = hybrid.mirrorReflections ? 1.f : 0.f;
             globals.world[14]    = hybrid.probeSkyLighting && hybrid.probeRoughReflections ? 1.f : 0.f;
+            globals.world[15]    = hybrid.blueNoiseAO ? 1.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -989,6 +990,7 @@ namespace render::detail
               || previousHybrid.shadowLight != hybrid.shadowLight
               || previousHybrid.ambientOcclusion != hybrid.ambientOcclusion
               || previousHybrid.halfResolutionAO != hybrid.halfResolutionAO
+              || previousHybrid.blueNoiseAO != hybrid.blueNoiseAO
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
               || previousHybrid.reflectionDistance != hybrid.reflectionDistance
