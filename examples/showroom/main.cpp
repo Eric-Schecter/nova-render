@@ -32,8 +32,7 @@ int main(int argc, char** argv)
           {{"car", assets / "CarConcept.glb", true}, {"floor", assets / "Ground.glb", true}},
           {car, {"floor", "floor"}});
         auto floorMaterial = window.GetMaterials("floor").at(0);
-        floorMaterial.roughness = .35f;
-        floorMaterial.hybridReflectionStrength = 1.f;
+        floorMaterial.hybridReflectionStrength = .65f;
         window.SetMaterial(0, floorMaterial, "floor");
         Camera camera;
         camera.position    = {4.0087951f, 1.6122328f, 4.052369f};

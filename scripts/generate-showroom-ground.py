@@ -1,4 +1,4 @@
-"""Generate the fixed CarConcept floor with four tire contact patches."""
+"""Generate CarConcept's stone paving and tire contact texture."""
 
 import json
 import math
@@ -16,9 +16,12 @@ def png_chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
-def contact_texture():
-    """Return sRGB attenuation. White leaves the underlying floor color unchanged."""
+def paving_texture():
+    """Return sRGB stone variation, joints and tire contact attenuation."""
     pixels = bytearray()
+    angle = math.radians(12)
+    cos_angle, sin_angle = math.cos(angle), math.sin(angle)
+    joint_width = 0.026
     for row in range(SIZE):
         pixels.append(0)
         z = ((row + 0.5) / SIZE * 2 - 1) * HALF_FLOOR
@@ -31,7 +34,18 @@ def contact_texture():
                     inner = math.exp(-((dx / 0.18) ** 2) - (dz / 0.23) ** 2)
                     outer = math.exp(-((dx / 0.33) ** 2) - (dz / 0.32) ** 2)
                     shade = max(shade, 0.55 * inner + 0.18 * outer)
-            srgb = 1.055 * (1 - shade) ** (1 / 2.4) - 0.055
+            u = x * cos_angle - z * sin_angle + 0.6
+            v = x * sin_angle + z * cos_angle + 0.9
+            course = math.floor(v / 2.8)
+            u += 1.8 if course % 2 else 0
+            slab = math.floor(u / 3.6)
+            across, along = u % 3.6, v % 2.8
+            distance = min(across, 3.6 - across, along, 2.8 - along)
+            joint = math.exp(-(distance / joint_width) ** 2)
+            tone = 0.93 + 0.035 * math.sin(slab * 2.4 + course * 1.7)
+            grain = 0.009 * math.sin(16 * x + 9 * z) * math.sin(7 * x - 18 * z)
+            luminance = (tone + grain) * (1 - 0.22 * joint) * (1 - shade)
+            srgb = 1.055 * luminance ** (1 / 2.4) - 0.055
             channel = round(srgb * 255)
             pixels.extend((channel, channel, channel))
     header = struct.pack(">2I5B", SIZE, SIZE, 8, 2, 0, 0, 0)
@@ -48,7 +62,7 @@ def generate(output):
     positions = [-edge, 0, -edge, -edge, 0, edge, edge, 0, edge, edge, 0, -edge]
     geometry = struct.pack("<24f6H", *positions, *([0, 1, 0] * 4), 0, 1, 2, 0, 2, 3)
     uv = struct.pack("<8f", 0, 0, 0, 1, 1, 1, 1, 0)
-    texture = contact_texture()
+    texture = paving_texture()
     data = geometry + uv + texture
     gltf = {
         "asset": {"version": "2.0"},
@@ -60,11 +74,11 @@ def generate(output):
             "indices": 2,
             "material": 0,
         }]}],
-        "materials": [{"extras": {"novaHybridReflectionStrength": 1}, "pbrMetallicRoughness": {
-            "baseColorFactor": [0.13, 0.13, 0.13, 1],
+        "materials": [{"extras": {"novaHybridReflectionStrength": 0.65}, "pbrMetallicRoughness": {
+            "baseColorFactor": [0.19, 0.175, 0.15, 1],
             "baseColorTexture": {"index": 0},
             "metallicFactor": 0,
-            "roughnessFactor": 0.35,
+            "roughnessFactor": 0.52,
         }}],
         "textures": [{"source": 0}],
         "images": [{"bufferView": 4, "mimeType": "image/png"}],
