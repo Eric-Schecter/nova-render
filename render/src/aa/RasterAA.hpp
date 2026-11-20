@@ -150,6 +150,20 @@ namespace render::detail
                         resolve->sources[7] = AAModelClearcoat;
                         resolve->uniforms[2][0] = 1;
                     }
+                    // The raw target is free once the temporal resolve has read it.
+                    auto* spatial = add(30, AAHybridReflection);
+                    spatial->sources[0] = resolvedReflection;
+                    spatial->sources[1] = AAModelNormal;
+                    spatial->sources[2] = AAModelBase;
+                    spatial->sources[4] = AARawMotion;
+                    spatial->sources[6] = AAModelPosition;
+                    spatial->uniforms[2][1] = 1;
+                    if (hybridSettings.clearcoatReflections)
+                    {
+                        spatial->sources[7] = AAModelClearcoat;
+                        spatial->uniforms[2][0] = 1;
+                    }
+                    resolvedReflection = AAHybridReflection;
                     auto* guide = add(30, AAReflectionPreviousGuide);
                     guide->sources[1] = AAModelNormal;
                     guide->sources[4] = AARawMotion;

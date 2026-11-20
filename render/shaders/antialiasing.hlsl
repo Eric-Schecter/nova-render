@@ -191,6 +191,60 @@ float reflectionLuma(float3 radiance)
 {
     return dot(radiance, float3(.2126, .7152, .0722));
 }
+float4 reflectionSpatial(int2 lowPixel, int2 last, float4 current, float4 depth,
+                         float4 coat, float3 normal, float roughness)
+{
+    float roughWeight = smoothstep(.24, .65, roughness);
+    if (roughWeight <= 0)
+        return current;
+
+    // Estimate local luminance variance from taps that agree with the center surface.
+    int stride = roughness >= .55 ? 2 : 1;
+    float3 sum = current.rgb * 4;
+    float centerLuma = reflectionLuma(current.rgb);
+    float2 moments = float2(centerLuma, centerLuma * centerLuma) * 4;
+    float mass = 4;
+    [unroll] for (int y = -1; y <= 1; ++y)
+        [unroll] for (int x = -1; x <= 1; ++x)
+        {
+            if (x == 0 && y == 0)
+                continue;
+            int2 tap = lowPixel + int2(x, y) * stride;
+            if (any(tap < 1) || any(tap > last))
+                continue;
+            int3 guide = int3(tap * 2 - 1, 0);
+            float4 sampleValue = colorTex.Load(int3(tap, 0));
+            float4 tapDepth = areaTex.Load(guide);
+            float dz = abs((depth.x - tapDepth.x) + (depth.y - tapDepth.y));
+            if (sampleValue.a <= 0 || abs(depth.w - tapDepth.w) > .5 || dz > .045)
+                continue;
+
+            float4 tapCoat = aa[2].x > .5 ? searchTex.Load(guide) : 0;
+            bool coated = coat.z > 0;
+            if (abs(coat.z - tapCoat.z) > .1 || (coated && abs(coat.w - tapCoat.w) > .1))
+                continue;
+            float tapRoughness = weightTex.Load(guide).a;
+            if (coated)
+                tapRoughness = min(tapRoughness, tapCoat.w);
+            float dr = abs(tapRoughness - roughness);
+            float2 tapNormal = coated ? tapCoat.xy : edgeTex.Load(guide).xy;
+            float alignment = dot(normal, reflectionNormal(tapNormal));
+            if (dr > .12 || alignment < .9)
+                continue;
+
+            float weight = (x == 0 || y == 0 ? 2 : 1) * exp2(-125 * dz - 18 * dr)
+                           * pow(saturate(alignment), 24);
+            float luma = reflectionLuma(sampleValue.rgb);
+            sum += sampleValue.rgb * weight;
+            moments += float2(luma, luma * luma) * weight;
+            mass += weight;
+        }
+    moments /= mass;
+    float deviation = sqrt(max(0, moments.y - moments.x * moments.x));
+    float filterWeight = roughWeight * saturate(deviation / (.015 + .2 * moments.x));
+    return float4(lerp(current.rgb, sum / mass, filterWeight), current.a);
+}
+
 float4 reflectionTemporal(int2 lowPixel)
 {
     uint width, height;
@@ -215,6 +269,9 @@ float4 reflectionTemporal(int2 lowPixel)
     if (coated)
         roughness = min(roughness, coat.w);
     float3 normal = reflectionNormal(encodedNormal);
+
+    if (aa[2].y > .5)
+        return reflectionSpatial(lowPixel, last, current, depth, coat, normal, roughness);
 
     // Use nearby samples from the same surface to limit isolated fireflies on rough materials.
     float3 neighbors = 0, upper = current.rgb;

@@ -436,14 +436,22 @@ export async function createAntiAliasingView({
             reflectionPreviousGuide,
             87,
           )
+          const spatial = add(30, hybridReflectionTarget)
+          spatial.sources[0] = resolvedReflection
+          spatial.sources[1] = 86
+          spatial.sources[2] = 85
+          spatial.sources[4] = 18
+          spatial.sources[6] = 87
+          spatial.u[9] = 1
+          resolvedReflection = hybridReflectionTarget
           const guide = add(30, reflectionPreviousGuide)
           guide.sources[1] = 86
           guide.sources[4] = 18
           guide.sources[6] = 87
           guide.u[27] = 1
           if (external.hybrid.clearcoatReflections) {
-            resolve.sources[7] = guide.sources[7] = modelClearcoatTarget
-            resolve.u[8] = guide.u[8] = 1
+            resolve.sources[7] = spatial.sources[7] = guide.sources[7] = modelClearcoatTarget
+            resolve.u[8] = spatial.u[8] = guide.u[8] = 1
           }
         }
         const p = add(-5, sceneColor)
