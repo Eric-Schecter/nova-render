@@ -1547,6 +1547,10 @@ bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, 
     float2 fraction = frac(low);
     float3 radiance = 0;
     float weightSum = 0;
+    float3 brightest = 0;
+    float strongest = 0, nextStrongest = 0, brightestWeight = 0;
+    uint compatible = 0;
+    bool suppressOutliers = surface.roughness >= .25;
     [unroll] for (int y = 0; y < 2; ++y)
         [unroll] for (int x = 0; x < 2; ++x)
         {
@@ -1573,10 +1577,30 @@ bool upsampleHybridReflection(int2 pixel, float4 position, SurfaceData surface, 
             if (dz > .06 || alignment < .8 || abs(position.w - guideDepth.w) > .5)
                 weight = 0;
             weight *= max(.02, (x == 0 ? 1 - fraction.x : fraction.x) * (y == 0 ? 1 - fraction.y : fraction.y));
+            if (suppressOutliers && weight > .001)
+            {
+                ++compatible;
+                float brightness = dot(sampleValue.rgb, float3(.2126, .7152, .0722));
+                if (brightness > strongest)
+                {
+                    nextStrongest = strongest;
+                    strongest = brightness;
+                    brightest = sampleValue.rgb;
+                    brightestWeight = weight;
+                }
+                else
+                    nextStrongest = max(nextStrongest, brightness);
+            }
             radiance += sampleValue.rgb * weight;
             weightSum += weight;
         }
-    reflection = radiance / max(weightSum, .001);
+    if (compatible >= 3)
+    {
+        // Limit an isolated bright tap while retaining the existing depth and normal weights.
+        float ceiling = max(.015, nextStrongest * 1.5);
+        radiance -= brightest * brightestWeight * (1 - saturate(ceiling / max(strongest, .0001)));
+    }
+    reflection = max(radiance, 0) / max(weightSum, .001);
     return weightSum >= .001;
 }
 #endif
