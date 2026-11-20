@@ -21,7 +21,7 @@ VkDescriptorSet             modelSet = VK_NULL_HANDLE, gBufferSet = VK_NULL_HAND
 VkDescriptorSetLayout probeSetLayout = VK_NULL_HANDLE;
 VkDescriptorSet probeReadSet = VK_NULL_HANDLE, probeUpdateSet = VK_NULL_HANDLE, probeModelSet = VK_NULL_HANDLE;
 ModelBuffer probeUniform, probeCurrent, probePrevious;
-VkPipeline probeUpdatePipeline = VK_NULL_HANDLE;
+VkPipeline probeUpdatePipeline = VK_NULL_HANDLE, probeSharedUpdatePipeline = VK_NULL_HANDLE;
 bool                        modelReady     = false;
 uint32_t                    memoryType(uint32_t bits, VkMemoryPropertyFlags flags)
 {
@@ -424,6 +424,9 @@ void destroyModel()
     if (probeUpdatePipeline)
         vkDestroyPipeline(device, probeUpdatePipeline, nullptr);
     probeUpdatePipeline = VK_NULL_HANDLE;
+    if (probeSharedUpdatePipeline)
+        vkDestroyPipeline(device, probeSharedUpdatePipeline, nullptr);
+    probeSharedUpdatePipeline = VK_NULL_HANDLE;
     if (probeSetLayout)
         vkDestroyDescriptorSetLayout(device, probeSetLayout, nullptr);
     probeSetLayout = VK_NULL_HANDLE;

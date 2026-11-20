@@ -21,10 +21,7 @@ export function createHybridProbes(device, pipeline, layout) {
   })
   const bindings = (buffers) =>
     buffers.map((buffer, binding) => ({ binding: binding + 25, resource: { buffer } }))
-  const batch = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(2),
-    entries: bindings([config, previous, current]),
-  })
+  const batchGroups = new Map()
   const read = device.createBindGroup({ layout, entries: bindings([config, current]) })
   let first = 0
   let sequence = 0
@@ -34,7 +31,14 @@ export function createHybridProbes(device, pipeline, layout) {
     invalidate() {
       reset = true
     },
-    update(bounds, header, sceneResources, minimumExtent = 0.25, multiBounce = false) {
+    update(
+      bounds,
+      header,
+      sceneResources,
+      minimumExtent = 0.25,
+      multiBounce = false,
+      sharedPipeline = null,
+    ) {
       if (!bounds) return
       const [minimum, maximum] = bounds
       const extent = maximum.map((v, i) => Math.max(v - minimum[i], minimumExtent))
@@ -66,16 +70,25 @@ export function createHybridProbes(device, pipeline, layout) {
         multiBounce ? size : batchCount * bytesPerProbe,
       )
       const pass = encoder.beginComputePass()
-      pass.setPipeline(pipeline)
+      const updatePipeline = sharedPipeline || pipeline
+      if (!batchGroups.has(updatePipeline))
+        batchGroups.set(
+          updatePipeline,
+          device.createBindGroup({
+            layout: updatePipeline.getBindGroupLayout(2),
+            entries: bindings([config, previous, current]),
+          }),
+        )
+      pass.setPipeline(updatePipeline)
       pass.setBindGroup(
         0,
         device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
+          layout: updatePipeline.getBindGroupLayout(0),
           entries: sceneResources,
         }),
       )
-      pass.setBindGroup(2, batch)
-      pass.dispatchWorkgroups(Math.ceil((batchCount * 6) / 32))
+      pass.setBindGroup(2, batchGroups.get(updatePipeline))
+      pass.dispatchWorkgroups(sharedPipeline ? batchCount : Math.ceil((batchCount * 6) / 32))
       pass.end()
       device.queue.submit([encoder.finish()])
       first = (first + batchCount) % count

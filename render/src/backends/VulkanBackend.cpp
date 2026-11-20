@@ -206,7 +206,7 @@ namespace render::detail
             probeFrame = PrepareProbes(reset);
             if (!probeFrame)
                 return;
-            if (!probeUpdatePipeline)
+            if (!probeCurrent.buffer)
             {
                 constexpr auto bytes = ProbeCount * ProbeBytes;
                 modelBuffer(probeUniform, sizeof(ProbeConfig), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -246,7 +246,13 @@ namespace render::detail
                 };
                 bind(probeReadSet, probeCurrent);
                 bind(probeUpdateSet, probePrevious);
-                auto                        module = shader("model-probe-update.comp.spv");
+                reset = true;
+            }
+            auto& pipeline = hybrid.probeSharedRays ? probeSharedUpdatePipeline : probeUpdatePipeline;
+            if (!pipeline)
+            {
+                auto module = shader(hybrid.probeSharedRays ? "model-probe-update-shared.comp.spv"
+                                                          : "model-probe-update.comp.spv");
                 VkComputePipelineCreateInfo info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
                 info.stage        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
                 info.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -254,10 +260,9 @@ namespace render::detail
                 info.stage.pName  = "HybridProbeUpdateCS";
                 info.layout       = layout;
                 const auto status =
-                  vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &probeUpdatePipeline);
+                  vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
                 vkDestroyShaderModule(device, module, nullptr);
                 check(status, "Create probe update pipeline");
-                reset = true;
             }
             auto upload = [&](ModelBuffer& buffer, const void* data, size_t size) {
                 void* mapped;
@@ -312,10 +317,11 @@ namespace render::detail
               VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
               VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, probeUpdatePipeline);
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &probeModelSet, 0, nullptr);
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2, 1, &probeUpdateSet, 0, nullptr);
-            vkCmdDispatch(command, (probeConfig.count * 6 + 31) / 32, 1, 1);
+            const auto groups = hybrid.probeSharedRays ? probeConfig.count : (probeConfig.count * 6 + 31) / 32;
+            vkCmdDispatch(command, groups, 1, 1);
             barrier(
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
               VK_ACCESS_SHADER_WRITE_BIT,

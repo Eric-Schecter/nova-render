@@ -1320,6 +1320,63 @@ struct HybridProbeLobe
 [[vk::binding(26, 2)]] StructuredBuffer<HybridProbeLobe> probePrevious : register(t0, space2);
 [[vk::binding(27, 2)]] RWStructuredBuffer<HybridProbeLobe> probeUpdated : register(u0, space2);
 
+#if defined(NOVA_SHARED_PROBE_RAYS)
+groupshared float4 directionDistance[96];
+groupshared float3 sampleRadiance[96];
+
+[numthreads(96, 1, 1)]
+void HybridProbeUpdateCS(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+{
+    const uint sampleCount = 96;
+    // Dispatch one group per scheduled probe. Every lane reaches the barrier.
+    uint3 dimensions = probeDimensionsFirst.xyz;
+    uint probe = probeDimensionsFirst.w + group.x;
+    uint3 cell = uint3(probe % dimensions.x, probe / dimensions.x % dimensions.y,
+                      probe / (dimensions.x * dimensions.y));
+    float3 origin = probeOrigin.xyz + float3(cell) * probeSpacingDistance.xyz;
+    float phase = frac(float(probeBatch.y) * .61803399 + float(probe) * .75487767);
+    float z = 1 - 2 * frac((lane + .5) / sampleCount + phase);
+    float phi = lane * 2.39996323 + phase * 6.28318531;
+    float radius = sqrt(max(0, 1 - z * z));
+    float3 ray = float3(radius * cos(phi), z, radius * sin(phi));
+    float distance = probeSpacingDistance.w;
+    uint instance, hitTriangle;
+    float2 bary;
+    float3 radiance = 0;
+    bool sampleSky = cameraForward.w > .5 && instances[probeSceneHeader].world._m22 > .5;
+    bool feedback = sampleSky && instances[probeSceneHeader].world._m32 > .5;
+    if (hybridNearest(probeSceneHeader, origin, ray, distance, instance, hitTriangle, bary))
+        radiance = hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray, feedback ? .65 : 0);
+    else if (sampleSky)
+        radiance = environmentTexture.SampleLevel(textureSampler, environmentDirection(ray), 0).rgb * environmentParams.z;
+    directionDistance[lane] = float4(ray, saturate(distance / probeSpacingDistance.w));
+    sampleRadiance[lane] = radiance;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (lane >= 6)
+        return;
+    uint axis = lane / 2;
+    float3 n = float3(axis == 0, axis == 1, axis == 2) * ((lane & 1) ? -1 : 1);
+    float3 incoming = 0;
+    float2 moments = 0;
+    float sum = 0;
+    [loop] for (uint j = 0; j < sampleCount; ++j)
+    {
+        float w = saturate(dot(n, directionDistance[j].xyz));
+        float d = directionDistance[j].w;
+        incoming += sampleRadiance[j] * w;
+        moments += float2(d, d * d) * w;
+        sum += w;
+    }
+    uint index = probe * 6 + lane;
+    HybridProbeLobe previous = probePrevious[index];
+    float history = saturate(probeHistoryWeight) * previous.irradiance.w;
+    HybridProbeLobe result;
+    result.irradiance = float4(lerp(incoming / max(sum, 1e-5), previous.irradiance.rgb, history), 1);
+    result.distanceMoments = float4(lerp(moments / max(sum, 1e-5), previous.distanceMoments.xy, history), 0, 0);
+    probeUpdated[index] = result;
+}
+#else
 [numthreads(32, 1, 1)]
 void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
 {
@@ -1371,6 +1428,8 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
     result.distanceMoments = float4(lerp(moments / sampleCount, previous.distanceMoments.xy, history), 0, 0);
     probeUpdated[index] = result;
 }
+
+#endif
 
 // Axis lobes use squared direction components so constant radiance stays constant.
 float4 hybridProbeDirection(uint probe, float3 direction, bool distance)

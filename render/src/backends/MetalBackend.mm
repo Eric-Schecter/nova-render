@@ -282,7 +282,7 @@ namespace render::detail
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
           aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaProbeReflection, aaDeferredHalf;
-        id<MTLComputePipelineState> probeUpdatePipeline;
+        id<MTLComputePipelineState> probeUpdatePipeline, probeSharedUpdatePipeline;
         id<MTLRenderPipelineState>  probeDeferredPipeline, probeDeferredHalf;
         id<MTLBuffer>               probeCurrent, probePrevious;
         bool                        probeFrame = false;
@@ -292,9 +292,11 @@ namespace render::detail
             probeFrame = PrepareProbes(reset);
             if (!probeFrame)
                 return;
-            if (!probeUpdatePipeline)
+            auto& pipeline = hybrid.probeSharedRays ? probeSharedUpdatePipeline : probeUpdatePipeline;
+            if (!pipeline)
             {
-                const auto bytes = LoadShader(settings.shaderDirectory, "model-probe-update.metallib");
+                const auto bytes = LoadShader(settings.shaderDirectory,
+                  hybrid.probeSharedRays ? "model-probe-update-shared.metallib" : "model-probe-update.metallib");
                 auto       blob  = dispatch_data_create(
                   bytes.data(),
                   bytes.size(),
@@ -304,11 +306,13 @@ namespace render::detail
                 auto     library = [device newLibraryWithData:blob error:&error];
                 if (!library)
                     throw metalError("Load probe update shader", error);
-                probeUpdatePipeline =
-                  [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"computeMain"]
-                                                        error:&error];
-                if (!probeUpdatePipeline)
+                pipeline = [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"computeMain"]
+                                                                  error:&error];
+                if (!pipeline)
                     throw metalError("Create probe update pipeline", error);
+            }
+            if (!probeCurrent)
+            {
                 probeCurrent  = [device newBufferWithLength:ProbeCount * ProbeBytes
                                                    options:MTLResourceStorageModePrivate];
                 probePrevious = [device newBufferWithLength:ProbeCount * ProbeBytes
@@ -328,7 +332,7 @@ namespace render::detail
                             size:bytes];
             [blit endEncoding];
             auto encoder = [command computeCommandEncoder];
-            [encoder setComputePipelineState:probeUpdatePipeline];
+            [encoder setComputePipelineState:pipeline];
             [encoder setBytes:&rasterAA.current length:sizeof(SceneUniforms) atIndex:0];
             [encoder setBuffer:sceneInstanceBuffer offset:0 atIndex:14];
             [encoder setBytes:&probeConfig length:sizeof(probeConfig) atIndex:25];
@@ -338,8 +342,9 @@ namespace render::detail
                 [encoder setTexture:modelTextures[i] atIndex:(i < 5 ? 2 + i : 28 + i - 5)];
             [encoder setTexture:environmentTexture atIndex:8];
             [encoder setSamplerState:modelSampler atIndex:7];
-            [encoder dispatchThreadgroups:MTLSizeMake((probeConfig.count * 6 + 31) / 32, 1, 1)
-                    threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+            const auto groups = hybrid.probeSharedRays ? probeConfig.count : (probeConfig.count * 6 + 31) / 32;
+            [encoder dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+                    threadsPerThreadgroup:MTLSizeMake(hybrid.probeSharedRays ? 96 : 32, 1, 1)];
             [encoder endEncoding];
         }
         id<MTLDepthStencilState>   oitDepthState;

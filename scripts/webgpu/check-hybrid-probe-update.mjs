@@ -9,6 +9,12 @@ const { compute } = await compile(source, {
   optimizeCompute: true,
   maxSourceBytes: 128 * 1024,
 })
+const { compute: sharedCompute } = await compile('#define NOVA_SHARED_PROBE_RAYS 1\n' + source, {
+  compute: true,
+  computeEntry: 'HybridProbeUpdateCS',
+  optimizeCompute: true,
+  maxSourceBytes: 128 * 1024,
+})
 const { compute: sampling } = await compile('#define NOVA_PROBE_SAMPLE_VALIDATION 1\n' + source, {
   compute: true,
   computeEntry: 'HybridProbeSampleCS',
@@ -23,7 +29,7 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage()
   await page.goto(process.env.NOVA_TEST_URL || 'http://127.0.0.1:5220')
-  await page.evaluate(async (code) => {
+  const verifyUpdate = async (code) => {
     const adapter = await navigator.gpu.requestAdapter()
     const device = await adapter.requestDevice()
     const pipeline = await device.createComputePipelineAsync({
@@ -142,7 +148,8 @@ try {
       check(sky.subarray(i, i + 8), [...incident, 1, 1, 1, 0, 0])
     readback.unmap()
     device.destroy()
-  }, compute)
+  }
+  for (const update of [compute, sharedCompute]) await page.evaluate(verifyUpdate, update)
   await page.evaluate(async (code) => {
     const adapter = await navigator.gpu.requestAdapter()
     const device = await adapter.requestDevice()

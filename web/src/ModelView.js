@@ -211,6 +211,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       probeDeferred,
       probeDeferredHalf,
       probeReflectionPipeline,
+      probeSharedUpdatePipeline,
       probeShader,
       probeBounds,
       probeLightingKey,
@@ -387,6 +388,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           true,
           true,
         )
+      if (hybrid.probeSharedRays && !probeSharedUpdatePipeline)
+        probeSharedUpdatePipeline = await device.createComputePipelineAsync({
+          layout: 'auto',
+          compute: {
+            module: device.createShaderModule({ code: probeShader.sharedCompute }),
+            entryPoint: 'HybridProbeUpdateCS',
+          },
+        })
       const key = JSON.stringify([lighting, light, environmentSettings])
       if (key !== probeLightingKey) probes.invalidate()
       probeLightingKey = key
@@ -405,6 +414,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ],
         hybrid.probeBounds ? 0 : 0.25,
         !!environment && hybrid.probeSkyLighting && hybrid.probeMultiBounce,
+        hybrid.probeSharedRays ? probeSharedUpdatePipeline : null,
       )
       probeEnabled = true
     }
@@ -528,6 +538,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           (hybrid?.probeGI !== settings?.probeGI ||
             hybrid?.probeSkyLighting !== settings?.probeSkyLighting ||
             hybrid?.probeMultiBounce !== settings?.probeMultiBounce ||
+            hybrid?.probeSharedRays !== settings?.probeSharedRays ||
             JSON.stringify(hybrid?.probeBounds) !== JSON.stringify(settings?.probeBounds))
         )
           probes?.invalidate()

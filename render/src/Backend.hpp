@@ -156,7 +156,8 @@ namespace render::detail
                 }
             const bool resetProbes = hybrid.probeGI != value.probeGI || hybrid.probeBounds != value.probeBounds
                                      || hybrid.probeSkyLighting != value.probeSkyLighting
-                                     || hybrid.probeMultiBounce != value.probeMultiBounce;
+                                     || hybrid.probeMultiBounce != value.probeMultiBounce
+                                     || hybrid.probeSharedRays != value.probeSharedRays;
             hybrid = value;
             RebuildRasterInstances(resetProbes);
             rasterAA.Reset();
@@ -987,6 +988,7 @@ namespace render::detail
               || previousHybrid.probeSkyLighting != hybrid.probeSkyLighting
               || previousHybrid.probeMultiBounce != hybrid.probeMultiBounce || previousHybrid.probeGI != hybrid.probeGI
               || previousHybrid.probeReflectionLighting != hybrid.probeReflectionLighting
+              || previousHybrid.probeSharedRays != hybrid.probeSharedRays
               || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
@@ -1001,7 +1003,8 @@ namespace render::detail
                 RebuildRasterInstances(
                   previousHybrid.probeGI != hybrid.probeGI || previousHybrid.probeBounds != hybrid.probeBounds
                   || previousHybrid.probeSkyLighting != hybrid.probeSkyLighting
-                  || previousHybrid.probeMultiBounce != hybrid.probeMultiBounce);
+                  || previousHybrid.probeMultiBounce != hybrid.probeMultiBounce
+                  || previousHybrid.probeSharedRays != hybrid.probeSharedRays);
                 rasterAA.Reset();
             }
             if (

@@ -174,6 +174,11 @@ const probeUpdate = await compile(rasterSource, {
   computeEntry: 'HybridProbeUpdateCS',
   optimizeCompute: true,
 })
+const probeSharedUpdate = await compile('#define NOVA_SHARED_PROBE_RAYS 1\n' + rasterSource, {
+  compute: true,
+  computeEntry: 'HybridProbeUpdateCS',
+  optimizeCompute: true,
+})
 const probeDeferred = await compile('#define NOVA_HYBRID_PROBES 1\n' + rasterSource, {
   model: true,
   vertexEntry: 'SkyVSMain',
@@ -194,6 +199,7 @@ await writeFile(
   'docs/public/generated/model-probes.json',
   JSON.stringify({
     compute: probeUpdate.compute,
+    sharedCompute: probeSharedUpdate.compute,
     vert: probeDeferred.vert,
     frag: probeDeferred.frag,
     halfFrag: probeDeferredHalf.frag,

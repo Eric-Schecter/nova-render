@@ -397,6 +397,18 @@ export function attachParameterPanel(
         probeRow.prepend(probeToggle)
         renderer.append(probeRow)
         fields.set('hybrid_probeGI', { input: probeToggle })
+        const sharedRaysRow = document.createElement('label'),
+          sharedRaysToggle = document.createElement('input')
+        sharedRaysRow.textContent = 'DDGI shared rays'
+        sharedRaysToggle.type = 'checkbox'
+        sharedRaysToggle.setAttribute('aria-label', 'DDGI shared rays')
+        sharedRaysToggle.checked = h.probeSharedRays
+        sharedRaysToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ probeSharedRays: sharedRaysToggle.checked })),
+        )
+        sharedRaysRow.prepend(sharedRaysToggle)
+        renderer.append(sharedRaysRow)
+        fields.set('hybrid_probeSharedRays', { input: sharedRaysToggle })
         const probeSkyRow = document.createElement('label'),
           probeSkyToggle = document.createElement('input')
         probeSkyRow.textContent = 'DDGI sky lighting'
@@ -936,11 +948,19 @@ export function attachParameterPanel(
         else field.input.value = value
         if (field.output) field.output.textContent = String(value)
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
-        if (['probeSkyLighting', 'probeMultiBounce', 'probeReflectionLighting'].includes(name))
+        if (
+          [
+            'probeSkyLighting',
+            'probeMultiBounce',
+            'probeReflectionLighting',
+            'probeSharedRays',
+          ].includes(name)
+        )
           field.input.disabled =
             adapter.getHybridCapabilities?.()?.probeGI === false ||
             !adapter.getHybrid().probeGI ||
-            (name !== 'probeSkyLighting' && !adapter.getHybrid().probeSkyLighting) ||
+            (['probeMultiBounce', 'probeReflectionLighting'].includes(name) &&
+              !adapter.getHybrid().probeSkyLighting) ||
             (name === 'probeReflectionLighting' && !adapter.getHybrid().reflections)
         if (name === 'shadowLight')
           field.input.closest('label').style.display =
