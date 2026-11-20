@@ -287,6 +287,10 @@ namespace render::detail
                     ImGui::BeginDisabled(!hybrid.reflections || !hybrid.halfResolutionReflections);
                     ImGui::Checkbox("Reflection temporal denoising", &hybrid.reflectionDenoising);
                     ImGui::EndDisabled();
+                    ImGui::BeginDisabled(
+                      !hybrid.reflections || !hybrid.halfResolutionReflections || !hybrid.reflectionDenoising);
+                    ImGui::Checkbox("Reflection hit reprojection", &hybrid.reflectionHitReprojection);
+                    ImGui::EndDisabled();
                     int reflectionSamples = int(hybrid.reflectionSamples);
                     if (ImGui::SliderInt("Reflection rays/pixel", &reflectionSamples, 1, 16))
                         hybrid.reflectionSamples = uint32_t(reflectionSamples);

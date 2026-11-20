@@ -245,6 +245,59 @@ float4 reflectionSpatial(int2 lowPixel, int2 last, float4 current, float4 depth,
     return float4(lerp(current.rgb, sum / mass, filterWeight), current.a);
 }
 
+float3 reflectionCameraRay(float2 pixel, int2 extent)
+{
+    float2 ndc = (pixel - .5) / float2(extent) * float2(2, -2) + float2(-1, 1);
+    return aa[14].xyz + ndc.x * aa[12].w * aa[12].xyz + ndc.y * aa[13].w * aa[13].xyz;
+}
+
+bool reflectionVirtualHistory(int2 lowPixel, int2 extent, float4 depth, float encodedDistance,
+                              inout float2 previousPixel, inout float previousDepth)
+{
+    if (aa[2].z < .5 || encodedDistance <= 1 || aa[13].w < 0
+        || all(abs(aa[11].xyz - aa[15].xyz) < 1e-6))
+        return false;
+
+    int2 pixel = lowPixel * 2 - 1;
+    float3 normal = reflectionNormal(edgeTex.Load(int3(pixel, 0)).zw);
+    float3 ray = reflectionCameraRay(pixel, extent);
+    float primaryDepth = exp2(depth.x + depth.y);
+    float3 surface = ray * primaryDepth;
+
+    // Test neighbors along both axes against the center tangent plane.
+    [unroll] for (int axis = 0; axis < 2; ++axis)
+    {
+        int2 offset = axis == 0 ? int2(2, 0) : int2(0, 2);
+        int2 tap = pixel + offset;
+        if (any(tap > extent))
+            tap = pixel - offset;
+        if (any(tap < 1))
+            return false;
+        float4 neighbor = areaTex.Load(int3(tap, 0));
+        float3 tapRay = reflectionCameraRay(tap, extent);
+        float3 tapSurface = tapRay * exp2(neighbor.x + neighbor.y);
+        if (abs(depth.w - neighbor.w) > .5
+            || abs(dot(normal, tapSurface - surface)) > max(.002, primaryDepth * .002)
+            || dot(normal, reflectionNormal(edgeTex.Load(int3(tap, 0)).zw)) < .998)
+            return false;
+    }
+
+    float distance = exp2(encodedDistance - 1) - 1;
+    float3 virtualPoint = aa[11].xyz + surface + normalize(ray) * distance;
+    float4 clip = aa[7] * virtualPoint.x + aa[8] * virtualPoint.y + aa[9] * virtualPoint.z + aa[10];
+    float3 virtualRay = virtualPoint - aa[15].xyz;
+    float denominator = dot(normal, virtualRay);
+    if (clip.w <= 0 || abs(denominator) < 1e-5)
+        return false;
+    float t = dot(normal, aa[11].xyz + surface - aa[15].xyz) / denominator;
+    if (t <= 0 || t >= 1)
+        return false;
+    float2 uv = clip.xy / clip.w * float2(.5, -.5) + .5;
+    previousPixel = (uv * float2(extent) - .5 + aa[1].zw) * .5 + 1;
+    previousDepth = log2(max(1e-20, clip.w * t));
+    return true;
+}
+
 float4 reflectionTemporal(int2 lowPixel)
 {
     uint width, height;
@@ -310,6 +363,8 @@ float4 reflectionTemporal(int2 lowPixel)
     if (aa[3].x < .5 || motion.w < .5)
         return float4(current.rgb, 1);
     float2 previousPixel = float2(lowPixel) + (motion.xy * float2(extent) + aa[1].zw - aa[1].xy) * .5;
+    float previousDepth = motion.z;
+    reflectionVirtualHistory(lowPixel, extent, depth, current.a, previousPixel, previousDepth);
     int2 first = int2(floor(previousPixel));
     float2 fracPixel = frac(previousPixel);
     float3 sum = 0;
@@ -321,7 +376,7 @@ float4 reflectionTemporal(int2 lowPixel)
             if (any(tap < 1) || any(tap > last))
                 continue;
             float4 guide = oldMotionTex.Load(int3(tap, 0));
-            if (abs(guide.w - motion.w) > .25 || abs(guide.z - motion.z) > .045
+            if (abs(guide.w - motion.w) > .25 || abs(guide.z - previousDepth) > .045
                 || dot(normal, reflectionNormal(guide.xy)) < .9)
                 continue;
             float4 history = historyTex.Load(int3(tap, 0));

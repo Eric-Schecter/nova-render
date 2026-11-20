@@ -1450,14 +1450,18 @@ float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
 }
 
 float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n, float rough,
-                            float3 f0, float f90, float rotation)
+                            float3 f0, float f90, float rotation, bool measureHit, out float hitDistance)
 {
+    hitDistance = 0;
     float  maxDistance = instances[header].world._m01;
     uint   samples     = uint(instances[header].world._m11);
     float3 tangent   = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
            bitangent = cross(n, tangent);
     float  nv = max(.001, dot(n, v)), a = rough * rough;
     float3 sum = 0;
+    float nearest = maxDistance, farthest = 0;
+    uint hitCount = 0, firstInstance = 0;
+    bool sameInstance = true;
     [loop] for (uint j = 0; j < samples; ++j)
     {
         float  u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
@@ -1474,6 +1478,16 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
         float3 radiance;
         if (hybridNearest(header, origin, ray, distance, instance, hitTri, bary))
         {
+            if (measureHit)
+            {
+                if (hitCount == 0)
+                    firstInstance = instance;
+                sameInstance = sameInstance && firstInstance == instance;
+                nearest = min(nearest, distance);
+                farthest = max(farthest, distance);
+                hitDistance += distance;
+                ++hitCount;
+            }
             radiance = hybridHitRadiance(instance, hitTri, bary, origin + ray * distance, ray);
         }
         else
@@ -1485,13 +1499,17 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
         float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
         sum += radiance * fresnel(vh, f0, f90) * (g * vh / (nv * nh));
     }
+    // Mixed sky/geometry or materially different hit distances have no stable virtual point.
+    hitDistance = sameInstance && hitCount == samples && farthest - nearest <= .15 * nearest
+                    ? hitDistance / max(1, hitCount) : 0;
     return sum / max(1, samples);
 }
 
-float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCoat)
+float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCoat, bool measureHit, out float hitDistance)
 {
     float3 v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
     float3 reflection = 0;
+    hitDistance = 0;
     const int lobes = traceCoat && s.clearcoat.x > 0 ? 2 : 1;
     [loop] for (int lobe = 0; lobe < lobes; ++lobe)
     {
@@ -1501,7 +1519,12 @@ float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCo
         float3 n = coat ? s.coatNormal : s.normal;
         float roughness = max(.02, coat ? s.clearcoat.y : s.roughness);
         float weight = coat ? s.clearcoat.x : traceCoat ? clearcoatTransmission(s, v) : 1;
-        reflection += weight * hybridReflectionLobe(s, header, v, n, roughness, f0, f90, rotation + lobe * 1.618);
+        float distance;
+        reflection += weight * hybridReflectionLobe(
+          s, header, v, n, roughness, f0, f90, rotation + lobe * 1.618,
+          measureHit && lobes == 1 && roughness <= .2 && dot(n, s.geometricNormal) > .995, distance);
+        if (!coat)
+            hitDistance = distance;
     }
     return reflection;
 }
@@ -1540,8 +1563,11 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     s.clearcoat = coat.zw;
     uint header = uint(irradiance[3].w) - 1;
     bool traceCoat = instances[header].world._m02 > .5;
-    return float4(hybridReflection(s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w)),
-                                   header, traceCoat), 1);
+    float hitDistance;
+    float3 reflected = hybridReflection(
+      s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w)), header, traceCoat,
+      instances[header].world._m12 > .5 && cameraUp.w >= 0, hitDistance);
+    return float4(reflected, 1 + log2(1 + hitDistance));
 }
 
 #if defined(NOVA_HALF_REFLECTIONS)
@@ -1686,7 +1712,10 @@ float4 DeferredPSMain(SkyOut input)
 #if defined(NOVA_HALF_REFLECTIONS)
             if (!upsampleHybridReflection(pixel.xy, pos, s, traceCoat, reflection))
 #endif
-                reflection = hybridReflection(s, rotation, header, traceCoat);
+            {
+                float unusedDistance;
+                reflection = hybridReflection(s, rotation, header, traceCoat, false, unusedDistance);
+            }
             if (instances[header].world._m30 > 2.5)
                 return float4(displayRadiance(reflection), 1);
             reflectionMix = reflectionOverride >= 0 ? reflectionOverride : instances[header].world._m21;

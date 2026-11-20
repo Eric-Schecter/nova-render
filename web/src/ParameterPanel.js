@@ -490,6 +490,19 @@ export function attachParameterPanel(
         )
         reflectionDenoiseRow.prepend(reflectionDenoiseToggle)
         renderer.append(reflectionDenoiseRow)
+        const reflectionReprojectionRow = document.createElement('label'),
+          reflectionReprojectionToggle = document.createElement('input')
+        reflectionReprojectionRow.textContent = 'Reflection hit reprojection'
+        reflectionReprojectionToggle.type = 'checkbox'
+        reflectionReprojectionToggle.setAttribute('aria-label', 'Reflection hit reprojection')
+        reflectionReprojectionToggle.checked = h.reflectionHitReprojection
+        reflectionReprojectionToggle.disabled =
+          reflectionDenoiseToggle.disabled || !h.reflectionDenoising
+        reflectionReprojectionToggle.addEventListener('change', () =>
+          adapter.setHybrid({ reflectionHitReprojection: reflectionReprojectionToggle.checked }),
+        )
+        reflectionReprojectionRow.prepend(reflectionReprojectionToggle)
+        renderer.append(reflectionReprojectionRow)
         const shadowTemporalRow = document.createElement('label'),
           shadowTemporalToggle = document.createElement('input')
         shadowTemporalRow.textContent = 'Shadow temporal reconstruction'

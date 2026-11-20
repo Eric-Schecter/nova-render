@@ -160,11 +160,15 @@ namespace render::detail
             rasterAA.Reset();
         }
         HybridSettings GetHybrid() const { return hybrid; }
+        bool           HasHybridTemporalHistory() const
+        {
+            return hybrid.temporalReconstruction || (hybrid.shadows && hybrid.shadowTemporalReconstruction)
+                   || (hybrid.reflections && hybrid.halfResolutionReflections && hybrid.reflectionDenoising && hybrid.reflectionHitReprojection);
+        }
         uint32_t       GetHybridHistoryFrames() const
         {
-            return mode == RenderMode::Hybrid
-                       && (hybrid.temporalReconstruction || (hybrid.shadows && hybrid.shadowTemporalReconstruction))
-                       && hybrid.view == HybridView::Final && modelRaster.view == GBufferView::Final
+            return mode == RenderMode::Hybrid && HasHybridTemporalHistory() && hybrid.view == HybridView::Final
+                       && modelRaster.view == GBufferView::Final
                      ? rasterAA.frames
                      : 0;
         }
@@ -349,6 +353,7 @@ namespace render::detail
             globals.world[6]     = hybrid.reflectionStrength;
             globals.world[7]     = hybrid.diffuseBounce ? 10.f : 0.f;
             globals.world[8]     = hybrid.clearcoatReflections ? 1.f : 0.f;
+            globals.world[9]     = hybrid.reflectionDenoising && hybrid.reflectionHitReprojection ? 1.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -736,12 +741,10 @@ namespace render::detail
             for (unsigned i = 0; i < 4; ++i)
                 orientationDot += old.orientation[i] * next.orientation[i];
             const bool preserve =
-              mode == RenderMode::Hybrid
-              && (hybrid.temporalReconstruction || (hybrid.shadows && hybrid.shadowTemporalReconstruction))
-              && old.projection == next.projection && old.verticalFov == next.verticalFov
-              && old.orthographicHeight == next.orthographicHeight && old.nearPlane == next.nearPlane
-              && old.farPlane == next.farPlane && old.exposure == next.exposure && distanceSquared <= 4
-              && std::abs(orientationDot) > .98480775f;
+              mode == RenderMode::Hybrid && HasHybridTemporalHistory() && old.projection == next.projection
+              && old.verticalFov == next.verticalFov && old.orthographicHeight == next.orthographicHeight
+              && old.nearPlane == next.nearPlane && old.farPlane == next.farPlane && old.exposure == next.exposure
+              && distanceSquared <= 4 && std::abs(orientationDot) > .98480775f;
             viewCamera = next;
             if (!preserve)
                 rasterAA.Reset();
@@ -981,6 +984,7 @@ namespace render::detail
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
               || previousHybrid.reflectionDenoising != hybrid.reflectionDenoising
+              || previousHybrid.reflectionHitReprojection != hybrid.reflectionHitReprojection
               || previousHybrid.clearcoatReflections != hybrid.clearcoatReflections
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.shadowTemporalReconstruction != hybrid.shadowTemporalReconstruction

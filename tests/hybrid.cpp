@@ -404,6 +404,24 @@ int main(int argc, char** argv)
         };
         if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
             throw std::runtime_error("Reflected helmet lost normal map or material AO");
+        auto reprojection                      = hitMaterials;
+        reprojection.view                      = HybridView::Final;
+        reprojection.halfResolutionReflections = true;
+        reprojection.reflectionDenoising       = true;
+        reprojection.reflectionHitReprojection = true;
+        backend->SetHybrid(reprojection);
+        capture("reflection-hit-history-first");
+        auto movingCamera = backend->GetViewCamera();
+        movingCamera.position[0] += .05f;
+        backend->SetViewCamera(movingCamera);
+        const auto hitHistory = capture("reflection-hit-history-motion");
+        if (backend->GetHybridHistoryFrames() != 2)
+            throw std::runtime_error("Reflection hit reprojection lost history under camera motion");
+        backend->ResetHybridHistory();
+        const auto hitReset = capture("reflection-hit-history-reset");
+        if (backend->GetHybridHistoryFrames() != 1 || groundDelta(hitHistory, hitReset) < 20)
+            throw std::runtime_error("No reflection history reached the moving mirror");
+        backend->SetCamera(camera);
         const Matrix4 coatFloor{2, 0, 0, 0, 0, 0, -2, 0, 0, 1, 0, 0, 0, -.84f, 0, 1};
         backend->SetScene(
           {{"mirror", assets / "MaterialSample/Quad.glb"}, {"helmet", assets / "DamagedHelmet/DamagedHelmet.glb"}},

@@ -349,6 +349,39 @@ try {
   }
   if (groundDelta(mapped, flat) < 20 || groundDelta(flat, clearAO) < 20)
     throw Error('Reflected helmet lost normal map or material AO')
+  await page.evaluate(() => {
+    r.setHybrid({
+      view: 'final',
+      halfResolutionReflections: true,
+      reflectionDenoising: true,
+      reflectionHitReprojection: true,
+    })
+  })
+  await capture('reflection-hit-history-first')
+  await page.evaluate(() => {
+    const moving = r.getViewCamera()
+    moving.position[0] += 0.05
+    r.setViewCamera(moving)
+  })
+  const hitHistory = await capture('reflection-hit-history-motion')
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 2)
+    throw Error('Reflection hit reprojection lost history under camera motion')
+  await page.evaluate(() => r.resetHybridHistory())
+  const hitReset = await capture('reflection-hit-history-reset')
+  if (
+    (await page.evaluate(() => r.getHybridHistoryFrames())) !== 1 ||
+    groundDelta(hitHistory, hitReset) < 20
+  )
+    throw Error('No reflection history reached the moving mirror')
+  await page.evaluate(() => {
+    r.setCamera({ yaw: 72, pitch: 25, distance: 5.5 })
+    r.setHybrid({
+      view: 'reflections',
+      halfResolutionReflections: false,
+      reflectionDenoising: false,
+      reflectionHitReprojection: false,
+    })
+  })
   await page.evaluate(async () => {
     const helmet = r.getMaterials('helmet')[0]
     await r.setScene(
@@ -514,6 +547,9 @@ try {
       'reflected-material-mapped',
       'reflected-material-flat',
       'reflected-material-no-ao',
+      'reflection-hit-history-first',
+      'reflection-hit-history-motion',
+      'reflection-hit-history-reset',
       'coat-environment',
       'coat-traced',
       'coat-rough',

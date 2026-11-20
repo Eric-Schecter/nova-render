@@ -447,6 +447,8 @@ export async function createAntiAliasingView({
             reflectionPreviousGuide,
             87,
           )
+          resolve.hitReprojection = external.hybrid.reflectionHitReprojection
+          resolve.u[10] = resolve.hitReprojection ? 1 : 0
           const spatial = add(30, hybridReflectionTarget)
           spatial.sources[0] = resolvedReflection
           spatial.sources[1] = 86
@@ -741,6 +743,7 @@ export async function createAntiAliasingView({
         p.end()
       }
     function render(p, index, present = false) {
+      if (p.hitReprojection) external.writeReflectionReprojection(p.u)
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
       const scene =
           (p.program <= 0 && p.program !== -8) ||

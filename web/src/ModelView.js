@@ -406,6 +406,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         4,
       )
       record[8] = hybrid?.clearcoatReflections ? 1 : 0
+      record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
       record.set(
@@ -669,6 +670,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (data.skinInputs?.byteLength) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         const palette = data.jointMatrices || new Float32Array(16)
         device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
+      },
+      writeReflectionReprojection(uniforms) {
+        const previous = lastScene || currentScene
+        uniforms.splice(28, 16, ...previous.subarray(0, 16))
+        uniforms.splice(44, 4, ...currentScene.subarray(16, 20))
+        uniforms.splice(48, 12, ...currentScene.subarray(40, 52))
+        uniforms.splice(60, 4, ...previous.subarray(16, 20))
       },
       drawAA(pass, motion, count, settings, program, gbuffers) {
         if (program === -5 || program === -7 || program === -8) {

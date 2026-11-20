@@ -155,6 +155,17 @@ namespace render::detail
                         resolve->sources[7] = AAModelClearcoat;
                         resolve->uniforms[2][0] = 1;
                     }
+                    if (hybridSettings.reflectionHitReprojection)
+                    {
+                        resolve->uniforms[2][2] = 1;
+                        for (int i = 0; i < 4; ++i)
+                            std::copy_n(previous.viewProjection + i * 4, 4, resolve->uniforms[7 + i].begin());
+                        std::copy_n(current.eyeExposure, 4, resolve->uniforms[11].begin());
+                        std::copy_n(current.cameraRight, 4, resolve->uniforms[12].begin());
+                        std::copy_n(current.cameraUp, 4, resolve->uniforms[13].begin());
+                        std::copy_n(current.cameraForward, 4, resolve->uniforms[14].begin());
+                        std::copy_n(previous.eyeExposure, 4, resolve->uniforms[15].begin());
+                    }
                     // The raw target is free once the temporal resolve has read it.
                     auto* spatial = add(30, AAHybridReflection);
                     spatial->sources[0] = resolvedReflection;

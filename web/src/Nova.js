@@ -75,7 +75,7 @@ class Renderer {
   getHybridHistoryFrames() {
     this.#check()
     return this.#renderMode === 'hybrid' &&
-      (this.#hybrid.temporalReconstruction || this.#shadowTemporalActive()) &&
+      this.#hasHybridTemporalHistory() &&
       this.#hybrid.view === 'final' &&
       this.#rasterSettings.view === 'final'
       ? this.#aaView?.getHistoryFrames() || 0
@@ -186,14 +186,22 @@ class Renderer {
       this.#aaRemaining > 0
     )
   }
-  #shadowTemporalActive() {
-    return this.#hybrid.shadows && this.#hybrid.shadowTemporalReconstruction
+  #hasHybridTemporalHistory() {
+    const h = this.#hybrid
+    return (
+      h.temporalReconstruction ||
+      (h.shadows && h.shadowTemporalReconstruction) ||
+      (h.reflections &&
+        h.halfResolutionReflections &&
+        h.reflectionDenoising &&
+        h.reflectionHitReprojection)
+    )
   }
   #taaActive() {
     return (
       (this.#renderMode === 'raster' ||
         (this.#renderMode === 'hybrid' &&
-          (this.#hybrid.temporalReconstruction || this.#shadowTemporalActive()) &&
+          this.#hasHybridTemporalHistory() &&
           this.#hybrid.view === 'final')) &&
       !this.#aoSettings.enabled &&
       this.#rasterSettings.view === 'final' &&
@@ -307,6 +315,8 @@ class Renderer {
               pass.draw(3)
             }
           },
+          writeReflectionReprojection: (uniforms) =>
+            this.#model?.writeReflectionReprojection(uniforms),
           finish: () => this.#model?.finishAA(),
         },
         owner = this
@@ -958,7 +968,7 @@ class Renderer {
       orientationDot = old.orientation.reduce((sum, v, i) => sum + v * camera.orientation[i], 0)
     const preserve =
       this.#renderMode === 'hybrid' &&
-      (this.#hybrid.temporalReconstruction || this.#shadowTemporalActive()) &&
+      this.#hasHybridTemporalHistory() &&
       [
         'projection',
         'verticalFov',
