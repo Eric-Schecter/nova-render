@@ -107,7 +107,7 @@ export function instrumentRenderer(renderer, canvas) {
         meter.record(start, {
           width: Math.max(1, Math.round(canvas.width * scale)),
           height: Math.max(1, Math.round(canvas.height * scale)),
-          scale,
+          scale: scale * renderer.getRenderScale(),
           samples: ray ? settings.samplesPerFrame : ['msaa', 'ssaa'].includes(aa.method) ? 4 : 1,
           method:
             renderer.getRenderMode() === 'hybrid'

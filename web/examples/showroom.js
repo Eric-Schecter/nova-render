@@ -135,10 +135,12 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       viewDistance: 5.784566,
       onError,
       onChange() {
+        renderer.setRenderScale(0.8)
         if (renderer.getHybrid().shadowSamples !== 2) renderer.setHybrid({ shadowSamples: 2 })
         clearTimeout(settleTimer)
         settleTimer = setTimeout(async () => {
           try {
+            renderer.setRenderScale(1)
             renderer.setHybrid({ shadowSamples: 4 })
             await renderer.drawFrame()
           } catch (error) {

@@ -1,5 +1,7 @@
 # Camera and viewport
 
+On Web, `setRenderScale(scale)` scales both framebuffer dimensions after applying the device pixel ratio. Use a value greater than 0 and at most 1. `getRenderScale()` reports the active scale, which defaults to 1. Changing the scale resets temporal history and ray accumulation. The canvas layout and camera are independent of the framebuffer scale.
+
 Available on `main` for the next SDK version; not included in v0.1.0. Native headers, libraries and web shader assets must come from the same build.
 
 The core `Renderer` / `Window` and WebGPU `createRenderer` support independent camera position, quaternion orientation and lens settings. These APIs apply to static/animated model rasterization, scene instances, AA, post-processing and the core single-model ray tracer. Specialized laboratory views keep their existing orbit interfaces.

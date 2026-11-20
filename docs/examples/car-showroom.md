@@ -9,3 +9,5 @@ The showroom blends 25% scene-traced specular with 75% environment specular on t
 Hybrid uses a 5 × 4 × 5 DDGI grid around the car and nearby floor on Metal, Vulkan and WebGPU. **Show DDGI probes** overlays the probe positions, colored by height. The desktop toggle is available in UI-enabled builds. The native example falls back to per-pixel diffuse bounce when the backend lacks probe support. While orbiting or zooming, the showroom uses two samples for the top softbox shadow. It restores four after the camera settles.
 
 <ClientOnly><ModelPlayground showroom /></ClientOnly>
+
+The Web preview renders at 80% of its framebuffer resolution while orbiting or zooming and restores full resolution when the camera settles.
