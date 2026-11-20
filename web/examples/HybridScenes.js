@@ -118,10 +118,18 @@ export async function createHybridScenes(renderer, canvas, shaderDirectory, opti
       }
       check()
       const initial = !current
+      if (next.environment || current?.environment) {
+        await renderer.loadEnvironment(
+          next.environment ? new URL(next.environment, directory).href : null,
+        )
+        check()
+      }
       current = next
       renderer.setLighting('pbr')
       renderer.setDirectionalLight(
-        id === 'box' ? { direction: [-1, 2, 1], color: [1, 1, 1], intensity: 4 } : reference.light,
+        id === 'box'
+          ? { direction: [-1, 2, 1], color: [1, 1, 1], intensity: 4 }
+          : (next.light ?? reference.light),
       )
       renderer.setHybrid({ aoRadius: id === 'box' ? 1 : 2 })
       if (initial) renderer.setRenderMode('hybrid')
