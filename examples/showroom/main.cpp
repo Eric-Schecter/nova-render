@@ -61,10 +61,9 @@ int main(int argc, char** argv)
             const bool outdoors = lighting == example::ShowroomLighting::QuarryDaylight;
             window.LoadEnvironment(assets / (outdoors ? "QuarryClouds.nenv" : "CleanStudio.nenv"));
             EnvironmentSettings environment;
-            environment.rotation            = -90;
-            environment.intensity           = outdoors ? .6f : 1.f;
-            environment.backgroundIntensity = outdoors ? .9f : 1.f;
-            environment.showBackground      = outdoors;
+            environment.rotation       = -90;
+            environment.intensity      = outdoors ? .6f : 1.f;
+            environment.showBackground = false;
             window.SetEnvironment(environment);
             post.exposureEV = outdoors ? 1.39f : 0.f;
             window.SetPostProcessing(post);

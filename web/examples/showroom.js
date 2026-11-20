@@ -101,8 +101,8 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       renderer.setEnvironment({
         rotation: -90,
         intensity: outdoors ? 0.6 : 1,
-        backgroundIntensity: outdoors ? 0.9 : 1,
-        showBackground: outdoors,
+        backgroundIntensity: 1,
+        showBackground: false,
       })
       renderer.setPostProcessing({
         enabled: true,
