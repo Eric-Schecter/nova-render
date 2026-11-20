@@ -31,6 +31,7 @@ int main(int argc, char** argv)
           {{"car", assets / "CarConcept.glb", true}, {"floor", assets / "Ground.glb", true}},
           {car, {"floor", "floor"}});
         auto floorMaterial = window.GetMaterials("floor").at(0);
+        floorMaterial.roughness = .35f;
         floorMaterial.hybridReflectionStrength = 1.f;
         window.SetMaterial(0, floorMaterial, "floor");
         window.LoadEnvironment(assets / "CleanStudio.nenv");

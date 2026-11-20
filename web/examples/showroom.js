@@ -23,7 +23,11 @@ export async function showShowroom(canvas, _modelURL, shaderDirectory, _camera, 
       ],
     )
     const [floorMaterial] = renderer.getMaterials('floor')
-    await renderer.setMaterial(0, { ...floorMaterial, hybridReflectionStrength: 1 }, 'floor')
+    await renderer.setMaterial(
+      0,
+      { ...floorMaterial, roughness: 0.35, hybridReflectionStrength: 1 },
+      'floor',
+    )
     await renderer.loadEnvironment(assets + 'CleanStudio.bin')
     renderer.setEnvironment({
       // Match the equirectangular HDRI orientation of the UE reference.
