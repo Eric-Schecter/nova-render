@@ -149,8 +149,11 @@ bool shadowBox(float3 low, float3 high, float3 origin, float3 direction, float m
     }
     return true;
 }
-bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase, bool shadowOnly)
+bool intersectSceneTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase,
+                            bool shadowOnly, out float distance, out float2 bary)
 {
+    distance = maxDistance;
+    bary = 0;
     float3 a = tri.baseColor.xyz, e = tri.material.xyz - a, f = tri.emissive.xyz - a, p = cross(direction, f);
     float  determinant = dot(e, p);
     if (abs(determinant) < 1e-12)
@@ -162,7 +165,7 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
         return false;
     float3 q        = cross(delta, e);
     float  v        = dot(direction, q) * inverse;
-    float  distance = dot(f, q) * inverse;
+    distance        = dot(f, q) * inverse;
     if (!(v >= 0 && u + v <= 1 && distance > 1e-5 && distance < maxDistance))
         return false;
     InstanceData material = instances[materialBase + uint(tri.emissive.w)];
@@ -180,7 +183,14 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
         if (baseTexture.SampleLevel(textureSampler, uv, 0).a * material.baseColor.a < frac(material.emissive.w) * 4)
             return false;
     }
+    bary = float2(u, v);
     return true;
+}
+bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase, bool shadowOnly)
+{
+    float distance;
+    float2 bary;
+    return intersectSceneTriangle(tri, origin, direction, maxDistance, materialBase, shadowOnly, distance, bary);
 }
 bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistance, bool shadowOnly = true)
 {
@@ -1106,8 +1116,20 @@ float hybridAO(float3 position, float3 normal, float rotation)
     }
     return pow(saturate(visible / max(1, samples)), strength);
 }
-// Nearest-hit traversal uses world-distance parameters even for scaled instances.
-// BLEND is excluded, MASK and sidedness use the same coverage as shadow rays.
+// Reuse the reciprocal direction for all nodes of an instance's BVH.
+bool nearestHitBox(float3 low, float3 high, float3 origin, float3 reciprocal, bool3 parallel, float distance)
+{
+    float3 pad = 1e-5 * max(1, max(abs(low), abs(high)));
+    float3 lo = low - pad - origin, hi = high + pad - origin;
+    if (any(parallel & (lo > 0 | hi < 0)))
+        return false;
+    float3 a = lo * reciprocal, b = hi * reciprocal;
+    float3 nearT = min(a, b), farT = max(a, b);
+    nearT = float3(parallel.x ? 0 : nearT.x, parallel.y ? 0 : nearT.y, parallel.z ? 0 : nearT.z);
+    farT = float3(parallel.x ? distance : farT.x, parallel.y ? distance : farT.y, parallel.z ? distance : farT.z);
+    return min(distance, min(min(farT.x, farT.y), farT.z)) >= max(0, max(max(nearT.x, nearT.y), nearT.z));
+}
+// Keep world-distance parameters through scaled instances and apply the same material coverage as shadows.
 bool hybridNearest(
   uint        header,
   float3      origin,
@@ -1135,11 +1157,14 @@ bool hybridNearest(
         float3 delta = origin - translation;
         float3 o     = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
         float3 d     = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
+        bool3 parallel = abs(d) < 1e-15;
+        float3 reciprocal = rcp(float3(parallel.x ? 1 : d.x, parallel.y ? 1 : d.y, parallel.z ? 1 : d.z));
+        uint   materialBase = uint(instances[i].uv.x);
         uint   root = header + 1 + uint(instances[i].uv.y), node = 0, count = uint(instances[i].uv.w);
         [loop] while (node < count)
         {
             InstanceData box = instances[root + node];
-            if (!shadowBox(box.baseColor.xyz, box.material.xyz, o, d, distance))
+            if (!nearestHitBox(box.baseColor.xyz, box.material.xyz, o, reciprocal, parallel, distance))
             {
                 node = uint(box.baseColor.w);
                 continue;
@@ -1154,13 +1179,12 @@ bool hybridNearest(
             {
                 uint         index = root + uint(box.uv.z) + t;
                 InstanceData tri   = instances[index];
-                if (!shadowTriangle(tri, o, d, distance, uint(instances[i].uv.x), false))
+                float candidateDistance;
+                float2 candidateBary;
+                if (!intersectSceneTriangle(tri, o, d, distance, materialBase, false, candidateDistance, candidateBary))
                     continue;
-                float3 e = tri.material.xyz - tri.baseColor.xyz, f = tri.emissive.xyz - tri.baseColor.xyz;
-                float3 p = cross(d, f), q = cross(o - tri.baseColor.xyz, e);
-                float  inverse = 1 / dot(e, p);
-                distance       = dot(f, q) * inverse;
-                hitBary        = float2(dot(o - tri.baseColor.xyz, p), dot(d, q)) * inverse;
+                distance       = candidateDistance;
+                hitBary        = candidateBary;
                 hitInstance    = i;
                 hitTriangle    = index;
                 found          = true;
