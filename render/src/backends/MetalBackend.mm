@@ -442,7 +442,8 @@ namespace render::detail
                 if (pass.program == -5 || pass.program == -7 || pass.program == -8)
                 {
                     const bool probeReflection = pass.program == -8 && probeFrame && environment
-                                                 && hybrid.probeSkyLighting && hybrid.probeReflectionLighting;
+                                                 && hybrid.probeSkyLighting
+                                                 && (hybrid.probeReflectionLighting || hybrid.probeRoughReflections);
                     const bool probes = (pass.program == -5 && probeFrame) || probeReflection;
                     const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto&      active = probeReflection      ? aaProbeReflection

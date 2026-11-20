@@ -280,6 +280,7 @@ namespace render::detail
                     ImGui::Checkbox("DDGI multi-bounce", &hybrid.probeMultiBounce);
                     ImGui::BeginDisabled(!hybrid.reflections);
                     ImGui::Checkbox("DDGI reflection lighting", &hybrid.probeReflectionLighting);
+                    ImGui::Checkbox("DDGI rough reflections", &hybrid.probeRoughReflections);
                     ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::EndDisabled();

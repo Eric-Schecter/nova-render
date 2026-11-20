@@ -449,6 +449,18 @@ export function attachParameterPanel(
         probeReflectionRow.prepend(probeReflectionToggle)
         renderer.append(probeReflectionRow)
         fields.set('hybrid_probeReflectionLighting', { input: probeReflectionToggle })
+        const roughProbeRow = document.createElement('label'),
+          roughProbeToggle = document.createElement('input')
+        roughProbeRow.textContent = 'DDGI rough reflections'
+        roughProbeToggle.type = 'checkbox'
+        roughProbeToggle.setAttribute('aria-label', 'DDGI rough reflections')
+        roughProbeToggle.checked = h.probeRoughReflections
+        roughProbeToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ probeRoughReflections: roughProbeToggle.checked })),
+        )
+        roughProbeRow.prepend(roughProbeToggle)
+        renderer.append(roughProbeRow)
+        fields.set('hybrid_probeRoughReflections', { input: roughProbeToggle })
         const bounceRow = document.createElement('label'),
           bounceToggle = document.createElement('input')
         bounceRow.textContent = 'Diffuse bounce'
@@ -966,15 +978,19 @@ export function attachParameterPanel(
             'probeSkyLighting',
             'probeMultiBounce',
             'probeReflectionLighting',
+            'probeRoughReflections',
             'probeSharedRays',
           ].includes(name)
         )
           field.input.disabled =
             adapter.getHybridCapabilities?.()?.probeGI === false ||
             !adapter.getHybrid().probeGI ||
-            (['probeMultiBounce', 'probeReflectionLighting'].includes(name) &&
+            (['probeMultiBounce', 'probeReflectionLighting', 'probeRoughReflections'].includes(
+              name,
+            ) &&
               !adapter.getHybrid().probeSkyLighting) ||
-            (name === 'probeReflectionLighting' && !adapter.getHybrid().reflections)
+            (['probeReflectionLighting', 'probeRoughReflections'].includes(name) &&
+              !adapter.getHybrid().reflections)
         if (name === 'shadowLight')
           field.input.closest('label').style.display =
             adapter.getHybrid().view === 'shadows' ? '' : 'none'

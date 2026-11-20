@@ -1553,9 +1553,25 @@ bool hybridMirror(uint header, float roughness)
 }
 
 float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n, float rough,
-                            float3 f0, float f90, float rotation, bool measureHit, out float hitDistance)
+                            float3 f0, float f90, float rotation, bool measureHit, out float hitDistance, out bool filteredByProbe)
 {
     hitDistance = 0;
+    filteredByProbe = false;
+#if defined(NOVA_HYBRID_PROBES)
+    if (rough >= .8 && probeDimensionsFirst.x > 0 && cameraForward.w > .5
+        && instances[header].world._m23 > .5)
+    {
+        float coverage;
+        float3 reflected = reflect(-v, n);
+        float3 incident = hybridSampleProbes(primary.position, reflected, true, coverage);
+        if (coverage >= .999)
+        {
+            filteredByProbe = true;
+            float2 brdf = environmentBRDF(rough, saturate(dot(n, v)));
+            return incident * (f0 * brdf.x + f90 * brdf.y);
+        }
+    }
+#endif
     float  maxDistance = instances[header].world._m01;
     bool mirror = hybridMirror(header, rough);
     uint samples = mirror ? 1 : uint(instances[header].world._m11);
@@ -1624,12 +1640,13 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
     return sum / max(1, samples);
 }
 
-float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCoat, bool measureHit, out float hitDistance)
+float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCoat, bool measureHit, out float hitDistance, out bool skipDenoise)
 {
     float3 v = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
     float3 reflection = 0;
     hitDistance = 0;
     const int lobes = traceCoat && s.clearcoat.x > 0 ? 2 : 1;
+    skipDenoise = true;
     [loop] for (int lobe = 0; lobe < lobes; ++lobe)
     {
         bool coat = lobe != 0;
@@ -1639,9 +1656,12 @@ float3 hybridReflection(SurfaceData s, float rotation, uint header, bool traceCo
         float roughness = max(.02, coat ? s.clearcoat.y : s.roughness);
         float weight = coat ? s.clearcoat.x : traceCoat ? clearcoatTransmission(s, v) : 1;
         float distance;
+        bool filteredByProbe;
         reflection += weight * hybridReflectionLobe(
           s, header, v, n, roughness, f0, f90, rotation + lobe * 1.618,
-          measureHit && lobes == 1 && roughness <= .2 && dot(n, s.geometricNormal) > .995, distance);
+          measureHit && lobes == 1 && roughness <= .2 && dot(n, s.geometricNormal) > .995,
+          distance, filteredByProbe);
+        skipDenoise = skipDenoise && (filteredByProbe || hybridMirror(header, roughness));
         if (!coat)
             hitDistance = distance;
     }
@@ -1683,13 +1703,12 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     uint header = uint(irradiance[3].w) - 1;
     bool traceCoat = instances[header].world._m02 > .5;
     float hitDistance;
+    bool skipDenoise;
     float3 reflected = hybridReflection(
       s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w)), header, traceCoat,
-      instances[header].world._m12 > .5 && cameraUp.w >= 0, hitDistance);
-    bool mirror = hybridMirror(header, s.roughness)
-                  && (!traceCoat || s.clearcoat.x <= 0 || hybridMirror(header, s.clearcoat.y));
+      instances[header].world._m12 > .5 && cameraUp.w >= 0, hitDistance, skipDenoise);
     // Positive alpha below 1 marks a valid sample that bypasses reflection denoising.
-    return float4(reflected, mirror ? .5 : 1 + log2(1 + hitDistance));
+    return float4(reflected, skipDenoise ? .5 : 1 + log2(1 + hitDistance));
 }
 
 #if defined(NOVA_HALF_REFLECTIONS)
@@ -1836,7 +1855,8 @@ float4 DeferredPSMain(SkyOut input)
 #endif
             {
                 float unusedDistance;
-                reflection = hybridReflection(s, rotation, header, traceCoat, false, unusedDistance);
+                bool unusedSkip;
+                reflection = hybridReflection(s, rotation, header, traceCoat, false, unusedDistance, unusedSkip);
             }
             if (instances[header].world._m30 > 2.5)
                 return float4(displayRadiance(reflection), 1);

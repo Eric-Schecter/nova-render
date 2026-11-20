@@ -361,6 +361,7 @@ namespace render::detail
             globals.world[11]    = hybrid.probeMultiBounce ? 1.f : 0.f;
             globals.world[12]    = hybrid.probeSkyLighting && hybrid.probeReflectionLighting ? 1.f : 0.f;
             globals.world[13]    = hybrid.mirrorReflections ? 1.f : 0.f;
+            globals.world[14]    = hybrid.probeSkyLighting && hybrid.probeRoughReflections ? 1.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -989,6 +990,7 @@ namespace render::detail
               || previousHybrid.probeSkyLighting != hybrid.probeSkyLighting
               || previousHybrid.probeMultiBounce != hybrid.probeMultiBounce || previousHybrid.probeGI != hybrid.probeGI
               || previousHybrid.probeReflectionLighting != hybrid.probeReflectionLighting
+              || previousHybrid.probeRoughReflections != hybrid.probeRoughReflections
               || previousHybrid.probeSharedRays != hybrid.probeSharedRays
               || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength

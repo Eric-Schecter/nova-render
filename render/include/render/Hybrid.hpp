@@ -49,6 +49,7 @@ namespace render
         bool                             probeMultiBounce             = false;
         bool                             probeReflectionLighting      = false;
         bool                             mirrorReflections = false;
+        bool                             probeRoughReflections = false;
         bool                             probeSharedRays              = false;
     };
     struct HybridCapabilities
