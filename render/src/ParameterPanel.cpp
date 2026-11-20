@@ -290,6 +290,9 @@ namespace render::detail
                     int reflectionSamples = int(hybrid.reflectionSamples);
                     if (ImGui::SliderInt("Reflection rays/pixel", &reflectionSamples, 1, 16))
                         hybrid.reflectionSamples = uint32_t(reflectionSamples);
+                    ImGui::BeginDisabled(!hybrid.shadows);
+                    ImGui::Checkbox("Shadow temporal reconstruction", &hybrid.shadowTemporalReconstruction);
+                    ImGui::EndDisabled();
                     ImGui::Checkbox("Hybrid temporal reconstruction", &hybrid.temporalReconstruction);
                     ImGui::SliderFloat("Hybrid history weight", &hybrid.historyWeight, 0, .98f);
                     int view = int(hybrid.view);

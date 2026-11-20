@@ -162,8 +162,9 @@ namespace render::detail
         HybridSettings GetHybrid() const { return hybrid; }
         uint32_t       GetHybridHistoryFrames() const
         {
-            return mode == RenderMode::Hybrid && hybrid.temporalReconstruction && hybrid.view == HybridView::Final
-                       && modelRaster.view == GBufferView::Final
+            return mode == RenderMode::Hybrid
+                       && (hybrid.temporalReconstruction || (hybrid.shadows && hybrid.shadowTemporalReconstruction))
+                       && hybrid.view == HybridView::Final && modelRaster.view == GBufferView::Final
                      ? rasterAA.frames
                      : 0;
         }
@@ -735,10 +736,12 @@ namespace render::detail
             for (unsigned i = 0; i < 4; ++i)
                 orientationDot += old.orientation[i] * next.orientation[i];
             const bool preserve =
-              mode == RenderMode::Hybrid && hybrid.temporalReconstruction && old.projection == next.projection
-              && old.verticalFov == next.verticalFov && old.orthographicHeight == next.orthographicHeight
-              && old.nearPlane == next.nearPlane && old.farPlane == next.farPlane && old.exposure == next.exposure
-              && distanceSquared <= 4 && std::abs(orientationDot) > .98480775f;
+              mode == RenderMode::Hybrid
+              && (hybrid.temporalReconstruction || (hybrid.shadows && hybrid.shadowTemporalReconstruction))
+              && old.projection == next.projection && old.verticalFov == next.verticalFov
+              && old.orthographicHeight == next.orthographicHeight && old.nearPlane == next.nearPlane
+              && old.farPlane == next.farPlane && old.exposure == next.exposure && distanceSquared <= 4
+              && std::abs(orientationDot) > .98480775f;
             viewCamera = next;
             if (!preserve)
                 rasterAA.Reset();
@@ -865,14 +868,18 @@ namespace render::detail
                 rasterAA.current.irradiance[1][3] = mode == RenderMode::Hybrid ? 1.f : 0.f;
                 rasterAA.current.irradiance[2][3] = float(hybrid.shadowSamples);
                 rasterAA.current.irradiance[4][3] = hybrid.shadows ? 1.f : 0.f;
+                const bool temporalShadows        = mode == RenderMode::Hybrid && hybrid.shadows
+                                             && hybrid.shadowTemporalReconstruction && hybrid.view == HybridView::Final
+                                             && modelRaster.view == GBufferView::Final;
+                const float frame = float(rasterAA.frames + 1);
                 rasterAA.current.irradiance[5][3] =
-                  hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : 0.f;
+                  hybrid.view == HybridView::Shadows ? float(hybrid.shadowLight + 1) : (temporalShadows ? -frame : 0.f);
                 rasterAA.current.irradiance[6][3] =
-                  mode == RenderMode::Hybrid && hybrid.temporalReconstruction ? float(rasterAA.frames + 1) : 0.f;
-                // Negative frame indices rotate reflection rays only. AO and shadows use the positive sequence.
+                  mode == RenderMode::Hybrid && hybrid.temporalReconstruction ? frame : 0.f;
+                // Negative frame indices rotate reflection rays only.
                 if (mode == RenderMode::Hybrid && hybrid.reflections && hybrid.halfResolutionReflections
                     && hybrid.reflectionDenoising && !hybrid.temporalReconstruction)
-                    rasterAA.current.irradiance[6][3] = -float(rasterAA.frames + 1);
+                    rasterAA.current.irradiance[6][3] = -frame;
                 const bool debug = modelRaster.view != GBufferView::Final;
                 rasterAA.current.irradiance[0][3] =
                   !debug && !(mode == RenderMode::Hybrid && hybrid.view != HybridView::Final) && postSettings.enabled
@@ -891,7 +898,8 @@ namespace render::detail
                   HasRasterTransparency(model.get()),
                   mode == RenderMode::Hybrid,
                   mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,
-                  hybrid);
+                  hybrid,
+                  lightCollectionActive ? lights.size() : 1);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }
@@ -961,8 +969,9 @@ namespace render::detail
               hybrid,
               GetHybridCapabilities());
             if (
-              previousHybrid.probeBounds != hybrid.probeBounds || previousHybrid.shadows != hybrid.shadows || previousHybrid.shadowSamples != hybrid.shadowSamples
-              || previousHybrid.view != hybrid.view || previousHybrid.shadowLight != hybrid.shadowLight
+              previousHybrid.probeBounds != hybrid.probeBounds || previousHybrid.shadows != hybrid.shadows
+              || previousHybrid.shadowSamples != hybrid.shadowSamples || previousHybrid.view != hybrid.view
+              || previousHybrid.shadowLight != hybrid.shadowLight
               || previousHybrid.ambientOcclusion != hybrid.ambientOcclusion
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
@@ -974,6 +983,7 @@ namespace render::detail
               || previousHybrid.reflectionDenoising != hybrid.reflectionDenoising
               || previousHybrid.clearcoatReflections != hybrid.clearcoatReflections
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
+              || previousHybrid.shadowTemporalReconstruction != hybrid.shadowTemporalReconstruction
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {
                 RebuildRasterInstances(

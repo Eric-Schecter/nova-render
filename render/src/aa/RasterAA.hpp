@@ -34,13 +34,14 @@ namespace render::detail
           uint32_t                      h,
           const AntiAliasingSettings&   requestedSettings,
           const std::array<float, 4>&   clear,
-          bool                          triangle       = false,
-          const PostProcessingSettings& requestedPost  = {},
-          const RasterSettings&         modelSettings  = {},
-          bool                          transparent    = false,
-          bool                          hybrid         = false,
-          bool                          hybridDebug    = false,
-          const HybridSettings&         hybridSettings = {})
+          bool                          triangle         = false,
+          const PostProcessingSettings& requestedPost    = {},
+          const RasterSettings&         modelSettings    = {},
+          bool                          transparent      = false,
+          bool                          hybrid           = false,
+          bool                          hybridDebug      = false,
+          const HybridSettings&         hybridSettings   = {},
+          size_t                        shadowLightCount = 0)
         {
             auto settings     = requestedSettings;
             auto postSettings = requestedPost;
@@ -111,9 +112,13 @@ namespace render::detail
             const bool halfReflections = hybrid && hybridSettings.reflections
                                          && hybridSettings.halfResolutionReflections;
             const bool denoiseReflections = deferred && halfReflections && hybridSettings.reflectionDenoising;
+            const int  shadowGroups       = int((shadowLightCount + 3) / 4);
+            const bool temporalShadows    = shadowGroups > 0 && deferred && hybrid && hybridSettings.shadows
+                                         && hybridSettings.shadowTemporalReconstruction && !hybridDebug
+                                         && modelSettings.view == GBufferView::Final;
             if (deferred)
             {
-                if (denoiseReflections)
+                if (denoiseReflections || temporalShadows)
                     add(-2, AARawMotion);
                 add(-4, AAModelBase);
                 if (hybrid)
@@ -175,12 +180,35 @@ namespace render::detail
                         guide->uniforms[2][0] = 1;
                     }
                 }
+                int resolvedShadows = AAHybridShadow0;
+                if (temporalShadows)
+                {
+                    const int previousShadows = frames % 2 ? AAShadowHistoryA : AAShadowHistoryB;
+                    resolvedShadows           = frames % 2 ? AAShadowHistoryB : AAShadowHistoryA;
+                    const float scale         = settings.method == AAMethod::SSAA ? 2.f : 1.f;
+                    for (int i = 0; i < shadowGroups; ++i)
+                    {
+                        auto* resolve           = add(7, resolvedShadows + i);
+                        resolve->sources[0]     = AAHybridShadow0 + i;
+                        resolve->sources[1]     = AAModelNormal;
+                        resolve->sources[2]     = AAShadowPreviousNormal;
+                        resolve->sources[3]     = previousShadows + i;
+                        resolve->sources[4]     = AARawMotion;
+                        resolve->sources[5]     = AAShadowPreviousMotion;
+                        resolve->sources[7]     = AAShadowPreviousDepth;
+                        resolve->uniforms[2][0] = scale;
+                        resolve->uniforms[6][3] = 3;
+                    }
+                    add(1, AAShadowPreviousDepth)->sources[0]  = AAModelPosition;
+                    add(1, AAShadowPreviousNormal)->sources[0] = AAModelNormal;
+                    add(1, AAShadowPreviousMotion)->sources[0] = AARawMotion;
+                }
                 auto* p = add(-5, sceneColor);
                 if (halfReflections)
                     p->sources[9] = resolvedReflection;
                 if (hybrid)
                     for (int i = 0; i < 4; i++)
-                        p->sources[4 + i] = AAHybridShadow0 + i;
+                        p->sources[4 + i] = (i < shadowGroups ? resolvedShadows : AAHybridShadow0) + i;
                 for (int i = 0; i < 4; i++)
                     p->sources[i] = AAModelBase + i;
                 p->sources[8] = AAModelClearcoat;
@@ -219,7 +247,7 @@ namespace render::detail
             }
             if (reconstruct)
             {
-                if (!denoiseReflections)
+                if (!denoiseReflections && !temporalShadows)
                     add(-2, AARawMotion);
                 const uint32_t scale = settings.method == AAMethod::SSAA ? 2 : 1;
                 crop(AAMotion, AARawMotion, w * scale, h * scale, false);

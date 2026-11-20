@@ -75,7 +75,7 @@ class Renderer {
   getHybridHistoryFrames() {
     this.#check()
     return this.#renderMode === 'hybrid' &&
-      this.#hybrid.temporalReconstruction &&
+      (this.#hybrid.temporalReconstruction || this.#shadowTemporalActive()) &&
       this.#hybrid.view === 'final' &&
       this.#rasterSettings.view === 'final'
       ? this.#aaView?.getHistoryFrames() || 0
@@ -93,7 +93,7 @@ class Renderer {
       throw Error('Half-resolution Hybrid reflections require 21 sampled textures per shader stage')
     this.#hybrid = next
     this.#resetAA()
-    if (this.#hybrid.probeGI) this.#continuePathTracing()
+    this.#continuePathTracing()
     this.#parameterPanel?.refresh()
   }
   getHybridCapabilities() {
@@ -186,11 +186,14 @@ class Renderer {
       this.#aaRemaining > 0
     )
   }
+  #shadowTemporalActive() {
+    return this.#hybrid.shadows && this.#hybrid.shadowTemporalReconstruction
+  }
   #taaActive() {
     return (
       (this.#renderMode === 'raster' ||
         (this.#renderMode === 'hybrid' &&
-          this.#hybrid.temporalReconstruction &&
+          (this.#hybrid.temporalReconstruction || this.#shadowTemporalActive()) &&
           this.#hybrid.view === 'final')) &&
       !this.#aoSettings.enabled &&
       this.#rasterSettings.view === 'final' &&
@@ -240,6 +243,9 @@ class Renderer {
       const scene = {
           get hybrid() {
             return owner.#renderMode === 'hybrid' ? owner.#hybrid : null
+          },
+          get shadowLightCount() {
+            return owner.#lights?.length ?? 1
           },
           get raster() {
             return owner.#rasterSettings
@@ -952,7 +958,7 @@ class Renderer {
       orientationDot = old.orientation.reduce((sum, v, i) => sum + v * camera.orientation[i], 0)
     const preserve =
       this.#renderMode === 'hybrid' &&
-      this.#hybrid.temporalReconstruction &&
+      (this.#hybrid.temporalReconstruction || this.#shadowTemporalActive()) &&
       [
         'projection',
         'verticalFov',

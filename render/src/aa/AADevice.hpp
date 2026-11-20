@@ -77,11 +77,16 @@ namespace render::detail
         AAHybridCurrentDepth,
         AAHybridOitAccum,
         AAHybridOitReveal,
-        AAModelClearcoat = 102,
+        AAModelClearcoat   = 102,
         AAHybridReflection = 103,
         AAReflectionHistoryA,
         AAReflectionHistoryB,
         AAReflectionPreviousGuide,
+        AAShadowHistoryA,
+        AAShadowHistoryB      = AAShadowHistoryA + 4,
+        AAShadowPreviousDepth = AAShadowHistoryB + 4,
+        AAShadowPreviousNormal,
+        AAShadowPreviousMotion,
         AAResourceCount
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
@@ -111,6 +116,8 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id >= AAShadowHistoryA)
+            return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};
         if (id >= AAHybridReflection)
             return {(w * (ss ? 2u : 1u) + 1) / 2 + 2, (h * (ss ? 2u : 1u) + 1) / 2 + 2, 1};
         if (id >= AAHybridPreviousNormal && id != AAModelClearcoat)

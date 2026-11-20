@@ -179,6 +179,29 @@ int main(int argc, char** argv)
         settings.view = HybridView::Final;
         backend->SetHybrid(settings);
         capture("scene-final");
+        settings.shadowTemporalReconstruction = true;
+        backend->SetHybrid(settings);
+        for (int frame = 0; frame < 3; ++frame)
+        {
+            const auto resolved = capture("shadow-history-" + std::to_string(frame));
+            if (Difference(resolved, sceneShadow) > .2)
+                throw std::runtime_error("Shadow history changed hard shadows in a five-light scene");
+        }
+        if (backend->GetHybridHistoryFrames() != 3)
+            throw std::runtime_error("Independent shadow history did not accumulate");
+        auto shadowCamera = backend->GetViewCamera();
+        shadowCamera.position[0] += .05f;
+        backend->SetViewCamera(shadowCamera);
+        capture("shadow-history-motion");
+        if (backend->GetHybridHistoryFrames() != 4)
+            throw std::runtime_error("Camera motion reset independent shadow history");
+        shadowCamera.verticalFov += 1;
+        backend->SetViewCamera(shadowCamera);
+        if (backend->GetHybridHistoryFrames() != 0)
+            throw std::runtime_error("Lens change retained independent shadow history");
+        backend->SetCamera(camera);
+        settings.shadowTemporalReconstruction = false;
+        backend->SetHybrid(settings);
         AntiAliasingSettings aa;
         aa.method     = AAMethod::TAA;
         bool rejected = false;

@@ -138,6 +138,22 @@ try {
   }
   await page.evaluate(() => r.setHybrid({ view: 'final' }))
   await capture('scene-final')
+  await page.evaluate(() => r.setHybrid({ shadowTemporalReconstruction: true }))
+  for (let frame = 0; frame < 3; ++frame) {
+    const resolved = await capture('shadow-history-' + frame)
+    if (diff(resolved, shadow) > 0.2) throw Error('Shadow history changed five-light hard shadows')
+  }
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 3)
+    throw Error('Independent shadow history did not accumulate')
+  await page.evaluate(() => r.setAntiAliasing({ method: 'ssaa' }))
+  await capture('shadow-history-ssaa-first')
+  await capture('shadow-history-ssaa-second')
+  if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 2)
+    throw Error('Independent shadow history failed with SSAA')
+  await page.evaluate(() => {
+    r.setAntiAliasing({ method: 'off' })
+    r.setHybrid({ shadowTemporalReconstruction: false })
+  })
   const checks = await page.evaluate(() => {
     const caps = r.getHybridCapabilities()
     let invalid = 0

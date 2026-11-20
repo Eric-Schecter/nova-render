@@ -370,6 +370,43 @@ float4 PSMain(Varying i)
     SMAANeighborhoodBlendingVS(uv, offset);
     return SMAANeighborhoodBlendingPS(uv, offset, colorTex, weightTex);
 #elif AA_PASS == 7
+    // Reproject light visibility before deferred lighting, independently of HDR color.
+    if (aa[6].w > 2.5)
+    {
+        int2 pixel = int2(i.position.xy);
+        float4 current = colorTex.Load(int3(pixel, 0));
+        float4 motion = motionTex.Load(int3(pixel, 0));
+        if (aa[3].x < .5 || motion.w < .5)
+            return current;
+        float2 activeSize = aa[0].xy * aa[2].x;
+        float2 previousPixel = float2(pixel) + motion.xy * activeSize;
+        int2 first = int2(floor(previousPixel));
+        float2 fraction = frac(previousPixel);
+        float4 total = 0;
+        float mass = 0;
+        float2 normal = edgeTex.Load(int3(pixel, 0)).zw;
+        [unroll] for (int y = 0; y < 2; ++y)
+            [unroll] for (int x = 0; x < 2; ++x)
+            {
+                int2 tap = first + int2(x, y);
+                if (any(tap < 1) || any(tap > int2(activeSize)))
+                    continue;
+                float4 oldMotion = oldMotionTex.Load(int3(tap, 0));
+                float2 oldDepth = searchTex.Load(int3(tap, 0)).xy;
+                if (abs(oldDepth.x + oldDepth.y - motion.z) > .026 ||
+                    abs(oldMotion.w - motion.w) > .25 ||
+                    length(weightTex.Load(int3(tap, 0)).zw - normal) > .13)
+                    continue;
+                float weight = (x == 0 ? 1 - fraction.x : fraction.x)
+                             * (y == 0 ? 1 - fraction.y : fraction.y);
+                total += weight * historyTex.Load(int3(tap, 0));
+                mass += weight;
+            }
+        if (mass < .2)
+            return current;
+        float historyWeight = .85 * saturate(mass * 2);
+        return lerp(current, total / mass, historyWeight);
+    }
     // Hybrid history is reconstructed before post processing and final AA.
     // Current/old oct normals, split-log depth and motion identity reject disocclusions.
     if (aa[6].w > 1.5)

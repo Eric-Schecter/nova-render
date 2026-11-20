@@ -238,6 +238,11 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
     }
     return false;
 }
+float shadowSamplePhase()
+{
+    // The shadow diagnostic uses positive light indices. A negative value supplies a shadow-only frame index.
+    return max(0, max(irradiance[6].w, -irradiance[5].w) - 1);
+}
 float sceneVisibility(float3 position, float3 normal, float3 light, float softness)
 {
     if (irradiance[3].w < .5)
@@ -254,7 +259,7 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
     [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
     {
         float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * softness * .006;
-        float  angle  = float(sampleIndex) * 2.39996323 + max(0, irradiance[6].w - 1) * 2.39996323;
+        float  angle  = float(sampleIndex) * 2.39996323 + shadowSamplePhase() * 2.39996323;
         float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
         visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray, 1e30) ? 0 : 1;
     }
@@ -284,7 +289,7 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
     {
         // Deterministic disk around the source, radius in world units.
         float  radius         = count == 1 ? 0 : sqrt((float(i) + .5) / count) * softness * .006;
-        float  angle          = float(i) * 2.39996323 + max(0, irradiance[6].w - 1) * 2.39996323;
+        float  angle          = float(i) * 2.39996323 + shadowSamplePhase() * 2.39996323;
         float3 sampleDelta    = delta + radius * (cos(angle) * tangent + sin(angle) * bitangent);
         float  sampleDistance = length(sampleDelta);
         visible += sceneOccluded(header, origin, sampleDelta / sampleDistance, max(0, sampleDistance - 1e-5)) ? 0 : 1;

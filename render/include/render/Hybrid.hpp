@@ -43,6 +43,7 @@ namespace render
         bool       reflectionDenoising = false;
         bool       clearcoatReflections = true;
         std::optional<HybridProbeBounds> probeBounds;
+        bool                             shadowTemporalReconstruction = false;
     };
     struct HybridCapabilities
     {

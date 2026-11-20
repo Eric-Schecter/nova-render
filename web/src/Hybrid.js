@@ -1,6 +1,7 @@
 export const defaultHybrid = () => ({
   shadows: true,
   shadowSamples: 4,
+  shadowTemporalReconstruction: false,
   view: 'final',
   shadowLight: 0,
   temporalReconstruction: false,
@@ -29,6 +30,7 @@ export function copyHybrid(value) {
         ![
           'shadows',
           'shadowSamples',
+          'shadowTemporalReconstruction',
           'view',
           'shadowLight',
           'temporalReconstruction',
@@ -54,6 +56,7 @@ export function copyHybrid(value) {
   const s = { ...defaultHybrid(), ...value }
   if (
     typeof s.shadows !== 'boolean' ||
+    typeof s.shadowTemporalReconstruction !== 'boolean' ||
     !Number.isInteger(s.shadowSamples) ||
     s.shadowSamples < 1 ||
     s.shadowSamples > 16 ||

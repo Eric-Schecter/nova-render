@@ -490,6 +490,23 @@ export function attachParameterPanel(
         )
         reflectionDenoiseRow.prepend(reflectionDenoiseToggle)
         renderer.append(reflectionDenoiseRow)
+        const shadowTemporalRow = document.createElement('label'),
+          shadowTemporalToggle = document.createElement('input')
+        shadowTemporalRow.textContent = 'Shadow temporal reconstruction'
+        shadowTemporalToggle.type = 'checkbox'
+        shadowTemporalToggle.setAttribute('aria-label', 'Shadow temporal reconstruction')
+        shadowTemporalToggle.checked = h.shadowTemporalReconstruction
+        shadowTemporalToggle.addEventListener(
+          'change',
+          () =>
+            change(() =>
+              adapter.setHybrid({ shadowTemporalReconstruction: shadowTemporalToggle.checked }),
+            ),
+          { signal: fieldEvents.signal },
+        )
+        shadowTemporalRow.prepend(shadowTemporalToggle)
+        renderer.append(shadowTemporalRow)
+        fields.set('hybrid_shadowTemporalReconstruction', { input: shadowTemporalToggle })
         const temporalRow = document.createElement('label'),
           temporalToggle = document.createElement('input')
         temporalRow.textContent = 'Hybrid temporal reconstruction'

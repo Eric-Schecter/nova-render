@@ -63,6 +63,11 @@ const hybridReflectionTarget = 103
 const reflectionHistoryA = 104
 const reflectionHistoryB = 105
 const reflectionPreviousGuide = 106
+const shadowHistoryA = 107,
+  shadowHistoryB = shadowHistoryA + 4,
+  shadowPreviousDepth = shadowHistoryB + 4,
+  shadowPreviousNormal = shadowPreviousDepth + 1,
+  shadowPreviousMotion = shadowPreviousNormal + 1
 
 export async function createAntiAliasingView({
   canvas,
@@ -277,7 +282,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= reflectionPreviousGuide; i++)
+    for (let i = 0; i <= shadowPreviousMotion; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -299,6 +304,12 @@ export async function createAntiAliasingView({
     const halfReflections =
       external?.hybrid?.reflections && external.hybrid.halfResolutionReflections
     const denoiseReflections = halfReflections && external.hybrid.reflectionDenoising
+    const shadowGroups = Math.ceil((external?.shadowLightCount ?? 0) / 4)
+    const temporalShadows =
+      shadowGroups > 0 &&
+      !!external?.hybrid?.shadows &&
+      external.hybrid.shadowTemporalReconstruction &&
+      !debug
     const reconstruct = !!external?.hybrid?.temporalReconstruction && !debug
     const effectiveMethod = debug ? 'off' : settings.method
     const taa = effectiveMethod === 'taa',
@@ -406,7 +417,7 @@ export async function createAntiAliasingView({
       const oit = external.alphaBlend && !debug,
         sceneColor = oit ? 91 : 17
       if (external.raster?.pipeline === 'deferred') {
-        if (denoiseReflections) add(-2, 18)
+        if (denoiseReflections || temporalShadows) add(-2, 18)
         add(-4, 85)
         if (external.hybrid) {
           const shadow = add(-7, 92)
@@ -454,9 +465,42 @@ export async function createAntiAliasingView({
             resolve.u[8] = spatial.u[8] = guide.u[8] = 1
           }
         }
+        let resolvedShadows = 92
+        if (temporalShadows) {
+          const previousShadows = frames % 2 ? shadowHistoryA : shadowHistoryB
+          resolvedShadows = frames % 2 ? shadowHistoryB : shadowHistoryA
+          for (let i = 0; i < shadowGroups; i++) {
+            const resolve = add(7, resolvedShadows + i)
+            resolve.sources.splice(
+              0,
+              8,
+              92 + i,
+              86,
+              shadowPreviousNormal,
+              previousShadows + i,
+              18,
+              shadowPreviousMotion,
+              DUMMY,
+              shadowPreviousDepth,
+            )
+            resolve.u[8] = effectiveMethod === 'ssaa' ? 2 : 1
+            resolve.u[27] = 3
+          }
+          for (const [target, source] of [
+            [shadowPreviousDepth, 87],
+            [shadowPreviousNormal, 86],
+            [shadowPreviousMotion, 18],
+          ]) {
+            const guide = add(1, target)
+            guide.sources[0] = source
+            guide.u[26] = 1
+          }
+        }
         const p = add(-5, sceneColor)
         if (halfReflections) p.sources[9] = resolvedReflection
-        if (external.hybrid) p.sources.splice(4, 4, 92, 93, 94, 95)
+        if (external.hybrid)
+          for (let i = 0; i < 4; i++)
+            p.sources[4 + i] = (i < shadowGroups ? resolvedShadows : 92) + i
         p.sources.splice(0, 4, 85, 86, 87, 88)
         p.sources[8] = modelClearcoatTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
@@ -506,7 +550,7 @@ export async function createAntiAliasingView({
       add(1, PM).sources[0] = M
     }
     if (reconstruct) {
-      if (!denoiseReflections) add(-2, 18)
+      if (!denoiseReflections && !temporalShadows) add(-2, 18)
       const scale = effectiveMethod === 'ssaa' ? 2 : 1
       crop(M, 18, width * scale, height * scale, false)
       crop(98, 86, width * scale, height * scale, false)
@@ -598,7 +642,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= reflectionPreviousGuide; i++) {
+    for (let i = 0; i <= shadowPreviousMotion; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -627,7 +671,11 @@ export async function createAntiAliasingView({
         tw = w
         th = h
       }
-      if (i >= hybridReflectionTarget) {
+      if (i >= shadowHistoryA) {
+        const scale = superSample ? 2 : 1
+        tw = w * scale + 2
+        th = h * scale + 2
+      } else if (i >= hybridReflectionTarget) {
         const scale = superSample ? 2 : 1
         tw = Math.ceil((w * scale) / 2) + 2
         th = Math.ceil((h * scale) / 2) + 2
