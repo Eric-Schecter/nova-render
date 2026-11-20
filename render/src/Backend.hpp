@@ -360,6 +360,7 @@ namespace render::detail
             globals.world[10]    = hybrid.probeSkyLighting ? 1.f : 0.f;
             globals.world[11]    = hybrid.probeMultiBounce ? 1.f : 0.f;
             globals.world[12]    = hybrid.probeSkyLighting && hybrid.probeReflectionLighting ? 1.f : 0.f;
+            globals.world[13]    = hybrid.mirrorReflections ? 1.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -994,6 +995,7 @@ namespace render::detail
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
               || previousHybrid.reflectionDenoising != hybrid.reflectionDenoising
+              || previousHybrid.mirrorReflections != hybrid.mirrorReflections
               || previousHybrid.reflectionHitReprojection != hybrid.reflectionHitReprojection
               || previousHybrid.clearcoatReflections != hybrid.clearcoatReflections
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction

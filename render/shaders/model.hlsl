@@ -569,7 +569,10 @@ SurfaceData sampleSurface(VertexOut input)
     sampled.xy *= matFactor.z;
     n                    = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
     float4      mr       = materialTexture.Sample(textureSampler, uv);
-    float       metallic = saturate(mr.b * matFactor.x), roughness = clamp(mr.g * matFactor.y, 0.06, 1);
+    bool useMirrorRoughness = irradiance[1].w > .5 && irradiance[3].w > .5
+                               && instances[uint(irradiance[3].w) - 1].world._m13 > .5;
+    float metallic = saturate(mr.b * matFactor.x);
+    float roughness = clamp(mr.g * matFactor.y, useMirrorRoughness ? .02 : .06, 1);
     float       ao = lerp(1, occlusionTexture.Sample(textureSampler, aoUV).r, matFactor.w);
     SurfaceData result;
     result.useVisibility = 0;
@@ -747,6 +750,8 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     if (emissiveFactor.w < .5)
         return base;
     float3 n = s.normal, v = viewDirection;
+    if (!secondaryLighting)
+        s.roughness = max(.06, s.roughness);
     float  metallic = s.metallic, roughness = s.roughness, ao = s.ao;
     float  coatTransmission = clearcoatTransmission(s, v);
     bool   collection = false;
@@ -1542,12 +1547,18 @@ float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
     return incoming * surface.base * (1 - surface.metallic) / samples;
 }
 
+bool hybridMirror(uint header, float roughness)
+{
+    return instances[header].world._m13 > .5 && roughness <= .05002;
+}
+
 float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n, float rough,
                             float3 f0, float f90, float rotation, bool measureHit, out float hitDistance)
 {
     hitDistance = 0;
     float  maxDistance = instances[header].world._m01;
-    uint   samples     = uint(instances[header].world._m11);
+    bool mirror = hybridMirror(header, rough);
+    uint samples = mirror ? 1 : uint(instances[header].world._m11);
     float3 tangent   = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
            bitangent = cross(n, tangent);
     float  nv = max(.001, dot(n, v)), a = rough * rough;
@@ -1557,9 +1568,14 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
     bool sameInstance = true;
     [loop] for (uint j = 0; j < samples; ++j)
     {
-        float  u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
-        float  cosTheta = sqrt((1 - u) / (1 + (a * a - 1) * u)), sinTheta = sqrt(max(0, 1 - cosTheta * cosTheta));
-        float3 h   = normalize(tangent * (sinTheta * cos(phi)) + bitangent * (sinTheta * sin(phi)) + n * cosTheta);
+        float3 h = n;
+        if (!mirror)
+        {
+            float u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
+            float cosTheta = sqrt((1 - u) / (1 + (a * a - 1) * u));
+            float sinTheta = sqrt(max(0, 1 - cosTheta * cosTheta));
+            h = normalize(tangent * (sinTheta * cos(phi)) + bitangent * (sinTheta * sin(phi)) + n * cosTheta);
+        }
         float3 ray = reflect(-v, h);
         float  nl = dot(n, ray), nh = max(.001, dot(n, h)), vh = max(0, dot(v, h));
         if (nl <= 0)
@@ -1593,6 +1609,11 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
               cameraForward.w > .5
                 ? environmentTexture.SampleLevel(textureSampler, environmentDirection(ray), 0).rgb * environmentParams.z
                 : studio(ray, 0);
+        if (mirror)
+        {
+            sum = radiance * fresnel(vh, f0, f90);
+            break;
+        }
         float k = pow(rough + 1, 2) / 8;
         float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
         sum += radiance * fresnel(vh, f0, f90) * (g * vh / (nv * nh));
@@ -1665,7 +1686,10 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     float3 reflected = hybridReflection(
       s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w)), header, traceCoat,
       instances[header].world._m12 > .5 && cameraUp.w >= 0, hitDistance);
-    return float4(reflected, 1 + log2(1 + hitDistance));
+    bool mirror = hybridMirror(header, s.roughness)
+                  && (!traceCoat || s.clearcoat.x <= 0 || hybridMirror(header, s.clearcoat.y));
+    // Positive alpha below 1 marks a valid sample that bypasses reflection denoising.
+    return float4(reflected, mirror ? .5 : 1 + log2(1 + hitDistance));
 }
 
 #if defined(NOVA_HALF_REFLECTIONS)

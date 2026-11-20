@@ -542,6 +542,18 @@ export function attachParameterPanel(
         )
         reflectionDenoiseRow.prepend(reflectionDenoiseToggle)
         renderer.append(reflectionDenoiseRow)
+        const mirrorRow = document.createElement('label'),
+          mirrorToggle = document.createElement('input')
+        mirrorRow.textContent = 'Mirror reflection shortcut'
+        mirrorToggle.type = 'checkbox'
+        mirrorToggle.setAttribute('aria-label', 'Mirror reflection shortcut')
+        mirrorToggle.checked = h.mirrorReflections
+        mirrorToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ mirrorReflections: mirrorToggle.checked })),
+        )
+        mirrorRow.prepend(mirrorToggle)
+        renderer.append(mirrorRow)
+        fields.set('hybrid_mirrorReflections', { input: mirrorToggle })
         const reflectionReprojectionRow = document.createElement('label'),
           reflectionReprojectionToggle = document.createElement('input')
         reflectionReprojectionRow.textContent = 'Reflection hit reprojection'
@@ -947,6 +959,7 @@ export function attachParameterPanel(
         if (typeof value === 'boolean') field.input.checked = value
         else field.input.value = value
         if (field.output) field.output.textContent = String(value)
+        if (name === 'mirrorReflections') field.input.disabled = !adapter.getHybrid().reflections
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
         if (
           [

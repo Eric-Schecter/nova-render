@@ -318,6 +318,8 @@ float4 reflectionTemporal(int2 lowPixel)
     float4 current = colorTex.Load(int3(lowPixel, 0));
     if (current.a <= 0)
         return 0;
+    if (current.a < 1)
+        return current;
     float roughness = weightTex.Load(pixel).a;
     if (coated)
         roughness = min(roughness, coat.w);
@@ -380,7 +382,7 @@ float4 reflectionTemporal(int2 lowPixel)
                 || dot(normal, reflectionNormal(guide.xy)) < .9)
                 continue;
             float4 history = historyTex.Load(int3(tap, 0));
-            if (history.a <= 0)
+            if (history.a < 1)
                 continue;
             float blend = (x ? fracPixel.x : 1 - fracPixel.x) * (y ? fracPixel.y : 1 - fracPixel.y);
             sum += history.rgb * blend;

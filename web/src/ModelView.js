@@ -442,6 +442,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       record[10] = hybrid?.probeSkyLighting ? 1 : 0
       record[11] = hybrid?.probeMultiBounce ? 1 : 0
       record[12] = hybrid?.probeSkyLighting && hybrid.probeReflectionLighting ? 1 : 0
+      record[13] = hybrid?.mirrorReflections ? 1 : 0
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)

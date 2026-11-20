@@ -422,6 +422,19 @@ int main(int argc, char** argv)
         if (backend->GetHybridHistoryFrames() != 1 || groundDelta(hitHistory, hitReset) < 20)
             throw std::runtime_error("No reflection history reached the moving mirror");
         backend->SetCamera(camera);
+        auto polishedHelmet = helmet;
+        polishedHelmet.roughness = .04f;
+        backend->SetMaterial(0, polishedHelmet, "helmet");
+        reprojection.mirrorReflections = true;
+        reprojection.reflectionHitReprojection = false;
+        reprojection.reflectionSamples = 1;
+        backend->SetHybrid(reprojection);
+        const auto oneMirrorRay = capture("mirror-shortcut-one");
+        reprojection.reflectionSamples = 8;
+        backend->SetHybrid(reprojection);
+        const auto eightMirrorRays = capture("mirror-shortcut-eight");
+        if (Difference(oneMirrorRay, eightMirrorRays) != 0)
+            throw std::runtime_error("Mirror reflection depended on configured ray count");
         const Matrix4 coatFloor{2, 0, 0, 0, 0, 0, -2, 0, 0, 1, 0, 0, 0, -.84f, 0, 1};
         backend->SetScene(
           {{"mirror", assets / "MaterialSample/Quad.glb"}, {"helmet", assets / "DamagedHelmet/DamagedHelmet.glb"}},

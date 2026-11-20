@@ -292,6 +292,7 @@ namespace render::detail
                     ImGui::SliderFloat("Reflection strength", &hybrid.reflectionStrength, 0, 1);
                     ImGui::Checkbox("Half-resolution reflections", &hybrid.halfResolutionReflections);
                     ImGui::BeginDisabled(!hybrid.reflections);
+                    ImGui::Checkbox("Mirror reflection shortcut", &hybrid.mirrorReflections);
                     ImGui::Checkbox("Trace clearcoat reflections", &hybrid.clearcoatReflections);
                     ImGui::EndDisabled();
                     ImGui::BeginDisabled(!hybrid.reflections || !hybrid.halfResolutionReflections);
