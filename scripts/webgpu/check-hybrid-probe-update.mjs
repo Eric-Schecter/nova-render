@@ -46,18 +46,26 @@ try {
     const environment = device.createTexture({
       size: [1, 1, 6],
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
+    const sceneUniforms = buffer(
+      new Float32Array(96),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    )
+    const sceneInstances = buffer(
+      new Float32Array(48),
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    )
     // An empty scene returns zero incoming light and the maximum distance for every ray.
     const scene = bind(0, [
-      { binding: 0, resource: { buffer: buffer(new Float32Array(256), GPUBufferUsage.UNIFORM) } },
+      { binding: 0, resource: { buffer: sceneUniforms } },
       ...[2, 3, 4, 5, 6, 28, 29, 30].map((binding) => ({
         binding,
         resource: materials.createView(),
       })),
       { binding: 7, resource: device.createSampler() },
       { binding: 8, resource: environment.createView({ dimension: 'cube' }) },
-      { binding: 14, resource: { buffer: buffer(new Float32Array(48), GPUBufferUsage.STORAGE) } },
+      { binding: 14, resource: { buffer: sceneInstances } },
     ])
     const settings = new Float32Array(16)
     settings.set([1, 1, 1, 10], 4)
@@ -99,6 +107,39 @@ try {
     check(values.subarray(48, 56), [1, 2, 3, 1, 0.75, 0.625, 0, 0])
     for (let i = 56; i < values.length; i += 8)
       check(values.subarray(i, i + 8), [0, 0, 0, 1, 1, 1, 0, 0])
+    readback.unmap()
+    for (let face = 0; face < 6; face++)
+      device.queue.writeTexture(
+        { texture: environment, origin: [0, 0, face] },
+        new Uint8Array([64, 128, 192, 255]),
+        {},
+        [1, 1, 1],
+      )
+    device.queue.writeBuffer(sceneUniforms, 51 * 4, new Float32Array([1, 0, 1, 0.5]))
+    device.queue.writeBuffer(sceneInstances, 10 * 4, new Float32Array([1]))
+    const skyEncoder = device.createCommandEncoder()
+    const skyPass = skyEncoder.beginComputePass()
+    skyPass.setPipeline(pipeline)
+    skyPass.setBindGroup(0, scene)
+    skyPass.setBindGroup(2, batch)
+    skyPass.dispatchWorkgroups(1)
+    skyPass.end()
+    skyEncoder.copyBufferToBuffer(updated, 0, readback, 0, previous.byteLength)
+    device.queue.submit([skyEncoder.finish()])
+    await readback.mapAsync(GPUMapMode.READ)
+    const sky = new Float32Array(readback.getMappedRange())
+    check(sky.subarray(0, 48), new Float32Array(48))
+    const incident = [64, 128, 192].map((channel) => (channel / 255) * 0.5)
+    check(sky.subarray(48, 56), [
+      ...incident.map((channel, i) => channel * 0.5 + i + 1),
+      1,
+      0.75,
+      0.625,
+      0,
+      0,
+    ])
+    for (let i = 56; i < sky.length; i += 8)
+      check(sky.subarray(i, i + 8), [...incident, 1, 1, 1, 0, 0])
     readback.unmap()
     device.destroy()
   }, compute)

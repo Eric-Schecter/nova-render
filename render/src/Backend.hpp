@@ -154,7 +154,8 @@ namespace render::detail
                         || high <= low)
                         throw std::invalid_argument("Invalid Hybrid probe bounds");
                 }
-            const bool resetProbes = hybrid.probeGI != value.probeGI || hybrid.probeBounds != value.probeBounds;
+            const bool resetProbes = hybrid.probeGI != value.probeGI || hybrid.probeBounds != value.probeBounds
+                                     || hybrid.probeSkyLighting != value.probeSkyLighting;
             hybrid = value;
             RebuildRasterInstances(resetProbes);
             rasterAA.Reset();
@@ -354,6 +355,7 @@ namespace render::detail
             globals.world[7]     = hybrid.diffuseBounce ? 10.f : 0.f;
             globals.world[8]     = hybrid.clearcoatReflections ? 1.f : 0.f;
             globals.world[9]     = hybrid.reflectionDenoising && hybrid.reflectionHitReprojection ? 1.f : 0.f;
+            globals.world[10]    = hybrid.probeSkyLighting ? 1.f : 0.f;
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -979,7 +981,8 @@ namespace render::detail
               || previousHybrid.aoRadius != hybrid.aoRadius || previousHybrid.aoStrength != hybrid.aoStrength
               || previousHybrid.aoSamples != hybrid.aoSamples || previousHybrid.reflections != hybrid.reflections
               || previousHybrid.reflectionDistance != hybrid.reflectionDistance
-              || previousHybrid.probeGI != hybrid.probeGI || previousHybrid.diffuseBounce != hybrid.diffuseBounce
+              || previousHybrid.probeSkyLighting != hybrid.probeSkyLighting || previousHybrid.probeGI != hybrid.probeGI
+              || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
@@ -991,7 +994,8 @@ namespace render::detail
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {
                 RebuildRasterInstances(
-                  previousHybrid.probeGI != hybrid.probeGI || previousHybrid.probeBounds != hybrid.probeBounds);
+                  previousHybrid.probeGI != hybrid.probeGI || previousHybrid.probeBounds != hybrid.probeBounds
+                  || previousHybrid.probeSkyLighting != hybrid.probeSkyLighting);
                 rasterAA.Reset();
             }
             if (

@@ -273,6 +273,9 @@ namespace render::detail
                         hybrid.aoSamples = uint32_t(aoSamples);
                     ImGui::BeginDisabled(!hybridCaps.probeGI);
                     ImGui::Checkbox("DDGI probes", &hybrid.probeGI);
+                    ImGui::BeginDisabled(!hybrid.probeGI);
+                    ImGui::Checkbox("DDGI sky lighting", &hybrid.probeSkyLighting);
+                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::BeginDisabled(hybrid.probeGI);
                     ImGui::Checkbox("Diffuse bounce", &hybrid.diffuseBounce);

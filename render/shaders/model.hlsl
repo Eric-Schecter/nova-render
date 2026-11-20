@@ -741,7 +741,7 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
 }
 
 float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection,
-                       bool tracedClearcoat = false, bool secondaryLighting = false)
+                       bool tracedClearcoat = false, bool secondaryLighting = false, float probeSkyCoverage = 0)
 {
     float3 base = s.base;
     if (emissiveFactor.w < .5)
@@ -836,6 +836,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         diffuseAmbient = diffuse * (all(s.specular == 1) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4;
         baseEnvironment = studio(reflect(-v, n), roughness) * f;
     }
+    diffuseAmbient *= 1 - probeSkyCoverage;
     if (tracedClearcoat)
         color += (diffuseAmbient * coatTransmission
                   + lerp(baseEnvironment * coatTransmission + coatEnvironment, raySpecular, reflectionMix)) * ao;
@@ -1326,6 +1327,7 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
     float rotation = frac(float(probeBatch.y) * .61803399 + float(probe) * .75487767) * 6.28318531;
     float3 incoming = 0;
     float2 moments = 0;
+    bool sampleSky = cameraForward.w > .5 && instances[probeSceneHeader].world._m22 > .5;
     [loop] for (uint j = 0; j < sampleCount; ++j)
     {
         float u = (j + .5) / sampleCount, phi = rotation + j * 2.39996323;
@@ -1335,6 +1337,9 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
         float2 bary;
         if (hybridNearest(probeSceneHeader, origin, ray, distance, instance, hitTriangle, bary))
             incoming += hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray);
+        else if (sampleSky)
+            incoming += environmentTexture.SampleLevel(
+              textureSampler, environmentDirection(ray), 0).rgb * environmentParams.z;
         float normalizedDistance = saturate(distance / probeSpacingDistance.w);
         moments += float2(normalizedDistance, normalizedDistance * normalizedDistance);
     }
@@ -1369,8 +1374,9 @@ float hybridProbeVisibility(float normalizedDistance, float2 moments)
     return bound * bound;
 }
 
-float3 hybridSampleProbes(float3 position, float3 normal)
+float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out float coverage)
 {
+    coverage = 0;
     uint3 dimensions = probeDimensionsFirst.xyz;
     if (any(dimensions == 0))
         return 0;
@@ -1386,7 +1392,7 @@ float3 hybridSampleProbes(float3 position, float3 normal)
     uint3 first = uint3(floor(grid));
     float3 fraction = frac(grid);
     float3 total = 0;
-    float weightTotal = 0;
+    float weightTotal = 0, facingTotal = 0;
     [loop] for (uint corner = 0; corner < 8; ++corner)
     {
         uint3 offset = uint3(corner & 1, (corner >> 1) & 1, corner >> 2);
@@ -1411,7 +1417,11 @@ float3 hybridSampleProbes(float3 position, float3 normal)
         total += irradiance.rgb * (weight * visibility * facing);
         // Keep blocked probes in the denominator so normalization cannot restore leaked light.
         weightTotal += weight * irradiance.w;
+        facingTotal += weight * irradiance.w * facing;
     }
+    coverage = boundaryWeight * saturate(weightTotal);
+    if (skyLighting)
+        return facingTotal > 0 ? total * (coverage / facingTotal) : 0;
     return weightTotal > 0 ? total * (boundaryWeight / weightTotal) : 0;
 }
 
@@ -1422,8 +1432,12 @@ float3 hybridSampleProbes(float3 position, float3 normal)
 void HybridProbeSampleCS(uint3 thread : SV_DispatchThreadID)
 {
     if (thread.x < probeBatch.x)
-        probeSamples[thread.x] = float4(hybridSampleProbes(
-          probeQueries[thread.x * 2].xyz, probeQueries[thread.x * 2 + 1].xyz), 1);
+    {
+        float coverage;
+        float3 irradiance = hybridSampleProbes(
+          probeQueries[thread.x * 2].xyz, probeQueries[thread.x * 2 + 1].xyz, false, coverage);
+        probeSamples[thread.x] = float4(irradiance, 1);
+    }
 }
 #endif
 
@@ -1729,12 +1743,29 @@ float4 DeferredPSMain(SkyOut input)
         if (debug == 0 && (reflections || diffuseBounce || probes))
         {
             float3 viewDirection = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - s.position);
-            float3 color = surfaceRadiance(s, reflection, reflectionMix, viewDirection, traceCoat);
+            float3 probeDiffuse = 0;
+            float skyCoverage = 0;
 #if defined(NOVA_HYBRID_PROBES)
             if (probes && s.metallic < 1)
-                color += hybridSampleProbes(s.position, s.normal) * s.base * (1 - s.metallic)
-                         * clearcoatTransmission(s, viewDirection);
+            {
+                float coverage;
+                bool probeSky = cameraForward.w > .5 && instances[header].world._m22 > .5;
+                float3 probeLight = hybridSampleProbes(s.position, s.normal, probeSky, coverage);
+                probeDiffuse = probeLight * s.base * (1 - s.metallic)
+                               * clearcoatTransmission(s, viewDirection);
+                if (probeSky)
+                {
+                    skyCoverage = coverage;
+                    // The probe irradiance already includes sky visibility. Keep direct light and specular IBL.
+                    float nv = saturate(dot(s.normal, viewDirection));
+                    float3 f0 = lerp(dielectricF0(s.specular), s.base, s.metallic);
+                    float3 f = fresnel(nv, f0, lerp(s.specular.a, 1, s.metallic));
+                    probeDiffuse *= (1 - diffuseFresnel(nv, f, s.specular)) * s.ao;
+                }
+            }
 #endif
+            float3 color = surfaceRadiance(s, reflection, reflectionMix, viewDirection, traceCoat, false, skyCoverage)
+                           + probeDiffuse;
             if (!probes && diffuseBounce && s.metallic < 1)
                 color += hybridDiffuseBounce(s, header, rotation) * clearcoatTransmission(s, viewDirection);
             return float4(applyFog(displayRadiance(color), s.position), 1);

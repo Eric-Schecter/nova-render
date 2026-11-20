@@ -406,6 +406,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         4,
       )
       record[8] = hybrid?.clearcoatReflections ? 1 : 0
+      record[10] = hybrid?.probeSkyLighting ? 1 : 0
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
@@ -500,6 +501,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (
           hybrid !== settings &&
           (hybrid?.probeGI !== settings?.probeGI ||
+            hybrid?.probeSkyLighting !== settings?.probeSkyLighting ||
             JSON.stringify(hybrid?.probeBounds) !== JSON.stringify(settings?.probeBounds))
         )
           probes?.invalidate()

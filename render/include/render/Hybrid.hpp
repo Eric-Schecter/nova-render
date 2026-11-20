@@ -45,6 +45,7 @@ namespace render
         std::optional<HybridProbeBounds> probeBounds;
         bool                             shadowTemporalReconstruction = false;
         bool                             reflectionHitReprojection    = false;
+        bool                             probeSkyLighting             = false;
     };
     struct HybridCapabilities
     {
