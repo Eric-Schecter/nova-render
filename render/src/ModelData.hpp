@@ -16,7 +16,7 @@ namespace render::detail
         float position[4]; // xyz: position; w: one-based material slot (shader restores homogeneous w).
         float normal[4]; // xyz: normal; w: dielectric transmission fraction.
         float uv[4];     // xy: UV; z: generated flat-normal flag; w: dielectric IOR.
-        float uv1[4]{};  // xy: TEXCOORD_1, zw: reserved for storage alignment.
+        float uv1[4]{};  // xy: TEXCOORD_1, zw: expanded raster corner and primitive kind.
         float color[4]{1, 1, 1, 1};
     };
     using ModelImage = render::Image;

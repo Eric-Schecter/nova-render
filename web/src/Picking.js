@@ -29,7 +29,9 @@ export class PickMesh {
   constructor(data) {
     if (!data || data.vertices.length % modelTriangleFloats) throw Error('Invalid picking geometry')
     this.data = data
-    this.triangles = Array.from({ length: data.vertices.length / modelTriangleFloats }, (_, i) => i)
+    this.triangles = []
+    for (let i = 0; i < data.vertices.length / modelTriangleFloats; i++)
+      if (data.vertices[i * modelTriangleFloats + 14] === 0) this.triangles.push(i)
     this.nodes = []
     if (this.triangles.length) this.build(0, this.triangles.length)
   }

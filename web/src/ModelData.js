@@ -154,8 +154,8 @@ export async function loadGLB(url) {
     if (node.mesh !== undefined)
       for (const p of json.meshes[node.mesh].primitives) {
         const mode = p.mode ?? 4
-        if (![4, 5, 6].includes(mode) || p.targets?.length)
-          throw Error('Only triangle primitives without morph targets are supported')
+        if (!Number.isInteger(mode) || mode < 0 || mode > 6 || p.targets?.length)
+          throw Error('Unsupported glTF primitive mode or morph targets')
         if (p.material !== undefined && (!Number.isInteger(p.material) || p.material < 0 || p.material >= defaultMaterial))
           throw Error('Invalid glTF material index')
         const materialIndex = p.material ?? defaultMaterial
@@ -201,18 +201,28 @@ export async function loadGLB(url) {
         )
           throw Error('Invalid index format')
         const inputCount = json.accessors[p.indices ?? p.attributes.POSITION].count
-        if (!Number.isSafeInteger(inputCount) || inputCount < 3 || (mode === 4 && inputCount % 3))
-          throw Error('Invalid triangle mesh')
-        const count = mode === 4 ? inputCount : (inputCount - 2) * 3
+        const pointList = mode === 0, line = mode >= 1 && mode <= 3
+        if (!Number.isSafeInteger(inputCount) || inputCount < (pointList ? 1 : line ? 2 : 3)
+          || (mode === 4 && inputCount % 3) || (mode === 1 && inputCount % 2))
+          throw Error('Invalid primitive element count')
+        const primitiveCount = pointList || mode === 2 ? inputCount
+          : mode === 1 ? inputCount / 2 : line ? inputCount - 1
+          : mode === 4 ? inputCount / 3 : inputCount - 2
+        const stride = pointList || line ? 6 : 3
+        const count = primitiveCount * stride
         if (vertices.length / modelVertexFloats + count > 10000000)
-          throw Error('Oversized triangle mesh')
+          throw Error('Oversized model mesh')
+        const lineEndpoint = [0, 1, 0, 0, 1, 1]
         function vertexIndex(i) {
-          const triangle = Math.floor(i / 3),
-            corner = i % 3
-          if (mode === 5)
-            i = triangle + (triangle % 2 && corner < 2 ? 1 - corner : corner)
+          const primitive = Math.floor(i / stride), corner = i % stride
+          if (pointList) i = primitive
+          else if (line)
+            i = mode === 1 ? primitive * 2 + lineEndpoint[corner]
+              : (primitive + lineEndpoint[corner]) % inputCount
+          else if (mode === 5)
+            i = primitive + (primitive % 2 && corner < 2 ? 1 - corner : corner)
           else if (mode === 6)
-            i = corner === 0 ? 0 : triangle + corner
+            i = corner === 0 ? 0 : primitive + corner
           return p.indices === undefined ? i : element(p.indices, i, 'SCALAR', 1)[0]
         }
         function faceNormal(i) {
@@ -228,7 +238,7 @@ export async function loadGLB(url) {
           )
         }
         for (let i = 0; i < count; i++) {
-          if (mode !== 4 && i % 3 === 0 && p.indices !== undefined) {
+          if (stride === 3 && mode !== 4 && i % 3 === 0 && p.indices !== undefined) {
             const a = vertexIndex(i), b = vertexIndex(i + 1), c = vertexIndex(i + 2)
             if (a === b || b === c || c === a) {
               i += 2
@@ -236,13 +246,13 @@ export async function loadGLB(url) {
             }
           }
           const index = vertexIndex(
-              det < 0 ? i - (i % 3) + (i % 3 === 1 ? 2 : i % 3 === 2 ? 1 : 0) : i,
+              det < 0 && stride === 3 ? i - (i % 3) + (i % 3 === 1 ? 2 : i % 3 === 2 ? 1 : 0) : i,
             ),
             pos = element(p.attributes.POSITION, index, 'VEC3', 3),
             normal =
               p.attributes.NORMAL !== undefined
                 ? element(p.attributes.NORMAL, index, 'VEC3', 3)
-                : faceNormal(i),
+                : stride === 6 ? [0, 0, 1] : faceNormal(i),
             uv =
               p.attributes.TEXCOORD_0 === undefined
                 ? [0, 0]
@@ -275,8 +285,8 @@ export async function loadGLB(url) {
             p.attributes.NORMAL === undefined ? 1 : 0,
             ior,
             ...uv1,
-            0,
-            0,
+            stride === 6 ? i % stride + 1 : 0,
+            stride === 6 ? (line ? 2 : 1) : 0,
             ...readColor(p.attributes.COLOR_0, index),
           )
           animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex, normal)
