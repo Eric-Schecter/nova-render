@@ -43,10 +43,10 @@ try {
           const u = sceneUniforms(data, camera, 1, 'pbr', light, null, env),
             floorPixels = []
           const triangles = []
-          for (let i = 0; i < data.vertices.length; i += 48) {
+          for (let i = 0; i < data.vertices.length; i += 60) {
             const a = [...data.vertices.slice(i, i + 3)],
-              e = [0, 1, 2].map((k) => data.vertices[i + 16 + k] - a[k]),
-              f = [0, 1, 2].map((k) => data.vertices[i + 32 + k] - a[k]),
+              e = [0, 1, 2].map((k) => data.vertices[i + 20 + k] - a[k]),
+              f = [0, 1, 2].map((k) => data.vertices[i + 40 + k] - a[k]),
               t = [0, 1, 2].map((k) => u[16 + k] - a[k]),
               q = [t[1] * e[2] - t[2] * e[1], t[2] * e[0] - t[0] * e[2], t[0] * e[1] - t[1] * e[0]]
             triangles.push({ e, f, t, q, top: f.reduce((s, x, k) => s + x * q[k], 0) })

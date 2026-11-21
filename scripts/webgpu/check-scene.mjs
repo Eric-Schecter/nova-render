@@ -51,7 +51,7 @@ try {
       }))
       const scene = new SceneData(),
         first = await scene.update(assets, instances)
-      require(first.model.vertices.length === 72 * 16 &&
+      require(first.model.vertices.length === 72 * 20 &&
         first.draws.length === 2 &&
         first.instances.length ===
           144 + first.model.materialRecords.length, 'Shared geometry/group layout')

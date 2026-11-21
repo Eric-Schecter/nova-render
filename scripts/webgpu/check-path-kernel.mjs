@@ -38,8 +38,9 @@ try {
       try {
         const data = emptyModelData()
         data.vertices = new Float32Array([
-          -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1,
-          0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0.5, 1, 0, 0, 0.5, 1, 0, 0,
+          -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
+          1, -1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1,
+          0, 1, 0, 1, 0, 0, 1, 0, 0.5, 1, 0, 0, 0.5, 1, 0, 0, 1, 1, 1, 1,
         ])
         data.baseColor = [1, 0, 0, 1]
         const bvh = buildBVH(data.vertices)
@@ -258,7 +259,7 @@ try {
           early,
           later,
           filteredError,
-          triangles: helmet.vertices.length / 48,
+          triangles: helmet.vertices.length / 60,
           nodes: buildBVH(helmet.vertices).count,
           png: canvas.toDataURL().split(',')[1],
         }

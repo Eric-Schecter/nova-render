@@ -22,7 +22,7 @@ export async function createSkinReadback(device, directory = '/generated/') {
   return async (data) => {
     const scene = new Float32Array(96)
     scene[59] = 1
-    scene[58] = data.vertices.length / 16
+    scene[58] = data.vertices.length / 20
     const resources = []
     const buffer = (bytes, usage) => {
       const b = device.createBuffer({
@@ -60,7 +60,7 @@ export async function createSkinReadback(device, directory = '/generated/') {
         pass = encoder.beginComputePass()
       pass.setPipeline(pipeline)
       pass.setBindGroup(0, group)
-      pass.dispatchWorkgroups(Math.ceil(data.vertices.length / 16 / 64))
+      pass.dispatchWorkgroups(Math.ceil(data.vertices.length / 20 / 64))
       pass.end()
       encoder.copyBufferToBuffer(buffers[4], 0, read, 0, data.vertices.byteLength)
       device.queue.submit([encoder.finish()])

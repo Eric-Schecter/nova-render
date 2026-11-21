@@ -82,6 +82,8 @@ export async function loadGLB(url) {
           'KHR_materials_ior',
           'KHR_materials_specular',
           'KHR_materials_emissive_strength',
+          'KHR_xmp_json_ld',
+          'KHR_xmp',
           'KHR_materials_clearcoat',
         ].includes(e),
     ) ||
@@ -91,18 +93,18 @@ export async function loadGLB(url) {
     throw Error('Expected embedded GLB data and supported glTF extensions')
   const animation = readAnimation(json, bin)
   const raw = new DataView(bin)
-  function element(index, i, type, components) {
+  function element(index, i, type, components, color = false) {
     const a = json.accessors[index],
       v = json.bufferViews[a.bufferView]
     const size = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 }[a.componentType],
       stride = v.byteStride || size * components
     const uvDivisor =
-      type === 'VEC2' && a.normalized ? { 5121: 255, 5123: 65535 }[a.componentType] : 0
+      (type === 'VEC2' || color) && a.normalized ? { 5121: 255, 5123: 65535 }[a.componentType] : 0
     const start = (v.byteOffset || 0) + (a.byteOffset || 0) + i * stride
     if (
       a.sparse ||
       (a.normalized && !uvDivisor) ||
-      (type === 'VEC2' && a.componentType !== 5126 && !uvDivisor) ||
+      ((type === 'VEC2' || color) && a.componentType !== 5126 && !uvDivisor) ||
       a.type !== type ||
       i >= a.count ||
       !size ||
@@ -121,6 +123,15 @@ export async function loadGLB(url) {
             : raw.getUint8(start + k) / (uvDivisor || 1),
     )
   }
+  function readColor(index, vertex) {
+    if (index === undefined) return [1, 1, 1, 1]
+    const type = json.accessors[index].type
+    if (type !== 'VEC3' && type !== 'VEC4') throw Error('COLOR_0 requires VEC3 or VEC4')
+    const color = element(index, vertex, type, type === 'VEC3' ? 3 : 4, true)
+    if (color.some((v) => !Number.isFinite(v))) throw Error('Invalid COLOR_0 value')
+    if (color.length === 3) color.push(1)
+    return color.map((v) => Math.max(0, Math.min(1, v)))
+  }
   const vertices = [],
     min = [Infinity, Infinity, Infinity],
     max = [-Infinity, -Infinity, -Infinity],
@@ -136,7 +147,8 @@ export async function loadGLB(url) {
       c = m.slice(8, 11)
     const cof = [cross(b, c), cross(c, a), cross(a, b)],
       det = dot(a, cof[0])
-    if (Math.abs(det) < 1e-10) throw Error('Degenerate node transform')
+    if (Math.abs(det) <= 1e-10 * Math.hypot(...a) * Math.hypot(...b) * Math.hypot(...c))
+      throw Error('Degenerate node transform')
     if (node.mesh !== undefined)
       for (const p of json.meshes[node.mesh].primitives) {
         if ((p.mode ?? 4) !== 4 || p.targets)
@@ -241,6 +253,7 @@ export async function loadGLB(url) {
             ...uv1,
             0,
             0,
+            ...readColor(p.attributes.COLOR_0, index),
           )
           animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex, normal)
         }
