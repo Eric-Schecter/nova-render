@@ -13,6 +13,7 @@ export const defaultHybrid = () => ({
   probeSkyLighting: false,
   probeMultiBounce: false,
   probeSharedRays: false,
+  probeOctahedral: false,
   probeReflectionLighting: false,
   probeRoughReflections: false,
   probeBounds: null,
@@ -55,6 +56,7 @@ export function copyHybrid(value) {
           'probeSkyLighting',
           'probeMultiBounce',
           'probeSharedRays',
+          'probeOctahedral',
           'probeReflectionLighting',
           'probeRoughReflections',
           'probeBounds',
@@ -113,6 +115,7 @@ export function copyHybrid(value) {
     typeof s.probeRoughReflections !== 'boolean' ||
     typeof s.probeMultiBounce !== 'boolean' ||
     typeof s.probeSharedRays !== 'boolean' ||
+    typeof s.probeOctahedral !== 'boolean' ||
     !Number.isFinite(s.reflectionDistance) ||
     s.reflectionDistance <= 0 ||
     s.reflectionDistance > 100000 ||

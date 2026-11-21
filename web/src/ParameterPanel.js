@@ -450,6 +450,18 @@ export function attachParameterPanel(
         sharedRaysRow.prepend(sharedRaysToggle)
         renderer.append(sharedRaysRow)
         fields.set('hybrid_probeSharedRays', { input: sharedRaysToggle })
+        const octahedralRow = document.createElement('label'),
+          octahedralToggle = document.createElement('input')
+        octahedralRow.textContent = 'DDGI octahedral probes'
+        octahedralToggle.type = 'checkbox'
+        octahedralToggle.setAttribute('aria-label', 'DDGI octahedral probes')
+        octahedralToggle.checked = h.probeOctahedral
+        octahedralToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ probeOctahedral: octahedralToggle.checked })),
+        )
+        octahedralRow.prepend(octahedralToggle)
+        renderer.append(octahedralRow)
+        fields.set('hybrid_probeOctahedral', { input: octahedralToggle })
         const probeSkyRow = document.createElement('label'),
           probeSkyToggle = document.createElement('input')
         probeSkyRow.textContent = 'DDGI sky lighting'
@@ -1062,6 +1074,7 @@ export function attachParameterPanel(
             'probeReflectionLighting',
             'probeRoughReflections',
             'probeSharedRays',
+            'probeOctahedral',
           ].includes(name)
         )
           field.input.disabled =

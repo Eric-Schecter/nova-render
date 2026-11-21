@@ -6,7 +6,7 @@ export const hybridProbeGridDimensions = Object.freeze([5, 4, 5])
 export function createHybridProbes(device, pipeline, layout) {
   const dimensions = hybridProbeGridDimensions
   const count = dimensions.reduce((a, b) => a * b, 1)
-  const size = count * 6 * 32
+  const size = count * 256 * 32
   const current = device.createBuffer({
     size,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
@@ -38,6 +38,7 @@ export function createHybridProbes(device, pipeline, layout) {
       minimumExtent = 0.25,
       multiBounce = false,
       sharedPipeline = null,
+      octahedral = false,
     ) {
       if (!bounds) return
       const [minimum, maximum] = bounds
@@ -54,20 +55,20 @@ export function createHybridProbes(device, pipeline, layout) {
       const configData = new ArrayBuffer(64)
       const floats = new Float32Array(configData)
       const ints = new Uint32Array(configData)
-      floats.set(origin)
+      floats.set([...origin, octahedral ? 1 : 0])
       floats.set([...spacing, Math.hypot(...extent)], 4)
       ints.set([...dimensions, first, batchCount, sequence], 8)
       floats[14] = 0.85
       ints[15] = header
       device.queue.writeBuffer(config, 0, configData)
-      const bytesPerProbe = 6 * 32
+      const bytesPerProbe = (octahedral ? 256 : 6) * 32
       const offset = multiBounce ? 0 : first * bytesPerProbe
       encoder.copyBufferToBuffer(
         current,
         offset,
         previous,
         offset,
-        multiBounce ? size : batchCount * bytesPerProbe,
+        (multiBounce ? count : batchCount) * bytesPerProbe,
       )
       const pass = encoder.beginComputePass()
       const updatePipeline = sharedPipeline || pipeline

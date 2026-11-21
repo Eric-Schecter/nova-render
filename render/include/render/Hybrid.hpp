@@ -55,6 +55,7 @@ namespace render
         bool                             halfResolutionAO = false;
         bool                             mirrorReflections = false;
         bool                             probeRoughReflections = false;
+        bool                             probeOctahedral = false;
         bool                             probeSharedRays              = false;
     };
     struct HybridCapabilities

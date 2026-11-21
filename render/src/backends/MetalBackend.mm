@@ -292,11 +292,11 @@ namespace render::detail
             probeFrame = PrepareProbes(reset);
             if (!probeFrame)
                 return;
-            auto& pipeline = hybrid.probeSharedRays ? probeSharedUpdatePipeline : probeUpdatePipeline;
+            auto& pipeline = UsesSharedProbeRays() ? probeSharedUpdatePipeline : probeUpdatePipeline;
             if (!pipeline)
             {
                 const auto bytes = LoadShader(settings.shaderDirectory,
-                  hybrid.probeSharedRays ? "model-probe-update-shared.metallib" : "model-probe-update.metallib");
+                  UsesSharedProbeRays() ? "model-probe-update-shared.metallib" : "model-probe-update.metallib");
                 auto       blob  = dispatch_data_create(
                   bytes.data(),
                   bytes.size(),
@@ -313,18 +313,18 @@ namespace render::detail
             }
             if (!probeCurrent)
             {
-                probeCurrent  = [device newBufferWithLength:ProbeCount * ProbeBytes
+                probeCurrent  = [device newBufferWithLength:ProbeCount * ProbeAllocationBytes
                                                    options:MTLResourceStorageModePrivate];
-                probePrevious = [device newBufferWithLength:ProbeCount * ProbeBytes
+                probePrevious = [device newBufferWithLength:ProbeCount * ProbeAllocationBytes
                                                     options:MTLResourceStorageModePrivate];
                 reset         = true;
             }
             auto blit = [command blitCommandEncoder];
             if (reset)
-                [blit fillBuffer:probeCurrent range:NSMakeRange(0, ProbeCount * ProbeBytes) value:0];
+                [blit fillBuffer:probeCurrent range:NSMakeRange(0, ProbeCount * ProbeAllocationBytes) value:0];
             const bool feedback = hybrid.probeSkyLighting && hybrid.probeMultiBounce && bool(environment);
-            const auto offset   = feedback ? 0 : probeConfig.dimensionsFirst[3] * ProbeBytes;
-            const auto bytes    = (feedback ? ProbeCount : probeConfig.count) * ProbeBytes;
+            const auto offset   = feedback ? 0 : probeConfig.dimensionsFirst[3] * ProbeStride();
+            const auto bytes    = (feedback ? ProbeCount : probeConfig.count) * ProbeStride();
             [blit copyFromBuffer:probeCurrent
                     sourceOffset:offset
                         toBuffer:probePrevious
@@ -342,9 +342,9 @@ namespace render::detail
                 [encoder setTexture:modelTextures[i] atIndex:(i < 5 ? 2 + i : 28 + i - 5)];
             [encoder setTexture:environmentTexture atIndex:8];
             [encoder setSamplerState:modelSampler atIndex:7];
-            const auto groups = hybrid.probeSharedRays ? probeConfig.count : (probeConfig.count * 6 + 31) / 32;
+            const auto groups = UsesSharedProbeRays() ? probeConfig.count : (probeConfig.count * 6 + 31) / 32;
             [encoder dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
-                    threadsPerThreadgroup:MTLSizeMake(hybrid.probeSharedRays ? 96 : 32, 1, 1)];
+                    threadsPerThreadgroup:MTLSizeMake(UsesSharedProbeRays() ? 96 : 32, 1, 1)];
             [encoder endEncoding];
         }
         id<MTLDepthStencilState>   oitDepthState;

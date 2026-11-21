@@ -1325,7 +1325,7 @@ struct HybridProbeLobe
 };
 [[vk::binding(25, 2)]] cbuffer HybridProbeUpdate : register(b0, space2)
 {
-    float4 probeOrigin;
+    float4 probeOrigin; // XYZ origin, W enables octahedral storage
     float4 probeSpacingDistance; // XYZ spacing, W ray limit
     uint4 probeDimensionsFirst; // XYZ counts, W first probe in this batch
     uint2 probeBatch; // Count and update sequence
@@ -1367,6 +1367,40 @@ void HybridProbeUpdateCS(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
     directionDistance[lane] = float4(ray, saturate(distance / probeSpacingDistance.w));
     sampleRadiance[lane] = radiance;
     GroupMemoryBarrierWithGroupSync();
+
+    if (probeOrigin.w > .5)
+    {
+        // The first 64 records hold irradiance. All 256 hold directional depth.
+        for (uint bin = lane; bin < 256; bin += sampleCount)
+        {
+            float3 depthNormal = octDecode((float2(bin % 16, bin / 16) + .5) / 8 - 1);
+            float3 diffuseNormal = octDecode((float2(bin % 8, bin / 8) + .5) / 4 - 1);
+            float2 moments = 0;
+            float3 incoming = 0;
+            float depthWeight = 0, diffuseWeight = 0;
+            [loop] for (uint i = 0; i < sampleCount; ++i)
+            {
+                float4 sample = directionDistance[i];
+                float weight = pow(saturate(dot(depthNormal, sample.xyz)), 12);
+                moments += float2(sample.w, sample.w * sample.w) * weight;
+                depthWeight += weight;
+                if (bin < 64)
+                {
+                    float w = saturate(dot(diffuseNormal, sample.xyz));
+                    incoming += sampleRadiance[i] * w;
+                    diffuseWeight += w;
+                }
+            }
+            uint index = probe * 256 + bin;
+            HybridProbeLobe previous = probePrevious[index];
+            float history = saturate(probeHistoryWeight) * previous.irradiance.w;
+            HybridProbeLobe result;
+            result.irradiance = float4(lerp(incoming / max(diffuseWeight, 1e-5), previous.irradiance.rgb, history), 1);
+            result.distanceMoments = float4(lerp(moments / max(depthWeight, 1e-5), previous.distanceMoments.xy, history), 0, 0);
+            probeUpdated[index] = result;
+        }
+        return;
+    }
 
     if (lane >= 6)
         return;
@@ -1446,9 +1480,32 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
 
 #endif
 
+float4 hybridOctahedralTap(uint probe, int2 tap, int side, bool distance)
+{
+    // Across a folded edge the other coordinate reverses. This also remaps corners.
+    if (tap.x < 0 || tap.x >= side)
+        tap = int2(clamp(tap.x, 0, side - 1), side - 1 - tap.y);
+    if (tap.y < 0 || tap.y >= side)
+        tap = int2(side - 1 - tap.x, clamp(tap.y, 0, side - 1));
+    HybridProbeLobe bin = probePrevious[probe * 256 + uint(tap.y * side + tap.x)];
+    return distance ? bin.distanceMoments : bin.irradiance;
+}
+
 // Axis lobes use squared direction components so constant radiance stays constant.
 float4 hybridProbeDirection(uint probe, float3 direction, bool distance)
 {
+    if (probeOrigin.w > .5)
+    {
+        int side = distance ? 16 : 8;
+        float2 at = (octEncode(direction) * .5 + .5) * side - .5;
+        int2 first = int2(floor(at));
+        float2 f = frac(at);
+        return lerp(
+          lerp(hybridOctahedralTap(probe, first, side, distance),
+               hybridOctahedralTap(probe, first + int2(1, 0), side, distance), f.x),
+          lerp(hybridOctahedralTap(probe, first + int2(0, 1), side, distance),
+               hybridOctahedralTap(probe, first + 1, side, distance), f.x), f.y);
+    }
     float3 weights = direction * direction;
     uint first = probe * 6;
     HybridProbeLobe x = probePrevious[first     + uint(direction.x < 0)];

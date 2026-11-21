@@ -29,7 +29,7 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage()
   await page.goto(process.env.NOVA_TEST_URL || 'http://127.0.0.1:5220')
-  const verifyUpdate = async (code) => {
+  const verifyUpdate = async ({ code, bins }) => {
     const adapter = await navigator.gpu.requestAdapter()
     const device = await adapter.requestDevice()
     const pipeline = await device.createComputePipelineAsync({
@@ -74,12 +74,14 @@ try {
       { binding: 14, resource: { buffer: sceneInstances } },
     ])
     const settings = new Float32Array(16)
+    settings[3] = bins === 256 ? 1 : 0
     settings.set([1, 1, 1, 10], 4)
     const words = new Uint32Array(settings.buffer)
     words.set([2, 1, 1, 1, 1, 7], 8)
     settings[14] = 0.5
-    const previous = new Float32Array(2 * 6 * 8)
-    previous.set([2, 4, 6, 1, 0.5, 0.25, 0, 0], 6 * 8)
+    const stride = bins * 8
+    const previous = new Float32Array(2 * stride)
+    previous.set([2, 4, 6, 1, 0.5, 0.25, 0, 0], stride)
     const updated = buffer(
       new Float32Array(previous.length),
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
@@ -109,9 +111,9 @@ try {
         if (Math.abs(actual[i] - value) > 1e-6 || !Number.isFinite(actual[i]))
           throw Error('Unexpected probe value at ' + i + ': ' + actual[i])
       })
-    check(values.subarray(0, 48), new Float32Array(48))
-    check(values.subarray(48, 56), [1, 2, 3, 1, 0.75, 0.625, 0, 0])
-    for (let i = 56; i < values.length; i += 8)
+    check(values.subarray(0, stride), new Float32Array(stride))
+    check(values.subarray(stride, stride + 8), [1, 2, 3, 1, 0.75, 0.625, 0, 0])
+    for (let i = stride + 8; i < values.length; i += 8)
       check(values.subarray(i, i + 8), [0, 0, 0, 1, 1, 1, 0, 0])
     readback.unmap()
     for (let face = 0; face < 6; face++)
@@ -134,9 +136,9 @@ try {
     device.queue.submit([skyEncoder.finish()])
     await readback.mapAsync(GPUMapMode.READ)
     const sky = new Float32Array(readback.getMappedRange())
-    check(sky.subarray(0, 48), new Float32Array(48))
+    check(sky.subarray(0, stride), new Float32Array(stride))
     const incident = [64, 128, 192].map((channel) => (channel / 255) * 0.5)
-    check(sky.subarray(48, 56), [
+    check(sky.subarray(stride, stride + 8), [
       ...incident.map((channel, i) => channel * 0.5 + i + 1),
       1,
       0.75,
@@ -144,12 +146,20 @@ try {
       0,
       0,
     ])
-    for (let i = 56; i < sky.length; i += 8)
-      check(sky.subarray(i, i + 8), [...incident, 1, 1, 1, 0, 0])
+    for (let i = stride + 8; i < sky.length; i += 8)
+      check(sky.subarray(i, i + 8), [
+        ...(bins === 256 && i >= stride + 64 * 8 ? [0, 0, 0] : incident),
+        1,
+        1,
+        1,
+        0,
+        0,
+      ])
     readback.unmap()
     device.destroy()
   }
-  for (const update of [compute, sharedCompute]) await page.evaluate(verifyUpdate, update)
+  for (const code of [compute, sharedCompute]) await page.evaluate(verifyUpdate, { code, bins: 6 })
+  await page.evaluate(verifyUpdate, { code: sharedCompute, bins: 256 })
   await page.evaluate(async (code) => {
     const adapter = await navigator.gpu.requestAdapter()
     const device = await adapter.requestDevice()

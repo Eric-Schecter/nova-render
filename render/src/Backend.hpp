@@ -63,7 +63,9 @@ namespace render::detail
         };
         static_assert(sizeof(ProbeConfig) == 64);
         static constexpr uint32_t ProbeCount = HybridProbeGridDimensions[0] * HybridProbeGridDimensions[1] * HybridProbeGridDimensions[2],
-                                  ProbeBytes = 6 * 32;
+                                  ProbeAllocationBytes = 256 * 32;
+        uint32_t ProbeStride() const { return (hybrid.probeOctahedral ? 256u : 6u) * 32; }
+        bool UsesSharedProbeRays() const { return hybrid.probeSharedRays || hybrid.probeOctahedral; }
         uint32_t                  probeFirst = 0, probeSequence = 0;
         bool                      probeReset = true;
         ProbeConfig               probeConfig;
@@ -124,6 +126,7 @@ namespace render::detail
                 probeFirst = probeSequence = 0;
                 probeReset                 = false;
             }
+            probeConfig.origin[3] = hybrid.probeOctahedral ? 1.f : 0.f;
             probeConfig.dimensionsFirst[3] = probeFirst;
             probeConfig.count              = std::min(8u, ProbeCount - probeFirst);
             probeConfig.sequence           = probeSequence++;
@@ -157,7 +160,8 @@ namespace render::detail
             const bool resetProbes = hybrid.probeGI != value.probeGI || hybrid.probeBounds != value.probeBounds
                                      || hybrid.probeSkyLighting != value.probeSkyLighting
                                      || hybrid.probeMultiBounce != value.probeMultiBounce
-                                     || hybrid.probeSharedRays != value.probeSharedRays;
+                                     || hybrid.probeSharedRays != value.probeSharedRays
+                                     || hybrid.probeOctahedral != value.probeOctahedral;
             hybrid = value;
             RebuildRasterInstances(resetProbes);
             rasterAA.Reset();
@@ -1003,6 +1007,7 @@ namespace render::detail
               || previousHybrid.probeReflectionLighting != hybrid.probeReflectionLighting
               || previousHybrid.probeRoughReflections != hybrid.probeRoughReflections
               || previousHybrid.probeSharedRays != hybrid.probeSharedRays
+              || previousHybrid.probeOctahedral != hybrid.probeOctahedral
               || previousHybrid.diffuseBounce != hybrid.diffuseBounce
               || previousHybrid.reflectionStrength != hybrid.reflectionStrength
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
@@ -1021,7 +1026,8 @@ namespace render::detail
                   previousHybrid.probeGI != hybrid.probeGI || previousHybrid.probeBounds != hybrid.probeBounds
                   || previousHybrid.probeSkyLighting != hybrid.probeSkyLighting
                   || previousHybrid.probeMultiBounce != hybrid.probeMultiBounce
-                  || previousHybrid.probeSharedRays != hybrid.probeSharedRays);
+                  || previousHybrid.probeSharedRays != hybrid.probeSharedRays
+                  || previousHybrid.probeOctahedral != hybrid.probeOctahedral);
                 rasterAA.Reset();
             }
             if (

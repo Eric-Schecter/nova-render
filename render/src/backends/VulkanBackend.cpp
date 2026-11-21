@@ -211,7 +211,7 @@ namespace render::detail
                 return;
             if (!probeCurrent.buffer)
             {
-                constexpr auto bytes = ProbeCount * ProbeBytes;
+                constexpr auto bytes = ProbeCount * ProbeAllocationBytes;
                 modelBuffer(probeUniform, sizeof(ProbeConfig), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
                 modelBuffer(
                   probeCurrent,
@@ -251,10 +251,10 @@ namespace render::detail
                 bind(probeUpdateSet, probePrevious);
                 reset = true;
             }
-            auto& pipeline = hybrid.probeSharedRays ? probeSharedUpdatePipeline : probeUpdatePipeline;
+            auto& pipeline = UsesSharedProbeRays() ? probeSharedUpdatePipeline : probeUpdatePipeline;
             if (!pipeline)
             {
-                auto module = shader(hybrid.probeSharedRays ? "model-probe-update-shared.comp.spv"
+                auto module = shader(UsesSharedProbeRays() ? "model-probe-update-shared.comp.spv"
                                                           : "model-probe-update.comp.spv");
                 VkComputePipelineCreateInfo info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
                 info.stage        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
@@ -311,8 +311,8 @@ namespace render::detail
                   VK_ACCESS_TRANSFER_READ_BIT);
             }
             const bool         feedback = hybrid.probeSkyLighting && hybrid.probeMultiBounce && bool(environment);
-            const VkDeviceSize offset   = feedback ? 0 : probeConfig.dimensionsFirst[3] * ProbeBytes;
-            const VkDeviceSize bytes    = (feedback ? ProbeCount : probeConfig.count) * ProbeBytes;
+            const VkDeviceSize offset   = feedback ? 0 : probeConfig.dimensionsFirst[3] * ProbeStride();
+            const VkDeviceSize bytes    = (feedback ? ProbeCount : probeConfig.count) * ProbeStride();
             VkBufferCopy       copy{offset, offset, bytes};
             vkCmdCopyBuffer(command, probeCurrent.buffer, probePrevious.buffer, 1, &copy);
             barrier(
@@ -323,7 +323,7 @@ namespace render::detail
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &probeModelSet, 0, nullptr);
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2, 1, &probeUpdateSet, 0, nullptr);
-            const auto groups = hybrid.probeSharedRays ? probeConfig.count : (probeConfig.count * 6 + 31) / 32;
+            const auto groups = UsesSharedProbeRays() ? probeConfig.count : (probeConfig.count * 6 + 31) / 32;
             vkCmdDispatch(command, groups, 1, 1);
             barrier(
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,

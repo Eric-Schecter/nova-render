@@ -390,7 +390,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           true,
           true,
         )
-      if (hybrid.probeSharedRays && !probeSharedUpdatePipeline)
+      const sharedRays = hybrid.probeSharedRays || hybrid.probeOctahedral
+      if (sharedRays && !probeSharedUpdatePipeline)
         probeSharedUpdatePipeline = await device.createComputePipelineAsync({
           layout: 'auto',
           compute: {
@@ -416,7 +417,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         ],
         hybrid.probeBounds ? 0 : 0.25,
         !!environment && hybrid.probeSkyLighting && hybrid.probeMultiBounce,
-        hybrid.probeSharedRays ? probeSharedUpdatePipeline : null,
+        sharedRays ? probeSharedUpdatePipeline : null,
+        hybrid.probeOctahedral,
       )
       probeEnabled = true
     }
@@ -547,6 +549,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             hybrid?.probeSkyLighting !== settings?.probeSkyLighting ||
             hybrid?.probeMultiBounce !== settings?.probeMultiBounce ||
             hybrid?.probeSharedRays !== settings?.probeSharedRays ||
+            hybrid?.probeOctahedral !== settings?.probeOctahedral ||
             JSON.stringify(hybrid?.probeBounds) !== JSON.stringify(settings?.probeBounds))
         )
           probes?.invalidate()

@@ -42,6 +42,7 @@ Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settin
 - Enable `probeReflectionLighting` with DDGI sky lighting and a loaded environment to replace diffuse IBL at reflection hits with local probe lighting. This applies to full- and half-resolution Hybrid reflections and defaults to false.
 - Enable `probeSharedRays` to trace 96 spherical rays per probe and reuse their results across all six directional lobes in workgroup memory. It defaults to false. Changing it restarts the cache.
 - Enable `probeRoughReflections` with DDGI sky lighting to approximate reflection lobes of roughness 0.8 or greater using cached radiance. This skips tracing only with full probe coverage and skips denoising only when every lobe is already filtered or a deterministic mirror. It defaults to false.
+- Enable `probeOctahedral` to use 8 × 8 radiance and 16 × 16 depth moment bins per probe. This enables shared rays automatically and uses seam-aware interpolation. It defaults to false and switching layouts resets the cache.
 - History: `temporalReconstruction` defaults to false; `historyWeight` is 0–0.98 (default 0.9). Reprojection uses depth, normal and instance rejection, neighborhood clamping and motion-dependent weighting before post processing and final AA. Transparent OIT overlays are composited afterward.
 
 `view` selects `Final`, `Shadows`, `AmbientOcclusion` or `Reflections` in C++; Web uses `'final'`, `'shadows'`, `'ambient-occlusion'`, `'reflections'`. Diagnostics bypass AA/post. `shadowLight` selects active-light index 0–15; unused slots are fully visible.
@@ -52,7 +53,7 @@ Load a static model or scene first. `GetHybrid()` / `getHybrid()` returns settin
 
 Hybrid selects Deferred. Off, FXAA, SMAA and SSAA work; MSAA, TAA and AA split are rejected. Static instances and MASK coverage are supported. BLEND remains OIT, without shadow casting or ray-traced glass. Secondary reflection hits use material textures, including normal maps and material AO. The tangent frame comes from the hit triangle and its UVs, with geometric shading for degenerate UVs. Reflections use one bounce.
 
-Animated geometry, moving-instance motion vectors and hardware ray queries remain unsupported. The DDGI grid uses six lobes per probe. It has no relocation or adaptive placement, and DX12 does not expose probe mode. Scene edits conservatively reset history. Full-frame reconstruction uses combined color. Independent shadow reconstruction filters visibility in time. Half-resolution reflections also use a spatial filter.
+Animated geometry, moving-instance motion vectors and hardware ray queries remain unsupported. The default DDGI grid uses six lobes per probe. It has no relocation or adaptive placement, and DX12 does not expose probe mode. Scene edits conservatively reset history. Full-frame reconstruction uses combined color. Independent shadow reconstruction filters visibility in time. Half-resolution reflections also use a spatial filter.
 
 
 ### Local probe bounds
