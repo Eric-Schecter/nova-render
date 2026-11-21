@@ -177,6 +177,7 @@ namespace render::detail
         auto              result    = std::make_shared<ModelData>();
         glm::vec3         minimum(std::numeric_limits<float>::max()), maximum(-std::numeric_limits<float>::max());
         std::vector<bool> active(gltf.nodes.size(), false);
+        const auto defaultMaterial = gltf.materials.size();
         std::function<void(int, glm::mat4)> visit = [&](int index, glm::mat4 parent) {
             if (index < 0 || static_cast<size_t>(index) >= gltf.nodes.size() || active[index])
                 throw std::runtime_error("Invalid glTF scene graph");
@@ -208,17 +209,20 @@ namespace render::detail
             if (node.mesh >= 0)
                 for (const auto& p : gltf.meshes.at(node.mesh).primitives)
                 {
-                    if (p.mode != TINYGLTF_MODE_TRIANGLES || !p.targets.empty())
+                    if (p.mode < TINYGLTF_MODE_TRIANGLES || p.mode > TINYGLTF_MODE_TRIANGLE_FAN || !p.targets.empty())
                         throw std::runtime_error("Only triangle primitives without morph targets are supported");
-                    if (p.material < 0)
-                        throw std::runtime_error("Missing material");
-                    const auto glass     = dielectric(gltf.materials.at(p.material));
+                    if (p.material < -1 || (p.material >= 0 && size_t(p.material) >= defaultMaterial))
+                        throw std::runtime_error("Invalid glTF material index");
+                    const auto materialIndex = p.material == -1 ? defaultMaterial : size_t(p.material);
+                    if (p.material == -1 && gltf.materials.size() == defaultMaterial)
+                        gltf.materials.emplace_back();
+                    const auto glass = dielectric(gltf.materials.at(materialIndex));
                     result->hasTransmission |= glass[0] > 0;
                     const int  position  = p.attributes.at("POSITION"),
                               uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
                     const int   uv1      = p.attributes.count("TEXCOORD_1") ? p.attributes.at("TEXCOORD_1") : -1;
                     const auto colorIndex = p.attributes.find("COLOR_0");
-                    const auto& material = gltf.materials.at(p.material);
+                    const auto& material = gltf.materials.at(materialIndex);
                     const auto& pbr      = material.pbrMetallicRoughness;
                     const auto& ao       = material.occlusionTexture;
                     if (uv < 0 && (pbr.baseColorTexture.index >= 0 || pbr.metallicRoughnessTexture.index >= 0
@@ -236,11 +240,23 @@ namespace render::detail
                                 throw std::runtime_error("Clearcoat texture requires its declared TEXCOORD set");
                         }
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
-                    const auto count =
+                    const auto inputCount =
                       p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
-                    if (count % 3 || result->vertices.size() + count > 10000000)
-                        throw std::runtime_error("Invalid or oversized triangle mesh");
+                    const auto triangleList = p.mode == TINYGLTF_MODE_TRIANGLES;
+                    if (inputCount < 3 || (triangleList && inputCount % 3))
+                        throw std::runtime_error("Invalid triangle mesh");
+                    const auto triangleCount = triangleList ? inputCount / 3 : inputCount - 2;
+                    if (triangleCount > (10000000 - result->vertices.size()) / 3)
+                        throw std::runtime_error("Oversized triangle mesh");
+                    const auto count = triangleCount * 3;
+                    const auto mirrored = glm::determinant(glm::mat3(matrix)) < 0;
                     auto vertexIndex = [&](size_t i) {
+                        const auto triangle = i / 3;
+                        const auto corner = i % 3;
+                        if (p.mode == TINYGLTF_MODE_TRIANGLE_STRIP)
+                            i = triangle + (triangle % 2 && corner < 2 ? 1 - corner : corner);
+                        else if (p.mode == TINYGLTF_MODE_TRIANGLE_FAN)
+                            i = corner == 0 ? 0 : triangle + corner;
                         if (p.indices < 0)
                             return uint32_t(i);
                         const auto c = gltf.accessors.at(p.indices).componentType;
@@ -255,7 +271,17 @@ namespace render::detail
                     };
                     for (size_t i = 0; i < count; ++i)
                     {
-                        const auto windingIndex = glm::determinant(glm::mat3(matrix))<0 ? (i-i%3+(i%3==1?2:i%3==2?1:0)) : i;
+                        const auto corner = i % 3;
+                        if (!triangleList && corner == 0 && p.indices >= 0)
+                        {
+                            const auto a = vertexIndex(i), b = vertexIndex(i + 1), c = vertexIndex(i + 2);
+                            if (a == b || b == c || c == a)
+                            {
+                                i += 2;
+                                continue;
+                            }
+                        }
+                        const auto windingIndex = mirrored && corner != 0 ? i - corner + (3 - corner) : i;
                         const auto v = vertexIndex(windingIndex);
                         glm::vec3  localNormal;
                         if (normal >= 0)
@@ -284,7 +310,7 @@ namespace render::detail
                         const auto color = colorIndex == p.attributes.end()
                                              ? glm::vec4(1) : vertexColor(gltf, colorIndex->second, v);
                         result->vertices.push_back(
-                          {{pos.x, pos.y, pos.z, float(p.material + 1)},
+                          {{pos.x, pos.y, pos.z, float(materialIndex + 1)},
                            {n.x, n.y, n.z, glass[0]},
                            {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]},
                            {t1.x, t1.y, 0, 0},
