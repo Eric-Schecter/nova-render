@@ -62,3 +62,7 @@ Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits c
 Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `SetMaterial(slot, material)` / `await setMaterial(slot, material)`. Pass the scene asset ID as the final argument to edit all its instances. Texture maps accept RGBA8 images; `LoadMaterialImage(path)` / `await loadMaterialImage(url)` decodes an image. See the materials API documentation for ranges and atlas limits.
 
 SDK 0.8.0: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations.
+
+### Preview resolution
+
+Call `renderer.setRenderScale(scale)` to render at a fraction of the canvas resolution. The scale is greater than zero and at most one, with a default of one. It does not change the canvas layout or shadow sample count.

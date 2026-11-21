@@ -324,37 +324,45 @@ export class SceneData {
   shadowInstances() {
     if (!this.players.size)
       return { instances: this.instanceBytes, draws: this.draws, shadowRecords: this.shadowRecords }
-    const instances = this.instanceBytes.slice(),
-      chunks = [this.shadowRecords]
-    let length = this.shadowRecords.length,
-      index = 0
-    for (const [assetId, mesh] of this.meshes) {
-      for (const instance of this.pickInstances) {
-        if (instance.assetId !== assetId) continue
-        const at = index++ * 48,
-          player = this.players.get(instance.id)
-        if (!player || !instances[at + 46]) continue
-        player.queryPick ||= mesh.picking.refit(this.poseGeometry(instance.id))
-        const nodes = player.queryPick.nodes.length
-        const rows = player.queryPick.shadowRecords()
-        if ((length + rows.length) * 4 > 64 * 1024 * 1024)
-          throw Error('Scene shadow BVHs exceed 64 MiB')
-        instances[at + 45] = length / 48
-        instances[at + 47] = nodes
-        const offset =
-          this.model.vertices[mesh.first * modelVertexFloats + 3] - mesh.data.vertices[3]
-        for (let row = nodes; row < rows.length / 48; row++) rows[row * 48 + 43] += offset
-        chunks.push(rows)
-        length += rows.length
+    let cache = this.animationShadowCache
+    if (!cache || cache.source !== this.instanceBytes) {
+      const instances = this.instanceBytes.slice()
+      const entries = []
+      let length = this.shadowRecords.length,
+        index = 0
+      for (const [assetId, mesh] of this.meshes) {
+        for (const instance of this.pickInstances) {
+          if (instance.assetId !== assetId) continue
+          const at = index++ * 48
+          if (!this.players.has(instance.id) || !instances[at + 46]) continue
+          instances[at + 45] = length / 48
+          instances[at + 47] = mesh.shadowNodes
+          entries.push({ id: instance.id, mesh, offset: length, pose: null })
+          length += mesh.shadowData.length
+        }
+      }
+      if (length * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
+      const records = new Float32Array(length)
+      records.set(this.shadowRecords)
+      for (const { mesh, offset } of entries) {
+        const first = mesh.shadowFirst * 48
+        records.set(this.shadowRecords.subarray(first, first + mesh.shadowData.length), offset)
+      }
+      this.animationShadowCache = cache = {
+        source: this.instanceBytes,
+        instances,
+        entries,
+        records,
       }
     }
-    const shadowRecords = new Float32Array(length)
-    let offset = 0
-    for (const chunk of chunks) {
-      shadowRecords.set(chunk, offset)
-      offset += chunk.length
+    for (const entry of cache.entries) {
+      const player = this.players.get(entry.id)
+      player.queryPick ||= entry.mesh.picking.refit(this.poseGeometry(entry.id))
+      if (entry.pose === player.queryPick) continue
+      player.queryPick.writeShadowPose(cache.records, entry.offset)
+      entry.pose = player.queryPick
     }
-    return { instances, draws: this.draws, shadowRecords }
+    return { instances: cache.instances, draws: this.draws, shadowRecords: cache.records }
   }
   animations(id) {
     const mesh = this.meshes.get(id)
@@ -503,6 +511,7 @@ export class SceneData {
   }
   dispose() {
     this.players = new Map()
+    this.animationShadowCache = undefined
     this.raySource = null
     this.rayCache = null
     this.rayKey = ''

@@ -127,27 +127,26 @@ float3 applyFog(float3 color, float3 position)
 #endif
     return lerp(color, fog, saturate(amount));
 }
+bool shadowBox(float3 low, float3 high, float3 origin, float3 inverseDirection, bool3 parallel, float maxDistance)
+{
+    float3 pad = 1e-5 * max(1, max(abs(low), abs(high)));
+    float3 lower = low - pad - origin, upper = high + pad - origin;
+    bool3 outside = max(lower, -upper) > 0;
+    if ((parallel.x && outside.x) || (parallel.y && outside.y) || (parallel.z && outside.z))
+        return false;
+    float3 a = lower * inverseDirection, b = upper * inverseDirection;
+    float3 nearT = min(a, b), farT = max(a, b);
+    nearT = float3(parallel.x ? 0 : nearT.x, parallel.y ? 0 : nearT.y, parallel.z ? 0 : nearT.z);
+    farT = float3(parallel.x ? maxDistance : farT.x, parallel.y ? maxDistance : farT.y, parallel.z ? maxDistance : farT.z);
+    return max(0, max(nearT.x, max(nearT.y, nearT.z))) <= min(maxDistance, min(farT.x, min(farT.y, farT.z)));
+}
 bool shadowBox(float3 low, float3 high, float3 origin, float3 direction, float maxDistance)
 {
-    float nearT = 0, farT = maxDistance;
-    [unroll] for (uint k = 0; k < 3; k++)
-    {
-        float pad = 1e-5 * max(1, max(abs(low[k]), abs(high[k])));
-        if (abs(direction[k]) < 1e-15)
-        {
-            if (origin[k] < low[k] - pad || origin[k] > high[k] + pad)
-                return false;
-        }
-        else
-        {
-            float a = (low[k] - pad - origin[k]) / direction[k], b = (high[k] + pad - origin[k]) / direction[k];
-            nearT = max(nearT, min(a, b));
-            farT  = min(farT, max(a, b));
-            if (farT < nearT)
-                return false;
-        }
-    }
-    return true;
+    bool3 parallel = abs(direction) < 1e-15;
+    float3 inverseDirection = 1 / float3(parallel.x ? 1 : direction.x,
+                                        parallel.y ? 1 : direction.y,
+                                        parallel.z ? 1 : direction.z);
+    return shadowBox(low, high, origin, inverseDirection, parallel, maxDistance);
 }
 bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float maxDistance, uint materialBase)
 {
@@ -199,11 +198,15 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
         float3 delta          = origin - translation;
         float3 localOrigin    = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
         float3 localDirection = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
+        bool3  parallel       = abs(localDirection) < 1e-15;
+        float3 inverseDirection = 1 / float3(parallel.x ? 1 : localDirection.x,
+                                            parallel.y ? 1 : localDirection.y,
+                                            parallel.z ? 1 : localDirection.z);
         uint   root = header + 1 + uint(instance.uv.y), node = 0, count = uint(instance.uv.w);
         [loop] while (node < count)
         {
             InstanceData box = instances[root + node];
-            if (!shadowBox(box.baseColor.xyz, box.material.xyz, localOrigin, localDirection, maxDistance))
+            if (!shadowBox(box.baseColor.xyz, box.material.xyz, localOrigin, inverseDirection, parallel, maxDistance))
             {
                 node = uint(box.baseColor.w);
                 continue;
@@ -237,13 +240,16 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
     float3 axis    = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
     uint   count   = softness < .0001 ? 1 : uint(irradiance[1].w > .5 ? irradiance[2].w : settings.emissive.w);
+    float3 origin = position + normalize(normal) * settings.uv.x;
+    if (count == 1)
+        return sceneOccluded(header, origin, light, 1e30) ? 0 : 1;
     float  visible = 0;
     [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
     {
         float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * softness * .006;
         float  angle  = float(sampleIndex) * 2.39996323 + max(0, irradiance[6].w - 1) * 2.39996323;
         float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
-        visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray, 1e30) ? 0 : 1;
+        visible += sceneOccluded(header, origin, ray, 1e30) ? 0 : 1;
     }
     return visible / count;
 }
@@ -266,6 +272,8 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
     float3 axis    = abs(light.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 tangent = normalize(cross(light, axis)), bitangent = cross(light, tangent);
     uint   count   = softness < .0001 ? 1 : uint(irradiance[1].w > .5 ? irradiance[2].w : settings.emissive.w);
+    if (count == 1)
+        return sceneOccluded(header, origin, light, max(0, distance - 1e-5)) ? 0 : 1;
     float  visible = 0;
     [loop] for (uint i = 0; i < count; ++i)
     {

@@ -53,6 +53,7 @@ class Renderer {
   #sceneCanvas = { width: 1, height: 1 }
   #viewCamera
   #viewport = null
+  #renderScale = 1
   #pipeline
   #triangleShader
   #triangleAA = {}
@@ -960,6 +961,19 @@ class Renderer {
     this.#check()
     return this.#viewport ? { ...this.#viewport } : null
   }
+  getRenderScale() {
+    this.#check()
+    return this.#renderScale
+  }
+  setRenderScale(scale) {
+    this.#check()
+    if (!Number.isFinite(scale) || scale <= 0 || scale > 1)
+      throw Error('Render scale must be greater than 0 and at most 1')
+    if (this.#renderScale === scale) return
+    this.#renderScale = scale
+    this.#resetAA()
+    this.resetAccumulation()
+  }
   setViewport(value) {
     this.#check()
     const next = copyViewport(value)
@@ -1161,7 +1175,7 @@ class Renderer {
     if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'
-    const ratio = window.devicePixelRatio || 1
+    const ratio = (window.devicePixelRatio || 1) * this.#renderScale
     const width = Math.min(
       this.#device.limits.maxTextureDimension2D,
       Math.max(1, Math.round(rect.width * ratio)),
