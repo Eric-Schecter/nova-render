@@ -308,6 +308,9 @@ namespace render::detail
                     ImGui::BeginDisabled(!hybrid.reflections || !hybrid.halfResolutionReflections);
                     ImGui::Checkbox("Reflection blue noise", &hybrid.blueNoiseReflections);
                     ImGui::Checkbox("Reflection temporal denoising", &hybrid.reflectionDenoising);
+                    ImGui::BeginDisabled(!hybrid.reflectionDenoising);
+                    ImGui::Checkbox("Reflection SVGF", &hybrid.reflectionSVGF);
+                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::BeginDisabled(
                       !hybrid.reflections || !hybrid.halfResolutionReflections || !hybrid.reflectionDenoising);

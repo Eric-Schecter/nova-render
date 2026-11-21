@@ -595,6 +595,18 @@ export function attachParameterPanel(
         )
         reflectionDenoiseRow.prepend(reflectionDenoiseToggle)
         renderer.append(reflectionDenoiseRow)
+        const svgfRow = document.createElement('label'),
+          svgfToggle = document.createElement('input')
+        svgfRow.textContent = 'Reflection SVGF'
+        svgfToggle.type = 'checkbox'
+        svgfToggle.setAttribute('aria-label', 'Reflection SVGF')
+        svgfToggle.checked = h.reflectionSVGF
+        svgfToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ reflectionSVGF: svgfToggle.checked })),
+        )
+        svgfRow.prepend(svgfToggle)
+        renderer.append(svgfRow)
+        fields.set('hybrid_reflectionSVGF', { input: svgfToggle })
         const mirrorRow = document.createElement('label'),
           mirrorToggle = document.createElement('input')
         mirrorRow.textContent = 'Mirror reflection shortcut'
@@ -1021,6 +1033,11 @@ export function attachParameterPanel(
         if (name === 'blueNoiseReflections')
           field.input.disabled =
             !adapter.getHybrid().reflections || !adapter.getHybrid().halfResolutionReflections
+        if (name === 'reflectionSVGF')
+          field.input.disabled =
+            !adapter.getHybrid().reflections ||
+            !adapter.getHybrid().halfResolutionReflections ||
+            !adapter.getHybrid().reflectionDenoising
         if (name === 'mirrorReflections') field.input.disabled = !adapter.getHybrid().reflections
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
         if (

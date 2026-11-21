@@ -238,6 +238,12 @@ try {
     diff(denoisedFirst, denoised) < 0.001
   )
     throw Error('Independent reflection denoising did not accumulate')
+  await page.evaluate(() => r.setHybrid({ reflectionSVGF: true }))
+  await capture('reflection-svgf-first')
+  const svgf = await capture('reflection-svgf-history')
+  if (diff(reflectionOff, svgf) < 0.05 || diff(reflection, svgf) > 5)
+    throw Error('Reflection SVGF did not preserve lighting')
+  await page.evaluate(() => r.setHybrid({ reflectionSVGF: false }))
   await page.evaluate(() =>
     r.setHybrid({ halfResolutionReflections: false, reflectionDenoising: false }),
   )
@@ -567,6 +573,8 @@ try {
       'reflection-off',
       'reflection-final',
       'reflection-blue-noise',
+      'reflection-svgf-first',
+      'reflection-svgf-history',
       'shadow-blue-hard',
       'reflection-only',
       'reflected-material-mapped',

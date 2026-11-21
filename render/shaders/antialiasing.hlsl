@@ -373,6 +373,53 @@ float4 hybridAOResolve(int2 pixel)
     return float4(lerp(current.x, weighted / mass, min(.85, age / (age + 1))), 0, 0, min(age + 1, 16));
 }
 
+float4 reflectionAtrous(int2 pixel, int2 last, float4 current, float4 depth, float4 coat,
+                         float3 normal, float roughness)
+{
+    if (roughness < .15)
+        return current;
+
+    int step = int(aa[4].w) - 1;
+    float2 moments = historyTex.Load(int3(pixel, 0)).xy;
+    float variance = max(0, moments.y - moments.x * moments.x);
+    float center = reflectionLuma(current.rgb);
+    float tolerance = max(.02 + center * .06, sqrt(variance) * 1.5);
+    float3 sum = current.rgb * 4;
+    float mass = 4;
+    [unroll] for (int y = -1; y <= 1; ++y)
+        [unroll] for (int x = -1; x <= 1; ++x)
+        {
+            if (x == 0 && y == 0)
+                continue;
+            int2 tap = pixel + int2(x, y) * step;
+            if (any(tap < 1) || any(tap > last))
+                continue;
+            float4 color = colorTex.Load(int3(tap, 0));
+            int3 guide = int3(tap * 2 - 1, 0);
+            float4 tapDepth = areaTex.Load(guide);
+            float dz = abs((depth.x - tapDepth.x) + (depth.y - tapDepth.y));
+            if (color.a < 1 || dz > .055 || abs(depth.w - tapDepth.w) > .5)
+                continue;
+            float4 tapCoat = aa[2].x > .5 ? searchTex.Load(guide) : 0;
+            if (abs(tapCoat.z - coat.z) > .1 || (coat.z > 0 && abs(tapCoat.w - coat.w) > .1))
+                continue;
+            float tapRoughness = weightTex.Load(guide).a;
+            if (coat.z > 0)
+                tapRoughness = min(tapRoughness, tapCoat.w);
+            float dr = abs(tapRoughness - roughness);
+            float2 encoded = coat.z > 0 ? tapCoat.xy : edgeTex.Load(guide).xy;
+            float alignment = dot(normal, reflectionNormal(encoded));
+            if (alignment < .92 || dr > .12)
+                continue;
+            float weight = (x == 0 || y == 0 ? 2 : 1)
+                * exp2(-120 * dz / step - 18 * dr - abs(reflectionLuma(color.rgb) - center) / tolerance)
+                * pow(saturate(alignment), 32);
+            sum += color.rgb * weight;
+            mass += weight;
+        }
+    return float4(lerp(current.rgb, sum / mass, smoothstep(.15, .65, roughness)), current.a);
+}
+
 float4 reflectionTemporal(int2 lowPixel)
 {
     uint width, height;
@@ -393,12 +440,16 @@ float4 reflectionTemporal(int2 lowPixel)
     float4 current = colorTex.Load(int3(lowPixel, 0));
     if (current.a <= 0)
         return 0;
+    bool momentsPass = aa[4].w > .5 && aa[4].w < 1.5;
     if (current.a < 1)
-        return current;
+        return momentsPass ? 0 : current;
     float roughness = weightTex.Load(pixel).a;
     if (coated)
         roughness = min(roughness, coat.w);
     float3 normal = reflectionNormal(encodedNormal);
+
+    if (aa[4].w > 1.5)
+        return reflectionAtrous(lowPixel, last, current, depth, coat, normal, roughness);
 
     if (aa[2].y > .5)
         return reflectionSpatial(lowPixel, last, current, depth, coat, normal, roughness);
@@ -437,8 +488,10 @@ float4 reflectionTemporal(int2 lowPixel)
         upper = lerp(upper, min(upper, max(current.rgb, mean * 4 + .025)), suppression);
     }
 
+    float luma = min(128, reflectionLuma(current.rgb));
+    float3 sample = momentsPass ? float3(luma, luma * luma, 0) : current.rgb;
     if (aa[3].x < .5 || motion.w < .5)
-        return float4(current.rgb, 1);
+        return float4(sample, 1);
     float2 previousPixel = float2(lowPixel) + (motion.xy * float2(extent) + aa[1].zw - aa[1].xy) * .5;
     float previousDepth = motion.z;
     reflectionVirtualHistory(lowPixel, extent, depth, current.a, previousPixel, previousDepth);
@@ -465,12 +518,12 @@ float4 reflectionTemporal(int2 lowPixel)
             mass += blend;
         }
     if (mass < .15)
-        return float4(current.rgb, 1);
+        return float4(sample, 1);
     age /= mass;
     float3 historyColor = min(sum / mass, max(upper * 1.35, current.rgb + .015));
     float strength = lerp(.65, .9, smoothstep(.15, .65, roughness));
     float weight = min(strength, age / (age + 1)) * saturate(mass * 2);
-    return float4(lerp(current.rgb, historyColor, weight), min(age + 1, 16));
+    return float4(lerp(sample, momentsPass ? sum / mass : historyColor, weight), min(age + 1, 16));
 }
 #endif
 float4 PSMain(Varying i)

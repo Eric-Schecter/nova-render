@@ -168,18 +168,44 @@ namespace render::detail
                         std::copy_n(current.cameraForward, 4, resolve->uniforms[14].begin());
                         std::copy_n(previous.eyeExposure, 4, resolve->uniforms[15].begin());
                     }
-                    // The raw target is free once the temporal resolve has read it.
-                    auto* spatial = add(30, AAHybridReflection);
-                    spatial->sources[0] = resolvedReflection;
-                    spatial->sources[1] = AAModelNormal;
-                    spatial->sources[2] = AAModelBase;
-                    spatial->sources[4] = AARawMotion;
-                    spatial->sources[6] = AAModelPosition;
-                    spatial->uniforms[2][1] = 1;
-                    if (hybridSettings.clearcoatReflections)
+                    if (hybridSettings.reflectionSVGF)
                     {
-                        spatial->sources[7] = AAModelClearcoat;
-                        spatial->uniforms[2][0] = 1;
+                        const AAPass temporal = *resolve;
+                        const int moments = odd ? AAReflectionMomentsB : AAReflectionMomentsA;
+                        auto* update = add(30, moments);
+                        update->sources = temporal.sources;
+                        update->sources[3] = odd ? AAReflectionMomentsA : AAReflectionMomentsB;
+                        update->uniforms = temporal.uniforms;
+                        update->uniforms[4][3] = 1;
+
+                        int source = resolvedReflection;
+                        for (int step : {1, 2, 4})
+                        {
+                            const int target = step == 2 ? AAReflectionAtrous : AAHybridReflection;
+                            auto* filter = add(30, target);
+                            filter->sources = temporal.sources;
+                            filter->sources[0] = source;
+                            filter->sources[3] = moments;
+                            filter->uniforms[2][0] = temporal.uniforms[2][0];
+                            filter->uniforms[4][3] = float(step + 1);
+                            source = target;
+                        }
+                    }
+                    else
+                    {
+                        // The raw target is free once the temporal resolve has read it.
+                        auto* spatial = add(30, AAHybridReflection);
+                        spatial->sources[0] = resolvedReflection;
+                        spatial->sources[1] = AAModelNormal;
+                        spatial->sources[2] = AAModelBase;
+                        spatial->sources[4] = AARawMotion;
+                        spatial->sources[6] = AAModelPosition;
+                        spatial->uniforms[2][1] = 1;
+                        if (hybridSettings.clearcoatReflections)
+                        {
+                            spatial->sources[7] = AAModelClearcoat;
+                            spatial->uniforms[2][0] = 1;
+                        }
                     }
                     resolvedReflection = AAHybridReflection;
                     auto* guide = add(30, AAReflectionPreviousGuide);

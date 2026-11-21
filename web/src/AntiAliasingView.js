@@ -73,6 +73,9 @@ const hybridAO = shadowPreviousMotion + 1,
   aoHistoryB = aoHistoryA + 1,
   aoPreviousGuide = aoHistoryB + 1,
   aoCombinedPosition = aoPreviousGuide + 1
+const reflectionMomentsA = aoCombinedPosition + 1,
+  reflectionMomentsB = reflectionMomentsA + 1,
+  reflectionAtrous = reflectionMomentsB + 1
 
 export async function createAntiAliasingView({
   canvas,
@@ -287,7 +290,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= aoCombinedPosition; i++)
+    for (let i = 0; i <= reflectionAtrous; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -457,14 +460,44 @@ export async function createAntiAliasingView({
           resolve.hitReprojection = external.hybrid.reflectionHitReprojection
           resolve.u[10] = resolve.hitReprojection ? 1 : 0
           resolve.u[11] = 0
-          const spatial = add(30, hybridReflectionTarget)
-          spatial.sources[0] = resolvedReflection
-          spatial.sources[1] = 86
-          spatial.sources[2] = 85
-          spatial.sources[4] = 18
-          spatial.sources[6] = 87
-          spatial.u[9] = 1
-          spatial.u[11] = 0
+          resolve.u[19] = 0
+          if (external.hybrid.clearcoatReflections) {
+            resolve.sources[7] = modelClearcoatTarget
+            resolve.u[8] = 1
+          }
+          if (external.hybrid.reflectionSVGF) {
+            const moments = frames % 2 ? reflectionMomentsB : reflectionMomentsA
+            const update = add(30, moments)
+            update.sources = [...resolve.sources]
+            update.sources[3] = frames % 2 ? reflectionMomentsA : reflectionMomentsB
+            update.u = [...resolve.u]
+            update.u[19] = 1
+            update.hitReprojection = resolve.hitReprojection
+            let source = resolvedReflection
+            for (const step of [1, 2, 4]) {
+              const target = step === 2 ? reflectionAtrous : hybridReflectionTarget
+              const filter = add(30, target)
+              filter.sources = [...resolve.sources]
+              filter.sources[0] = source
+              filter.sources[3] = moments
+              filter.u[8] = resolve.u[8]
+              filter.u[11] = 0
+              filter.u[19] = step + 1
+              source = target
+            }
+          } else {
+            const spatial = add(30, hybridReflectionTarget)
+            spatial.sources[0] = resolvedReflection
+            spatial.sources[1] = 86
+            spatial.sources[2] = 85
+            spatial.sources[4] = 18
+            spatial.sources[6] = 87
+            spatial.u[9] = 1
+            spatial.u[11] = 0
+            spatial.u[19] = 0
+            spatial.sources[7] = resolve.sources[7]
+            spatial.u[8] = resolve.u[8]
+          }
           resolvedReflection = hybridReflectionTarget
           const guide = add(30, reflectionPreviousGuide)
           guide.sources[1] = 86
@@ -472,9 +505,10 @@ export async function createAntiAliasingView({
           guide.sources[6] = 87
           guide.u[27] = 1
           guide.u[11] = 0
+          guide.u[19] = 0
           if (external.hybrid.clearcoatReflections) {
-            resolve.sources[7] = spatial.sources[7] = guide.sources[7] = modelClearcoatTarget
-            resolve.u[8] = spatial.u[8] = guide.u[8] = 1
+            guide.sources[7] = modelClearcoatTarget
+            guide.u[8] = 1
           }
         }
         let resolvedShadows = 92
@@ -684,7 +718,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= aoCombinedPosition; i++) {
+    for (let i = 0; i <= reflectionAtrous; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -713,7 +747,7 @@ export async function createAntiAliasingView({
         tw = w
         th = h
       }
-      if (i >= hybridAO && i < aoCombinedPosition) {
+      if ((i >= hybridAO && i < aoCombinedPosition) || i >= reflectionMomentsA) {
         const scale = superSample ? 2 : 1
         tw = Math.ceil((w * scale) / 2) + 2
         th = Math.ceil((h * scale) / 2) + 2

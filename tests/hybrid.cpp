@@ -307,6 +307,13 @@ int main(int argc, char** argv)
         if (Difference(reflectionOff, denoised) < .05 || Difference(reflection, denoised) > 5
             || Difference(denoisedFirst, denoised) < .001)
             throw std::runtime_error("Independent reflection denoising did not accumulate");
+        settings.reflectionSVGF = true;
+        backend->SetHybrid(settings);
+        capture("reflection-svgf-first");
+        auto svgf = capture("reflection-svgf-history");
+        if (Difference(reflectionOff, svgf) < .05 || Difference(reflection, svgf) > 5)
+            throw std::runtime_error("Reflection SVGF did not preserve lighting");
+        settings.reflectionSVGF = false;
         settings.reflectionDenoising = false;
         settings.halfResolutionReflections = false;
         settings.ambientOcclusion       = true;

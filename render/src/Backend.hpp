@@ -1008,6 +1008,7 @@ namespace render::detail
               || previousHybrid.reflectionSamples != hybrid.reflectionSamples
               || previousHybrid.halfResolutionReflections != hybrid.halfResolutionReflections
               || previousHybrid.reflectionDenoising != hybrid.reflectionDenoising
+              || previousHybrid.reflectionSVGF != hybrid.reflectionSVGF
               || previousHybrid.mirrorReflections != hybrid.mirrorReflections
               || previousHybrid.reflectionHitReprojection != hybrid.reflectionHitReprojection
               || previousHybrid.clearcoatReflections != hybrid.clearcoatReflections
