@@ -59,8 +59,9 @@ namespace render::detail
     {
         if (!data_ || data_->vertices.size() % 3 || data_->vertices.size() / 3 > std::numeric_limits<uint32_t>::max())
             throw std::invalid_argument("Invalid picking geometry");
-        triangles_.resize(data_->vertices.size() / 3);
-        std::iota(triangles_.begin(), triangles_.end(), 0u);
+        for (uint32_t i = 0; i < data_->vertices.size() / 3; ++i)
+            if (data_->vertices[size_t(i) * 3].uv1[2] == 0)
+                triangles_.push_back(i);
         if (!triangles_.empty())
             Build(0, uint32_t(triangles_.size()));
     }

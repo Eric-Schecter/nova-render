@@ -26,9 +26,10 @@ function extendBounds(target, at, source, from) {
 // apart from the permutation of primitives and the resulting bounds hierarchy.
 export function buildSceneSAH(vertices, triangles, nodes) {
   if (!triangles.length) return
-  const bounds = new Float32Array(triangles.length * 6)
-  const centers = new Float32Array(triangles.length * 3)
-  for (let i = 0; i < triangles.length; i++) {
+  const triangleCapacity = vertices.length / modelTriangleFloats
+  const bounds = new Float32Array(triangleCapacity * 6)
+  const centers = new Float32Array(triangleCapacity * 3)
+  for (const i of triangles) {
     const first = i * modelTriangleFloats
     for (let axis = 0; axis < 3; axis++) {
       const a = vertices[first + axis]

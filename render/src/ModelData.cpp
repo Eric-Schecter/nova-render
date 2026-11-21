@@ -209,8 +209,8 @@ namespace render::detail
             if (node.mesh >= 0)
                 for (const auto& p : gltf.meshes.at(node.mesh).primitives)
                 {
-                    if (p.mode < TINYGLTF_MODE_TRIANGLES || p.mode > TINYGLTF_MODE_TRIANGLE_FAN || !p.targets.empty())
-                        throw std::runtime_error("Only triangle primitives without morph targets are supported");
+                    if (p.mode < TINYGLTF_MODE_POINTS || p.mode > TINYGLTF_MODE_TRIANGLE_FAN || !p.targets.empty())
+                        throw std::runtime_error("Unsupported glTF primitive mode or morph targets");
                     if (p.material < -1 || (p.material >= 0 && size_t(p.material) >= defaultMaterial))
                         throw std::runtime_error("Invalid glTF material index");
                     const auto materialIndex = p.material == -1 ? defaultMaterial : size_t(p.material);
@@ -242,21 +242,34 @@ namespace render::detail
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto inputCount =
                       p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
-                    const auto triangleList = p.mode == TINYGLTF_MODE_TRIANGLES;
-                    if (inputCount < 3 || (triangleList && inputCount % 3))
-                        throw std::runtime_error("Invalid triangle mesh");
-                    const auto triangleCount = triangleList ? inputCount / 3 : inputCount - 2;
-                    if (triangleCount > (10000000 - result->vertices.size()) / 3)
-                        throw std::runtime_error("Oversized triangle mesh");
-                    const auto count = triangleCount * 3;
+                    const bool pointList = p.mode == TINYGLTF_MODE_POINTS;
+                    const bool line = p.mode >= TINYGLTF_MODE_LINE && p.mode <= TINYGLTF_MODE_LINE_STRIP;
+                    const bool triangleList = p.mode == TINYGLTF_MODE_TRIANGLES;
+                    if (inputCount < (pointList ? 1 : line ? 2 : 3)
+                        || (triangleList && inputCount % 3) || (p.mode == TINYGLTF_MODE_LINE && inputCount % 2))
+                        throw std::runtime_error("Invalid primitive element count");
+                    const auto primitiveCount = pointList ? inputCount
+                      : p.mode == TINYGLTF_MODE_LINE ? inputCount / 2
+                      : p.mode == TINYGLTF_MODE_LINE_LOOP ? inputCount
+                      : line ? inputCount - 1 : triangleList ? inputCount / 3 : inputCount - 2;
+                    const size_t stride = pointList || line ? 6 : 3;
+                    if (primitiveCount > (10000000 - result->vertices.size()) / stride)
+                        throw std::runtime_error("Oversized model mesh");
+                    const auto count = primitiveCount * stride;
                     const auto mirrored = glm::determinant(glm::mat3(matrix)) < 0;
+                    constexpr std::array<size_t, 6> lineEndpoint{0, 1, 0, 0, 1, 1};
                     auto vertexIndex = [&](size_t i) {
-                        const auto triangle = i / 3;
-                        const auto corner = i % 3;
-                        if (p.mode == TINYGLTF_MODE_TRIANGLE_STRIP)
-                            i = triangle + (triangle % 2 && corner < 2 ? 1 - corner : corner);
+                        const auto primitive = i / stride;
+                        const auto corner = i % stride;
+                        if (pointList)
+                            i = primitive;
+                        else if (line)
+                            i = p.mode == TINYGLTF_MODE_LINE ? primitive * 2 + lineEndpoint[corner]
+                                                            : (primitive + lineEndpoint[corner]) % inputCount;
+                        else if (p.mode == TINYGLTF_MODE_TRIANGLE_STRIP)
+                            i = primitive + (primitive % 2 && corner < 2 ? 1 - corner : corner);
                         else if (p.mode == TINYGLTF_MODE_TRIANGLE_FAN)
-                            i = corner == 0 ? 0 : triangle + corner;
+                            i = corner == 0 ? 0 : primitive + corner;
                         if (p.indices < 0)
                             return uint32_t(i);
                         const auto c = gltf.accessors.at(p.indices).componentType;
@@ -271,8 +284,8 @@ namespace render::detail
                     };
                     for (size_t i = 0; i < count; ++i)
                     {
-                        const auto corner = i % 3;
-                        if (!triangleList && corner == 0 && p.indices >= 0)
+                        const auto corner = i % stride;
+                        if (stride == 3 && !triangleList && corner == 0 && p.indices >= 0)
                         {
                             const auto a = vertexIndex(i), b = vertexIndex(i + 1), c = vertexIndex(i + 2);
                             if (a == b || b == c || c == a)
@@ -281,11 +294,13 @@ namespace render::detail
                                 continue;
                             }
                         }
-                        const auto windingIndex = mirrored && corner != 0 ? i - corner + (3 - corner) : i;
+                        const auto windingIndex = mirrored && stride == 3 && corner != 0 ? i - corner + (3 - corner) : i;
                         const auto v = vertexIndex(windingIndex);
                         glm::vec3  localNormal;
                         if (normal >= 0)
                             localNormal = vec3(gltf, normal, v);
+                        else if (stride == 6)
+                            localNormal = glm::vec3(0, 0, 1);
                         else
                         {
                             const auto first = i - i % 3;
@@ -313,7 +328,8 @@ namespace render::detail
                           {{pos.x, pos.y, pos.z, float(materialIndex + 1)},
                            {n.x, n.y, n.z, glass[0]},
                            {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]},
-                           {t1.x, t1.y, 0, 0},
+                           {t1.x, t1.y, stride == 6 ? float(corner + 1) : 0.0f,
+                            stride == 6 ? (line ? 2.0f : 1.0f) : 0.0f},
                            {color.x, color.y, color.z, color.w}});
                     }
                 }

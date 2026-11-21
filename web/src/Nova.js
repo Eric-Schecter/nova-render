@@ -44,6 +44,9 @@ export async function createRenderer({ canvas, shaderDirectory = '/generated/' }
   const requiredLimits = canUseDeferred(adapter.limits) ? { ...deferredLimits } : {}
   if (canUseHalfReflections(adapter.limits))
     requiredLimits.maxSampledTexturesPerShaderStage = halfReflectionTextureLimit
+  // Point and line raster expansion can exceed the default WebGPU storage limit.
+  for (const limit of ['maxBufferSize', 'maxStorageBufferBindingSize'])
+    requiredLimits[limit] = Math.min(adapter.limits[limit], 512 * 1024 * 1024)
   const device = await adapter.requestDevice({ requiredLimits })
   const context = canvas.getContext('webgpu')
   if (!context) {

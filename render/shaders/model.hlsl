@@ -326,6 +326,32 @@ struct VertexOut
     float2 uv1 : TEXCOORD6;
     nointerpolation float2 dielectric : TEXCOORD7;
 };
+// Point and line primitives use camera-facing quads in the shared raster pipeline.
+float4 expandRasterPrimitive(float4 clip, float4 other, float2 primitive)
+{
+    uint corner = uint(primitive.x) - 1;
+    float aspect = max(.001, abs(cameraRight.w / cameraUp.w));
+    const float2 pointCorners[6] = {
+        float2(-1, -1), float2(1, -1), float2(-1, 1),
+        float2(-1, 1), float2(1, -1), float2(1, 1)
+    };
+    float2 offset = pointCorners[corner] * .004;
+    if (primitive.y > 1.5)
+    {
+        const bool secondEnd = corner == 1 || corner >= 4;
+        float2 direction = other.xy / max(other.w, .001) - clip.xy / max(clip.w, .001);
+        direction *= (secondEnd ? -1 : 1) * float2(aspect, 1);
+        float2 side = float2(-direction.y, direction.x) * rsqrt(max(dot(direction, direction), 1e-12));
+        offset = side * (corner == 0 || corner == 1 || corner == 4 ? -.002 : .002);
+    }
+    clip.xy += offset * float2(1 / aspect, 1) * clip.w;
+    return clip;
+}
+uint rasterOtherEndpoint(uint id, float2 primitive)
+{
+    uint corner = uint(primitive.x) - 1;
+    return id - corner + (corner == 1 || corner >= 4 ? 0 : 1);
+}
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
 #ifdef NOVA_D3D12
@@ -350,6 +376,19 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         o.winding = determinant((float3x3)instances[instanceId].world) < 0 ? -1 : 1;
     o.instanceIndex   = materialIndex;
     o.position        = mul(viewProjection, v.position);
+    if (v.uv1.z > .5)
+    {
+        float4 other = v.position;
+        if (v.uv1.w > 1.5)
+        {
+            other = float4(skinVertex(rasterOtherEndpoint(id, v.uv1.zw), uint(max(0, palette - 1)),
+                                     palette > .5).position.xyz, 1);
+            if (scene)
+                other = mul(instances[instanceId].world, other);
+        }
+        o.position = expandRasterPrimitive(o.position, mul(viewProjection, other), v.uv1.zw);
+        o.winding = 0;
+    }
     o.worldPosition   = v.position.xyz;
     o.normal          = v.normal.xyz;
     o.uv              = v.uv.xy;
@@ -890,7 +929,7 @@ float4 shadeSurface(SurfaceData s)
 
 void materialCoverage(inout SurfaceData s, bool face, float winding, bool transparent)
 {
-    bool front = winding < 0 ? !face : face;
+    bool front = winding == 0 || (winding < 0 ? !face : face);
     uint flags = (uint)s.alphaInfo, mode = flags & 3;
     if ((flags & 4) == 0 && !front)
         discard;
