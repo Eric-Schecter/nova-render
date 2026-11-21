@@ -111,12 +111,12 @@ try {
         packMaterials(data)
         // Cornell's original atlas uses constant UVs per triangle; give each
         // triangle a real UV basis so the new normal map actually takes effect.
-        for (let i = 0; i < data.vertices.length; i += 48) {
+        for (let i = 0; i < data.vertices.length; i += 60) {
           const u = data.vertices[i + 8],
             v = data.vertices[i + 9]
           data.vertices.set([u - 0.005, v - 0.005], i + 8)
-          data.vertices.set([u + 0.005, v - 0.005], i + 24)
-          data.vertices.set([u, v + 0.005], i + 40)
+          data.vertices.set([u + 0.005, v - 0.005], i + 28)
+          data.vertices.set([u, v + 0.005], i + 48)
         }
         path.dispose()
         path = await createPathView(device, data, '/generated/', { linearOutput: true })

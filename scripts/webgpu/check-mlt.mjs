@@ -139,8 +139,9 @@ try {
       try {
         data = emptyModelData()
         data.vertices = new Float32Array([
-          -1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0,
-          1.5, 0, 0, 0, 0, 0, 1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0,
+          -1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          1, -1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          0, 1, 10, 1, 0, 0, -1, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
         ])
         view = await createPathView(device, data, analyticDirectory, { linearOutput: true })
         for (const probability of [0.3, 1]) {

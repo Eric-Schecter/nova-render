@@ -74,6 +74,34 @@ namespace render::detail
                 throw std::runtime_error("Unsupported glTF texture coordinate encoding");
             return v;
         }
+        glm::vec4 vertexColor(const tinygltf::Model& m, int index, size_t vertex)
+        {
+            const auto& a = m.accessors.at(index);
+            if (a.type != TINYGLTF_TYPE_VEC3 && a.type != TINYGLTF_TYPE_VEC4)
+                throw std::runtime_error("COLOR_0 requires VEC3 or VEC4");
+            const int count = a.type == TINYGLTF_TYPE_VEC3 ? 3 : 4;
+            const int component = a.componentType;
+            if (!(component == 5126 && !a.normalized) && !((component == 5121 || component == 5123) && a.normalized))
+                throw std::runtime_error("Invalid COLOR_0 encoding");
+            const auto* bytes = element(m, index, vertex, a.type, component);
+            glm::vec4 color(1);
+            if (component == 5126)
+                std::memcpy(&color, bytes, count * sizeof(float));
+            else if (component == 5121)
+                for (int k = 0; k < count; ++k)
+                    color[k] = bytes[k] / 255.f;
+            else
+                for (int k = 0; k < count; ++k)
+                {
+                    uint16_t value;
+                    std::memcpy(&value, bytes + k * sizeof(value), sizeof(value));
+                    color[k] = value / 65535.f;
+                }
+            for (int k = 0; k < count; ++k)
+                if (!std::isfinite(color[k]))
+                    throw std::runtime_error("Invalid COLOR_0 value");
+            return glm::clamp(color, 0.f, 1.f);
+        }
         constexpr std::array coatTextureKeys{"clearcoatTexture", "clearcoatRoughnessTexture", "clearcoatNormalTexture"};
         struct CoatTexture
         {
@@ -119,7 +147,8 @@ namespace render::detail
                 if (
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
-                  && extension != "KHR_materials_emissive_strength")
+                  && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
+                  && extension != "KHR_xmp")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -188,6 +217,7 @@ namespace render::detail
                     const int  position  = p.attributes.at("POSITION"),
                               uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
                     const int   uv1      = p.attributes.count("TEXCOORD_1") ? p.attributes.at("TEXCOORD_1") : -1;
+                    const auto colorIndex = p.attributes.find("COLOR_0");
                     const auto& material = gltf.materials.at(p.material);
                     const auto& pbr      = material.pbrMetallicRoughness;
                     const auto& ao       = material.occlusionTexture;
@@ -251,11 +281,14 @@ namespace render::detail
                         maximum = glm::max(maximum, pos);
                         if (animation)
                             AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix, localNormal);
+                        const auto color = colorIndex == p.attributes.end()
+                                             ? glm::vec4(1) : vertexColor(gltf, colorIndex->second, v);
                         result->vertices.push_back(
                           {{pos.x, pos.y, pos.z, float(p.material + 1)},
                            {n.x, n.y, n.z, glass[0]},
                            {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]},
-                           {t1.x, t1.y, 0, 0}});
+                           {t1.x, t1.y, 0, 0},
+                           {color.x, color.y, color.z, color.w}});
                     }
                 }
             for (int child : node.children)

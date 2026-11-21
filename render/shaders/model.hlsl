@@ -10,6 +10,7 @@ struct Vertex
     float4 normal;
     float4 uv;
     float4 uv1;
+    float4 color;
 };
 [[vk::binding(0, 0)]] cbuffer Scene : register(b0)
 {
@@ -127,6 +128,14 @@ float3 applyFog(float3 color, float3 position)
 #endif
     return lerp(color, fog, saturate(amount));
 }
+float4 triangleColor(InstanceData tri, float2 bary)
+{
+    const float4 a = float4(tri.world._m02, tri.world._m12, tri.world._m22, tri.world._m32);
+    const float4 b = float4(tri.world._m03, tri.world._m13, tri.world._m23, tri.world._m33);
+    const float4 c = float4(tri.normalMatrix._m02, tri.normalMatrix._m12,
+                            tri.normalMatrix._m22, tri.normalMatrix._m32);
+    return a * (1 - bary.x - bary.y) + b * bary.x + c * bary.y;
+}
 bool shadowBox(float3 low, float3 high, float3 origin, float3 inverseDirection, bool3 parallel, float maxDistance)
 {
     float3 pad = 1e-5 * max(1, max(abs(low), abs(high)));
@@ -179,7 +188,7 @@ bool intersectSceneTriangle(InstanceData tri, float3 origin, float3 direction, f
         float2 uv =
           tri.uv.xy * (1 - u - v) + tri.uv.zw * u + float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]) * v;
         uv = frac(uv) * material.uv.xy + material.uv.zw;
-        if (baseTexture.SampleLevel(textureSampler, uv, 0).a * material.baseColor.a < frac(material.emissive.w) * 4)
+        if (baseTexture.SampleLevel(textureSampler, uv, 0).a * material.baseColor.a * triangleColor(tri, float2(u, v)).a < frac(material.emissive.w) * 4)
             return false;
     }
     bary = float2(u, v);
@@ -311,6 +320,7 @@ struct VertexOut
     float3                normal : TEXCOORD1;
     float2                uv : TEXCOORD2;
     nointerpolation float generatedNormal : TEXCOORD3;
+    float4 color : TEXCOORD8;
     nointerpolation uint  instanceIndex : TEXCOORD4;
     nointerpolation float winding : TEXCOORD5;
     float2 uv1 : TEXCOORD6;
@@ -344,6 +354,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.normal          = v.normal.xyz;
     o.uv              = v.uv.xy;
     o.uv1             = v.uv1.xy;
+    o.color           = v.color;
     o.generatedNormal = v.uv.z;
     o.dielectric      = float2(v.normal.w, v.uv.w);
     return o;
@@ -535,7 +546,7 @@ SurfaceData sampleSurface(VertexOut input)
         clearcoat             = materialClearcoat(instance);
         materialRecord        = instance;
     }
-    float4 baseSample = baseTexture.Sample(textureSampler, uv);
+    float4 baseSample = baseTexture.Sample(textureSampler, uv) * input.color;
     float3 base       = baseSample.rgb * baseFactor.rgb;
     float3 n          = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
@@ -1320,7 +1331,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
         if (dot(mapped, mapped) > 1e-12)
             hit.normal = normalize(mapped);
     }
-    hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb;
+    hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
     float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
     hit.metallic  = saturate(mr.b * mat.material.x);
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
@@ -2099,6 +2110,7 @@ struct MotionOut
     float                 previousDepth : TEXCOORD5;
     nointerpolation float identity : TEXCOORD6;
     nointerpolation float transmission : TEXCOORD7;
+    float vertexAlpha : TEXCOORD8;
 };
 MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
@@ -2142,6 +2154,7 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.previousDepth = dot(old.position.xyz - previousSceneRest[0].xyz, previousSceneRest[8].xyz);
     o.identity      = float(instanceId + 1);
     o.transmission  = current.normal.w;
+    o.vertexAlpha   = current.color.a;
     return o;
 }
 float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
@@ -2157,7 +2170,7 @@ float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
         factor         = m.baseColor;
         info           = m.emissive.w;
     }
-    float opacity = baseTexture.Sample(textureSampler, uv).a * factor.a;
+    float opacity = baseTexture.Sample(textureSampler, uv).a * factor.a * input.vertexAlpha;
     uint  flags = uint(info), mode = flags & 3;
     bool  front = input.winding < 0 ? !face : face;
     if (((flags & 4) == 0 && !front) || mode == 2 || (mode == 1 && opacity < frac(info) * 4)

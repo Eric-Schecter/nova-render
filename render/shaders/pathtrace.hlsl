@@ -4,6 +4,7 @@ struct Vertex
     float4 normal;
     float4 uv;
     float4 uv1;
+    float4 color;
 };
 #ifdef NOVA_WEB_BVH
 struct BVHNode
@@ -536,7 +537,8 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
             p.coat.y = clamp(p.coat.y, .06, 1);
         }
     }
-    p.base         = pow(max(textureColor(0, textureUV).rgb, 0), 2.2) * mat.base.rgb;
+    p.base         = pow(max(textureColor(0, textureUV).rgb, 0), 2.2) * mat.base.rgb
+                   * (a.color.rgb * bary.x + b.color.rgb * bary.y + c.color.rgb * bary.z);
     p.emission     = pow(max(textureColor(4, textureUV).rgb, 0), 2.2) * mat.emission.rgb;
     float4 mr      = textureColor(2, textureUV);
     p.metal        = saturate(mr.b * mat.factors.x);

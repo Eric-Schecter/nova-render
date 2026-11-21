@@ -23,10 +23,13 @@ try {
       const data = emptyModelData()
       data.material = [0, 0.4, 1, 1]
       data.vertices = new Float32Array([
-        -1, -1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1.5, 1, -1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1.5, 1, 1, 0, 1,
-        0, 0, 1, 1, 1, 1, 0, 1.5, -1, -1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1.5, 1, 1, 0, 1, 0, 0, 1, 1, 1,
-        1, 0, 1.5, -1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1.5,
-      ])
+          -1, -1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          1, -1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          -1, -1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+          -1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1.5, 0, 0, 0, 0, 1, 1, 1, 1,
+        ])
       let view = await createPathView(device, data, '/generated/', { linearOutput: true })
       const camera = { yaw: 0, pitch: 0, distance: 3.6, exposure: 1 },
         env = { ...defaultEnvironment(), intensity: 0, showBackground: false }
@@ -105,7 +108,7 @@ try {
       const blocked = emptyModelData()
       blocked.material = data.material
       const extra = new Float32Array(data.vertices)
-      for (let i = 0; i < extra.length; i += 12) {
+      for (let i = 0; i < extra.length; i += 20) {
         extra[i + 2] = -1
         extra[i + 7] = 0
       }

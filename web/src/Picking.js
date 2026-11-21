@@ -148,6 +148,8 @@ export class PickMesh {
       for (let j = 0; j < 3; j++) {
         const v = (t * 3 + j) * modelVertexFloats,
           vertices = this.data.vertices
+        const colorOffset = row + (j < 2 ? 8 + j * 4 : 24)
+        records.set(vertices.subarray(v + 16, v + 20), colorOffset)
         records[row + j * 2] = vertices[v + 12]
         records[row + j * 2 + 1] = vertices[v + 13]
         records[row + 43] = this.data.vertices[v + 3] - 1
