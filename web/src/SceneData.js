@@ -32,6 +32,7 @@ export function instanceNormal(m) {
 }
 export class SceneData {
   players = new Map()
+  shadowPoseRevision = 0
   shadowRecords = new Float32Array(0)
   pickInstances = []
   pick(ray, active = true) {
@@ -42,7 +43,7 @@ export class SceneData {
         const player = this.players.get(instance.id)
         if (!player) return instance
         const geometry = this.poseGeometry(instance.id)
-        player.queryPick ||= new PickMesh(geometry)
+        player.queryPick ||= this.meshes.get(instance.assetId).picking.refit(geometry)
         const key = Symbol(instance.id)
         meshes.set(key, { picking: player.queryPick })
         return { ...instance, assetId: key }
@@ -333,7 +334,7 @@ export class SceneData {
         const at = index++ * 48,
           player = this.players.get(instance.id)
         if (!player || !instances[at + 46]) continue
-        player.queryPick ||= new PickMesh(this.poseGeometry(instance.id))
+        player.queryPick ||= mesh.picking.refit(this.poseGeometry(instance.id))
         const nodes = player.queryPick.nodes.length
         const rows = player.queryPick.shadowRecords()
         if ((length + rows.length) * 4 > 64 * 1024 * 1024)
@@ -393,6 +394,7 @@ export class SceneData {
     const palette = evaluateAnimation(this.meshes.get(p.assetId).data, state)
     this.players = new Map(this.players)
     this.players.set(id, { ...p, state, palette, query: undefined, queryPick: undefined })
+    this.shadowPoseRevision++
     this.commitPalettes()
   }
   updateAnimations(delta) {
@@ -414,6 +416,7 @@ export class SceneData {
       }
       const palette = evaluateAnimation(this.meshes.get(p.assetId).data, state),
         changed = palette.some((v, i) => v !== p.palette[i])
+      if (changed) this.shadowPoseRevision++
       next.set(id, {
         ...p,
         state,

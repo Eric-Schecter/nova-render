@@ -72,6 +72,38 @@ export class PickMesh {
     }
     return index
   }
+  refit(data) {
+    if (data.vertices.length !== this.data.vertices.length)
+      throw Error('Picking refit requires the same triangle topology')
+    const result = Object.create(PickMesh.prototype)
+    result.data = data
+    result.triangles = this.triangles
+    result.nodes = this.nodes.map((node) => ({
+      ...node,
+      minimum: [Infinity, Infinity, Infinity],
+      maximum: [-Infinity, -Infinity, -Infinity],
+    }))
+    const vertices = data.vertices
+    for (let n = result.nodes.length - 1; n >= 0; n--) {
+      const { minimum, maximum, count, first, left, right } = result.nodes[n]
+      if (!count) {
+        for (let k = 0; k < 3; k++) {
+          minimum[k] = Math.min(result.nodes[left].minimum[k], result.nodes[right].minimum[k])
+          maximum[k] = Math.max(result.nodes[left].maximum[k], result.nodes[right].maximum[k])
+        }
+        continue
+      }
+      for (let i = first; i < first + count; i++) {
+        const start = result.triangles[i] * modelTriangleFloats
+        for (let v = start; v < start + modelTriangleFloats; v += modelVertexFloats)
+          for (let k = 0; k < 3; k++) {
+            minimum[k] = Math.min(minimum[k], vertices[v + k])
+            maximum[k] = Math.max(maximum[k], vertices[v + k])
+          }
+      }
+    }
+    return result
+  }
   shadowRecords() {
     const records = new Float32Array((this.nodes.length + this.triangles.length) * 48)
     if (records.byteLength > 64 * 1024 * 1024) throw Error('Scene shadow BVH exceeds 64 MiB')
@@ -94,9 +126,14 @@ export class PickMesh {
     this.triangles.forEach((t, i) => {
       const row = (this.nodes.length + i) * 48
       for (let j = 0; j < 3; j++) {
-        records.set(this.point(t, j), row + 32 + j * 4)
-        const v = (t * 3 + j) * modelVertexFloats
-        records.set(this.data.vertices.subarray(v + 12, v + 14), row + j * 2)
+        const v = (t * 3 + j) * modelVertexFloats,
+          position = row + 32 + j * 4,
+          vertices = this.data.vertices
+        records[position] = vertices[v]
+        records[position + 1] = vertices[v + 1]
+        records[position + 2] = vertices[v + 2]
+        records[row + j * 2] = vertices[v + 12]
+        records[row + j * 2 + 1] = vertices[v + 13]
         records[row + 43] = this.data.vertices[v + 3] - 1
         if (j < 2) {
           records[row + 44 + j * 2] = this.data.vertices[v + 8]

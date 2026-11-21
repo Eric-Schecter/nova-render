@@ -656,10 +656,25 @@ class Renderer {
     this.#sceneData.updateAnimations(delta)
     this.#refreshAnimationShadows()
   }
+  #animationShadowState
   #refreshAnimationShadows() {
     if (!this.#sceneModel || !this.#sceneData.players.size) return
-    const { instances, draws, shadowRecords } = this.#sceneData.shadowInstances()
+    const visibleShadows =
+      this.#lights?.some((light) => light.enabled && light.castShadow && light.intensity > 0) ??
+      this.#shadowSettings.enabled
+    if (this.#renderMode !== 'hybrid' && !visibleShadows) return
+
+    const scene = this.#sceneData
+    const previous = this.#animationShadowState
+    if (
+      previous?.scene === scene &&
+      previous.model === this.#model &&
+      previous.revision === scene.shadowPoseRevision
+    )
+      return
+    const { instances, draws, shadowRecords } = scene.shadowInstances()
     this.#model.setInstances(instances, draws, shadowRecords)
+    this.#animationShadowState = { scene, model: this.#model, revision: scene.shadowPoseRevision }
   }
   getSceneInstanceBounds(id) {
     this.#check()
@@ -1141,6 +1156,7 @@ class Renderer {
   }
   async #drawFrame() {
     this.#check()
+    this.#refreshAnimationShadows()
     this.#model?.setRasterSettings(this.#fogSettings, this.#shadowSettings, this.#lights)
     if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
