@@ -157,12 +157,14 @@ namespace render::detail
                     throw std::runtime_error("Invalid animation target");
                 if (track.path != "translation" && track.path != "rotation" && track.path != "scale")
                     throw std::runtime_error("Morph animation is not supported");
-                if (track.interpolation != "LINEAR" && track.interpolation != "STEP")
-                    throw std::runtime_error("Animation supports LINEAR and STEP only");
+                const bool cubic = track.interpolation == "CUBICSPLINE";
+                if (!cubic && track.interpolation != "LINEAR" && track.interpolation != "STEP")
+                    throw std::runtime_error("Unsupported animation interpolation");
                 const auto& input  = m.accessors.at(sampler.input);
                 const auto& output = m.accessors.at(sampler.output);
                 if (
-                  input.componentType != 5126 || output.componentType != 5126 || input.count != output.count
+                  input.componentType != 5126 || output.componentType != 5126 || input.count != output.count / (cubic ? 3 : 1)
+                  || (cubic && output.count % 3 != 0)
                   || !input.count)
                     throw std::runtime_error("Invalid animation sampler");
                 for (size_t i = 0; i < input.count; ++i)
@@ -171,7 +173,14 @@ namespace render::detail
                     if (t < 0 || (!track.times.empty() && t <= track.times.back()))
                         throw std::runtime_error("Invalid animation times");
                     track.times.push_back(t);
-                    auto value = Read(m, sampler.output, i, track.path == "rotation" ? 4 : 3);
+                    const int components = track.path == "rotation" ? 4 : 3;
+                    const size_t key = cubic ? i * 3 + 1 : i;
+                    auto value = Read(m, sampler.output, key, components);
+                    if (cubic)
+                    {
+                        track.inTangents.push_back(Read(m, sampler.output, key - 1, components));
+                        track.outTangents.push_back(Read(m, sampler.output, key + 1, components));
+                    }
                     if (track.path == "rotation")
                         Quaternion(value);
                     track.values.push_back(value);
@@ -315,9 +324,20 @@ namespace render::detail
                              ? 0
                              : (state.time - track.times[l]) / (track.times[r] - track.times[l]);
                 auto   value = glm::mix(track.values[l], track.values[r], t);
-                auto&  n     = nodes[track.node];
+                const bool cubic = track.interpolation == "CUBICSPLINE";
+                if (cubic && l != r)
+                {
+                    const float dt = track.times[r] - track.times[l];
+                    const float t2 = t * t, t3 = t2 * t;
+                    value = (2 * t3 - 3 * t2 + 1) * track.values[l]
+                            + (t3 - 2 * t2 + t) * dt * track.outTangents[l]
+                            + (-2 * t3 + 3 * t2) * track.values[r]
+                            + (t3 - t2) * dt * track.inTangents[r];
+                }
+                auto& n = nodes[track.node];
                 if (track.path == "rotation")
-                    n.rotation = glm::slerp(Quaternion(track.values[l]), Quaternion(track.values[r]), t);
+                    n.rotation = cubic ? Quaternion(value)
+                                       : glm::slerp(Quaternion(track.values[l]), Quaternion(track.values[r]), t);
                 else if (track.path == "translation")
                     n.translation = value;
                 else
