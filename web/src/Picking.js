@@ -106,15 +106,32 @@ export class PickMesh {
     }
     return result
   }
+  writeShadowPose(records, offset = 0) {
+    for (let i = 0; i < this.nodes.length; i++) {
+      const at = offset + i * 48
+      records.set(this.nodes[i].minimum, at + 32)
+      records.set(this.nodes[i].maximum, at + 36)
+    }
+    const vertices = this.data.vertices
+    for (let i = 0; i < this.triangles.length; i++) {
+      const row = offset + (this.nodes.length + i) * 48
+      for (let j = 0; j < 3; j++) {
+        const v = (this.triangles[i] * 3 + j) * modelVertexFloats
+        const position = row + 32 + j * 4
+        records[position] = vertices[v]
+        records[position + 1] = vertices[v + 1]
+        records[position + 2] = vertices[v + 2]
+      }
+    }
+  }
   shadowRecords() {
     const records = new Float32Array((this.nodes.length + this.triangles.length) * 48)
     if (records.byteLength > 64 * 1024 * 1024) throw Error('Scene shadow BVH exceeds 64 MiB')
+    this.writeShadowPose(records)
     const escape = (index, next) => {
       const node = this.nodes[index],
         at = index * 48
-      records.set(node.minimum, at + 32)
       records[at + 35] = next
-      records.set(node.maximum, at + 36)
       records.set(
         [node.left || 0, node.right || 0, this.nodes.length + node.first, node.count],
         at + 44,
@@ -130,11 +147,7 @@ export class PickMesh {
       records[row + 6] = this.data.vertices[t * 3 * modelVertexFloats + 7]
       for (let j = 0; j < 3; j++) {
         const v = (t * 3 + j) * modelVertexFloats,
-          position = row + 32 + j * 4,
           vertices = this.data.vertices
-        records[position] = vertices[v]
-        records[position + 1] = vertices[v + 1]
-        records[position + 2] = vertices[v + 2]
         records[row + j * 2] = vertices[v + 12]
         records[row + j * 2 + 1] = vertices[v + 13]
         records[row + 43] = this.data.vertices[v + 3] - 1

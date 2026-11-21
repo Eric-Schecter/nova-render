@@ -287,20 +287,33 @@ export function poseAnimationGeometry(source, palette) {
     bytes = source.skinInputs
   const values = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4),
     joints = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
-  for (let i = 0; i < vertices.length / modelVertexFloats; ++i)
-    for (let axis = 0; axis < 3; ++axis) {
-      let sum = 0
-      for (let k = 0; k < 4; ++k) {
-        const at = joints[i * 16 + 8 + k] * 16,
-          weight = values[i * 16 + 12 + k]
-        sum +=
-          weight *
-          (palette[at + axis] * values[i * 16] +
-            palette[at + 4 + axis] * values[i * 16 + 1] +
-            palette[at + 8 + axis] * values[i * 16 + 2] +
-            palette[at + 12 + axis])
-      }
-      vertices[i * modelVertexFloats + axis] = sum
+  for (
+    let vertex = 0, input = 0;
+    vertex < vertices.length;
+    vertex += modelVertexFloats, input += 16
+  ) {
+    const x = values[input],
+      y = values[input + 1],
+      z = values[input + 2]
+    let px = 0,
+      py = 0,
+      pz = 0
+    for (let k = 0; k < 4; k++) {
+      const at = joints[input + 8 + k] * 16,
+        weight = values[input + 12 + k]
+      if (weight === 0) continue
+      px +=
+        weight * (palette[at] * x + palette[at + 4] * y + palette[at + 8] * z + palette[at + 12])
+      py +=
+        weight *
+        (palette[at + 1] * x + palette[at + 5] * y + palette[at + 9] * z + palette[at + 13])
+      pz +=
+        weight *
+        (palette[at + 2] * x + palette[at + 6] * y + palette[at + 10] * z + palette[at + 14])
     }
+    vertices[vertex] = px
+    vertices[vertex + 1] = py
+    vertices[vertex + 2] = pz
+  }
   return { ...source, vertices }
 }
