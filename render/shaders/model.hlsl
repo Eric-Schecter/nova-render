@@ -243,7 +243,7 @@ float shadowSamplePhase()
     // The shadow diagnostic uses positive light indices. A negative value supplies a shadow-only frame index.
     return max(0, max(irradiance[6].w, -irradiance[5].w) - 1);
 }
-float sceneVisibility(float3 position, float3 normal, float3 light, float softness)
+float sceneVisibility(float3 position, float3 normal, float3 light, float softness, float2 blue = -1)
 {
     if (irradiance[3].w < .5)
         return 1;
@@ -258,8 +258,8 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
     float  visible = 0;
     [loop] for (uint sampleIndex = 0; sampleIndex < count; sampleIndex++)
     {
-        float  radius = count == 1 ? 0 : sqrt((float(sampleIndex) + .5) / count) * softness * .006;
-        float  angle  = float(sampleIndex) * 2.39996323 + shadowSamplePhase() * 2.39996323;
+        float  radius = count == 1 && blue.x < 0 ? 0 : sqrt((float(sampleIndex) + (blue.x < 0 ? .5 : blue.y)) / count) * softness * .006;
+        float  angle  = float(sampleIndex) * 2.39996323 + (blue.x < 0 ? shadowSamplePhase() * 2.39996323 : blue.x);
         float3 ray    = normalize(light + radius * (cos(angle) * tangent + sin(angle) * bitangent));
         visible += sceneOccluded(header, position + normalize(normal) * settings.uv.x, ray, 1e30) ? 0 : 1;
     }
@@ -267,7 +267,7 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
 }
 // Finite shadow segment: local BVH directions are deliberately not normalized,
 // so their intersection parameter retains world-space distance under nonuniform scale.
-float localLightVisibility(float3 position, float3 normal, float3 lightPosition, float softness)
+float localLightVisibility(float3 position, float3 normal, float3 lightPosition, float softness, float2 blue = -1)
 {
     if (irradiance[3].w < .5)
         return 1;
@@ -288,8 +288,8 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
     [loop] for (uint i = 0; i < count; ++i)
     {
         // Deterministic disk around the source, radius in world units.
-        float  radius         = count == 1 ? 0 : sqrt((float(i) + .5) / count) * softness * .006;
-        float  angle          = float(i) * 2.39996323 + shadowSamplePhase() * 2.39996323;
+        float  radius         = count == 1 && blue.x < 0 ? 0 : sqrt((float(i) + (blue.x < 0 ? .5 : blue.y)) / count) * softness * .006;
+        float  angle          = float(i) * 2.39996323 + (blue.x < 0 ? shadowSamplePhase() * 2.39996323 : blue.x);
         float3 sampleDelta    = delta + radius * (cos(angle) * tangent + sin(angle) * bitangent);
         float  sampleDistance = length(sampleDelta);
         visible += sceneOccluded(header, origin, sampleDelta / sampleDistance, max(0, sampleDistance - 1e-5)) ? 0 : 1;
@@ -1061,6 +1061,16 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
         float3 position = surfacePosition(input, gPosition.Load(pixel).xy), normal = octDecode(gNormals.Load(pixel).zw);
         uint   header        = uint(irradiance[3].w) - 1;
         InstanceData globals = instances[header];
+        float2 blue = -1;
+#if defined(NOVA_HYBRID_BLUE_NOISE)
+        if (uint(globals.world._m33) & 2u)
+        {
+            uint frame = uint(shadowSamplePhase());
+            uint2 at = uint2(pixel.xy - 1);
+            blue = float2(novaBluePhase(at, frame),
+                          novaBluePhase(at.yx + uint2(7, 19), frame) / 6.28318531);
+        }
+#endif
         if (globals.uv.w > .5)
         {
             uint count = min(16, uint(globals.uv.y)), offset = uint(globals.uv.z);
@@ -1077,18 +1087,18 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
                         visibility[i] = rectangleVisibility(light, position, normal);
                 }
                 else if (type == 0)
-                    visibility[i] = sceneVisibility(position, normal, light.emissive.xyz, light.uv.w);
+                    visibility[i] = sceneVisibility(position, normal, light.emissive.xyz, light.uv.w, blue);
                 else
                 {
                     // The selected-light diagnostic shows raw visibility outside the light influence too.
                     bool showRawVisibility = irradiance[5].w == float(i + 1);
                     if (showRawVisibility || localLightCastsAt(light, position))
-                        visibility[i] = localLightVisibility(position, normal, light.material.xyz, light.uv.w);
+                        visibility[i] = localLightVisibility(position, normal, light.material.xyz, light.uv.w, blue);
                 }
             }
         }
         else
-            visibility[0] = sceneVisibility(position, normal, lightDirection.xyz, globals.emissive.z);
+            visibility[0] = sceneVisibility(position, normal, lightDirection.xyz, globals.emissive.z, blue);
     }
     output.slots0 = float4(visibility[0], visibility[1], visibility[2], visibility[3]);
     output.slots1 = float4(visibility[4], visibility[5], visibility[6], visibility[7]);
@@ -1686,8 +1696,8 @@ float4 HybridAOPSMain(SkyOut input) : SV_Target
     float3 normal = octDecode(gNormals.Load(pixel).zw);
     float3 position = surfacePosition(input, gPosition.Load(pixel).xy);
     float angle = hybridFrameRotation(uint2(pixel.xy), -skyParams.z);
-#if defined(NOVA_HYBRID_AO_PASS)
-    if (irradiance[3].w > .5 && instances[uint(irradiance[3].w) - 1].world._m33 > .5)
+#if defined(NOVA_HYBRID_BLUE_NOISE)
+    if (irradiance[3].w > .5 && (uint(instances[uint(irradiance[3].w) - 1].world._m33) & 1u) != 0)
         angle = novaBluePhase(uint2(local), uint(-skyParams.z - 1));
 #endif
     return float4(hybridAO(position, normal, angle), 0, 0, 1);
@@ -1729,8 +1739,13 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     bool traceCoat = instances[header].world._m02 > .5;
     float hitDistance;
     bool skipDenoise;
+    float rotation = hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w));
+#if defined(NOVA_HYBRID_BLUE_NOISE)
+    if (uint(instances[header].world._m33) & 4u)
+        rotation = novaBluePhase(uint2(local) + uint2(13, 3), uint(max(0, abs(irradiance[6].w) - 1)));
+#endif
     float3 reflected = hybridReflection(
-      s, hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w)), header, traceCoat,
+      s, rotation, header, traceCoat,
       instances[header].world._m12 > .5 && cameraUp.w >= 0, hitDistance, skipDenoise);
     // Positive alpha below 1 marks a valid sample that bypasses reflection denoising.
     return float4(reflected, skipDenoise ? .5 : 1 + log2(1 + hitDistance));

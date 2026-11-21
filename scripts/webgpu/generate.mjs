@@ -140,6 +140,9 @@ for (const [name, channels] of [
 }
 console.log('AA HLSL and SMAA reference tables generated')
 
+const blueNoiseSource =
+  '#define NOVA_HYBRID_BLUE_NOISE 1\n' +
+  (await readFile('render/shaders/ao-blue-noise.hlsli', 'utf8'))
 const rasterSource =
   '#define NOVA_RASTER_AA 1\n' + (await readFile('render/shaders/model.hlsl', 'utf8'))
 for (const [name, vertexEntry, fragmentEntry] of [
@@ -161,12 +164,13 @@ for (const [name, vertexEntry, fragmentEntry] of [
     name === 'model-deferred-half'
       ? '#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource
       : rasterSource
-  const shaderSource =
-    name === 'model-hybrid-ao'
-      ? '#define NOVA_HYBRID_AO_PASS 1\n' +
-        (await readFile('render/shaders/ao-blue-noise.hlsli', 'utf8')) +
-        source
-      : source
+  const shaderSource = [
+    'model-hybrid-ao',
+    'model-hybrid-shadow',
+    'model-hybrid-reflection',
+  ].includes(name)
+    ? blueNoiseSource + source
+    : source
   const data = await compile(shaderSource, {
     model: true,
     vertexEntry,
@@ -196,12 +200,15 @@ const probeDeferredHalf = await compile(
   '#define NOVA_HYBRID_PROBES 1\n#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource,
   { model: true, vertexEntry: 'SkyVSMain', fragmentEntry: 'DeferredPSMain', optimizeModel: true },
 )
-const probeReflection = await compile('#define NOVA_HYBRID_PROBES 1\n' + rasterSource, {
-  model: true,
-  vertexEntry: 'SkyVSMain',
-  fragmentEntry: 'HybridReflectionPSMain',
-  optimizeModel: true,
-})
+const probeReflection = await compile(
+  '#define NOVA_HYBRID_PROBES 1\n' + blueNoiseSource + rasterSource,
+  {
+    model: true,
+    vertexEntry: 'SkyVSMain',
+    fragmentEntry: 'HybridReflectionPSMain',
+    optimizeModel: true,
+  },
+)
 await writeFile(
   'docs/public/generated/model-probes.json',
   JSON.stringify({

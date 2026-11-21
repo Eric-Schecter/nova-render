@@ -265,6 +265,9 @@ namespace render::detail
                     int samples = int(hybrid.shadowSamples);
                     if (ImGui::SliderInt("Shadow rays/pixel/light", &samples, 1, 16))
                         hybrid.shadowSamples = uint32_t(samples);
+                    ImGui::BeginDisabled(!hybrid.shadows);
+                    ImGui::Checkbox("Shadow blue noise", &hybrid.blueNoiseShadows);
+                    ImGui::EndDisabled();
                     ImGui::Checkbox("Hybrid ambient occlusion", &hybrid.ambientOcclusion);
                     ImGui::BeginDisabled(!hybrid.ambientOcclusion);
                     ImGui::Checkbox("Half-resolution Hybrid AO", &hybrid.halfResolutionAO);
@@ -303,6 +306,7 @@ namespace render::detail
                     ImGui::Checkbox("Trace clearcoat reflections", &hybrid.clearcoatReflections);
                     ImGui::EndDisabled();
                     ImGui::BeginDisabled(!hybrid.reflections || !hybrid.halfResolutionReflections);
+                    ImGui::Checkbox("Reflection blue noise", &hybrid.blueNoiseReflections);
                     ImGui::Checkbox("Reflection temporal denoising", &hybrid.reflectionDenoising);
                     ImGui::EndDisabled();
                     ImGui::BeginDisabled(

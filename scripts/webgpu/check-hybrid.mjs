@@ -132,6 +132,11 @@ try {
   await page.evaluate(() => r.setHybrid({ shadows: true }))
   const shadow = await capture('scene-shadow')
   if (diff(off, shadow) < 0.1) throw Error('Hybrid shadows missing')
+  await page.evaluate(() => r.setHybrid({ blueNoiseShadows: true }))
+  if (diff(shadow, await capture('shadow-blue-hard')) > 0.01)
+    throw Error('Blue noise changed hard shadows')
+  await page.evaluate(() => r.setHybrid({ blueNoiseShadows: false }))
+
   for (const i of [0, 1, 2, 4]) {
     await page.evaluate((i) => r.setHybrid({ view: 'shadows', shadowLight: i }), i)
     await capture('visibility-' + i)
@@ -220,6 +225,11 @@ try {
     throw Error('Half-resolution reflection did not preserve reflection lighting')
   await page.evaluate(() => r.setHybrid({ reflectionDenoising: true }))
   const denoisedFirst = await capture('reflection-denoised-first')
+  await page.evaluate(() => r.setHybrid({ blueNoiseReflections: true }))
+  if (diff(denoisedFirst, await capture('reflection-blue-noise')) <= 0.0001)
+    throw Error('Blue noise did not change half-resolution GGX sampling')
+  await page.evaluate(() => r.setHybrid({ blueNoiseReflections: false }))
+
   let denoised = denoisedFirst
   for (let i = 0; i < 8; i++) denoised = await capture('reflection-denoised-' + i)
   if (
@@ -556,6 +566,8 @@ try {
       'temporal-full-camera',
       'reflection-off',
       'reflection-final',
+      'reflection-blue-noise',
+      'shadow-blue-hard',
       'reflection-only',
       'reflected-material-mapped',
       'reflected-material-flat',

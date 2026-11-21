@@ -26,6 +26,8 @@ export const defaultHybrid = () => ({
   ambientOcclusion: false,
   halfResolutionAO: false,
   blueNoiseAO: false,
+  blueNoiseShadows: false,
+  blueNoiseReflections: false,
   aoRadius: 1,
   aoStrength: 1,
   aoSamples: 4,
@@ -64,6 +66,8 @@ export function copyHybrid(value) {
           'ambientOcclusion',
           'halfResolutionAO',
           'blueNoiseAO',
+          'blueNoiseShadows',
+          'blueNoiseReflections',
           'aoRadius',
           'aoStrength',
           'aoSamples',
@@ -85,6 +89,8 @@ export function copyHybrid(value) {
     typeof s.ambientOcclusion !== 'boolean' ||
     typeof s.halfResolutionAO !== 'boolean' ||
     typeof s.blueNoiseAO !== 'boolean' ||
+    typeof s.blueNoiseShadows !== 'boolean' ||
+    typeof s.blueNoiseReflections !== 'boolean' ||
     !Number.isFinite(s.aoRadius) ||
     s.aoRadius <= 0 ||
     s.aoRadius > 10000 ||

@@ -169,6 +169,12 @@ int main(int argc, char** argv)
         auto sceneShadow = capture("scene-shadow");
         if (Difference(sceneOff, sceneShadow) < .1)
             throw std::runtime_error("Missing Hybrid shadows");
+        settings.blueNoiseShadows = true;
+        backend->SetHybrid(settings);
+        if (Difference(sceneShadow, capture("shadow-blue-hard")) > .01)
+            throw std::runtime_error("Blue noise changed hard shadows");
+        settings.blueNoiseShadows = false;
+
         for (uint32_t i : {0u, 1u, 2u, 4u})
         {
             settings.view        = HybridView::Shadows;
@@ -287,6 +293,14 @@ int main(int argc, char** argv)
         settings.reflectionDenoising = true;
         backend->SetHybrid(settings);
         auto denoisedFirst = capture("reflection-denoised-first");
+        settings.blueNoiseReflections = true;
+        backend->SetHybrid(settings);
+        const auto blueReflection = capture("reflection-blue-noise");
+        if (Difference(blueReflection, denoisedFirst) <= .0001)
+            throw std::runtime_error("Blue noise did not change half-resolution GGX sampling");
+        settings.blueNoiseReflections = false;
+        backend->SetHybrid(settings);
+
         auto denoised = denoisedFirst;
         for (int i = 0; i < 8; ++i)
             denoised = capture("reflection-denoised-" + std::to_string(i));

@@ -48,6 +48,7 @@ namespace render
         bool                             probeSkyLighting             = false;
         bool                             probeMultiBounce             = false;
         bool                             probeReflectionLighting      = false;
+        bool                             blueNoiseShadows = false, blueNoiseReflections = false;
         bool                             blueNoiseAO = false;
         bool                             halfResolutionAO = false;
         bool                             mirrorReflections = false;

@@ -43,7 +43,8 @@ set(METAL_AIR)
 set(_nova_stages vert frag)
 set(_nova_shader_defines)
 set(_nova_shader_extra_deps)
-if(shader_name STREQUAL "model-hybrid-ao")
+if(shader_name MATCHES "^model-(hybrid-(ao|shadow|reflection)|probe-reflection)$")
+    set(_hlsl "${PROJECT_SOURCE_DIR}/render/shaders/model-hybrid-blue-noise.hlsl")
     set(_nova_shader_extra_deps
         "${PROJECT_SOURCE_DIR}/render/shaders/ao-blue-noise.hlsli"
         "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl")
