@@ -245,6 +245,23 @@ class Renderer {
     this.#resetAA()
     this.#parameterPanel?.refresh()
   }
+  #useHalfShadows() {
+    return (
+      this.#sceneModel &&
+      this.#renderMode === 'raster' &&
+      this.#lighting === 'pbr' &&
+      this.#shadowSettings.enabled &&
+      this.#shadowSettings.halfResolution &&
+      this.#aaSettings.method !== 'msaa' &&
+      this.#rasterSettings.view === 'final' &&
+      canUseDeferred(this.#device.limits) &&
+      (this.#lights?.some(
+        (light) =>
+          light.enabled && light.castShadow && light.type !== 'rectangle' && light.intensity > 0,
+      ) ??
+        true)
+    )
+  }
   async #drawAA(width, height) {
     if (!this.#model && this.#rasterSettings.pipeline === 'deferred')
       throw Error('Deferred requires a model or scene')
@@ -256,8 +273,13 @@ class Renderer {
           get shadowLightCount() {
             return owner.#lights?.length ?? 1
           },
+          get halfShadows() {
+            return owner.#useHalfShadows()
+          },
           get raster() {
-            return owner.#rasterSettings
+            return owner.#useHalfShadows()
+              ? { ...owner.#rasterSettings, pipeline: 'deferred' }
+              : owner.#rasterSettings
           },
           get alphaBlend() {
             return owner.#hasRasterTransparency()
@@ -282,7 +304,8 @@ class Renderer {
                 this.#environmentSettings,
                 frames,
                 this.#postSettings,
-                this.#rasterSettings,
+                scene.raster,
+                scene.halfShadows,
               )
             else if (!this.#triangleAA[settings.method === 'msaa' ? 4 : 1]) {
               const count = settings.method === 'msaa' ? 4 : 1,
@@ -1297,6 +1320,7 @@ class Renderer {
         (this.#aaSettings.method !== 'off' ||
           this.#postSettings.enabled ||
           this.#rasterSettings.pipeline === 'deferred' ||
+          this.#useHalfShadows() ||
           this.#hasRasterTransparency())
       )
         await this.#drawAA(viewport.width, viewport.height)

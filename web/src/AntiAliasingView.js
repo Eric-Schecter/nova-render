@@ -432,7 +432,7 @@ export async function createAntiAliasingView({
       if (external.raster?.pipeline === 'deferred') {
         if (denoiseReflections || temporalShadows || halfAO) add(-2, 18)
         add(-4, 85)
-        if (external.hybrid) {
+        if (external.hybrid || external.halfShadows) {
           const shadow = add(-7, 92)
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
@@ -597,7 +597,7 @@ export async function createAntiAliasingView({
         }
         const p = add(-5, sceneColor)
         if (halfReflections) p.sources[9] = resolvedReflection
-        if (external.hybrid)
+        if (external.hybrid || external.halfShadows)
           for (let i = 0; i < 4; i++)
             p.sources[4 + i] = (i < shadowGroups ? resolvedShadows : 92) + i
         p.sources.splice(0, 4, 85, 86, halfAO ? aoCombinedPosition : 87, 88)
@@ -766,6 +766,10 @@ export async function createAntiAliasingView({
         tw = w * scale + 2
         th = h * scale + 2
       }
+      if (external?.halfShadows && i >= 92 && i <= 95) {
+        tw = Math.ceil((tw - 2) / 2) + 2
+        th = Math.ceil((th - 2) / 2) + 2
+      }
       if (i >= 96 && i !== modelClearcoatTarget) {
         tw = w
         th = h
@@ -850,7 +854,10 @@ export async function createAntiAliasingView({
       if (p.hitReprojection) external.writeReflectionReprojection(p.u)
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
       const scene =
-          (p.program <= 0 && p.program !== -8 && p.program !== -9) ||
+          (p.program <= 0 &&
+            p.program !== -8 &&
+            p.program !== -9 &&
+            !(p.program === -7 && external?.halfShadows)) ||
           p.program === 9 ||
           p.program === 10 ||
           p.program === 16 ||
