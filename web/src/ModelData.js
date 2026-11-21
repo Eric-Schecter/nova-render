@@ -91,6 +91,8 @@ export async function loadGLB(url) {
     json.buffers[0].uri
   )
     throw Error('Expected embedded GLB data and supported glTF extensions')
+  json.materials ??= []
+  const defaultMaterial = json.materials.length
   const animation = readAnimation(json, bin)
   const raw = new DataView(bin)
   function element(index, i, type, components, color = false) {
@@ -151,10 +153,15 @@ export async function loadGLB(url) {
       throw Error('Degenerate node transform')
     if (node.mesh !== undefined)
       for (const p of json.meshes[node.mesh].primitives) {
-        if ((p.mode ?? 4) !== 4 || p.targets)
+        const mode = p.mode ?? 4
+        if (![4, 5, 6].includes(mode) || p.targets?.length)
           throw Error('Only triangle primitives without morph targets are supported')
-        if (p.material === undefined) throw Error('Missing material')
-        const mat = json.materials[p.material],
+        if (p.material !== undefined && (!Number.isInteger(p.material) || p.material < 0 || p.material >= defaultMaterial))
+          throw Error('Invalid glTF material index')
+        const materialIndex = p.material ?? defaultMaterial
+        if (p.material === undefined && json.materials.length === defaultMaterial)
+          json.materials.push({})
+        const mat = json.materials[materialIndex],
           pbr = mat.pbrMetallicRoughness || {}
         if (
           p.attributes.TEXCOORD_0 === undefined &&
@@ -169,7 +176,7 @@ export async function loadGLB(url) {
           throw Error('Textured material requires TEXCOORD_0')
         if (mat.occlusionTexture?.texCoord === 1 && p.attributes.TEXCOORD_1 === undefined)
           throw Error('AO texture requires TEXCOORD_1')
-        const extensions = json.materials[p.material].extensions || {}
+        const extensions = mat.extensions || {}
         for (const key of coatTextureKeys) {
           const info = extensions.KHR_materials_clearcoat?.[key]
           if (info && p.attributes['TEXCOORD_' + (info.texCoord ?? 0)] === undefined)
@@ -193,11 +200,21 @@ export async function loadGLB(url) {
           ![5121, 5123, 5125].includes(json.accessors[p.indices].componentType)
         )
           throw Error('Invalid index format')
-        const count = json.accessors[p.indices ?? p.attributes.POSITION].count
-        const vertexIndex = (i) =>
-          p.indices === undefined ? i : element(p.indices, i, 'SCALAR', 1)[0]
-        if (count % 3 || vertices.length / modelVertexFloats + count > 10000000)
-          throw Error('Invalid or oversized mesh')
+        const inputCount = json.accessors[p.indices ?? p.attributes.POSITION].count
+        if (!Number.isSafeInteger(inputCount) || inputCount < 3 || (mode === 4 && inputCount % 3))
+          throw Error('Invalid triangle mesh')
+        const count = mode === 4 ? inputCount : (inputCount - 2) * 3
+        if (vertices.length / modelVertexFloats + count > 10000000)
+          throw Error('Oversized triangle mesh')
+        function vertexIndex(i) {
+          const triangle = Math.floor(i / 3),
+            corner = i % 3
+          if (mode === 5)
+            i = triangle + (triangle % 2 && corner < 2 ? 1 - corner : corner)
+          else if (mode === 6)
+            i = corner === 0 ? 0 : triangle + corner
+          return p.indices === undefined ? i : element(p.indices, i, 'SCALAR', 1)[0]
+        }
         function faceNormal(i) {
           const first = i - (i % 3),
             positions = [0, 1, 2].map((k) =>
@@ -211,6 +228,13 @@ export async function loadGLB(url) {
           )
         }
         for (let i = 0; i < count; i++) {
+          if (mode !== 4 && i % 3 === 0 && p.indices !== undefined) {
+            const a = vertexIndex(i), b = vertexIndex(i + 1), c = vertexIndex(i + 2)
+            if (a === b || b === c || c === a) {
+              i += 2
+              continue
+            }
+          }
           const index = vertexIndex(
               det < 0 ? i - (i % 3) + (i % 3 === 1 ? 2 : i % 3 === 2 ? 1 : 0) : i,
             ),
@@ -244,7 +268,7 @@ export async function loadGLB(url) {
           }
           vertices.push(
             ...world,
-            p.material + 1,
+            materialIndex + 1,
             ...n,
             transmission,
             ...uv,
