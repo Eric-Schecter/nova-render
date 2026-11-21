@@ -838,10 +838,22 @@ struct HybridShadowTargets
 HybridShadowTargets HybridShadowPSMain(SkyOut input)
 {
     int3 pixel = int3(int2(input.position.xy), 0);
+    if (irradiance[1].z > .5)
+    {
+        uint width, height;
+        gBase.GetDimensions(width, height);
+        int2 extent = int2(width, height) - 2;
+        int2 full = (pixel.xy - 1) * 2;
+        pixel.xy = min(full, extent - 1) + 1;
+        input.uv = (float2(pixel.xy) - .5) / float2(extent);
+        float2 ndc = input.uv * float2(2, -2) + float2(-1, 1);
+        input.direction = cameraForward.xyz + ndc.x * cameraRight.w * cameraRight.xyz
+                          + ndc.y * cameraUp.w * cameraUp.xyz;
+    }
     HybridShadowTargets output;
     float        visibility[16];
     [unroll] for (uint j = 0; j < 16; j++) visibility[j] = 1;
-    if (gBase.Load(pixel).w > 0 && irradiance[4].w > .5 && irradiance[3].w > .5)
+    if (gBase.Load(pixel).w > 0 && (irradiance[4].w > .5 || irradiance[1].z > .5) && irradiance[3].w > .5)
     {
         float3 position = surfacePosition(input, gPosition.Load(pixel).xy), normal = octDecode(gNormals.Load(pixel).zw);
         uint   header        = uint(irradiance[3].w) - 1;
@@ -1243,6 +1255,46 @@ float3 hybridReflection(SurfaceData primary, float rotation)
     return sum / max(1, samples);
 }
 
+// Bilateral reconstruction on the full-resolution receiver surface. When the
+// coarse grid misses a thin receiver, the lighting pass traces that pixel.
+void upsampleRasterShadows(inout SurfaceData s, int2 pixel, float logDepth, float3 normal)
+{
+    uint width, height;
+    hybridShadow0.GetDimensions(width, height);
+    int2 last = int2(width, height) - 2;
+    float2 samplePosition = float2(pixel - 1) * .5;
+    int2 first = int2(floor(samplePosition)) + 1;
+    float2 fraction = frac(samplePosition);
+    float4 visibility0 = 0, visibility1 = 0, visibility2 = 0, visibility3 = 0;
+    float total = 0;
+    uint header = uint(irradiance[3].w) - 1;
+    uint count = instances[header].uv.w > .5 ? uint(instances[header].uv.y) : 1;
+    [unroll] for (int y = 0; y < 2; y++)
+        [unroll] for (int x = 0; x < 2; x++)
+        {
+            int2 tap = min(first + int2(x, y), last);
+            int3 guide = int3((tap - 1) * 2 + 1, 0);
+            float2 depth = gPosition.Load(guide).xy;
+            float dz = abs(depth.x + depth.y - logDepth);
+            float agreement = dot(normal, octDecode(gNormals.Load(guide).zw));
+            if (gBase.Load(guide).w <= 0 || dz >= .025 || agreement < .9)
+                continue;
+            float2 bilinear = lerp(1 - fraction, fraction, float2(x, y));
+            float weight = (bilinear.x * bilinear.y + .02) * (1 - dz / .025) * agreement;
+            total += weight;
+            visibility0 += hybridShadow0.Load(int3(tap, 0)) * weight;
+            if (count > 4) visibility1 += hybridShadow1.Load(int3(tap, 0)) * weight;
+            if (count > 8) visibility2 += hybridShadow2.Load(int3(tap, 0)) * weight;
+            if (count > 12) visibility3 += hybridShadow3.Load(int3(tap, 0)) * weight;
+        }
+    if (total < .002)
+        return;
+    s.useVisibility = true;
+    s.visibility0 = visibility0 / total;
+    s.visibility1 = visibility1 / total;
+    s.visibility2 = visibility2 / total;
+    s.visibility3 = visibility3 / total;
+}
 float4 DeferredPSMain(SkyOut input)
   : SV_Target
 {
@@ -1267,7 +1319,7 @@ float4 DeferredPSMain(SkyOut input)
     SurfaceData s;
     s.useVisibility = irradiance[1].w > .5 ? 1 : 0;
     s.visibility0 = s.visibility1 = s.visibility2 = s.visibility3 = 1;
-    if (s.useVisibility)
+    if (irradiance[1].w > .5)
     {
         s.visibility0 = hybridShadow0.Load(pixel);
         s.visibility1 = hybridShadow1.Load(pixel);
@@ -1280,6 +1332,8 @@ float4 DeferredPSMain(SkyOut input)
     s.roughness       = base.w;
     s.normal          = octDecode(normals.xy);
     s.geometricNormal = octDecode(normals.zw);
+    if (irradiance[1].z > .5 && irradiance[3].w > .5)
+        upsampleRasterShadows(s, pixel.xy, pos.x + pos.y, s.geometricNormal);
     s.position        = surfacePosition(input, pos.xy);
     s.ao              = pos.z;
     s.emissive        = emission.rgb;
@@ -1293,14 +1347,14 @@ float4 DeferredPSMain(SkyOut input)
         InstanceData material = instances[uint(irradiance[3].w - 1 - pos.w)];
         s.specular = materialSpecular(material);
     }
-    if (s.useVisibility)
+    if (irradiance[1].w > .5)
     {
         float ao = hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
         if (irradiance[3].w > .5 && abs(instances[uint(irradiance[3].w) - 1].world._m30 - 2) < .1)
             return float4(diagnosticLinear(ao.xxx), 1);
         s.ao *= ao;
     }
-    if (s.useVisibility && irradiance[3].w > .5)
+    if (irradiance[1].w > .5 && irradiance[3].w > .5)
     {
         uint header = uint(irradiance[3].w) - 1;
         float reflectionMix = 0;

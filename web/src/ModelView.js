@@ -213,6 +213,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       oit = false,
       hybridShadow = false,
       probe = false,
+      noDepth = false,
     ) {
       const vertex = device.createShaderModule({ code: shader.vert }),
         fragment = device.createShaderModule({ code: shader.frag })
@@ -279,11 +280,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
         multisample: { count: samples },
-        depthStencil: {
-          format: 'depth32float',
-          depthWriteEnabled: !sky && !deferred && !oit && !hybridShadow,
-          depthCompare: sky || deferred || hybridShadow ? 'always' : oit ? 'less-equal' : 'less',
-        },
+        ...(!noDepth && {
+          depthStencil: {
+            format: 'depth32float',
+            depthWriteEnabled: !sky && !deferred && !oit && !hybridShadow,
+            depthCompare: sky || deferred || hybridShadow ? 'always' : oit ? 'less-equal' : 'less',
+          },
+        }),
       })
     }
     const pipeline = await pipelineFor(shader)
@@ -466,6 +469,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         frames,
         postSettings,
         rasterSettings,
+        halfShadows = false,
       ) {
         if (!aaPipelines) {
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
@@ -526,6 +530,25 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           aaPipelines.motion = await pipelineFor(packages[2], false, 1, true, true)
           aaPipelines.skyMotion = await pipelineFor(packages[3], true, 1, true, true)
         }
+        if (halfShadows && !aaPipelines.halfShadow) {
+          const path =
+            shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1) + 'model-hybrid-shadow.json'
+          const response = await fetch(path)
+          if (!response.ok) throw Error('Missing half-resolution shadow shader')
+          aaPipelines.halfShadow = await pipelineFor(
+            await response.json(),
+            false,
+            1,
+            false,
+            true,
+            false,
+            false,
+            false,
+            true,
+            false,
+            true,
+          )
+        }
         currentScene = sceneUniforms(
           data,
           camera,
@@ -538,6 +561,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         currentScene[35] =
           sceneDraws !== null || singleCaster ? 1 : data.materialRecords?.length ? 2 : 0
         currentScene[75] = rasterGlobals + 1
+        currentScene[66] = halfShadows ? 1 : 0
         currentScene[67] = hybrid ? 1 : 0
         currentScene[71] = hybrid?.shadowSamples || 1
         currentScene[87] = hybrid?.temporalReconstruction ? frames + 1 : 0
@@ -587,7 +611,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           if (program === -5 && probeEnabled) pass.setBindGroup(2, probes.read)
           pass.setPipeline(
             program === -7
-              ? aaPipelines.hybridShadow
+              ? currentScene[66]
+                ? aaPipelines.halfShadow
+                : aaPipelines.hybridShadow
               : probeEnabled
                 ? probeDeferred
                 : aaPipelines.deferred,

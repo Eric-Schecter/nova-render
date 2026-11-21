@@ -24,9 +24,17 @@ export function copyFog(value = {}) {
 }
 
 export function copyShadows(value = {}) {
-  const settings = { enabled: false, softness: 1, samples: 8, bias: 0.002, ...value }
+  const settings = {
+    enabled: false,
+    softness: 1,
+    samples: 8,
+    bias: 0.002,
+    halfResolution: false,
+    ...value,
+  }
   if (
     typeof settings.enabled !== 'boolean' ||
+    typeof settings.halfResolution !== 'boolean' ||
     !Number.isFinite(settings.softness) ||
     settings.softness < 0 ||
     settings.softness > 4 ||

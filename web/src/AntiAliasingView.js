@@ -397,13 +397,13 @@ export async function createAntiAliasingView({
         sceneColor = oit ? 91 : 17
       if (external.raster?.pipeline === 'deferred') {
         add(-4, 85)
-        if (external.hybrid) {
+        if (external.hybrid || external.halfShadows) {
           const shadow = add(-7, 92)
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
         }
         const p = add(-5, sceneColor)
-        if (external.hybrid) p.sources.splice(4, 4, 92, 93, 94, 95)
+        if (external.hybrid || external.halfShadows) p.sources.splice(4, 4, 92, 93, 94, 95)
         p.sources.splice(0, 4, 85, 86, 87, 88)
         p.sources[8] = modelClearcoatTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
@@ -570,6 +570,10 @@ export async function createAntiAliasingView({
         tw = w * scale + 2
         th = h * scale + 2
       }
+      if (external?.halfShadows && i >= 92 && i <= 95) {
+        tw = Math.ceil((tw - 2) / 2) + 2
+        th = Math.ceil((th - 2) / 2) + 2
+      }
       if (i >= 96 && i !== modelClearcoatTarget) {
         tw = w
         th = h
@@ -637,7 +641,7 @@ export async function createAntiAliasingView({
     function render(p, index, present = false) {
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
       const scene =
-          p.program <= 0 ||
+          (p.program <= 0 && !(p.program === -7 && external?.halfShadows)) ||
           p.program === 9 ||
           p.program === 10 ||
           p.program === 16 ||

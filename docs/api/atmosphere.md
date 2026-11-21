@@ -43,6 +43,8 @@ Clear an environment with an empty native path or a `null`/empty web URL. Existi
 - `samples`: integer 1–16, default 8; soft-shadow quality/cost. One sample is hard.
 - `bias`: world-space offset, 0.00001–0.1, default 0.002. Adjust for the scale of the scene.
 
+WebGPU raster scenes can opt in with `setShadows({ halfResolution: true })`. The renderer traces one receiver per 2 × 2 region and reconstructs visibility using full-resolution depth and geometric normals. When neighboring samples do not match the surface, it traces that receiver at full resolution. Output resolution and sample count are independent. The default is `false`. This WebGPU path needs deferred-capable limits and falls back to the regular raster shadow path with MSAA, unsupported devices or non-raster modes.
+
 Scene instances accept `castShadow` (default true). Setting it false removes that instance from shadow queries while leaving it rendered and pickable. BVHs are shared per asset, so transform and material changes retain local geometry. Nonuniform and mirrored world transforms use inverse-transformed rays. The packed BVH budget is 64 MiB, with the web device's storage-buffer limit checked before upload. Changing settings resets temporal history.
 
 ```cpp
