@@ -21,7 +21,7 @@ namespace render::detail
         int                    node;
         std::string            path, interpolation;
         std::vector<float>     times;
-        std::vector<glm::vec4> values;
+        std::vector<glm::vec4> values, inTangents, outTangents;
     };
     struct SkinVertex
     {

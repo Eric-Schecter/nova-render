@@ -104,30 +104,39 @@ export function readAnimation(json, bin) {
         targets.add(key)
         if (
           !['translation', 'rotation', 'scale'].includes(path) ||
-          !['LINEAR', 'STEP'].includes(interpolation)
+          !['LINEAR', 'STEP', 'CUBICSPLINE'].includes(interpolation)
         )
-          throw Error('Animation supports TRS LINEAR/STEP only')
+          throw Error('Animation supports TRS channels and glTF interpolation modes')
         const input = json.accessors[sampler.input],
-          output = json.accessors[sampler.output]
+          output = json.accessors[sampler.output],
+          cubic = interpolation === 'CUBICSPLINE'
         if (
           input.componentType !== 5126 ||
           output.componentType !== 5126 ||
           !input.count ||
-          input.count !== output.count
+          input.count * (cubic ? 3 : 1) !== output.count
         )
           throw Error('Invalid animation sampler')
         const times = [],
-          values = []
+          values = [],
+          inTangents = [],
+          outTangents = []
         for (let i = 0; i < input.count; i++) {
           const t = read(sampler.input, i, 1)[0]
           if (t < 0 || (i && t <= times[i - 1])) throw Error('Invalid animation times')
           times.push(t)
-          const value = read(sampler.output, i, path === 'rotation' ? 4 : 3)
+          const components = path === 'rotation' ? 4 : 3
+          const key = cubic ? i * 3 + 1 : i
+          const value = read(sampler.output, key, components)
+          if (cubic) {
+            inTangents.push(read(sampler.output, key - 1, components))
+            outTangents.push(read(sampler.output, key + 1, components))
+          }
           if (path === 'rotation') normalize(value)
           values.push(value)
         }
         duration = Math.max(duration, times.at(-1))
-        return { node, path, interpolation, times, values }
+        return { node, path, interpolation, times, values, inTangents, outTangents }
       })
     if (!channels.length || duration <= 0) throw Error('Empty animation clip')
     clips.push({ name: animation.name || 'Animation ' + (clips.length + 1), duration })
@@ -253,6 +262,20 @@ export function evaluateAnimation(data, state) {
         l === r || track.interpolation === 'STEP'
           ? 0
           : (state.time - track.times[l]) / (track.times[r] - track.times[l])
+    if (track.interpolation === 'CUBICSPLINE') {
+      const dt = track.times[r] - track.times[l],
+        t2 = t * t,
+        t3 = t2 * t
+      const value = track.values[l].map(
+        (v, k) =>
+          (2 * t3 - 3 * t2 + 1) * v +
+          (t3 - 2 * t2 + t) * dt * track.outTangents[l][k] +
+          (-2 * t3 + 3 * t2) * track.values[r][k] +
+          (t3 - t2) * dt * track.inTangents[r][k],
+      )
+      nodes[track.node][track.path] = track.path === 'rotation' ? normalize(value) : value
+      continue
+    }
     nodes[track.node][track.path] =
       track.path === 'rotation'
         ? slerp(track.values[l], track.values[r], t)
