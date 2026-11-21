@@ -359,13 +359,13 @@ namespace render::detail
                 heap.NumDescriptors = 4;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&dsvHeap)));
                 heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-                heap.NumDescriptors = 64 * 18;
+                heap.NumDescriptors = 96 * 18;
                 heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
                 Check(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&srvHeap)));
                 rtvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
                 dsvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 srvStride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-                uniforms  = Buffer(256 * 64, D3D12_HEAP_TYPE_UPLOAD);
+                uniforms  = Buffer(256 * 96, D3D12_HEAP_TYPE_UPLOAD);
                 for (int i = 0; i < 31; i++)
                     pipelines[i] = (i == 25 || i == 26) ? ComputePipeline(i, c) : Pipeline(i, 1, c);
                 sceneMS  = Pipeline(0, 4, c);

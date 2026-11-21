@@ -95,6 +95,9 @@ namespace render::detail
         AAReflectionMomentsA,
         AAReflectionMomentsB,
         AAReflectionAtrous,
+        AAShadowMomentsA,
+        AAShadowMomentsB = AAShadowMomentsA + 4,
+        AAShadowAtrous = AAShadowMomentsB + 4,
         AAResourceCount
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
@@ -124,7 +127,7 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
-        if ((id >= AAHybridAO && id < AAAOCombinedPosition) || id >= AAReflectionMomentsA)
+        if ((id >= AAHybridAO && id < AAAOCombinedPosition) || (id >= AAReflectionMomentsA && id <= AAReflectionAtrous))
             return {(w * (ss ? 2u : 1u) + 1) / 2 + 2, (h * (ss ? 2u : 1u) + 1) / 2 + 2, 1};
         if (id >= AAShadowHistoryA)
             return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};

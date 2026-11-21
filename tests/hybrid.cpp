@@ -206,6 +206,12 @@ int main(int argc, char** argv)
         if (backend->GetHybridHistoryFrames() != 0)
             throw std::runtime_error("Lens change retained independent shadow history");
         backend->SetCamera(camera);
+        settings.shadowSVGF = true;
+        backend->SetHybrid(settings);
+        capture("shadow-svgf-first");
+        if (Difference(sceneShadow, capture("shadow-svgf-hard")) > .2)
+            throw std::runtime_error("Shadow SVGF changed static hard shadows");
+        settings.shadowSVGF = false;
         settings.shadowTemporalReconstruction = false;
         backend->SetHybrid(settings);
         AntiAliasingSettings aa;

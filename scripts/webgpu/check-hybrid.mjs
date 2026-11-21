@@ -150,6 +150,11 @@ try {
   }
   if ((await page.evaluate(() => r.getHybridHistoryFrames())) !== 3)
     throw Error('Independent shadow history did not accumulate')
+  await page.evaluate(() => r.setHybrid({ shadowSVGF: true }))
+  await capture('shadow-svgf-first')
+  if (diff(shadow, await capture('shadow-svgf-hard')) > 0.2)
+    throw Error('Shadow SVGF changed static hard shadows')
+  await page.evaluate(() => r.setHybrid({ shadowSVGF: false }))
   await page.evaluate(() => r.setAntiAliasing({ method: 'ssaa' }))
   await capture('shadow-history-ssaa-first')
   await capture('shadow-history-ssaa-second')
@@ -576,6 +581,7 @@ try {
       'reflection-svgf-first',
       'reflection-svgf-history',
       'shadow-blue-hard',
+      'shadow-svgf-hard',
       'reflection-only',
       'reflected-material-mapped',
       'reflected-material-flat',

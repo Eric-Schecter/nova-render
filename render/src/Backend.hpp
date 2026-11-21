@@ -1014,6 +1014,7 @@ namespace render::detail
               || previousHybrid.clearcoatReflections != hybrid.clearcoatReflections
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.shadowTemporalReconstruction != hybrid.shadowTemporalReconstruction
+              || previousHybrid.shadowSVGF != hybrid.shadowSVGF
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {
                 RebuildRasterInstances(

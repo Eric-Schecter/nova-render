@@ -705,12 +705,12 @@ namespace render::detail
                 pl.pSetLayouts = &computeSetLayout;
                 Check(api.vkCreatePipelineLayout(device, &pl, nullptr, &computeLayout));
                 VkDescriptorPoolSize sizes[] = {
-                  {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 64},
-                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 64},
-                  {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024},
-                  {VK_DESCRIPTOR_TYPE_SAMPLER, 128}};
+                  {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 96},
+                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 96},
+                  {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1536},
+                  {VK_DESCRIPTOR_TYPE_SAMPLER, 192}};
                 VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-                dp.maxSets       = 64;
+                dp.maxSets       = 96;
                 dp.poolSizeCount = 4;
                 dp.pPoolSizes    = sizes;
                 Check(api.vkCreateDescriptorPool(device, &dp, nullptr, &descriptorPool));
@@ -738,7 +738,7 @@ namespace render::detail
                 shadowMS = Pipeline(10, true, config);
                 hdrMS    = Pipeline(16, true, config);
                 ssrMS    = Pipeline(17, true, config);
-                uniforms = MakeBuffer(uniformStride * 64, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+                uniforms = MakeBuffer(uniformStride * 96, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
                 for (int i = AAArea; i <= AASearch; i++)
                 {
                     const auto data = AALookup(i == AAArea);

@@ -561,9 +561,47 @@ float4 PSMain(Varying i)
         int2 pixel = int2(i.position.xy);
         float4 current = colorTex.Load(int3(pixel, 0));
         float4 motion = motionTex.Load(int3(pixel, 0));
+        float2 activeSize = aa[0].xy * aa[2].x;
+        if (aa[4].w > 1.5)
+        {
+            if (motion.w < .5 || any(pixel < 1) || any(pixel > int2(activeSize)))
+                return current;
+            float4 mean = weightTex.Load(int3(pixel, 0));
+            float4 second = historyTex.Load(int3(pixel, 0));
+            float4 variance = max(0, second - mean * mean);
+            float4 strength = saturate(variance * 64);
+            if (all(strength <= .001))
+                return current;
+            const int step = int(aa[4].w) - 1;
+            float4 depth = areaTex.Load(int3(pixel, 0));
+            float2 encoded = edgeTex.Load(int3(pixel, 0)).zw;
+            float4 sum = current * 4, mass = 4;
+            [unroll] for (int y = -1; y <= 1; ++y)
+                [unroll] for (int x = -1; x <= 1; ++x)
+                {
+                    if (x == 0 && y == 0)
+                        continue;
+                    int2 tap = pixel + int2(x, y) * step;
+                    if (any(tap < 1) || any(tap > int2(activeSize)))
+                        continue;
+                    float4 oldMotion = motionTex.Load(int3(tap, 0));
+                    float4 neighbor = areaTex.Load(int3(tap, 0));
+                    float dz = abs((depth.x - neighbor.x) + (depth.y - neighbor.y));
+                    float dn = length(encoded - edgeTex.Load(int3(tap, 0)).zw);
+                    if (dz > .045 || dn > .12 || abs(oldMotion.w - motion.w) > .25)
+                        continue;
+                    float4 value = colorTex.Load(int3(tap, 0));
+                    float4 weight = (x == 0 || y == 0 ? 2 : 1)
+                        * exp2(-120 * dz / step - 24 * dn - abs(value - current) / (.03 + 2 * sqrt(variance)));
+                    sum += value * weight;
+                    mass += weight;
+                }
+            return lerp(current, sum / mass, strength);
+        }
+        if (aa[4].w > .5)
+            current *= current;
         if (aa[3].x < .5 || motion.w < .5)
             return current;
-        float2 activeSize = aa[0].xy * aa[2].x;
         float2 previousPixel = float2(pixel) + motion.xy * activeSize;
         int2 first = int2(floor(previousPixel));
         float2 fraction = frac(previousPixel);

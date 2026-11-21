@@ -321,6 +321,9 @@ namespace render::detail
                         hybrid.reflectionSamples = uint32_t(reflectionSamples);
                     ImGui::BeginDisabled(!hybrid.shadows);
                     ImGui::Checkbox("Shadow temporal reconstruction", &hybrid.shadowTemporalReconstruction);
+                    ImGui::BeginDisabled(!hybrid.shadowTemporalReconstruction);
+                    ImGui::Checkbox("Shadow SVGF", &hybrid.shadowSVGF);
+                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     ImGui::Checkbox("Hybrid temporal reconstruction", &hybrid.temporalReconstruction);
                     ImGui::SliderFloat("Hybrid history weight", &hybrid.historyWeight, 0, .98f);

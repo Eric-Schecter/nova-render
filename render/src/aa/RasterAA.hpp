@@ -237,7 +237,37 @@ namespace render::detail
                         resolve->sources[7]     = AAShadowPreviousDepth;
                         resolve->uniforms[2][0] = scale;
                         resolve->uniforms[6][3] = 3;
+                        if (hybridSettings.shadowSVGF)
+                        {
+                            const AAPass temporal = *resolve;
+                            const bool odd = frames % 2;
+                            const int moments = (odd ? AAShadowMomentsB : AAShadowMomentsA) + i;
+                            auto* update = add(7, moments);
+                            update->sources = temporal.sources;
+                            update->sources[3] = (odd ? AAShadowMomentsA : AAShadowMomentsB) + i;
+                            update->uniforms = temporal.uniforms;
+                            update->uniforms[4][3] = 1;
+
+                            int source = resolvedShadows + i;
+                            for (int step : {1, 2, 4})
+                            {
+                                const int target = step == 2 ? AAShadowAtrous : AAHybridShadow0 + i;
+                                auto* filter = add(7, target);
+                                filter->sources[0] = source;
+                                filter->sources[1] = AAModelNormal;
+                                filter->sources[2] = resolvedShadows + i;
+                                filter->sources[3] = moments;
+                                filter->sources[4] = AARawMotion;
+                                filter->sources[6] = AAModelPosition;
+                                filter->uniforms[2][0] = scale;
+                                filter->uniforms[6][3] = 3;
+                                filter->uniforms[4][3] = float(step + 1);
+                                source = target;
+                            }
+                        }
                     }
+                    if (hybridSettings.shadowSVGF)
+                        resolvedShadows = AAHybridShadow0;
                     add(1, AAShadowPreviousDepth)->sources[0]  = AAModelPosition;
                     add(1, AAShadowPreviousNormal)->sources[0] = AAModelNormal;
                     add(1, AAShadowPreviousMotion)->sources[0] = AARawMotion;

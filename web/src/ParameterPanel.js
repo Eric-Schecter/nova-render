@@ -649,6 +649,18 @@ export function attachParameterPanel(
         shadowTemporalRow.prepend(shadowTemporalToggle)
         renderer.append(shadowTemporalRow)
         fields.set('hybrid_shadowTemporalReconstruction', { input: shadowTemporalToggle })
+        const shadowSVGFRow = document.createElement('label'),
+          shadowSVGFToggle = document.createElement('input')
+        shadowSVGFRow.textContent = 'Shadow SVGF'
+        shadowSVGFToggle.type = 'checkbox'
+        shadowSVGFToggle.setAttribute('aria-label', 'Shadow SVGF')
+        shadowSVGFToggle.checked = h.shadowSVGF
+        shadowSVGFToggle.addEventListener('change', () =>
+          change(() => adapter.setHybrid({ shadowSVGF: shadowSVGFToggle.checked })),
+        )
+        shadowSVGFRow.prepend(shadowSVGFToggle)
+        renderer.append(shadowSVGFRow)
+        fields.set('hybrid_shadowSVGF', { input: shadowSVGFToggle })
         const temporalRow = document.createElement('label'),
           temporalToggle = document.createElement('input')
         temporalRow.textContent = 'Hybrid temporal reconstruction'
@@ -1038,6 +1050,9 @@ export function attachParameterPanel(
             !adapter.getHybrid().reflections ||
             !adapter.getHybrid().halfResolutionReflections ||
             !adapter.getHybrid().reflectionDenoising
+        if (name === 'shadowSVGF')
+          field.input.disabled =
+            !adapter.getHybrid().shadows || !adapter.getHybrid().shadowTemporalReconstruction
         if (name === 'mirrorReflections') field.input.disabled = !adapter.getHybrid().reflections
         if (name === 'diffuseBounce') field.input.disabled = adapter.getHybrid().probeGI
         if (

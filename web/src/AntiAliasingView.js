@@ -76,6 +76,9 @@ const hybridAO = shadowPreviousMotion + 1,
 const reflectionMomentsA = aoCombinedPosition + 1,
   reflectionMomentsB = reflectionMomentsA + 1,
   reflectionAtrous = reflectionMomentsB + 1
+const shadowMomentsA = reflectionAtrous + 1,
+  shadowMomentsB = shadowMomentsA + 4,
+  shadowAtrous = shadowMomentsB + 4
 
 export async function createAntiAliasingView({
   canvas,
@@ -173,7 +176,7 @@ export async function createAntiAliasingView({
     point
   try {
     uniform = device.createBuffer({
-      size: 256 * 64,
+      size: 256 * 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
     layout = device.createBindGroupLayout({
@@ -290,7 +293,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= reflectionAtrous; i++)
+    for (let i = 0; i <= shadowAtrous; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -531,7 +534,27 @@ export async function createAntiAliasingView({
             )
             resolve.u[8] = effectiveMethod === 'ssaa' ? 2 : 1
             resolve.u[27] = 3
+            resolve.u[19] = 0
+            if (external.hybrid.shadowSVGF) {
+              const moments = (frames % 2 ? shadowMomentsB : shadowMomentsA) + i
+              const update = add(7, moments)
+              update.sources = [...resolve.sources]
+              update.sources[3] = (frames % 2 ? shadowMomentsA : shadowMomentsB) + i
+              update.u = [...resolve.u]
+              update.u[19] = 1
+              let source = resolvedShadows + i
+              for (const step of [1, 2, 4]) {
+                const target = step === 2 ? shadowAtrous : 92 + i
+                const filter = add(7, target)
+                filter.sources.splice(0, 7, source, 86, resolvedShadows + i, moments, 18, DUMMY, 87)
+                filter.u[8] = resolve.u[8]
+                filter.u[27] = 3
+                filter.u[19] = step + 1
+                source = target
+              }
+            }
           }
+          if (external.hybrid.shadowSVGF) resolvedShadows = 92
           for (const [target, source] of [
             [shadowPreviousDepth, 87],
             [shadowPreviousNormal, 86],
@@ -718,7 +741,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= reflectionAtrous; i++) {
+    for (let i = 0; i <= shadowAtrous; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -747,7 +770,10 @@ export async function createAntiAliasingView({
         tw = w
         th = h
       }
-      if ((i >= hybridAO && i < aoCombinedPosition) || i >= reflectionMomentsA) {
+      if (
+        (i >= hybridAO && i < aoCombinedPosition) ||
+        (i >= reflectionMomentsA && i <= reflectionAtrous)
+      ) {
         const scale = superSample ? 2 : 1
         tw = Math.ceil((w * scale) / 2) + 2
         th = Math.ceil((h * scale) / 2) + 2
