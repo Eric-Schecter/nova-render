@@ -81,6 +81,7 @@ export async function loadGLB(url) {
           'KHR_materials_transmission',
           'KHR_materials_ior',
           'KHR_materials_specular',
+          'KHR_materials_emissive_strength',
           'KHR_materials_clearcoat',
         ].includes(e),
     ) ||
@@ -261,6 +262,17 @@ export async function loadGLB(url) {
   const materials = []
   for (const material of json.materials) {
     const pbr = material.pbrMetallicRoughness || {}
+    const emission = material.extensions?.KHR_materials_emissive_strength
+    let emissiveStrength = 1
+    if (emission !== undefined) {
+      if (!emission || typeof emission !== 'object' || Array.isArray(emission))
+        throw Error('Invalid KHR_materials_emissive_strength')
+      if ('emissiveStrength' in emission) {
+        emissiveStrength = emission.emissiveStrength
+        if (!Number.isFinite(emissiveStrength) || emissiveStrength < 0)
+          throw Error('Invalid glTF emissiveStrength')
+      }
+    }
     const specular = material.extensions?.KHR_materials_specular
     if (specular !== undefined) {
       if (!specular || typeof specular !== 'object' || Array.isArray(specular))
@@ -345,7 +357,7 @@ export async function loadGLB(url) {
           normalScale: material.normalTexture?.scale ?? 1,
           occlusionStrength: material.occlusionTexture?.strength ?? 1,
           occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,
-          emissive: material.emissiveFactor || [0, 0, 0],
+          emissive: (material.emissiveFactor || [0, 0, 0]).map((v) => v * emissiveStrength),
           baseColorTexture: textures[0] ? images[0] : null,
           normalTexture: textures[1] ? images[1] : null,
           metallicRoughnessTexture: textures[2] ? images[2] : null,

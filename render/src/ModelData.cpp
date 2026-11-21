@@ -118,7 +118,8 @@ namespace render::detail
             for (const auto& extension : list)
                 if (
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
-                  && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat")
+                  && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
+                  && extension != "KHR_materials_emissive_strength")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -360,8 +361,23 @@ namespace render::detail
               static_cast<float>(pbr.roughnessFactor),
               static_cast<float>(mat.normalTexture.scale),
               static_cast<float>(mat.occlusionTexture.strength)};
+            double emissiveStrength = 1;
+            if (const auto ext = mat.extensions.find("KHR_materials_emissive_strength"); ext != mat.extensions.end())
+            {
+                if (!ext->second.IsObject())
+                    throw std::runtime_error("Invalid KHR_materials_emissive_strength");
+                if (ext->second.Has("emissiveStrength"))
+                {
+                    const auto& strength = ext->second.Get("emissiveStrength");
+                    if (!strength.IsNumber())
+                        throw std::runtime_error("Invalid glTF emissiveStrength");
+                    emissiveStrength = strength.GetNumberAsDouble();
+                    if (!std::isfinite(emissiveStrength) || emissiveStrength < 0)
+                        throw std::runtime_error("Invalid glTF emissiveStrength");
+                }
+            }
             for (int k = 0; k < 3; ++k)
-                slot.emissive[k] = static_cast<float>(mat.emissiveFactor[k]);
+                slot.emissive[k] = static_cast<float>(mat.emissiveFactor[k] * emissiveStrength);
             if (
               pbr.baseColorTexture.texCoord || mat.normalTexture.texCoord || pbr.metallicRoughnessTexture.texCoord
               || mat.emissiveTexture.texCoord)
