@@ -32,6 +32,13 @@ uint32_t                    memoryType(uint32_t bits, VkMemoryPropertyFlags flag
             return i;
     throw std::runtime_error("No suitable Vulkan memory type");
 }
+void validateSceneStorage(VkDeviceSize bytes) const
+{
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(physical, &props);
+    if (bytes > props.limits.maxStorageBufferRange)
+        throw std::runtime_error("Scene shadow resources exceed Vulkan storage buffer limit");
+}
 void modelBuffer(ModelBuffer& b, VkDeviceSize bytes, VkBufferUsageFlags usage, const void* source = nullptr)
 {
     VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -201,6 +208,7 @@ void uploadModel()
       model->jointMatrices.empty() ? nullptr : model->jointMatrices.data());
     modelBuffer(modelUniform, sizeof(SceneUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     sceneInstanceBytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
+    validateSceneStorage(sceneInstanceBytes);
     modelBuffer(sceneInstanceBuffer, sceneInstanceBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     for (size_t i = 0; i < modelTextures.size(); ++i)
     {

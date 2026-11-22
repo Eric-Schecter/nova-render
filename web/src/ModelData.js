@@ -1,4 +1,4 @@
-import { modelVertexFloats } from './ModelVertex.js'
+import { modelVertexFloats, materialSlotLimit } from './ModelVertex.js'
 import { decodeMaterialImage } from './MaterialImage.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 import { cameraFromOrbit, cameraBasis } from './Camera.js'
@@ -287,10 +287,10 @@ export async function loadGLB(url, { pack = true } = {}) {
           transmission < 0 ||
           transmission > 1 ||
           !Number.isFinite(ior) ||
-          ior < 1.01 ||
+          ior < 1 ||
           ior > 3
         )
-          throw Error('Dielectric requires transmission 0..1 and IOR 1.01..3')
+          throw Error('Dielectric requires transmission 0..1 and IOR 1..3')
         hasTransmission ||= transmission > 0
         if (
           p.indices !== undefined &&
@@ -418,7 +418,7 @@ export async function loadGLB(url, { pack = true } = {}) {
     animation.center = min.map((v, k) => (v + max[k]) * 0.5)
     animation.scale = 2 / size
   }
-  if (json.materials.length > 128) throw Error('At most 128 material slots are supported')
+  if (json.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
   const materials = []
   const decodedImages = new Map()
   for (const material of json.materials) {

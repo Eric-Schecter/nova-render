@@ -1023,6 +1023,7 @@ namespace render::detail
                 size_t bytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
                 if (bytes > sceneInstanceBytes)
                 {
+                    validateSceneStorage(bytes);
                     destroyModelBuffer(sceneInstanceBuffer);
                     modelBuffer(sceneInstanceBuffer, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
                     sceneInstanceBytes = bytes;

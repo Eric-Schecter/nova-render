@@ -995,9 +995,10 @@ float3 glassRadiance(SurfaceData s, float2 pixel)
     // Thin glass uses the opaque scene at the projected surface. Roughness
     // broadens that sample without requiring an extra full-resolution pass.
     float3 transmitted = gBase.SampleLevel(textureSampler, uv, 0).rgb;
-    if (s.roughness > .1)
+    float transmissionRoughness = s.roughness * saturate(2 * (s.dielectric.y - 1));
+    if (transmissionRoughness > .1)
     {
-        float radius = min(16, s.roughness * s.roughness * .02 * height);
+        float radius = min(16, transmissionRoughness * transmissionRoughness * .02 * height);
         const float2 taps[4] = {float2(-1, 0), float2(1, 0), float2(0, -1), float2(0, 1)};
         [unroll] for (int i = 0; i < 4; ++i)
             transmitted += gBase.SampleLevel(textureSampler,
@@ -1029,7 +1030,7 @@ float3 glassRadiance(SurfaceData s, float2 pixel)
         }
     }
     float f = (s.dielectric.y - 1) / (s.dielectric.y + 1);
-    float3 reflectance = fresnel(saturate(dot(s.normal, view)), (f * f).xxx, 1);
+    float3 reflectance = s.dielectric.y <= 1.00001 ? 0 : fresnel(saturate(dot(s.normal, view)), (f * f).xxx, 1);
     float3 reflection = applyFog(displayRadiance(reflected), s.position) * reflectance;
     float3 attenuation = s.volume.w > 0 ? pow(saturate(s.volume.rgb), s.volume.w) : 1;
     return transmitted * s.base * attenuation * (1 - reflectance) + reflection;

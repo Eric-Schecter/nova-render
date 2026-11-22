@@ -119,8 +119,8 @@ namespace render::detail
     {
         if (data.materials.empty())
             return;
-        if (data.materials.size() > 128)
-            throw std::invalid_argument("At most 128 material slots are supported");
+        if (data.materials.size() > materialSlotLimit)
+            throw std::invalid_argument("At most 256 material slots are supported");
         uint32_t tile = 1;
         bool     texturedCoat = false;
         for (const auto& m : data.materials)

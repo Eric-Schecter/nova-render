@@ -109,9 +109,10 @@ namespace render::detail
     }
     std::vector<std::array<float, 48>> PickMesh::ShadowRecords() const
     {
-        std::vector<std::array<float, 48>> records(nodes_.size() + triangles_.size());
-        if (records.size() * 192ull > 64ull * 1024 * 1024)
-            throw std::runtime_error("Scene shadow BVH exceeds 64 MiB");
+        const auto count = nodes_.size() + triangles_.size();
+        if (count > shadowBVHByteLimit / sizeof(std::array<float, 48>))
+            throw std::runtime_error("Scene shadow BVH exceeds 384 MiB");
+        std::vector<std::array<float, 48>> records(count);
         std::function<void(uint32_t, uint32_t)> escape = [&](uint32_t index, uint32_t next) {
             const auto& node   = nodes_[index];
             auto&       record = records[index];
