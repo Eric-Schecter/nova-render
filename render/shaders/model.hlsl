@@ -2005,7 +2005,9 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
         float3 h = n;
         if (!mirror)
         {
-            float u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
+            // Decorrelate elevation from azimuth while keeping the midpoint on static frames.
+            float elevation = abs(irradiance[6].w) >= .5 ? frac(rotation * 17 + .5) : .5;
+            float u = (j + elevation) / samples, phi = j * 2.39996323 + rotation;
             float cosTheta = sqrt((1 - u) / (1 + (a * a - 1) * u));
             float sinTheta = sqrt(max(0, 1 - cosTheta * cosTheta));
             h = aniso ? anisotropicHalfVector(float2(u, frac(phi / 6.283185307)), n,

@@ -1,5 +1,13 @@
 # Hybrid implementation validation
 
+## Pica Pica reflection sampling and WebGPU material variants
+
+At 766 × 431, Chrome WebGPU reproduced pure-green pixels with DDGI and reflections enabled. A fixed camera contained 117,635 pure-green RGB pixels out of 330,146 before the material shader fix. Selecting lighting and probe shaders without the unused sheen lobe reduced that count to zero. Full- and half-resolution reflection captures also had zero pure-green pixels with and without DDGI. Scenes with sheen materials continue to select the full shader.
+
+Temporal reflection rays now vary the sample elevation within each GGX stratum as well as the azimuth. The midpoint is preserved when temporal sampling is disabled. The moving camera comparison used one reflection ray per pixel and the same corrected WebGPU material shaders for both runs. Its synchronized median was 575.7 ms before and 580.3 ms after. The console is still brighter and more purple than the reference capture. Frame comparisons and timings are under `build/validation/hybrid-reflection-elevation`.
+
+The twelve reference cameras rendered all 108 effect captures on each of Metal and Vulkan. Chrome's broader Hybrid shadow regression failed with both the previous and updated shader sets. The reference parity script also exceeded its Web/native threshold on the initial raster shadow fixture before exercising the updated reflection path.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

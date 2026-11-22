@@ -189,54 +189,40 @@ for (const [name, vertexEntry, fragmentEntry] of [
     optimizeModel: name.startsWith('model-hybrid-') || name.startsWith('model-deferred'),
   })
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
-  if (name === 'model-aa' || name === 'model-oit') {
-    const variant = await compile(disableSheen + rasterSource, {
+  if (['model-aa', 'model-oit', 'model-deferred', 'model-deferred-half', 'model-hybrid-reflection'].includes(name)) {
+    const variant = await compile(disableSheen + shaderSource, {
       model: true, vertexEntry, fragmentEntry, optimizeModel: true,
     })
     await writeFile('docs/public/generated/' + name + '-no-sheen.json', JSON.stringify(variant))
   }
 }
 
-const probeUpdate = await compile(rasterSource, {
-  compute: true,
-  computeEntry: 'HybridProbeUpdateCS',
-  optimizeCompute: true,
-})
-const probeSharedUpdate = await compile('#define NOVA_SHARED_PROBE_RAYS 1\n' + rasterSource, {
-  compute: true,
-  computeEntry: 'HybridProbeUpdateCS',
-  optimizeCompute: true,
-})
-const probeDeferred = await compile('#define NOVA_HYBRID_PROBES 1\n' + rasterSource, {
-  model: true,
-  vertexEntry: 'SkyVSMain',
-  fragmentEntry: 'DeferredPSMain',
-  optimizeModel: true,
-})
-const probeDeferredHalf = await compile(
-  '#define NOVA_HYBRID_PROBES 1\n#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource,
-  { model: true, vertexEntry: 'SkyVSMain', fragmentEntry: 'DeferredPSMain', optimizeModel: true },
-)
-const probeReflection = await compile(
-  '#define NOVA_HYBRID_PROBES 1\n' + blueNoiseSource + rasterSource,
-  {
-    model: true,
-    vertexEntry: 'SkyVSMain',
-    fragmentEntry: 'HybridReflectionPSMain',
-    optimizeModel: true,
-  },
-)
-await writeFile(
-  'docs/public/generated/model-probes.json',
-  JSON.stringify({
-    compute: probeUpdate.compute,
-    sharedCompute: probeSharedUpdate.compute,
-    vert: probeDeferred.vert,
-    frag: probeDeferred.frag,
-    halfFrag: probeDeferredHalf.frag,
-    reflectionFrag: probeReflection.frag,
-  }),
-)
+for (const [suffix, prefix] of [['', ''], ['-no-sheen', disableSheen]]) {
+  const source = prefix + rasterSource
+  const probeSource = '#define NOVA_HYBRID_PROBES 1\n' + source
+  const compute = { compute: true, computeEntry: 'HybridProbeUpdateCS', optimizeCompute: true }
+  const deferred = {
+    model: true, vertexEntry: 'SkyVSMain', fragmentEntry: 'DeferredPSMain', optimizeModel: true,
+  }
+  const probeUpdate = await compile(source, compute)
+  const shared = await compile('#define NOVA_SHARED_PROBE_RAYS 1\n' + source, compute)
+  const shading = await compile(probeSource, deferred)
+  const half = await compile('#define NOVA_HALF_REFLECTIONS 1\n' + probeSource, deferred)
+  const reflections = await compile(blueNoiseSource + probeSource, {
+    ...deferred, fragmentEntry: 'HybridReflectionPSMain',
+  })
+  await writeFile(
+    'docs/public/generated/model-probes' + suffix + '.json',
+    JSON.stringify({
+      compute: probeUpdate.compute,
+      sharedCompute: shared.compute,
+      vert: shading.vert,
+      frag: shading.frag,
+      halfFrag: half.frag,
+      reflectionFrag: reflections.frag,
+    }),
+  )
+}
 
 for (const pass of [9, 10]) {
   const data = await compile(

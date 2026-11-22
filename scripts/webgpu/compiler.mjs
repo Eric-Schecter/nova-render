@@ -87,6 +87,8 @@ export async function compile(
         ]) {
       const spv = join(dir, stage + '.spv'),
         wgsl = join(dir, stage + '.wgsl')
+      const deferredFragment =
+        model && optimizeModel && fragmentEntry === 'DeferredPSMain' && stage === 'frag'
       await exec(
         dxc,
         [
@@ -97,7 +99,7 @@ export async function compile(
           // Naga cannot spill those pointers into WGSL function variables.
           ...(compute ? ['-DNOVA_WEB_BVH=1'] : []),
           // Preserve storage-matrix inlining without LICM's non-storable pointer spills.
-          ...(model && optimizeModel && fragmentEntry === 'DeferredPSMain' && stage === 'frag'
+          ...(deferredFragment
             ? ['-Oconfig=' + modelWGSLPasses.map((pass) => '--' + pass).join(',')]
             : []),
           ...((compute && !optimizeCompute) || (model && stage === 'frag' && !sky && !optimizeModel)
@@ -116,7 +118,7 @@ export async function compile(
           spv,
           hlsl,
         ],
-        { timeout: 15000, maxBuffer: 262144 },
+        { timeout: deferredFragment ? 60000 : 15000, maxBuffer: 262144 },
       )
       await exec(
         process.execPath,

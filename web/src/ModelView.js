@@ -41,6 +41,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
   const data = suppliedData || (await loadGLB(url, loadOptions)),
     resources = []
   const hasSheen = data.materials?.some((material) => material.sheenColorFactor?.some((value) => value > 0))
+  // Keep the inactive sheen lobe out of all lighting shaders, including the ray-hit paths.
+  const materialShader = (name) => (hasSheen ? name : name + '-no-sheen')
   let instanceBuffer,
     sceneDraws = null,
     rasterGlobals = 0,
@@ -58,8 +60,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     pathView
   try {
     const animator = createAnimationPlayer(data)
-    // Compile the unused sheen lobe out of WebGPU forward pipelines.
-    const forwardShader = hasSheen ? shaderURL : shaderURL.replace(/model\.json$/, 'model-no-sheen.json')
+    const forwardShader = shaderURL.replace(/model\.json$/, materialShader('model') + '.json')
     const response = await fetch(forwardShader)
     if (!response.ok) throw Error('Missing model shader package: ' + shaderURL)
     const shader = await response.json()
@@ -333,7 +334,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       if (!bounds) return
       if (!probes) {
         const response = await fetch(
-          new URL('model-probes.json', new URL(shaderURL, document.baseURI)),
+          new URL(materialShader('model-probes') + '.json', new URL(shaderURL, document.baseURI)),
         )
         if (!response.ok) throw Error('Missing probe shader package')
         probeShader = await response.json()
@@ -578,13 +579,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
           const packages = await Promise.all(
             [
-              hasSheen ? 'model-aa' : 'model-aa-no-sheen',
+              materialShader('model-aa'),
               'sky-aa',
               'model-motion',
               'sky-motion',
               'model-gbuffer',
-              'model-deferred',
-              hasSheen ? 'model-oit' : 'model-oit-no-sheen',
+              materialShader('model-deferred'),
+              materialShader('model-oit'),
               'model-hybrid-shadow',
             ].map(async (n) => {
               const r = await fetch(dir + n + '.json')
@@ -637,7 +638,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
           const [trace, combine] = await Promise.all(
             ['model-hybrid-reflection', 'model-deferred-half'].map(async (name) => {
-              const response = await fetch(dir + name + '.json')
+              const response = await fetch(dir + materialShader(name) + '.json')
               if (!response.ok) throw Error('Missing raster AA shader ' + name)
               return response.json()
             }),
