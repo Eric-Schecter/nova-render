@@ -20,7 +20,7 @@ Current source exposes Hybrid as the third mode, with shared HLSL, paired settin
 
 `nova_hybrid_test` and `scripts/webgpu/check-hybrid.mjs` cover single-model traversal, five independent light slots, visibility diagnostics, AA restrictions, zero automatic native readbacks and Raster/Hybrid lighting parity. Metal, Vulkan and WebGPU agree within 0.015/255 maximum mean absolute channel error for these captures.
 
-The G-buffer now stores split logarithmic view depth rather than half-float world XYZ. Two half values retain enough depth precision for ray-origin reconstruction across near/far ranges without exceeding the baseline 32-byte attachment budget. The Web visibility kernel requires DXC optimization/inlining: unoptimized function-local matrix storage loses layout through SPIR-V/WGSL lowering. Native/Web transformed-instance ray tests guard this boundary.
+The G-buffer now stores split logarithmic view depth rather than half-float world XYZ. Two half values retain enough depth precision for ray-origin reconstruction across near/far ranges without exceeding the baseline 32-byte attachment budget. Instance and BVH records store matrix columns as explicit vectors. The shared shader reconstructs matrices after loading the record, so SPIR-V to WGSL lowering uses the same layout for whole records and individual fields. Previously, a whole-record load could read vertex color as transmission and skip opaque shadow casters. The five-light Hybrid fixture and ordinary scene-shadow fixture verify visible shadows in Chrome WebGPU. The tested Hybrid captures agreed with native within 0.0282/255 mean channel error.
 
 ## Original reference geometry and camera baseline
 

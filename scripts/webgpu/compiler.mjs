@@ -87,8 +87,7 @@ export async function compile(
         ]) {
       const spv = join(dir, stage + '.spv'),
         wgsl = join(dir, stage + '.wgsl')
-      const deferredFragment =
-        model && optimizeModel && fragmentEntry === 'DeferredPSMain' && stage === 'frag'
+      const optimizedModelFragment = model && optimizeModel && stage === 'frag'
       await exec(
         dxc,
         [
@@ -98,8 +97,8 @@ export async function compile(
           // DXC LICM hoists storage pointers across nested MIS/BVH loops.
           // Naga cannot spill those pointers into WGSL function variables.
           ...(compute ? ['-DNOVA_WEB_BVH=1'] : []),
-          // Preserve storage-matrix inlining without LICM's non-storable pointer spills.
-          ...(deferredFragment
+          // Inline storage accesses without LICM's non-storable pointer spills.
+          ...(optimizedModelFragment
             ? ['-Oconfig=' + modelWGSLPasses.map((pass) => '--' + pass).join(',')]
             : []),
           ...((compute && !optimizeCompute) || (model && stage === 'frag' && !sky && !optimizeModel)
@@ -118,7 +117,7 @@ export async function compile(
           spv,
           hlsl,
         ],
-        { timeout: deferredFragment ? 60000 : 15000, maxBuffer: 262144 },
+        { timeout: optimizedModelFragment ? 60000 : 15000, maxBuffer: 262144 },
       )
       await exec(
         process.execPath,

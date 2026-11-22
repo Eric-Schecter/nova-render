@@ -114,7 +114,32 @@ struct InstanceData
     float4   emissive;
     float4   uv;
 };
-[[vk::binding(14, 0)]] StructuredBuffer<InstanceData> instances : register(t11);
+// Keep the storage layout in vec4 columns so individual and whole-record loads
+// agree after SPIR-V is lowered to WGSL. The CPU record stays 192 bytes.
+struct PackedInstanceData
+{
+    JointMatrix world;
+    JointMatrix normalMatrix;
+    float4 baseColor;
+    float4 material;
+    float4 emissive;
+    float4 uv;
+};
+[[vk::binding(14, 0)]] StructuredBuffer<PackedInstanceData> instances : register(t11);
+
+InstanceData loadInstance(uint index)
+{
+    PackedInstanceData packed = instances[index];
+    InstanceData record;
+    record.world = transpose(float4x4(packed.world.c0, packed.world.c1, packed.world.c2, packed.world.c3));
+    record.normalMatrix = transpose(float4x4(
+      packed.normalMatrix.c0, packed.normalMatrix.c1, packed.normalMatrix.c2, packed.normalMatrix.c3));
+    record.baseColor = packed.baseColor;
+    record.material = packed.material;
+    record.emissive = packed.emissive;
+    record.uv = packed.uv;
+    return record;
+}
 
 float3 encodeDisplayRGB(float3 color);
 float3 diagnosticLinear(float3 color);
@@ -122,7 +147,7 @@ float3 applyFog(float3 color, float3 position)
 {
     if (irradiance[3].w < .5)
         return color;
-    InstanceData globals = instances[uint(irradiance[3].w) - 1];
+    InstanceData globals = loadInstance(uint(irradiance[3].w) - 1);
     float        mode    = globals.baseColor.w;
     if (mode < .5)
         return color;
@@ -201,7 +226,7 @@ bool intersectSceneTriangle(InstanceData tri, float3 origin, float3 direction, f
     distance        = dot(f, q) * inverse;
     if (!(v >= 0 && u + v <= 1 && distance > 1e-5 && distance < maxDistance))
         return false;
-    InstanceData material = instances[materialBase + uint(tri.emissive.w)];
+    InstanceData material = loadInstance(materialBase + uint(tri.emissive.w));
     uint         flags = uint(material.emissive.w), mode = flags & 3;
     // Fully transmitting dielectrics should not block opaque visibility rays.
     if (shadowOnly && tri.world._m21 >= 1 && material.material.x == 0)
@@ -227,21 +252,21 @@ bool shadowTriangle(InstanceData tri, float3 origin, float3 direction, float max
 }
 bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistance, bool shadowOnly = true)
 {
-    InstanceData settings = instances[header];
+    InstanceData settings = loadInstance(header);
     [loop] for (uint i = 0; i < uint(settings.emissive.x); i++)
     {
-        InstanceData instance = instances[i];
+        InstanceData instance = loadInstance(i);
         if (shadowOnly && instance.uv.z < .5)
             continue;
         // Explicit BVH transform components; the Web visibility kernel is optimized
         // to inline matrix storage access before SPIR-V/WGSL lowering.
-        float3 translation = float3(instances[i].world._m03, instances[i].world._m13, instances[i].world._m23);
+        float3 translation = float3(loadInstance(i).world._m03, loadInstance(i).world._m13, loadInstance(i).world._m23);
         float3 nx =
-          float3(instances[i].normalMatrix._m00, instances[i].normalMatrix._m10, instances[i].normalMatrix._m20);
+          float3(loadInstance(i).normalMatrix._m00, loadInstance(i).normalMatrix._m10, loadInstance(i).normalMatrix._m20);
         float3 ny =
-          float3(instances[i].normalMatrix._m01, instances[i].normalMatrix._m11, instances[i].normalMatrix._m21);
+          float3(loadInstance(i).normalMatrix._m01, loadInstance(i).normalMatrix._m11, loadInstance(i).normalMatrix._m21);
         float3 nz =
-          float3(instances[i].normalMatrix._m02, instances[i].normalMatrix._m12, instances[i].normalMatrix._m22);
+          float3(loadInstance(i).normalMatrix._m02, loadInstance(i).normalMatrix._m12, loadInstance(i).normalMatrix._m22);
         float3 delta          = origin - translation;
         float3 localOrigin    = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
         float3 localDirection = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
@@ -252,7 +277,7 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
         uint   root = header + 1 + uint(instance.uv.y), node = 0, count = uint(instance.uv.w);
         [loop] while (node < count)
         {
-            InstanceData box = instances[root + node];
+            InstanceData box = loadInstance(root + node);
             if (!shadowBox(box.baseColor.xyz, box.material.xyz, localOrigin, inverseDirection, parallel, maxDistance))
             {
                 node = uint(box.baseColor.w);
@@ -265,7 +290,7 @@ bool sceneOccluded(uint header, float3 origin, float3 direction, float maxDistan
                 continue;
             }
             [loop] for (uint t = 0; t < triangles; t++) if (shadowTriangle(
-                                                              instances[root + uint(box.uv.z) + t],
+                                                              loadInstance(root + uint(box.uv.z) + t),
                                                               localOrigin,
                                                               localDirection,
                                                               maxDistance,
@@ -285,7 +310,7 @@ float sceneVisibility(float3 position, float3 normal, float3 light, float softne
     if (irradiance[3].w < .5)
         return 1;
     uint         header   = uint(irradiance[3].w) - 1;
-    InstanceData settings = instances[header];
+    InstanceData settings = loadInstance(header);
     if ((irradiance[1].w > .5 ? irradiance[4].w < .5 : settings.emissive.y < .5) || settings.emissive.x < .5)
         return 1;
     light          = normalize(light);
@@ -312,7 +337,7 @@ float localLightVisibility(float3 position, float3 normal, float3 lightPosition,
     if (irradiance[3].w < .5)
         return 1;
     uint         header   = uint(irradiance[3].w) - 1;
-    InstanceData settings = instances[header];
+    InstanceData settings = loadInstance(header);
     if ((irradiance[1].w > .5 ? irradiance[4].w < .5 : settings.emissive.y < .5) || settings.emissive.x < .5)
         return 1;
     float3 origin   = position + normalize(normal) * settings.uv.x;
@@ -384,13 +409,13 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     instanceId += drawOffsets.y;
 #endif
     bool   scene         = lightDirection.w > .5 && lightDirection.w < 1.5;
-    float  palette       = scene ? instances[instanceId].normalMatrix._m03 : 1;
+    float  palette       = scene ? loadInstance(instanceId).normalMatrix._m03 : 1;
     Vertex v             = skinVertex(id, uint(max(0, palette - 1)), palette > .5);
     uint   materialIndex = uint(max(1, v.position.w)) - 1;
     v.position.w         = 1;
     if (lightDirection.w > .5 && lightDirection.w < 1.5)
     {
-        InstanceData instance = instances[instanceId];
+        InstanceData instance = loadInstance(instanceId);
         materialIndex += uint(instance.uv.x);
         v.position   = mul(instance.world, v.position);
         v.normal.xyz = mul((float3x3)instance.normalMatrix, v.normal.xyz);
@@ -398,7 +423,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     VertexOut o;
     o.winding = 1;
     if (lightDirection.w > .5 && lightDirection.w < 1.5)
-        o.winding = determinant((float3x3)instances[instanceId].world) < 0 ? -1 : 1;
+        o.winding = determinant((float3x3)loadInstance(instanceId).world) < 0 ? -1 : 1;
     o.instanceIndex   = materialIndex;
     o.position        = mul(viewProjection, v.position);
     if (v.uv1.z > .5)
@@ -409,7 +434,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             other = float4(skinVertex(rasterOtherEndpoint(id, v.uv1.zw), uint(max(0, palette - 1)),
                                      palette > .5).position.xyz, 1);
             if (scene)
-                other = mul(instances[instanceId].world, other);
+                other = mul(loadInstance(instanceId).world, other);
         }
         o.position = expandRasterPrimitive(o.position, mul(viewProjection, other), v.uv1.zw);
         o.winding = 0;
@@ -741,7 +766,7 @@ SurfaceData sampleSurface(VertexOut input)
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
     if (lightDirection.w > .5)
     {
-        InstanceData instance = instances[input.instanceIndex];
+        InstanceData instance = loadInstance(input.instanceIndex);
         baseUV                = wrapBaseUV(uv, instance.emissive.w) * instance.uv.xy + instance.uv.zw;
         uv                    = frac(uv) * instance.uv.xy + instance.uv.zw;
         aoUV                  = instance.world._m21 > .5 ? frac(input.uv1) * instance.uv.xy + instance.uv.zw : uv;
@@ -813,7 +838,7 @@ SurfaceData sampleSurface(VertexOut input)
       materialRecord.uv.xy + materialRecord.uv.zw : uv;
     float4 mr = materialTexture.Sample(textureSampler, mrUV);
     bool useMirrorRoughness = irradiance[1].w > .5 && irradiance[3].w > .5
-                               && instances[uint(irradiance[3].w) - 1].world._m13 > .5;
+                               && loadInstance(uint(irradiance[3].w) - 1).world._m13 > .5;
     float metallic = saturate(mr.b * matFactor.x);
     float roughness = clamp(mr.g * matFactor.y, useMirrorRoughness ? .02 : .06, 1);
     float       ao = lerp(1, occlusionTexture.Sample(textureSampler, aoUV).r, matFactor.w);
@@ -918,7 +943,7 @@ float3 rectangleSample(InstanceData light, uint index, uint count)
 uint rectangleShadowSamples()
 {
     return clamp(uint(irradiance[1].w > .5 ? irradiance[2].w
-                : instances[uint(irradiance[3].w) - 1].emissive.w), 1u, 16u);
+                : loadInstance(uint(irradiance[3].w) - 1).emissive.w), 1u, 16u);
 }
 float rectangleVisibility(InstanceData light, float3 position, float3 normal)
 {
@@ -1053,17 +1078,17 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     if (irradiance[3].w > .5)
     {
         header     = uint(irradiance[3].w) - 1;
-        collection = instances[header].uv.w > .5;
+        collection = loadInstance(header).uv.w > .5;
     }
     float3 color = 0;
     float3 coatEnvironment = clearcoatEnvironment(s, v);
     float3 baseEnvironment, diffuseAmbient;
     if (collection)
     {
-        uint count = uint(instances[header].uv.y), offset = uint(instances[header].uv.z);
+        uint count = uint(loadInstance(header).uv.y), offset = uint(loadInstance(header).uv.z);
         [loop] for (uint i = 0; i < count; ++i)
         {
-            InstanceData source      = instances[offset + i];
+            InstanceData source      = loadInstance(offset + i);
             uint         type        = uint(source.emissive.w);
             if (type == 3)
             {
@@ -1111,7 +1136,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
               s.position,
               s.geometricNormal,
               lightDirection.xyz,
-              irradiance[3].w > .5 ? instances[uint(irradiance[3].w) - 1].emissive.z : 0)),
+              irradiance[3].w > .5 ? loadInstance(uint(irradiance[3].w) - 1).emissive.z : 0)),
           coatTransmission);
     float3 f0 = lerp(dielectricF0(s.specular), base, metallic);
     float  f90 = lerp(s.specular.a, 1, metallic);
@@ -1239,10 +1264,10 @@ float3 glassRadiance(SurfaceData s, float2 pixel)
     if (emissiveFactor.w > .5 && irradiance[3].w > .5)
     {
         uint header = uint(irradiance[3].w) - 1;
-        uint count = uint(instances[header].uv.y), offset = uint(instances[header].uv.z);
+        uint count = uint(loadInstance(header).uv.y), offset = uint(loadInstance(header).uv.z);
         [loop] for (uint i = 0; i < count; ++i)
         {
-            InstanceData light = instances[offset + i];
+            InstanceData light = loadInstance(offset + i);
             if (uint(light.emissive.w) != 3 || light.baseColor.w <= 0)
                 continue;
             float planeDistance = dot(s.position - light.material.xyz, light.emissive.xyz);
@@ -1332,7 +1357,7 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     o.filmMap = float4(s.filmMap, encodeAnisotropy(s.normal, s.anisotropy));
     if (lightDirection.w > .5)
     {
-        InstanceData material = instances[input.instanceIndex];
+        InstanceData material = loadInstance(input.instanceIndex);
         if (materialSheenMaps(material) & 3u)
         {
             if (uint(material.world._m22) & 3u)
@@ -1432,7 +1457,7 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
     {
         float3 position = surfacePosition(input, gPosition.Load(pixel).xy), normal = octDecode(gNormals.Load(pixel).zw);
         uint   header        = uint(irradiance[3].w) - 1;
-        InstanceData globals = instances[header];
+        InstanceData globals = loadInstance(header);
         float2 blue = -1;
 #if defined(NOVA_HYBRID_BLUE_NOISE)
         if (uint(globals.world._m33) & 2u)
@@ -1448,7 +1473,7 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
             uint count = min(16, uint(globals.uv.y)), offset = uint(globals.uv.z);
             [loop] for (uint i = 0; i < count; i++)
             {
-                InstanceData light = instances[offset + i];
+                InstanceData light = loadInstance(offset + i);
                 if (light.uv.z <= .5 || light.baseColor.w <= 0)
                     continue;
                 uint type = uint(light.emissive.w);
@@ -1492,15 +1517,15 @@ float hybridAO(float3 position, float3 normal, float rotation)
     if (irradiance[3].w < .5)
         return 1;
     uint  header = uint(irradiance[3].w) - 1;
-    float radius = instances[header].world._m00;
+    float radius = loadInstance(header).world._m00;
     if (radius <= 0)
         return 1;
-    uint   samples   = uint(instances[header].world._m10);
-    float  strength  = instances[header].world._m20;
+    uint   samples   = uint(loadInstance(header).world._m10);
+    float  strength  = loadInstance(header).world._m20;
     float3 tangent   = normalize(cross(abs(normal.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), normal));
     float3 bitangent = cross(normal, tangent);
     float  visible   = 0;
-    float3 origin    = position + normal * max(1e-4, instances[header].uv.x);
+    float3 origin    = position + normal * max(1e-4, loadInstance(header).uv.x);
     [loop] for (uint i = 0; i < samples; ++i)
     {
         float  r = sqrt((i + .5) / samples), phi = i * 2.39996323 + rotation;
@@ -1535,28 +1560,28 @@ bool hybridNearest(
     bool found  = false;
     hitInstance = hitTriangle = 0;
     hitBary                   = 0;
-    [loop] for (uint i = 0; i < uint(instances[header].emissive.x); ++i)
+    [loop] for (uint i = 0; i < uint(loadInstance(header).emissive.x); ++i)
     {
-        if (instances[i].baseColor.w < 0
-            && !shadowBox(instances[i].baseColor.xyz, instances[i].material.xyz, origin, direction, distance))
+        if (loadInstance(i).baseColor.w < 0
+            && !shadowBox(loadInstance(i).baseColor.xyz, loadInstance(i).material.xyz, origin, direction, distance))
             continue;
-        float3 translation = float3(instances[i].world._m03, instances[i].world._m13, instances[i].world._m23);
+        float3 translation = float3(loadInstance(i).world._m03, loadInstance(i).world._m13, loadInstance(i).world._m23);
         float3 nx =
-          float3(instances[i].normalMatrix._m00, instances[i].normalMatrix._m10, instances[i].normalMatrix._m20);
+          float3(loadInstance(i).normalMatrix._m00, loadInstance(i).normalMatrix._m10, loadInstance(i).normalMatrix._m20);
         float3 ny =
-          float3(instances[i].normalMatrix._m01, instances[i].normalMatrix._m11, instances[i].normalMatrix._m21);
+          float3(loadInstance(i).normalMatrix._m01, loadInstance(i).normalMatrix._m11, loadInstance(i).normalMatrix._m21);
         float3 nz =
-          float3(instances[i].normalMatrix._m02, instances[i].normalMatrix._m12, instances[i].normalMatrix._m22);
+          float3(loadInstance(i).normalMatrix._m02, loadInstance(i).normalMatrix._m12, loadInstance(i).normalMatrix._m22);
         float3 delta = origin - translation;
         float3 o     = float3(dot(nx, delta), dot(ny, delta), dot(nz, delta));
         float3 d     = float3(dot(nx, direction), dot(ny, direction), dot(nz, direction));
         bool3 parallel = abs(d) < 1e-15;
         float3 reciprocal = rcp(float3(parallel.x ? 1 : d.x, parallel.y ? 1 : d.y, parallel.z ? 1 : d.z));
-        uint   materialBase = uint(instances[i].uv.x);
-        uint   root = header + 1 + uint(instances[i].uv.y), node = 0, count = uint(instances[i].uv.w);
+        uint   materialBase = uint(loadInstance(i).uv.x);
+        uint   root = header + 1 + uint(loadInstance(i).uv.y), node = 0, count = uint(loadInstance(i).uv.w);
         [loop] while (node < count)
         {
-            InstanceData box = instances[root + node];
+            InstanceData box = loadInstance(root + node);
             if (!nearestHitBox(box.baseColor.xyz, box.material.xyz, o, reciprocal, parallel, distance))
             {
                 node = uint(box.baseColor.w);
@@ -1571,7 +1596,7 @@ bool hybridNearest(
             [loop] for (uint t = 0; t < triangles; ++t)
             {
                 uint         index = root + uint(box.uv.z) + t;
-                InstanceData tri   = instances[index];
+                InstanceData tri   = loadInstance(index);
                 float candidateDistance;
                 float2 candidateBary;
                 if (!intersectSceneTriangle(tri, o, d, distance, materialBase, false, candidateDistance, candidateBary))
@@ -1613,8 +1638,8 @@ float3 probeDiffuseRadiance(SurfaceData surface, float3 view, float3 irradiance)
 float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 position, float3 ray,
                          float probeFeedback = 0)
 {
-    InstanceData tri = instances[hitTri];
-    InstanceData mat = instances[uint(instances[instance].uv.x) + uint(tri.emissive.w)];
+    InstanceData tri = loadInstance(hitTri);
+    InstanceData mat = loadInstance(uint(loadInstance(instance).uv.x) + uint(tri.emissive.w));
     float2 uv0 = tri.uv.xy, uv1 = tri.uv.zw;
     float2 uv2 = float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]);
     float2 uv1a = float2(tri.world._m00, tri.world._m10);
@@ -1627,7 +1652,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float3 localEdge1 = tri.material.xyz - tri.baseColor.xyz;
     float3 localEdge2 = tri.emissive.xyz - tri.baseColor.xyz;
     float3 worldNormal = normalize(mul(
-      (float3x3)instances[instance].normalMatrix, cross(localEdge1, localEdge2)));
+      (float3x3)loadInstance(instance).normalMatrix, cross(localEdge1, localEdge2)));
     if (dot(worldNormal, ray) > 0)
         worldNormal = -worldNormal;
 
@@ -1659,8 +1684,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
             float3 coatMap = coatNormalTexture.SampleLevel(textureSampler,
                 frac(coatUV.normal) * mat.uv.xy + mat.uv.zw, 0).xyz * 2 - 1;
             hit.coatNormal = applyCoatNormal(worldNormal, coatMap, coatUV.scale,
-                mul((float3x3)instances[instance].world, localEdge1),
-                mul((float3x3)instances[instance].world, localEdge2),
+                mul((float3x3)loadInstance(instance).world, localEdge1),
+                mul((float3x3)loadInstance(instance).world, localEdge2),
                 uvSet ? uv1b - uv1a : uv1 - uv0, uvSet ? uv1c - uv1a : uv2 - uv0);
         }
     }
@@ -1670,8 +1695,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float3 hitTangent = 0, hitBitangent = 0;
     if (abs(uvDet) > 1e-8)
     {
-        float3 edge1 = mul((float3x3)instances[instance].world, localEdge1);
-        float3 edge2 = mul((float3x3)instances[instance].world, localEdge2);
+        float3 edge1 = mul((float3x3)loadInstance(instance).world, localEdge1);
+        float3 edge2 = mul((float3x3)loadInstance(instance).world, localEdge2);
         // The determinant sign preserves the orientation of mirrored UV charts.
         float3 t = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * sign(uvDet);
         float3 b = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * sign(uvDet);
@@ -1747,8 +1772,8 @@ void HybridProbeUpdateCS(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
     uint instance, hitTriangle;
     float2 bary;
     float3 radiance = 0;
-    bool sampleSky = cameraForward.w > .5 && instances[probeSceneHeader].world._m22 > .5;
-    bool feedback = sampleSky && instances[probeSceneHeader].world._m32 > .5;
+    bool sampleSky = cameraForward.w > .5 && loadInstance(probeSceneHeader).world._m22 > .5;
+    bool feedback = sampleSky && loadInstance(probeSceneHeader).world._m32 > .5;
     if (hybridNearest(probeSceneHeader, origin, ray, distance, instance, hitTriangle, bary))
         radiance = hybridHitRadiance(instance, hitTriangle, bary, origin + ray * distance, ray, feedback ? .65 : 0);
     else if (sampleSky)
@@ -1841,8 +1866,8 @@ void HybridProbeUpdateCS(uint3 thread : SV_DispatchThreadID)
     float rotation = frac(float(probeBatch.y) * .61803399 + float(probe) * .75487767) * 6.28318531;
     float3 incoming = 0;
     float2 moments = 0;
-    bool sampleSky = cameraForward.w > .5 && instances[probeSceneHeader].world._m22 > .5;
-    bool probeFeedback = sampleSky && instances[probeSceneHeader].world._m32 > .5;
+    bool sampleSky = cameraForward.w > .5 && loadInstance(probeSceneHeader).world._m22 > .5;
+    bool probeFeedback = sampleSky && loadInstance(probeSceneHeader).world._m32 > .5;
     [loop] for (uint j = 0; j < sampleCount; ++j)
     {
         float u = (j + .5) / sampleCount, phi = rotation + j * 2.39996323;
@@ -1986,14 +2011,14 @@ float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
     float3 n = surface.geometricNormal;
     float3 t = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n));
     float3 b = cross(n, t);
-    float3 origin = surface.position + n * max(1e-4, instances[header].uv.x);
+    float3 origin = surface.position + n * max(1e-4, loadInstance(header).uv.x);
     float3 incoming = 0;
     const uint samples = 4;
     [loop] for (uint j = 0; j < samples; ++j)
     {
         float u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
         float3 ray = sqrt(u) * (t * cos(phi) + b * sin(phi)) + n * sqrt(1 - u);
-        float distance = instances[header].world._m31;
+        float distance = loadInstance(header).world._m31;
         uint instance, hitTriangle;
         float2 bary;
         // The existing environment lighting already accounts for rays that leave the scene.
@@ -2005,7 +2030,7 @@ float3 hybridDiffuseBounce(SurfaceData surface, uint header, float rotation)
 
 bool hybridMirror(uint header, float roughness)
 {
-    return instances[header].world._m13 > .5 && roughness <= .05002;
+    return loadInstance(header).world._m13 > .5 && roughness <= .05002;
 }
 
 float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n, float rough,
@@ -2015,7 +2040,7 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
     filteredByProbe = false;
 #if defined(NOVA_HYBRID_PROBES)
     if (rough >= .8 && probeDimensionsFirst.x > 0 && cameraForward.w > .5
-        && instances[header].world._m23 > .5)
+        && loadInstance(header).world._m23 > .5)
     {
         float coverage;
         float3 reflected = reflect(-v, n);
@@ -2032,9 +2057,9 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
         }
     }
 #endif
-    float  maxDistance = instances[header].world._m01;
+    float  maxDistance = loadInstance(header).world._m01;
     bool mirror = hybridMirror(header, rough);
-    uint samples = mirror ? 1 : uint(instances[header].world._m11);
+    uint samples = mirror ? 1 : uint(loadInstance(header).world._m11);
     float3 tangent   = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
            bitangent = cross(n, tangent);
     bool aniso = baseLayer && primary.anisotropy.w > 0;
@@ -2065,7 +2090,7 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
         float  distance = maxDistance;
         uint   instance, hitTri;
         float2 bary;
-        float3 origin = primary.position + primary.geometricNormal * max(1e-4, instances[header].uv.x);
+        float3 origin = primary.position + primary.geometricNormal * max(1e-4, loadInstance(header).uv.x);
         float3 radiance;
         if (hybridNearest(header, origin, ray, distance, instance, hitTri, bary))
         {
@@ -2081,7 +2106,7 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
             }
             float probeWeight = 0;
 #if defined(NOVA_HYBRID_PROBES)
-            if (probeDimensionsFirst.x > 0 && cameraForward.w > .5 && instances[header].world._m03 > .5)
+            if (probeDimensionsFirst.x > 0 && cameraForward.w > .5 && loadInstance(header).world._m03 > .5)
                 probeWeight = 1;
 #endif
             radiance = hybridHitRadiance(instance, hitTri, bary, origin + ray * distance, ray, probeWeight);
@@ -2158,7 +2183,7 @@ float4 HybridAOPSMain(SkyOut input) : SV_Target
     float3 position = surfacePosition(input, gPosition.Load(pixel).xy);
     float angle = hybridFrameRotation(uint2(pixel.xy), -skyParams.z);
 #if defined(NOVA_HYBRID_BLUE_NOISE)
-    if (irradiance[3].w > .5 && (uint(instances[uint(irradiance[3].w) - 1].world._m33) & 1u) != 0)
+    if (irradiance[3].w > .5 && (uint(loadInstance(uint(irradiance[3].w) - 1).world._m33) & 1u) != 0)
         angle = novaBluePhase(uint2(local), uint(-skyParams.z - 1));
 #endif
     return float4(hybridAO(position, normal, angle), 0, 0, 1);
@@ -2192,22 +2217,22 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     s.metallic = gEmission.Load(pixel).w;
     s.specular = 1;
     if (pos.w > .5 && irradiance[3].w > pos.w)
-        deferredMaterialLayers(s, instances[uint(irradiance[3].w - 1 - pos.w)], pixel);
+        deferredMaterialLayers(s, loadInstance(uint(irradiance[3].w - 1 - pos.w)), pixel);
     float4 coat = gClearcoat.Load(pixel);
     s.coatNormal = octDecode(coat.xy);
     s.clearcoat = coat.zw;
     uint header = uint(irradiance[3].w) - 1;
-    bool traceCoat = instances[header].world._m02 > .5;
+    bool traceCoat = loadInstance(header).world._m02 > .5;
     float hitDistance;
     bool skipDenoise;
     float rotation = hybridFrameRotation(uint2(pixel.xy), abs(irradiance[6].w));
 #if defined(NOVA_HYBRID_BLUE_NOISE)
-    if (uint(instances[header].world._m33) & 4u)
+    if (uint(loadInstance(header).world._m33) & 4u)
         rotation = novaBluePhase(uint2(local) + uint2(13, 3), uint(max(0, abs(irradiance[6].w) - 1)));
 #endif
     float3 reflected = hybridReflection(
       s, rotation, header, traceCoat,
-      instances[header].world._m12 > .5 && cameraUp.w >= 0, hitDistance, skipDenoise);
+      loadInstance(header).world._m12 > .5 && cameraUp.w >= 0, hitDistance, skipDenoise);
     // Positive alpha below 1 marks a valid sample that bypasses reflection denoising.
     return float4(reflected, skipDenoise ? .5 : 1 + log2(1 + hitDistance));
 }
@@ -2295,7 +2320,7 @@ void upsampleRasterShadows(inout SurfaceData s, int2 pixel, float logDepth, floa
     float4 visibility0 = 0, visibility1 = 0, visibility2 = 0, visibility3 = 0;
     float total = 0;
     uint header = uint(irradiance[3].w) - 1;
-    uint count = instances[header].uv.w > .5 ? uint(instances[header].uv.y) : 1;
+    uint count = loadInstance(header).uv.w > .5 ? uint(loadInstance(header).uv.y) : 1;
     [unroll] for (int y = 0; y < 2; y++)
         [unroll] for (int x = 0; x < 2; x++)
         {
@@ -2378,7 +2403,7 @@ float4 DeferredPSMain(SkyOut input)
     float reflectionOverride = -1;
     if (pos.w > .5 && irradiance[3].w > pos.w)
     {
-        InstanceData material = instances[uint(irradiance[3].w - 1 - pos.w)];
+        InstanceData material = loadInstance(uint(irradiance[3].w - 1 - pos.w));
         deferredMaterialLayers(s, material, pixel);
         reflectionOverride = material.world._m32;
     }
@@ -2386,7 +2411,7 @@ float4 DeferredPSMain(SkyOut input)
     {
         // The independent AO pass has already multiplied material occlusion in the position attachment.
         float ao = skyParams.z < -.5 ? 1 : hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
-        if (irradiance[3].w > .5 && abs(instances[uint(irradiance[3].w) - 1].world._m30 - 2) < .1)
+        if (irradiance[3].w > .5 && abs(loadInstance(uint(irradiance[3].w) - 1).world._m30 - 2) < .1)
             return float4(diagnosticLinear(ao.xxx), 1);
         s.ao *= ao;
     }
@@ -2396,8 +2421,8 @@ float4 DeferredPSMain(SkyOut input)
         float reflectionMix = 0;
         float3 reflection = 0;
         float rotation = hybridRotation(uint2(input.position.xy));
-        bool reflections = instances[header].world._m01 > 0;
-        bool traceCoat = reflections && instances[header].world._m02 > .5;
+        bool reflections = loadInstance(header).world._m01 > 0;
+        bool traceCoat = reflections && loadInstance(header).world._m02 > .5;
         if (reflections)
         {
 #if defined(NOVA_HALF_REFLECTIONS)
@@ -2408,11 +2433,11 @@ float4 DeferredPSMain(SkyOut input)
                 bool unusedSkip;
                 reflection = hybridReflection(s, rotation, header, traceCoat, false, unusedDistance, unusedSkip);
             }
-            if (instances[header].world._m30 > 2.5)
+            if (loadInstance(header).world._m30 > 2.5)
                 return float4(displayRadiance(reflection), 1);
-            reflectionMix = reflectionOverride >= 0 ? reflectionOverride : instances[header].world._m21;
+            reflectionMix = reflectionOverride >= 0 ? reflectionOverride : loadInstance(header).world._m21;
         }
-        bool diffuseBounce = instances[header].world._m31 > 0 && emissiveFactor.w > .5;
+        bool diffuseBounce = loadInstance(header).world._m31 > 0 && emissiveFactor.w > .5;
 #if defined(NOVA_HYBRID_PROBES)
         bool probes = probeDimensionsFirst.x > 0 && emissiveFactor.w > .5;
 #else
@@ -2427,7 +2452,7 @@ float4 DeferredPSMain(SkyOut input)
             if (probes && s.metallic < 1)
             {
                 float coverage;
-                bool probeSky = cameraForward.w > .5 && instances[header].world._m22 > .5;
+                bool probeSky = cameraForward.w > .5 && loadInstance(header).world._m22 > .5;
                 float3 probeLight = hybridSampleProbes(s.position, s.normal, probeSky, coverage);
                 probeDiffuse = probeLight * s.base * (1 - s.metallic)
                                * clearcoatTransmission(s, viewDirection);
@@ -2498,7 +2523,7 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     instanceId += drawOffsets.y;
 #endif
     bool   scene         = lightDirection.w > .5 && lightDirection.w < 1.5;
-    float  palette       = scene ? instances[instanceId].normalMatrix._m03 : 1;
+    float  palette       = scene ? loadInstance(instanceId).normalMatrix._m03 : 1;
     uint   paletteOffset = uint(max(0, palette - 1));
     Vertex current = skinVertex(id, paletteOffset, palette > .5), old = vertices[id];
     if (skyParams.w > .5 && palette > .5)
@@ -2531,10 +2556,10 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     current.position.w = old.position.w = 1;
     if (lightDirection.w > .5 && lightDirection.w < 1.5)
     {
-        materialIndex += uint(instances[instanceId].uv.x);
-        winding          = determinant((float3x3)instances[instanceId].world) < 0 ? -1 : 1;
-        current.position = mul(instances[instanceId].world, current.position);
-        old.position     = mul(instances[instanceId].world, old.position);
+        materialIndex += uint(loadInstance(instanceId).uv.x);
+        winding          = determinant((float3x3)loadInstance(instanceId).world) < 0 ? -1 : 1;
+        current.position = mul(loadInstance(instanceId).world, current.position);
+        old.position     = mul(loadInstance(instanceId).world, old.position);
     }
     MotionOut o;
     o.uv            = current.uv.xy;
@@ -2557,7 +2582,7 @@ float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
     float  info   = .125;
     if (lightDirection.w > .5)
     {
-        InstanceData m = instances[input.materialIndex];
+        InstanceData m = loadInstance(input.materialIndex);
         uv             = wrapBaseUV(uv, m.emissive.w) * m.uv.xy + m.uv.zw;
         factor         = m.baseColor;
         info           = m.emissive.w;
