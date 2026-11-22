@@ -4,6 +4,7 @@
 #include "Picking.hpp"
 #include "render/Scene.hpp"
 #include <map>
+#include <tuple>
 namespace render::detail
 {
     struct InstanceData
@@ -68,7 +69,8 @@ namespace render::detail
             std::array<float, 4>             uv;
             std::shared_ptr<const PickMesh>  picking;
         };
-        std::vector<std::pair<std::string, std::filesystem::path>> key;
+        using AssetKey = std::tuple<std::string, std::filesystem::path, std::optional<uint32_t>>;
+        std::vector<AssetKey> key;
         std::map<std::string, Mesh>                                meshes;
     };
 } // namespace render::detail

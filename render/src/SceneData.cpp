@@ -20,9 +20,11 @@ namespace render::detail
         if (!active)
             players.clear();
         std::map<std::string, std::filesystem::path> paths;
+        std::map<std::string, std::optional<uint32_t>> variants;
         for (const auto& a : assets)
             if (a.id.empty() || a.path.empty() || !paths.emplace(a.id, a.path).second)
                 throw std::invalid_argument("Scene assets require unique nonempty IDs and paths");
+        for (const auto& a : assets) variants.emplace(a.id, a.materialVariant);
         std::set<std::string> ids;
         std::set<std::string> referenced;
         for (const auto& i : input)
@@ -38,24 +40,22 @@ namespace render::detail
                 throw std::invalid_argument("Instance matrix must be affine");
             referenced.insert(i.assetId);
         }
-        std::vector<std::pair<std::string, std::filesystem::path>> nextKey;
+        std::vector<AssetKey> nextKey;
         for (const auto& id : referenced)
-            nextKey.emplace_back(id, paths.at(id));
+            nextKey.emplace_back(id, paths.at(id), variants.at(id));
         if (!model || nextKey != key)
         {
             std::map<std::string, Mesh> next;
             for (const auto& entry : nextKey)
             {
-                const auto&                      id   = entry.first;
-                const auto&                      path = entry.second;
+                const auto& [id, path, variant] = entry;
                 std::shared_ptr<const ModelData> data;
                 auto                             old  = meshes.find(id);
-                auto                             prev = std::find_if(
-                  key.begin(), key.end(), [&](const auto& p) { return p.first == id && p.second == path; });
+                auto                             prev = std::find(key.begin(), key.end(), entry);
                 if (old != meshes.end() && prev != key.end())
                     data = old->second.data;
                 else
-                    data = LoadGLB(path);
+                    data = LoadGLB(path, variant);
                 if (data->animation && data->skinInputs.empty())
                 {
                     AnimationPlayer prepare;

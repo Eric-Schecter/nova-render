@@ -48,7 +48,7 @@ export function nodeMatrix(n) {
     1,
   ]
 }
-export async function loadGLB(url, { pack = true } = {}) {
+export async function loadGLB(url, { pack = true, materialVariant } = {}) {
   const response = await fetch(url)
   if (!response.ok) throw Error('Load GLB: HTTP ' + response.status)
   const bytes = await response.arrayBuffer(),
@@ -80,6 +80,7 @@ export async function loadGLB(url, { pack = true } = {}) {
         ![
           'KHR_materials_transmission',
           'KHR_materials_volume',
+          'KHR_materials_variants',
           'KHR_materials_ior',
           'KHR_materials_specular',
           'KHR_materials_emissive_strength',
@@ -96,6 +97,27 @@ export async function loadGLB(url, { pack = true } = {}) {
   )
     throw Error('Expected embedded GLB data and supported glTF extensions')
   json.materials ??= []
+  const variants = json.extensions?.KHR_materials_variants?.variants ?? []
+  if (materialVariant !== undefined &&
+    (!Number.isInteger(materialVariant) || materialVariant < 0 || materialVariant >= variants.length))
+    throw Error('Unknown glTF material variant')
+  for (const mesh of json.meshes || [])
+    for (const primitive of mesh.primitives || []) {
+      const extension = primitive.extensions?.KHR_materials_variants
+      if (!extension) continue
+      if (!Array.isArray(extension.mappings)) throw Error('Invalid glTF material variant mappings')
+      const used = new Set()
+      for (const {material, variants: indices} of extension.mappings) {
+        if (!Number.isInteger(material) || material < 0 || material >= json.materials.length || !Array.isArray(indices))
+          throw Error('Invalid glTF material variant mapping')
+        for (const index of indices) {
+          if (!Number.isInteger(index) || index < 0 || index >= variants.length || used.has(index))
+            throw Error('Invalid or duplicate glTF material variant index')
+          used.add(index)
+          if (index === materialVariant) primitive.material = material
+        }
+      }
+    }
   const defaultMaterial = json.materials.length
   const raw = new DataView(bin)
   function bufferElement(viewIndex, offset, row, stride, size) {

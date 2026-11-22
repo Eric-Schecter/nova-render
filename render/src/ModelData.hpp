@@ -90,7 +90,7 @@ namespace render::detail
     static_assert(sizeof(SceneUniforms) == 384, "HLSL scene uniform layout must match");
     void                             PackMaterials(ModelData& data);
     void                             ValidateMaterial(const Material& material);
-    std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path);
+    std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path, std::optional<uint32_t> variant = {});
     std::shared_ptr<const ModelData> EmptyModelData();
     void                             ValidateDirectionalLight(const DirectionalLight& light);
     void                             ValidateCamera(const OrbitCamera& camera);

@@ -130,6 +130,7 @@ export class SceneData {
     )
     const paths = new Map()
     const strategies = new Map()
+    const variants = new Map()
     for (const a of assets) {
       if (
         !a ||
@@ -139,11 +140,13 @@ export class SceneData {
         typeof a.url !== 'string' ||
         !a.url ||
         (a.sourceSpace !== undefined && typeof a.sourceSpace !== 'boolean') ||
+        (a.materialVariant !== undefined && (!Number.isInteger(a.materialVariant) || a.materialVariant < 0)) ||
         (a.bvh !== undefined && a.bvh !== 'sah' && a.bvh !== 'median')
       )
         throw Error('Invalid scene asset ID, URL, sourceSpace or BVH strategy')
       paths.set(a.id, a.url)
       strategies.set(a.id, a.bvh ?? 'median')
+      variants.set(a.id, a.materialVariant)
     }
     const ids = new Set(),
       referenced = new Set()
@@ -166,22 +169,23 @@ export class SceneData {
       referenced.add(i.assetId)
     }
     const key = JSON.stringify(
-      [...referenced].sort().map((id) => [id, paths.get(id), strategies.get(id)]),
+      [...referenced].sort().map((id) => [id, paths.get(id), strategies.get(id), variants.get(id)]),
     )
     if (!this.model || key !== this.key) {
       const next = new Map()
       for (const id of [...referenced].sort()) {
         const previous = this.meshes.get(id)
         const data =
-          previous?.url === paths.get(id)
+          previous?.url === paths.get(id) && previous.materialVariant === variants.get(id)
             ? previous.data
-            : await loadGLB(paths.get(id), { pack: false })
+            : await loadGLB(paths.get(id), { pack: false, materialVariant: variants.get(id) })
         if (data.animation && !data.skinInputs) createAnimationPlayer(data)
         const strategy = strategies.get(id)
         next.set(id, {
           data,
           strategy,
           url: paths.get(id),
+          materialVariant: variants.get(id),
           picking:
             previous?.data === data && previous.strategy === strategy
               ? previous.picking
