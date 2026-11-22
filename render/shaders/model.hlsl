@@ -628,6 +628,18 @@ float3 encodeDisplayRGB(float3 c)
       c.y <= .0031308 ? 12.92 * c.y : 1.055 * pow(c.y, 1 / 2.4) - .055,
       c.z <= .0031308 ? 12.92 * c.z : 1.055 * pow(c.z, 1 / 2.4) - .055);
 }
+// Only the swapchain pipeline enables this. Offscreen passes stay linear.
+#if defined(NOVA_VULKAN_PRESENT)
+[[vk::constant_id(0)]] const uint encodeVulkanOutput = 0;
+#endif
+float4 presentColor(float4 color)
+{
+#if defined(NOVA_VULKAN_PRESENT)
+    if (encodeVulkanOutput)
+        color.rgb = encodeDisplayRGB(color.rgb);
+#endif
+    return color;
+}
 float3 displayRadiance(float3 color)
 {
     if (irradiance[0].w > .5)
@@ -665,11 +677,11 @@ float4 SkyPSMain(SkyOut input)
         pathTexture.GetDimensions(width, height);
         float2 halfTexel = 0.5 / float2(width, height);
         float3 color     = pathTexture.SampleLevel(textureSampler, clamp(input.uv, halfTexel, 1 - halfTexel), 0).rgb;
-        return float4(skyParams.z > 1.5 ? diagnosticLinear(color) : color, 1);
+        return presentColor(float4(skyParams.z > 1.5 ? diagnosticLinear(color) : color, 1));
     }
     float3 direction = environmentDirection(normalize(input.direction));
     float3 color     = backgroundTexture.Sample(textureSampler, direction).rgb * skyParams.x;
-    return float4(displayRadiance(color), 1);
+    return presentColor(float4(displayRadiance(color), 1));
 }
 struct SurfaceData
 {
@@ -1161,7 +1173,7 @@ float4 PSMain(VertexOut input, bool face : SV_IsFrontFace)
 {
     SurfaceData s = sampleSurface(input);
     materialCoverage(s, face, input.winding, false);
-    return shadeSurface(s);
+    return presentColor(shadeSurface(s));
 }
 [[vk::binding(17, 1)]] Texture2D<float4> gBase : register(t17);
 float3 glassRadiance(SurfaceData s, float2 pixel)

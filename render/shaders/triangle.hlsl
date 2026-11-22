@@ -12,8 +12,20 @@ VertexOut VSMain(uint id : SV_VertexID)
     output.color    = colors[id];
     return output;
 }
+#if defined(NOVA_VULKAN_PRESENT)
+[[vk::constant_id(0)]] const uint encodeVulkanOutput = 0;
+float encodeDisplayChannel(float value)
+{
+    return value <= .0031308 ? 12.92 * value : 1.055 * pow(value, 1 / 2.4) - .055;
+}
+#endif
 float4 PSMain(VertexOut input)
   : SV_Target
 {
-    return float4(input.color, 1.0);
+    float3 color = input.color;
+#if defined(NOVA_VULKAN_PRESENT)
+    if (encodeVulkanOutput)
+        color = float3(encodeDisplayChannel(color.r), encodeDisplayChannel(color.g), encodeDisplayChannel(color.b));
+#endif
+    return float4(color, 1.0);
 }

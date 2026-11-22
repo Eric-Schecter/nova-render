@@ -122,6 +122,9 @@ foreach(stage IN LISTS _nova_stages)
         endif()
     endif()
     if(NOVA_ENABLE_VULKAN)
+        if(stage STREQUAL "frag" AND shader_name MATCHES "^(triangle|model|skybox)$")
+            list(APPEND vulkan_options -DNOVA_VULKAN_PRESENT=1)
+        endif()
         set(output "${SHADER_OUTPUT_DIR}/${shader_name}.${stage}.spv")
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"

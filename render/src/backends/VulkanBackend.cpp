@@ -89,6 +89,7 @@ namespace render::detail
         VkQueue                    queue            = VK_NULL_HANDLE;
         VkSwapchainKHR             swapchain        = VK_NULL_HANDLE;
         VkFormat                   format           = VK_FORMAT_UNDEFINED;
+        bool                       encodeSwapchainRGB = false;
         VkExtent2D                 extent{};
         std::vector<VkImageView>   views;
         std::vector<VkFramebuffer> framebuffers;
@@ -683,12 +684,26 @@ namespace render::detail
             std::vector<VkSurfaceFormatKHR> formats(count);
             check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats.data()), "Surface formats");
             auto chosen = formats.front();
-            for (auto f : formats)
-                if (f.format == VK_FORMAT_B8G8R8A8_SRGB && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-                    chosen = f;
+            for (auto candidate : {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB,
+                                   VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM})
+            {
+                const auto found = std::find_if(formats.begin(), formats.end(), [candidate](const auto& f) {
+                    return f.format == candidate && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+                });
+                if (found != formats.end())
+                {
+                    chosen = *found;
+                    break;
+                }
+            }
             if (chosen.format == VK_FORMAT_UNDEFINED)
                 chosen.format = VK_FORMAT_B8G8R8A8_SRGB;
             format = chosen.format;
+            encodeSwapchainRGB =
+              chosen.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+              && (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_R8G8B8A8_UNORM
+                  || format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || format == VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                  || format == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
             extent = caps.currentExtent;
             if (extent.width == std::numeric_limits<uint32_t>::max())
             {
@@ -857,6 +872,11 @@ namespace render::detail
                 stages[0].module = vert;
                 stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
                 stages[1].module = frag;
+                const uint32_t               encode = encodeSwapchainRGB;
+                const VkSpecializationMapEntry transferEntry{0, 0, sizeof(encode)};
+                const VkSpecializationInfo transfer{1, &transferEntry, sizeof(encode), &encode};
+                if (encodeSwapchainRGB)
+                    stages[1].pSpecializationInfo = &transfer;
                 VkPipelineVertexInputStateCreateInfo vertex{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
                 VkPipelineInputAssemblyStateCreateInfo assembly{
                   VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
