@@ -34,7 +34,7 @@ Collections replace all direct lights atomically. IDs must be unique, nonempty U
 - `direction`: normalized by the SDK. Directional points **toward the source**; spot points **outward from the source**. Default [0,1,0]. A finite nonzero vector is required for directional/spot lights.
 - `range`: nonnegative world-space distance, default 0 (unlimited). Point/spot attenuation is `1 / max(distance², .01)`, multiplied by `saturate(1 - (distance/range)^4)^2` for positive range.
 - `innerConeAngle`, `outerConeAngle`: spot half angles in radians, defaults .35 and .6; `0 <= inner <= outer < pi/2`. Smoothstep falloff between cones; equal angles give a hard cone.
-- `castShadow`: default false. `shadowSoftness`: [0,4], default 1. Global `SetShadows` remains the shadow master switch and controls bias/sample count.
+- `castShadow`: default false. `shadowSoftness`: [0,20] for directional lights and [0,4] for other lights, default 1. A directional value of 16⅔ gives a sampling disk radius of 0.1 in tangent space. Global `SetShadows` remains the shadow master switch and controls bias/sample count.
 
 Invalid values, duplicate IDs and excess counts throw before replacing the previous collection. Disabled entries still count toward the limit and are validated. Only type-applicable position/direction/range/cone fields are validated.
 

@@ -3,7 +3,10 @@ import { realpathSync, mkdirSync, writeFileSync } from 'node:fs'
 import { decode } from './Screenshot.mjs'
 import assert from 'node:assert/strict'
 import { copySceneLights } from '../../web/src/Lighting.js'
+assert.equal(copySceneLights([{ id: 'sun', shadowSoftness: 20 }])[0].shadowSoftness, 20)
 for (const invalid of [
+  [{ id: 'sun', shadowSoftness: 20.01 }],
+  [{ id: 'point', type: 'point', shadowSoftness: 4.01 }],
   [{ id: 'a', type: 'spot', outerConeAngle: 2 }],
   [{ id: 'a', type: 'point', shadowSoftness: -1 }],
   [{ id: 'a' }, { id: 'a' }],

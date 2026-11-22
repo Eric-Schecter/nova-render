@@ -67,10 +67,11 @@ export function copySceneLights(input) {
       throw Error('Light color must be linear RGB in [0,1]')
     if (!Number.isFinite(light.intensity) || light.intensity < 0 || light.intensity > 100)
       throw Error('Light intensity must be in [0,100]')
+    const maxSoftness = light.type === 'directional' ? 20 : 4
     if (
       !Number.isFinite(light.shadowSoftness) ||
       light.shadowSoftness < 0 ||
-      light.shadowSoftness > 4
+      light.shadowSoftness > maxSoftness
     )
       throw Error('Invalid shadow softness')
     if (light.type !== 'directional') {

@@ -8,6 +8,10 @@ Temporal reflection rays now vary the sample elevation within each GGX stratum a
 
 The twelve reference cameras rendered all 108 effect captures on each of Metal and Vulkan. Chrome's broader Hybrid shadow regression failed with both the previous and updated shader sets. The reference parity script also exceeded its Web/native threshold on the initial raster shadow fixture before exercising the updated reflection path.
 
+## Pica Pica directional penumbra
+
+The reference directional light samples a disk of radius 0.1 in tangent space. Nova's previous collection limit of 4 mapped to 0.024. Directional lights now accept up to 20, allowing a reference match with `shadowSoftness = 0.1 / 0.006`. Both comparison captures use ACES at exposure 1 (0 post EV), four shadow samples, shadow history, and the same fitted camera, sky, light intensity, and Hybrid settings. At 766 × 431 after 32 frames, the wider disk softens the ground shadows around the console, boxes and loose props. The reference still has a bluer ground and brighter console trim. Changing the tone curve alone does not reproduce those differences. Captures are under `build/validation/pica-reflection-current`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

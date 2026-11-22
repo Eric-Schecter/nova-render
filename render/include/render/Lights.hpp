@@ -66,7 +66,8 @@ namespace render
                     fail("linear RGB color");
             if (!std::isfinite(light.intensity) || light.intensity < 0 || light.intensity > 100)
                 fail("intensity");
-            if (!std::isfinite(light.shadowSoftness) || light.shadowSoftness < 0 || light.shadowSoftness > 4)
+            const float maxSoftness = light.type == LightType::Directional ? 20.f : 4.f;
+            if (!std::isfinite(light.shadowSoftness) || light.shadowSoftness < 0 || light.shadowSoftness > maxSoftness)
                 fail("shadowSoftness");
             if (light.type != LightType::Directional)
             {

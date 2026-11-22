@@ -18,6 +18,25 @@ int main(int argc, char** argv)
     try
     {
         Require(argc == 3, "Expected API and asset directory");
+        SceneLight sun;
+        sun.id = "sun";
+        sun.shadowSoftness = 20;
+        Require(ValidateSceneLights({sun}).front().shadowSoftness == 20, "Directional softness limit");
+        for (auto type : {LightType::Directional, LightType::Point})
+        {
+            sun.type = type;
+            sun.shadowSoftness = type == LightType::Directional ? 20.01f : 4.01f;
+            bool rejected = false;
+            try
+            {
+                ValidateSceneLights({sun});
+            }
+            catch (const std::invalid_argument&)
+            {
+                rejected = true;
+            }
+            Require(rejected, "Invalid light softness accepted");
+        }
         std::string           api    = TestAPI(argv[1]);
         std::filesystem::path path   = std::filesystem::path(argv[2]) / "MaterialSample/Dual.glb";
         auto                  source = detail::LoadGLB(path);
