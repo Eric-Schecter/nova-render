@@ -79,6 +79,7 @@ namespace render::detail
         AAHybridOitReveal,
         AAModelClearcoat = 102,
         AAModelSpecularMap,
+        AAModelFilmMap,
         AAResourceCount
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
@@ -99,7 +100,7 @@ namespace render::detail
         uint32_t                                                     queueFamily = 0;
         std::function<void(void*)>                                   beforeScene;
         std::function<void(const AAPass&, void*, void*)>             draw;
-        std::function<void(void*, const std::array<void*, 10>&, int)> bindGBuffer;
+        std::function<void(void*, const std::array<void*, 11>&, int)> bindGBuffer;
     };
     struct AASpec
     {
@@ -108,7 +109,7 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
-        if (id >= AAHybridPreviousNormal && id != AAModelClearcoat && id != AAModelSpecularMap)
+        if (id >= AAHybridPreviousNormal && id != AAModelClearcoat && id != AAModelSpecularMap && id != AAModelFilmMap)
             return {w, h, 1};
         if (id >= AAModelBase)
             return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};
@@ -182,6 +183,7 @@ namespace render::detail
             {
                 used[AAModelClearcoat] = true;
                 used[AAModelSpecularMap] = true;
+                used[AAModelFilmMap] = true;
             }
             if (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
                 used[p.target + 1] = true;

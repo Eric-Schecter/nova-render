@@ -58,6 +58,12 @@ export function validateMaterial(m) {
     sheenColorFactor: Array.from(m.sheenColorFactor ?? [0, 0, 0]),
     sheenRoughnessFactor: m.sheenRoughnessFactor ?? 0,
     sheenTexCoords: Array.from(m.sheenTexCoords ?? [0, 0]),
+    iridescenceFactor: m.iridescenceFactor ?? 0,
+    iridescenceIor: m.iridescenceIor ?? 1.3,
+    iridescenceBaseIor: m.iridescenceBaseIor ?? 1.5,
+    iridescenceThicknessMinimum: m.iridescenceThicknessMinimum ?? 100,
+    iridescenceThicknessMaximum: m.iridescenceThicknessMaximum ?? 400,
+    iridescenceTexCoords: Array.from(m.iridescenceTexCoords ?? [0, 0]),
   }
   if (![0,1,2,4,5,6,8,9,10].includes(out.baseColorWrap)) throw Error("Invalid base-color texture wrapping")
   if (![0, 1].includes(out.emissiveTexCoord)) throw Error('Emissive texture coordinate set must be 0 or 1')
@@ -75,6 +81,12 @@ export function validateMaterial(m) {
     throw Error('Clearcoat coordinate set must be 0 or 1')
   if (out.specularTexCoords.length !== 2 || out.specularTexCoords.some((uv) => uv !== 0 && uv !== 1))
     throw Error('Specular coordinate set must be 0 or 1')
+  if (!Number.isFinite(out.iridescenceBaseIor) || out.iridescenceBaseIor < 1 || out.iridescenceBaseIor > 3)
+    throw Error('Film substrate index of refraction must be between one and three')
+  if (!Number.isFinite(Math.fround(out.iridescenceIor)) || out.iridescenceIor < 1)
+    throw Error('Film index of refraction must be at least one')
+  if (out.iridescenceTexCoords.length !== 2 || out.iridescenceTexCoords.some((uv) => uv !== 0 && uv !== 1))
+    throw Error('Iridescence coordinate set must be 0 or 1')
   if (out.sheenTexCoords.length !== 2 || out.sheenTexCoords.some((uv) => uv !== 0 && uv !== 1))
     throw Error('Sheen coordinate set must be 0 or 1')
   if (out.independentUVTransform && (out.independentUVTransform.length !== 6 ||
@@ -112,6 +124,9 @@ export function validateMaterial(m) {
     ['metallic', 1],
     ['specularFactor', 1],
     ['sheenRoughnessFactor', 1],
+    ['iridescenceFactor', 1],
+    ['iridescenceThicknessMinimum', 3.4028234663852886e38],
+    ['iridescenceThicknessMaximum', 3.4028234663852886e38],
     ['clearcoatFactor', 1],
     ['clearcoatRoughnessFactor', 1],
     ['normalScale', 16],
@@ -120,7 +135,7 @@ export function validateMaterial(m) {
     range(out[key], max)
     out[key] = Math.fround(out[key])
   }
-  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture", "specularTexture", "specularColorTexture", "sheenColorTexture", "sheenRoughnessTexture"]) {
+  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture", "specularTexture", "specularColorTexture", "sheenColorTexture", "sheenRoughnessTexture", "iridescenceTexture", "iridescenceThicknessTexture"]) {
     const im = m[key]
     if (im == null) {
       out[key] = null
@@ -143,15 +158,15 @@ export function validateMaterial(m) {
 }
 export function packMaterials(data) {
   if (!data.materials?.length) return data
-  if (data.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
+  if (data.materials.length > materialSlotLimit) throw Error('At most 512 material slots are supported')
   const materials = data.materials,
     first = materials[0],
-    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture || !!first.specularTexture || !!first.specularColorTexture || !!first.sheenColorTexture || !!first.sheenRoughnessTexture
+    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture || !!first.specularTexture || !!first.specularColorTexture || !!first.sheenColorTexture || !!first.sheenRoughnessTexture || !!first.iridescenceTexture || !!first.iridescenceThicknessTexture
   data.baseColor = [...first.baseColor]
   data.material = [first.metallic, first.roughness, first.normalScale, first.occlusionStrength]
   data.emissive = [...first.emissive, 0]
   const texturedCoat = materials.some(
-    (m) => m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture || m.sheenColorTexture || m.sheenRoughnessTexture,
+    (m) => m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture || m.sheenColorTexture || m.sheenRoughnessTexture || m.iridescenceTexture || m.iridescenceThicknessTexture,
   )
   const mapCount = texturedCoat ? materialTextureKeys.length : 5
   let tile = 1
@@ -161,7 +176,7 @@ export function packMaterials(data) {
       tile = Math.max(tile, im.width, im.height)
     }
   for (const m of materials)
-    for (const image of [m.transmissionTexture, m.thicknessTexture, m.specularTexture, m.specularColorTexture, m.sheenColorTexture, m.sheenRoughnessTexture])
+    for (const image of [m.transmissionTexture, m.thicknessTexture, m.specularTexture, m.specularColorTexture, m.sheenColorTexture, m.sheenRoughnessTexture, m.iridescenceTexture, m.iridescenceThicknessTexture])
       if (image) tile = Math.max(tile, image.width, image.height)
   tile = Math.min(tile, 2048)
   const cols = Math.ceil(Math.sqrt(materials.length)),
@@ -212,7 +227,12 @@ export function packMaterials(data) {
     record.set(m.sheenColorFactor ?? [0, 0, 0], 16)
     record[19] = m.sheenRoughnessFactor ?? 0
     record[20] = (m.sheenColorTexture ? 1 : 0) | (m.sheenRoughnessTexture ? 2 : 0) |
-      ((m.sheenTexCoords?.[0] ?? 0) << 2) | ((m.sheenTexCoords?.[1] ?? 0) << 3)
+      ((m.sheenTexCoords?.[0] ?? 0) << 2) | ((m.sheenTexCoords?.[1] ?? 0) << 3) |
+      (m.iridescenceTexture ? 16 : 0) | (m.iridescenceThicknessTexture ? 32 : 0) |
+      ((m.iridescenceTexCoords?.[0] ?? 0) << 6) | ((m.iridescenceTexCoords?.[1] ?? 0) << 7) |
+      (Math.round(((m.iridescenceBaseIor ?? 1.5) - 1) * 2047.5) << 8)
+    record.set([m.iridescenceFactor ?? 0, m.iridescenceIor ?? 1.3,
+      m.iridescenceThicknessMinimum ?? 100, m.iridescenceThicknessMaximum ?? 400], 28)
     if (m.independentUVTransform) {
       record.set(m.independentUVTransform, 21)
       record[27] = m.independentUVMaps
@@ -262,8 +282,11 @@ export function packMaterials(data) {
             }
             if (k === 1 && m.specularTexture)
               dst[target + 3] = channel(m.specularTexture, 3)
-            if (k === 6 && m.sheenRoughnessTexture)
-              dst[target + 3] = channel(m.sheenRoughnessTexture, 3)
+            if (k === 6) {
+              if (m.sheenRoughnessTexture) dst[target + 3] = channel(m.sheenRoughnessTexture, 3)
+              if (m.iridescenceTexture) dst[target] = channel(m.iridescenceTexture, 0)
+              if (m.iridescenceThicknessTexture) dst[target + 2] = channel(m.iridescenceThicknessTexture, 1)
+            }
             const packedColor = k === 3 ? m.specularColorTexture : k === 5 ? m.sheenColorTexture : null
             if (packedColor) {
               for (let component = 0; component < 3; component++) {

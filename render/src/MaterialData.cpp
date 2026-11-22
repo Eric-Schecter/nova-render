@@ -91,6 +91,16 @@ namespace render::detail
         for (auto uv : m.sheenTexCoords)
             if (uv > 1)
                 throw std::invalid_argument("Sheen coordinate set must be 0 or 1");
+        range(m.iridescenceFactor, 1);
+        if (!std::isfinite(m.iridescenceBaseIor) || m.iridescenceBaseIor < 1 || m.iridescenceBaseIor > 3)
+            throw std::invalid_argument("Film substrate index of refraction must be between one and three");
+        if (!std::isfinite(m.iridescenceIor) || m.iridescenceIor < 1)
+            throw std::invalid_argument("Film index of refraction must be at least one");
+        range(m.iridescenceThicknessMinimum, std::numeric_limits<float>::max());
+        range(m.iridescenceThicknessMaximum, std::numeric_limits<float>::max());
+        for (auto uv : m.iridescenceTexCoords)
+            if (uv > 1)
+                throw std::invalid_argument("Iridescence coordinate set must be 0 or 1");
         range(m.clearcoatFactor, 1);
         range(m.clearcoatRoughnessFactor, 1);
         if (!std::isfinite(m.clearcoatNormalScale))
@@ -118,7 +128,7 @@ namespace render::detail
         range(m.inverseAttenuationDistance, std::numeric_limits<float>::max());
         for (float x : m.attenuationColor)
             range(x, 1);
-        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture})
+        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture})
             if (*image && (!(*image)->width || !(*image)->height || (*image)->width > 8192 || (*image)->height > 8192
                 || (*image)->pixels.size() != size_t((*image)->width) * (*image)->height * 4))
                 throw std::invalid_argument("Volume maps require 1..8192 RGBA8 pixels");
@@ -133,17 +143,17 @@ namespace render::detail
         if (data.materials.empty())
             return;
         if (data.materials.size() > materialSlotLimit)
-            throw std::invalid_argument("At most 256 material slots are supported");
+            throw std::invalid_argument("At most 512 material slots are supported");
         uint32_t tile = 1;
         bool     auxiliaryMaps = false;
         for (const auto& m : data.materials)
         {
             ValidateMaterial(m);
             auxiliaryMaps |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture
-              || m.sheenColorTexture || m.sheenRoughnessTexture);
+              || m.sheenColorTexture || m.sheenRoughnessTexture || m.iridescenceTexture || m.iridescenceThicknessTexture);
             for (auto* im : maps(m))
                 tile = std::max({tile, im->width, im->height});
-            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture})
+            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture})
                 if (*map)
                     tile = std::max({tile, (*map)->width, (*map)->height});
         }
@@ -153,7 +163,7 @@ namespace render::detail
         std::copy(first.emissive.begin(), first.emissive.end(), data.emissive.begin());
         data.materialRecords.clear();
         const bool atlas = data.materials.size() > 1
-          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture || first.sheenColorTexture || first.sheenRoughnessTexture;
+          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture || first.sheenColorTexture || first.sheenRoughnessTexture || first.iridescenceTexture || first.iridescenceThicknessTexture;
         tile             = std::min(tile, 2048u);
         uint32_t cols    = uint32_t(std::ceil(std::sqrt(double(data.materials.size())))),
                  rows = uint32_t((data.materials.size() + cols - 1) / cols), stride = tile + 4, w = cols * stride,
@@ -215,7 +225,14 @@ namespace render::detail
             std::copy(m.sheenColorFactor.begin(), m.sheenColorFactor.end(), record.begin() + 16);
             record[19] = m.sheenRoughnessFactor;
             record[20] = float((m.sheenColorTexture ? 1u : 0u) | (m.sheenRoughnessTexture ? 2u : 0u)
-              | (m.sheenTexCoords[0] << 2) | (m.sheenTexCoords[1] << 3));
+              | (m.sheenTexCoords[0] << 2) | (m.sheenTexCoords[1] << 3)
+              | (m.iridescenceTexture ? 16u : 0u) | (m.iridescenceThicknessTexture ? 32u : 0u)
+              | (m.iridescenceTexCoords[0] << 6) | (m.iridescenceTexCoords[1] << 7)
+              | (uint32_t(std::lround((m.iridescenceBaseIor - 1) * 2047.5f)) << 8));
+            record[28] = m.iridescenceFactor;
+            record[29] = m.iridescenceIor;
+            record[30] = m.iridescenceThicknessMinimum;
+            record[31] = m.iridescenceThicknessMaximum;
             if (m.independentUVTransform)
             {
                 std::copy(m.independentUVTransform->begin(), m.independentUVTransform->end(), record.begin() + 21);
@@ -263,8 +280,15 @@ namespace render::detail
                             if (k == 5 && m.sheenColorTexture)
                                 for (size_t channel = 0; channel < 3; ++channel)
                                     pixel[channel + 1] = uint8_t(std::lround(255 * SRGBToLinear(packedChannel(m.sheenColorTexture, u, v, channel) / 255.f)));
-                            if (k == 6 && m.sheenRoughnessTexture)
-                                pixel[3] = packedChannel(m.sheenRoughnessTexture, u, v, 3);
+                            if (k == 6)
+                            {
+                                if (m.sheenRoughnessTexture)
+                                    pixel[3] = packedChannel(m.sheenRoughnessTexture, u, v, 3);
+                                if (m.iridescenceTexture)
+                                    pixel[0] = packedChannel(m.iridescenceTexture, u, v, 0);
+                                if (m.iridescenceThicknessTexture)
+                                    pixel[2] = packedChannel(m.iridescenceThicknessTexture, u, v, 1);
+                            }
                             if (k == 2)
                             {
                                 pixel[0] = packedChannel(m.thicknessTexture, u, v, 1);

@@ -26,8 +26,8 @@ export function copyRasterSettings(value) {
   return s
 }
 export const deferredLimits = {
-  maxColorAttachmentBytesPerSample: 48,
-  maxSampledTexturesPerShaderStage: 21,
+  maxColorAttachmentBytesPerSample: 56,
+  maxSampledTexturesPerShaderStage: 22,
 }
 export function canUseDeferred(limits) {
   return Object.entries(deferredLimits).every(([key, value]) => limits[key] >= value)
@@ -43,7 +43,7 @@ export function rasterCapabilities(deferred = true) {
     opaqueOnly: false,
     deferredRequiresModel: true,
     debugBypassesAAAndPost: true,
-    gBufferTargets: deferred ? 6 : 0,
-    gBufferBytesPerPixel: deferred ? 48 : 0,
+    gBufferTargets: deferred ? 7 : 0,
+    gBufferBytesPerPixel: deferred ? 56 : 0,
   }
 }

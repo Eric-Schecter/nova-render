@@ -231,7 +231,7 @@ namespace render::detail
               bool oit           = false,
               bool modelGBuffer  = false)
             {
-                const uint32_t n = modelGBuffer ? 6 : surface ? 4 : oit ? 2 : borrowedScene ? 1 : scene ? 2 : 1;
+                const uint32_t n = modelGBuffer ? 7 : surface ? 4 : oit ? 2 : borrowedScene ? 1 : scene ? 2 : 1;
                 std::vector<VkAttachmentDescription> attachments;
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -266,7 +266,7 @@ namespace render::detail
                     a.initialLayout = a.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                     attachments.push_back(a);
                 }
-                VkAttachmentReference colors[6]{}, resolves[6]{},
+                VkAttachmentReference colors[7]{}, resolves[7]{},
                   depthRef{uint32_t(attachments.size() - 1), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
                 for (uint32_t i = 0; i < n; i++)
                 {
@@ -978,7 +978,7 @@ namespace render::detail
                       (p.program <= 0 || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool nativeScene = p.program < 0;
-                    const int                attachments = p.program == -4                                           ? 6
+                    const int                attachments = p.program == -4                                           ? 7
                                                            : (p.program == 17 || p.program == 22 || p.program == -7) ? 4
                                                            : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
                                                              ? 2
@@ -992,7 +992,8 @@ namespace render::detail
                                              : nativeScene   ? AARawMultiColor
                                                              : AAMultiColor)
                                               + a
-                           : p.program == -4 && a == 5 ? AAModelSpecularMap
+                           : p.program == -4 && a == 6 ? AAModelFilmMap
+                                      : p.program == -4 && a == 5 ? AAModelSpecularMap
                                       : p.program == -4 && a == 4 ? AAModelClearcoat
                                                        : p.target + a];
                         Transition(t, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -1112,7 +1113,7 @@ namespace render::detail
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
                         if ((p.program == -5 || p.program == -6 || p.program == -7) && external.bindGBuffer)
                         {
-                            std::array<void*, 10> views{};
+                            std::array<void*, 11> views{};
                             for (size_t i = 0; i < views.size(); i++)
                                 views[i] = reinterpret_cast<void*>(textures[p.sources[i]].view);
                             external.bindGBuffer(command, views, p.program);

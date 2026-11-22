@@ -1,4 +1,5 @@
 #include "material-sheen.hlsli"
+#include "material-iridescence.hlsli"
 #ifdef NOVA_D3D12
 cbuffer DrawOffsets : register(b1)
 {
@@ -418,12 +419,16 @@ float2 independentTextureUV(InstanceData material, float2 uv, uint map, bool del
 }
 float4 materialSheen(InstanceData material)
 {
+#if defined(NOVA_DISABLE_SHEEN)
+    return 0;
+#else
     return float4(material.normalMatrix[0][0], material.normalMatrix[1][0],
                   material.normalMatrix[2][0], material.normalMatrix[3][0]);
+#endif
 }
 uint materialSheenMaps(InstanceData material)
 {
-    return uint(material.normalMatrix[0][1]);
+    return uint(material.normalMatrix[0][1]) & 15u;
 }
 float4 sampleSheenMaps(InstanceData material, float2 uv0, float2 uv1)
 {
@@ -433,6 +438,25 @@ float4 sampleSheenMaps(InstanceData material, float2 uv0, float2 uv1)
         result.rgb = coatStrengthTexture.SampleLevel(textureSampler, maps & 4u ? uv1 : uv0, 0).gba;
     if (maps & 2u)
         result.a = coatRoughnessTexture.SampleLevel(textureSampler, maps & 8u ? uv1 : uv0, 0).a;
+    return result;
+}
+float4 materialFilm(InstanceData material, float2 map)
+{
+    float factor = material.normalMatrix[0][3];
+    if (factor <= 0)
+        return 0;
+    float substrateIor = 1 + (uint(material.normalMatrix[0][1]) >> 8) / 2047.5;
+    return float4(factor * map.x, material.normalMatrix[1][3],
+                  lerp(material.normalMatrix[2][3], material.normalMatrix[3][3], map.y), substrateIor);
+}
+float2 sampleFilmMaps(InstanceData material, float2 uv0, float2 uv1)
+{
+    uint maps = (uint(material.normalMatrix[0][1]) >> 4) & 15u;
+    float2 result = 1;
+    if (maps & 1u)
+        result.x = coatRoughnessTexture.SampleLevel(textureSampler, maps & 4u ? uv1 : uv0, 0).r;
+    if (maps & 2u)
+        result.y = coatRoughnessTexture.SampleLevel(textureSampler, maps & 8u ? uv1 : uv0, 0).b;
     return result;
 }
 float2 materialClearcoat(InstanceData material)
@@ -455,8 +479,24 @@ float3 diffuseFresnel(float cosine, float3 reflection, float4 specular)
     float3 dielectric = fresnel(cosine, dielectricF0(specular), specular.a);
     return max(max(dielectric.r, dielectric.g), dielectric.b).xxx;
 }
+float3 filmDielectricReflectance(float cosine, float4 specular, float4 film)
+{
+    float3 baseF0 = min(filmBaseReflectance(film.w) * specular.rgb, 1);
+    return blendThinFilm(fresnel(cosine, baseF0, 1), cosine, baseF0, film.xyz) * specular.a;
+}
+float3 materialReflectance(float cosine, float3 base, float metallic, float4 specular, float4 film)
+{
+    if (film.x <= 0 || film.z <= 0)
+        return fresnel(cosine, lerp(dielectricF0(specular), base, metallic), lerp(specular.a, 1, metallic));
+    if (metallic <= 0)
+        return filmDielectricReflectance(cosine, specular, film);
+    float3 conductor = blendThinFilm(fresnel(cosine, base, 1), cosine, base, film.xyz);
+    if (metallic >= 1)
+        return conductor;
+    return lerp(filmDielectricReflectance(cosine, specular, film), conductor, metallic);
+}
 float3 directLight(
-  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance)
+  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance, float4 film = 0, float4 sheen = 0)
 {
     float3 halfVector = v + l;
     float3 h          = halfVector * rsqrt(max(dot(halfVector, halfVector), 1e-8));
@@ -466,9 +506,12 @@ float3 directLight(
     float  k = pow(roughness + 1, 2) / 8;
     float  g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
     float  vh = dot(v, h);
-    float3 f = fresnel(vh, lerp(dielectricF0(specular), base, metallic), lerp(specular.a, 1, metallic));
-    float3 diffuse = (1 - diffuseFresnel(vh, f, specular)) * (1 - metallic) * base / 3.14159265;
-    return (diffuse + d * g * f / (4 * nv * max(nl, 0.001))) * radiance * nl;
+    float3 f = materialReflectance(vh, base, metallic, specular, film);
+    float3 dielectric = film.x > 0 && film.z > 0
+      ? f : diffuseFresnel(vh, f, specular);
+    float3 diffuse = (1 - dielectric) * (1 - metallic) * base / 3.14159265;
+    float3 brdf = diffuse + d * g * f / (4 * nv * max(nl, 0.001));
+    return sheenLayer(sheen, n, v, l, brdf) * radiance * nl;
 }
 // Analytic studio environment; no external HDR file is required by this example.
 float3 studio(float3 r, float roughness)
@@ -570,6 +613,8 @@ struct SurfaceData
     float4 specularMap;
     float4 sheen;
     float4 sheenMap;
+    float4 film;
+    float2 filmMap;
     float2 clearcoat;
     float3 coatNormal;
     float4 visibility0, visibility1, visibility2, visibility3;
@@ -605,6 +650,7 @@ SurfaceData sampleSurface(VertexOut input)
     float  alphaInfo  = .125;
     float4 specular   = 1, specularMap = 1;
     float4 sheen = 0, sheenMap = 1;
+    float2 filmMap = 1;
     float2 clearcoat  = 0;
     InstanceData materialRecord = (InstanceData)0;
     float2 uv         = input.uv;
@@ -628,6 +674,8 @@ SurfaceData sampleSurface(VertexOut input)
             specularMap.a = normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? uv1 : uv, 0).a;
         if (specularMaps & 2u)
             specularMap.rgb = occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? uv1 : uv, 0).gba;
+        if (instance.normalMatrix[0][3] > 0)
+            filmMap = sampleFilmMaps(instance, uv, uv1);
         sheen = materialSheen(instance);
         if (any(sheen.rgb > 0))
             sheenMap = sampleSheenMaps(instance, uv, uv1);
@@ -689,6 +737,8 @@ SurfaceData sampleSurface(VertexOut input)
     result.specularMap = specularMap;
     result.sheen = sheen * sheenMap;
     result.sheenMap = sheenMap;
+    result.film = materialFilm(materialRecord, filmMap);
+    result.filmMap = filmMap;
     result.clearcoat = clearcoat;
     result.coatNormal = coatNormal;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
@@ -728,16 +778,9 @@ float clearcoatTransmission(SurfaceData s, float3 v)
 }
 float3 surfaceDirectLight(SurfaceData s, float3 v, float3 l, float3 radiance, float transmission)
 {
-    float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance);
-    float nl = saturate(dot(s.normal, l));
-    if (any(s.sheen.rgb > 0) && nl > 0)
-    {
-        float sheenScale = 1 - max(s.sheen.r, max(s.sheen.g, s.sheen.b)) *
-          max(sheenAlbedo(saturate(dot(s.normal, v)), s.sheen.a), sheenAlbedo(nl, s.sheen.a));
-        color = color * sheenScale + sheenLayer(s.sheen, s.normal, v, l, 0) * radiance * nl;
-    }
+    float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance, s.film, s.sheen);
     if (s.clearcoat.x > 0)
-        color = color * transmission + s.clearcoat.x * directLight(
+        return color * transmission + s.clearcoat.x * directLight(
           s.coatNormal, v, l, 0.04, 1, max(.06, s.clearcoat.y), 1, radiance);
     return color;
 }
@@ -827,9 +870,15 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     float3 f0 = lerp(dielectricF0(s.specular), base, metallic);
     float  f90 = lerp(s.specular.a, 1, metallic);
     float  nv = saturate(dot(n, v));
-    float3 f = fresnel(nv, f0, f90);
+    float3 f = materialReflectance(nv, base, metallic, s.specular, s.film);
     float3 diffuse = (1 - metallic) * base;
-    float3 diffuseEnergy = 1 - diffuseFresnel(nv, f, s.specular);
+    bool filmed = s.film.x > 0 && s.film.z > 0;
+    float3 diffuseEnergy = 1 - (filmed ? filmDielectricReflectance(nv, s.specular, s.film) : diffuseFresnel(nv, f, s.specular));
+    if (filmed)
+    {
+        float grazing = pow(1 - nv, 5);
+        f0 = saturate((f - f90 * grazing) / max(1 - grazing, 1e-4));
+    }
     float sheenEnergy = any(s.sheen.rgb > 0) ? sheenAlbedo(nv, s.sheen.a) : 0;
     float sheenScale = 1 - sheenEnergy * max(s.sheen.r, max(s.sheen.g, s.sheen.b));
     if (cameraForward.w > 0.5)
@@ -848,7 +897,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     {
         if (!collection)
             color += surfaceDirectLight(s, v, normalize(float3(1, 0.7, -1)), float3(1, 1.6, 2.7), coatTransmission);
-        color += sheenScale * (diffuse * (all(s.specular == 1) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4
+        color += sheenScale * (diffuse * (all(s.specular == 1) && !filmed ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4
                   + lerp(studio(reflect(-v, n), roughness) * f, raySpecular, reflectionMix))
                  * ao * coatTransmission;
         if (sheenEnergy > 0)
@@ -930,6 +979,7 @@ float3 glassRadiance(SurfaceData s, float2 pixel)
         : studio(reflectedDirection, s.roughness);
     float f = (s.dielectric.y - 1) / (s.dielectric.y + 1);
     float3 reflectance = s.dielectric.y <= 1.00001 ? 0 : fresnel(saturate(dot(s.normal, view)), (f * f).xxx, 1);
+    reflectance = blendThinFilm(reflectance, saturate(dot(s.normal, view)), (f * f).xxx, s.film.xyz);
     float3 reflection = applyFog(displayRadiance(reflected), s.position) * reflectance;
     float3 attenuation = s.volume.w > 0 ? pow(saturate(s.volume.rgb), s.volume.w) : 1;
     return transmitted * s.base * attenuation * (1 - reflectance) + reflection;
@@ -984,6 +1034,7 @@ struct ModelGBuffer
     float4 emissiveMetallic : SV_Target3;
     float4 clearcoat : SV_Target4;
     float4 specularMap : SV_Target5;
+    float4 filmMap : SV_Target6;
 };
 ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 {
@@ -1004,6 +1055,7 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
     o.specularMap = s.specularMap;
+    o.filmMap = float4(s.filmMap, 0, 0);
     if (lightDirection.w > .5)
     {
         InstanceData material = instances[input.instanceIndex];
@@ -1027,6 +1079,7 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 [[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
 [[vk::binding(31, 1)]] Texture2D<float4> gClearcoat : register(t31);
 [[vk::binding(32, 1)]] Texture2D<float4> gSpecularMap : register(t32);
+[[vk::binding(33, 1)]] Texture2D<float4> gFilmMap : register(t33);
 void deferredMaterialLayers(inout SurfaceData surface, InstanceData material, int3 pixel)
 {
     float4 modulation = gSpecularMap.Load(pixel);
@@ -1045,6 +1098,7 @@ void deferredMaterialLayers(inout SurfaceData surface, InstanceData material, in
         sheen = modulation;
     surface.specular = materialSpecular(material) * specular;
     surface.sheen = materialSheen(material) * sheen;
+    surface.film = materialFilm(material, gFilmMap.Load(pixel).rg);
 }
 [[vk::binding(21, 1)]] Texture2D<float4> hybridShadow0 : register(t21);
 [[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
@@ -1242,6 +1296,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     if (specularMaps & 2u)
         hit.specular.rgb *= occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? atlasUV1 : uv, 0).gba;
     hit.sheen = materialSheen(mat) * sampleSheenMaps(mat, uv, atlasUV1);
+    hit.film = materialFilm(mat, sampleFilmMaps(mat, uv, atlasUV1));
     hit.clearcoat = materialClearcoat(mat);
     hit.normal = hit.geometricNormal = hit.coatNormal = worldNormal;
     if (hit.clearcoat.x > 0)
@@ -1494,7 +1549,10 @@ float3 hybridReflection(SurfaceData primary, float rotation)
         float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
         float3 f0 = lerp(dielectricF0(primary.specular), primary.base, primary.metallic);
         float f90 = lerp(primary.specular.a, 1, primary.metallic);
-        sum += radiance * fresnel(vh, f0, f90) * (g * vh / (nv * nh));
+        float3 reflectance = primary.film.x > 0
+          ? materialReflectance(vh, primary.base, primary.metallic, primary.specular, primary.film)
+          : fresnel(vh, f0, f90);
+        sum += radiance * reflectance * (g * vh / (nv * nh));
     }
     return sum / max(1, samples);
 }
@@ -1587,6 +1645,7 @@ float4 DeferredPSMain(SkyOut input)
     s.metallic        = emission.w;
     s.specular        = 1;
     s.sheen           = 0;
+    s.film            = 0;
     float4 coat       = gClearcoat.Load(pixel);
     s.coatNormal      = octDecode(coat.xy);
     s.clearcoat       = coat.zw;

@@ -405,7 +405,7 @@ namespace render::detail
             info.DepthStencilState.BackFace                                   = face;
             info.SampleMask                                                   = UINT_MAX;
             info.PrimitiveTopologyType                                        = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-            info.NumRenderTargets                                             = std::string(file) == "model-gbuffer" ? 6
+            info.NumRenderTargets                                             = std::string(file) == "model-gbuffer" ? 7
                                                                                 : std::string(file) == "model-hybrid-shadow" ? 4
                                                                                 : std::string(file) == "model-oit" ? 2
                                                                                                                    : 1;
@@ -438,9 +438,9 @@ namespace render::detail
         {
             AAExternalScene external;
             external.device      = device.Get();
-            external.bindGBuffer = [this](void*, const std::array<void*, 10>& views, int program) {
+            external.bindGBuffer = [this](void*, const std::array<void*, 11>& views, int program) {
                 auto handle = modelHeap->GetCPUDescriptorHandleForHeapStart();
-                handle.ptr += (program == -6 ? 31 : program == -7 ? 21 : 11)
+                handle.ptr += (program == -6 ? 33 : program == -7 ? 22 : 11)
                               * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 for (size_t i = 0; i < (program == -6 ? 1 : views.size()); i++)
                 {
@@ -510,7 +510,7 @@ namespace render::detail
                     if (!active)
                         active = AAPipeline(pass.program == -7 ? "model-hybrid-shadow" : "model-deferred", true, 1);
                     auto h = modelHeap->GetGPUDescriptorHandleForHeapStart();
-                    h.ptr += (pass.program == -7 ? 21 : 11)
+                    h.ptr += (pass.program == -7 ? 22 : 11)
                              * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                     cmd->SetGraphicsRootDescriptorTable(9, h);
                     cmd->SetPipelineState(active.Get());
@@ -521,7 +521,7 @@ namespace render::detail
                 if (oit)
                 {
                     auto h = modelHeap->GetGPUDescriptorHandleForHeapStart();
-                    h.ptr += 31 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                    h.ptr += 33 * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                     cmd->SetGraphicsRootDescriptorTable(9, h);
                 }
                 const bool gbuffer = pass.program == -4;

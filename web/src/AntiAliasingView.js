@@ -60,6 +60,7 @@ const halton = (index, base) => {
 }
 const modelClearcoatTarget = 102
 const modelSpecularMapTarget = 103
+const modelFilmMapTarget = 104
 
 export async function createAntiAliasingView({
   canvas,
@@ -271,7 +272,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= modelSpecularMapTarget; i++)
+    for (let i = 0; i <= modelFilmMapTarget; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -403,12 +404,14 @@ export async function createAntiAliasingView({
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
           shadow.sources[9] = modelSpecularMapTarget
+          shadow.sources[10] = modelFilmMapTarget
         }
         const p = add(-5, sceneColor)
         if (external.hybrid || external.halfShadows) p.sources.splice(4, 4, 92, 93, 94, 95)
         p.sources.splice(0, 4, 85, 86, 87, 88)
         p.sources[8] = modelClearcoatTarget
         p.sources[9] = modelSpecularMapTarget
+        p.sources[10] = modelFilmMapTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
         add(-6, 89).sources[0] = 91
@@ -538,6 +541,7 @@ export async function createAntiAliasingView({
       if (p.program === -4) {
         used.add(modelClearcoatTarget)
         used.add(modelSpecularMapTarget)
+        used.add(modelFilmMapTarget)
       }
       if (p.program === 17 || p.program === -4 || p.program === -7) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
@@ -551,7 +555,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= modelSpecularMapTarget; i++) {
+    for (let i = 0; i <= modelFilmMapTarget; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -571,7 +575,7 @@ export async function createAntiAliasingView({
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
-      if ((i >= 85 && i < 96) || i === modelClearcoatTarget || i === modelSpecularMapTarget) {
+      if ((i >= 85 && i < 96) || i === modelClearcoatTarget || i === modelSpecularMapTarget || i === modelFilmMapTarget) {
         const scale = superSample ? 2 : 1
         tw = w * scale + 2
         th = h * scale + 2
@@ -580,7 +584,7 @@ export async function createAntiAliasingView({
         tw = Math.ceil((tw - 2) / 2) + 2
         th = Math.ceil((th - 2) / 2) + 2
       }
-      if (i >= 96 && i !== modelClearcoatTarget && i !== modelSpecularMapTarget) {
+      if (i >= 96 && i !== modelClearcoatTarget && i !== modelSpecularMapTarget && i !== modelFilmMapTarget) {
         tw = w
         th = h
       }
@@ -658,7 +662,7 @@ export async function createAntiAliasingView({
         {
           length:
             p.program === -4
-              ? 6
+              ? 7
               : p.program === 17 || p.program === -7
                 ? 4
                 : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
@@ -671,6 +675,8 @@ export async function createAntiAliasingView({
             : textures[
                 p.ms
                   ? (p.program === 17 ? 46 : native ? 19 : MC) + a
+                  : p.program === -4 && a === 6
+                    ? modelFilmMapTarget
                   : p.program === -4 && a === 5
                     ? modelSpecularMapTarget
                   : p.program === -4 && a === 4
@@ -726,7 +732,7 @@ export async function createAntiAliasingView({
             p.ms ? 4 : 1,
             p.program,
             p.program === -5 || p.program === -6 || p.program === -7
-              ? p.sources.slice(0, 10).map((i) => textures[i])
+              ? p.sources.slice(0, 11).map((i) => textures[i])
               : null,
           )
         pass.end()

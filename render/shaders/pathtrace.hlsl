@@ -1,4 +1,5 @@
 #include "material-sheen.hlsli"
+#include "material-iridescence.hlsli"
 struct Vertex
 {
     float4 position;
@@ -141,6 +142,9 @@ struct SurfaceMaterial
     uint sheenMapOffset;
     uint independentUVOffset;
     uint independentUVMaps;
+    float4 film;
+    uint filmMaps;
+    uint filmMapOffset;
 };
 SurfaceMaterial surfaceMaterial(Vertex vertex)
 {
@@ -157,9 +161,12 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
     m.sheenMapOffset = 0;
     m.independentUVOffset = 0;
     m.independentUVMaps = 0;
+    m.film = 0;
+    m.filmMaps = 0;
+    m.filmMapOffset = 0;
     if (asuint(parameters[27]).x > 0)
     {
-        uint at    = (uint(max(1, vertex.position.w)) - 1) * 43;
+        uint at    = (uint(max(1, vertex.position.w)) - 1) * 53;
         m.base     = asfloat(uint4(texels[at], texels[at + 1], texels[at + 2], texels[at + 3]));
         m.factors  = asfloat(uint4(texels[at + 4], texels[at + 5], texels[at + 6], texels[at + 7]));
         m.emission = asfloat(uint4(texels[at + 8], texels[at + 9], texels[at + 10], texels[at + 11]));
@@ -168,7 +175,11 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
         m.specular = asfloat(uint4(texels[at + 20], texels[at + 21], texels[at + 22], texels[at + 23]));
         m.specularMaps = uint(asfloat(texels[at + 24]));
         m.sheen = asfloat(uint4(texels[at + 25], texels[at + 26], texels[at + 27], texels[at + 28]));
-        m.sheenMaps = uint(asfloat(texels[at + 29]));
+        uint layerMaps = uint(asfloat(texels[at + 29]));
+        m.sheenMaps = layerMaps & 15u;
+        m.filmMaps = (layerMaps >> 4) & 15u;
+        m.film = asfloat(uint4(texels[at + 43], texels[at + 44], texels[at + 45], texels[at + 46]));
+        m.filmMapOffset = at + 47;
         m.sheenMapOffset = at + 30;
         m.independentUVMaps = uint(asfloat(texels[at + 42]));
         m.independentUVOffset = at + 36;
@@ -366,7 +377,7 @@ float distribution(float nh, float roughness)
     float a = roughness * roughness, a2 = a * a, q = nh * nh * (a2 - 1) + 1;
     return a2 / max(PI * q * q, 1e-7);
 }
-float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughness, float4 specular)
+float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughness, float4 specular, float3 film, float ior)
 {
     float  nv = max(dot(n, v), 1e-5), nl = max(dot(n, l), 0);
     float3 h  = normalize(v + l);
@@ -375,9 +386,16 @@ float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughn
     float  g  = nv / (nv * (1 - k) + k) * nl / max(nl * (1 - k) + k, 1e-5);
     float grazing = pow(1 - saturate(dot(v, h)), 5);
     float3 dielectricF = lerp(min(.04 * specular.rgb, 1) * specular.a, specular.a, grazing);
-    float3 f = lerp(dielectricF, fresnel(dot(v, h), base), metal);
-    float diffuseF = all(specular == 1) ? 0 : max(dielectricF.r, max(dielectricF.g, dielectricF.b));
-    float3 diffuse = (1 - (all(specular == 1) ? f : diffuseF.xxx)) * (1 - metal) * base / PI;
+    float3 conductorF = fresnel(dot(v, h), base);
+    if (film.x > 0 && film.z > 0)
+    {
+        float3 substrateF0 = min(filmBaseReflectance(ior) * specular.rgb, 1);
+        dielectricF = blendThinFilm(lerp(substrateF0, 1, grazing), dot(v, h), substrateF0, film) * specular.a;
+        conductorF = blendThinFilm(conductorF, dot(v, h), base, film);
+    }
+    float3 f = lerp(dielectricF, conductorF, metal);
+    float diffuseF = max(dielectricF.r, max(dielectricF.g, dielectricF.b));
+    float3 diffuse = (1 - (film.x > 0 && film.z > 0 ? dielectricF : all(specular == 1) ? f : diffuseF.xxx)) * (1 - metal) * base / PI;
     return diffuse + distribution(nh, roughness) * g * f / max(4 * nv * nl, 1e-5);
 }
 // Power heuristic for one sample from each strategy; scale first to avoid overflow.
@@ -526,6 +544,7 @@ struct PathVertex
     float4 volume;
     float4 specular;
     float4 sheen;
+    float3 film;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
 // whole path arrays by value would duplicate them at every connection.
@@ -551,6 +570,19 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
             p.specular.a *= textureColor(1, mat.specularMaps & 4u ? atlasUV1 : textureUV).a;
         if (mat.specularMaps & 2u)
             p.specular.rgb *= textureColor(3, mat.specularMaps & 8u ? atlasUV1 : textureUV).gba;
+    }
+    p.film = float3(mat.film.xy, mat.film.w);
+    if (mat.filmMaps && mat.film.x > 0)
+    {
+        float2 uv1 = a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z;
+        uint at = mat.filmMapOffset;
+        if (mat.filmMaps & 1u)
+            p.film.x *= sampleImage(uint4(texels[at], texels[at + 1], texels[at + 2], 0),
+                                     mat.filmMaps & 4u ? uv1 : uv).r;
+        if (mat.filmMaps & 2u)
+            p.film.z = lerp(mat.film.z, mat.film.w,
+                sampleImage(uint4(texels[at + 3], texels[at + 4], texels[at + 5], 0),
+                            mat.filmMaps & 8u ? uv1 : uv).g);
     }
     p.sheen = mat.sheen;
     if (mat.sheenMaps && any(p.sheen.rgb > 0))
@@ -729,7 +761,16 @@ float glassG1(float cosine, float roughness)
     float c2 = cosine * cosine;
     return 2 / (1 + sqrt(1 + pow(roughness, 4) * max(0, 1 - c2) / max(c2, 1e-20)));
 }
-void glassKernel(PathVertex p, float3 v, float3 l, out float value, out float pdf)
+float3 glassReflectance(PathVertex p, float cosine, float eta, bool entering)
+{
+    float f = abs(eta - 1) < 1e-6 ? 0 : dielectricFresnel(cosine, eta);
+    return entering ? blendThinFilm(f, cosine, filmBaseReflectance(eta).xxx, p.film) : f.xxx;
+}
+float filmSamplingProbability(float3 reflectance)
+{
+    return dot(reflectance, float3(.2126, .7152, .0722));
+}
+void glassKernel(PathVertex p, float3 v, float3 l, out float3 value, out float pdf)
 {
     value      = 0;
     pdf        = 0;
@@ -746,18 +787,20 @@ void glassKernel(PathVertex p, float3 v, float3 l, out float value, out float pd
     float vh = dot(v, h), lh = dot(l, h);
     if (vh <= 0 || lh * nl <= 0)
         return;
-    float f = dielectricFresnel(vh, eta), d = glassD(dot(n, h), p.roughness);
+    float3 f = glassReflectance(p, vh, eta, dot(p.geometric, v) > 0);
+    float probability = filmSamplingProbability(f);
+    float d = glassD(dot(n, h), p.roughness);
     float g = glassG1(nv, p.roughness) * glassG1(abs(nl), p.roughness);
     if (reflection)
     {
         value = f * d * g / (4 * nv * nl);
-        pdf   = f * d * dot(n, h) / (4 * abs(vh));
+        pdf   = probability * d * dot(n, h) / (4 * abs(vh));
     }
     else
     {
         float denom = lh + vh / eta;
         denom *= denom;
-        pdf   = (1 - f) * d * dot(n, h) * abs(lh) / max(denom, 1e-20);
+        pdf   = (1 - probability) * d * dot(n, h) * abs(lh) / max(denom, 1e-20);
         value = (1 - f) * d * g * abs(lh * vh / (nl * nv * max(denom, 1e-20))) / (eta * eta);
     }
 }
@@ -782,13 +825,20 @@ float3 pathF(PathVertex p, float3 v, float3 l)
 {
     if (p.unlit)
         return 0;
-    float glassValue = 0, glassPdf = 0;
+    float3 glassValue = 0;
+    float glassPdf = 0;
     if (p.transmission > 0)
     {
         if (p.ior > 1.00001)
             glassKernel(p, v, l, glassValue, glassPdf);
-        else if (dot(-v, l) > .999999)
-            glassValue = rcp(max(abs(dot(p.geometric, l)), 1e-7));
+        else
+        {
+            float3 reflectance = glassReflectance(p, abs(dot(p.geometric, v)), 1, dot(p.geometric, v) > 0);
+            if (dot(-v, l) > .999999)
+                glassValue = (1 - reflectance) / max(abs(dot(p.geometric, l)), 1e-7);
+            else if (dot(reflect(-v, p.geometric), l) > .999999)
+                glassValue = reflectance / max(abs(dot(p.geometric, l)), 1e-7);
+        }
     }
     bool crossesSurface = dot(p.geometric, v) * dot(p.geometric, l) < 0;
     float3 attenuation = crossesSurface && p.volume.w > 0 && dot(p.geometric, v) > 0
@@ -799,7 +849,7 @@ float3 pathF(PathVertex p, float3 v, float3 l)
     float cosine = dot(g, l);
     float nl = dot(n, l);
     if (cosine > 1e-7 && nl > 0)
-        value += (1 - p.transmission) * sheenLayer(p.sheen, n, v, l, brdf(n, v, l, p.base, p.metal, p.roughness, p.specular)) * nl / cosine;
+        value += (1 - p.transmission) * sheenLayer(p.sheen, n, v, l, brdf(n, v, l, p.base, p.metal, p.roughness, p.specular, p.film, p.ior)) * nl / cosine;
     if (p.coat.x <= 0)
         return value;
     float3 nc = coatFrame(p, g);
@@ -826,13 +876,21 @@ float pathPdf(PathVertex p, float3 v, float3 l)
         return 0;
     float3 n, g;
     pathFrame(p, v, n, g);
-    float value = 0, pdf = 0;
+    float3 value = 0;
+    float pdf = 0;
     if (p.transmission > 0)
     {
         if (p.ior > 1.00001)
             glassKernel(p, v, l, value, pdf);
-        else if (dot(-v, l) > .999999)
-            pdf = 1;
+        else
+        {
+            float probability = filmSamplingProbability(glassReflectance(
+                p, abs(dot(p.geometric, v)), 1, dot(p.geometric, v) > 0));
+            if (dot(-v, l) > .999999)
+                pdf = 1 - probability;
+            else if (dot(reflect(-v, p.geometric), l) > .999999)
+                pdf = probability;
+        }
     }
     bool reflection = dot(g, l) > 0;
     float base = p.transmission * pdf + (1 - p.transmission) * (reflection ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0);
@@ -882,9 +940,12 @@ bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out f
     {
         if (p.ior <= 1.00001)
         {
-            l = -v;
-            pdf = p.transmission;
-            return true;
+            float probability = filmSamplingProbability(glassReflectance(
+                p, abs(dot(p.geometric, v)), 1, dot(p.geometric, v) > 0));
+            bool reflection = probability > 0 && random(state) < probability;
+            l = reflection ? reflect(-v, p.geometric) : -v;
+            pdf = p.transmission * (reflection ? probability : 1 - probability);
+            return pdf > 0;
         }
         float3 n   = dot(p.geometric, v) > 0 ? p.geometric : -p.geometric;
         float  eta = dot(p.geometric, v) > 0 ? p.ior : 1 / p.ior;
@@ -899,7 +960,7 @@ bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out f
             pdf = 0;
             return false;
         }
-        bool reflection = random(state) < dielectricFresnel(vh, eta);
+        bool reflection = random(state) < filmSamplingProbability(glassReflectance(p, vh, eta, dot(p.geometric, v) > 0));
         l               = reflection ? reflect(-v, h) : refract(-v, h, 1 / eta);
         if (dot(l, l) < .5 || (dot(n, l) > 0) != reflection)
         {

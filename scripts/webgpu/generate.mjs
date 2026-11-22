@@ -4,14 +4,20 @@ import { compile as compileShader } from './compiler.mjs'
 const compile = (source, options = {}) =>
   compileShader(source, { ...options, maxSourceBytes: 262144 })
 const sheenSource = await readFile('render/shaders/material-sheen.hlsli', 'utf8')
+const filmSource = await readFile('render/shaders/material-iridescence.hlsli', 'utf8')
 const readMaterialShader = async (name) =>
   (await readFile(`render/shaders/${name}.hlsl`, 'utf8')).replace('#include "material-sheen.hlsli"', sheenSource)
+    .replace('#include "material-iridescence.hlsli"', filmSource)
 const result = await compile(await readFile('render/shaders/triangle.hlsl', 'utf8'))
 await mkdir('docs/public/generated', { recursive: true })
 await writeFile('docs/public/generated/triangle.json', JSON.stringify(result))
 console.log('HLSL → SPIR-V → WGSL generated')
 
-const model = await compile(await readMaterialShader('model'), { model: true })
+const modelSource = await readMaterialShader('model')
+const disableSheen = '#define NOVA_DISABLE_SHEEN 1\n'
+const model = await compile(modelSource, { model: true })
+const modelNoSheen = await compile(disableSheen + modelSource, { model: true, optimizeModel: true })
+await writeFile('docs/public/generated/model-no-sheen.json', JSON.stringify(modelNoSheen))
 await writeFile('docs/public/generated/model.json', JSON.stringify(model))
 await writeFile(
   'docs/public/generated/DamagedHelmet.glb',
@@ -156,6 +162,12 @@ for (const [name, vertexEntry, fragmentEntry] of [
     optimizeModel: ['model-hybrid-shadow', 'model-deferred'].includes(name),
   })
   await writeFile('docs/public/generated/' + name + '.json', JSON.stringify(data))
+  if (name === 'model-aa' || name === 'model-oit') {
+    const variant = await compile(disableSheen + rasterSource, {
+      model: true, vertexEntry, fragmentEntry, optimizeModel: true,
+    })
+    await writeFile('docs/public/generated/' + name + '-no-sheen.json', JSON.stringify(variant))
+  }
 }
 
 const probeUpdate = await compile(rasterSource, {

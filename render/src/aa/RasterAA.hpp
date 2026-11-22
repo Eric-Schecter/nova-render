@@ -118,6 +118,7 @@ namespace render::detail
                         shadow->sources[i] = AAModelBase + i;
                     shadow->sources[8] = AAModelClearcoat;
                     shadow->sources[9] = AAModelSpecularMap;
+                    shadow->sources[10] = AAModelFilmMap;
                 }
                 auto* p = add(-5, sceneColor);
                 if (hybrid)
@@ -127,6 +128,7 @@ namespace render::detail
                     p->sources[i] = AAModelBase + i;
                 p->sources[8] = AAModelClearcoat;
                 p->sources[9] = AAModelSpecularMap;
+                p->sources[10] = AAModelFilmMap;
             }
             else
                 add(-1, sceneColor)->multisampled = settings.method == AAMethod::MSAA;
