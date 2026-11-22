@@ -771,7 +771,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
 float4 shadeSurface(SurfaceData s)
 {
     float3 base = s.base;
-    if (emissiveFactor.w < .5)
+    if (emissiveFactor.w < .5 || (uint(s.alphaInfo) & 8u) != 0)
     {
 #if defined(NOVA_WEB_OUTPUT) && !defined(NOVA_RASTER_AA)
         base = encodeDisplayRGB(base);
@@ -867,7 +867,7 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     // index fits exactly in half precision even when the scene has many instances.
     float slotDistance = lightDirection.w > .5 && irradiance[3].w > .5
                          ? irradiance[3].w - 1 - float(input.instanceIndex) : 0;
-    o.positionAO       = float4(high, depth - high, s.ao, slotDistance);
+    o.positionAO       = float4(high, depth - high, (uint(s.alphaInfo) & 8u) ? -1 : s.ao, slotDistance);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
     return o;
@@ -1105,6 +1105,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
             hit.normal = normalize(mapped);
     }
     hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
+    if ((uint(mat.emissive.w) & 8u) != 0)
+        return hit.base;
     float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
     hit.metallic  = saturate(mr.b * mat.material.x);
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
@@ -1398,7 +1400,10 @@ float4 DeferredPSMain(SkyOut input)
     if (irradiance[1].z > .5 && irradiance[3].w > .5)
         upsampleRasterShadows(s, pixel.xy, pos.x + pos.y, s.geometricNormal);
     s.position        = surfacePosition(input, pos.xy);
-    s.ao              = pos.z;
+    s.ao              = max(0, pos.z);
+    s.alphaInfo       = pos.z < 0 ? 8 : 0;
+    if (debug == 0 && s.alphaInfo > 0)
+        return shadeSurface(s);
     s.emissive        = emission.rgb;
     s.metallic        = emission.w;
     s.specular        = 1;

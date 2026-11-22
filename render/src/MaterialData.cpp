@@ -174,7 +174,7 @@ namespace render::detail
             record[38] = m.normalScale;
             record[39] = m.occlusionStrength;
             std::copy(m.emissive.begin(), m.emissive.end(), record.begin() + 40);
-            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + m.alphaCutoff * .25f;
+            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + (m.unlit ? 8.f : 0.f) + m.alphaCutoff * .25f;
             uint32_t x = uint32_t(i) % cols * stride, y = uint32_t(i) / cols * stride;
             if (atlas)
             {

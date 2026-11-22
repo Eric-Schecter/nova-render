@@ -42,6 +42,7 @@ namespace render
         std::optional<Image>    clearcoatTexture, clearcoatRoughnessTexture, clearcoatNormalTexture;
         float                   clearcoatNormalScale = 1;
         std::array<uint32_t, 3> clearcoatTexCoords{}; // Strength, roughness, normal.
+        bool                    unlit = false;
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

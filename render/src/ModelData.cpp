@@ -264,7 +264,7 @@ namespace render::detail
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
-                  && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
+                  && extension != "KHR_materials_unlit" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -575,6 +575,7 @@ namespace render::detail
                                                           : AlphaMode::Opaque;
             slot.alphaCutoff = float(mat.alphaCutoff);
             slot.doubleSided = mat.doubleSided;
+            slot.unlit = mat.extensions.count("KHR_materials_unlit") != 0;
             std::array<float, 4> factors;
             for (int k = 0; k < 4; ++k)
                 slot.baseColor[k] = static_cast<float>(pbr.baseColorFactor[k]);

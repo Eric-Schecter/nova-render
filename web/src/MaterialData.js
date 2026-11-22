@@ -32,6 +32,7 @@ export function validateMaterial(m) {
     alphaMode: m.alphaMode ?? 'OPAQUE',
     alphaCutoff: m.alphaCutoff ?? 0.5,
     doubleSided: m.doubleSided ?? false,
+    unlit: m.unlit ?? false,
     baseColor: m.baseColor ?? [1, 1, 1, 1],
     roughness: m.roughness ?? 1,
     metallic: m.metallic ?? 1,
@@ -46,7 +47,7 @@ export function validateMaterial(m) {
     clearcoatTexCoords: Array.from(m.clearcoatTexCoords ?? [0, 0, 0]),
     specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
   }
-  if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean')
+  if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean' || typeof out.unlit !== 'boolean')
     throw Error('Invalid material alpha mode or sidedness')
   if (
     !Number.isFinite(out.clearcoatNormalScale) ||
@@ -178,6 +179,7 @@ export function packMaterials(data) {
     record[43] =
       ['OPAQUE', 'MASK', 'BLEND'].indexOf(m.alphaMode ?? 'OPAQUE') +
       (m.doubleSided ? 4 : 0) +
+      (m.unlit ? 8 : 0) +
       (m.alphaCutoff ?? 0.5) * 0.25
     record.set(
       atlas
