@@ -563,6 +563,20 @@ try {
     }))
   )
     throw Error('Invalid rectangle orientation corrupted the light collection')
+  await page.evaluate(() => {
+    r.setLights([rectangle])
+    r.setHybrid({ shadowTemporalReconstruction: true, shadowSamples: 1 })
+  })
+  const rectangleFirst = await capture('rectangle-history-first')
+  let rectangleResolved
+  for (let frame = 2; frame <= 16; frame++)
+    rectangleResolved = await capture('rectangle-history-' + frame)
+  if (
+    (await page.evaluate(() => r.getHybridHistoryFrames())) !== 16 ||
+    diff(rectangleFirst, rectangleResolved) < 0.001 ||
+    diff(rectangleLit, rectangleResolved) < 0.1
+  )
+    throw Error('Rectangle shadow history did not integrate the emitter')
   const parity = []
   for (const api of ['metal', 'vulkan'])
     for (const name of [
