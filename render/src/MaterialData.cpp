@@ -85,6 +85,12 @@ namespace render::detail
         range(m.roughness, 1);
         range(m.metallic, 1);
         range(m.specularFactor, 1);
+        for (float x : m.sheenColorFactor)
+            range(x, 1);
+        range(m.sheenRoughnessFactor, 1);
+        for (auto uv : m.sheenTexCoords)
+            if (uv > 1)
+                throw std::invalid_argument("Sheen coordinate set must be 0 or 1");
         range(m.clearcoatFactor, 1);
         range(m.clearcoatRoughnessFactor, 1);
         if (!std::isfinite(m.clearcoatNormalScale))
@@ -96,6 +102,12 @@ namespace render::detail
             if (uv > 1) throw std::invalid_argument("Specular coordinate set must be 0 or 1");
         for (float x : m.specularColorFactor)
             range(x, std::numeric_limits<float>::max());
+        if (m.independentUVMaps > 3 || (m.independentUVMaps && !m.independentUVTransform))
+            throw std::invalid_argument("Invalid independent texture map selection");
+        if (m.independentUVTransform)
+            for (float x : *m.independentUVTransform)
+                if (!std::isfinite(x))
+                    throw std::invalid_argument("Invalid independent texture mapping");
         range(m.normalScale, 16);
         range(m.occlusionStrength, 1);
         if (m.occlusionTexCoord > 1)
@@ -106,7 +118,7 @@ namespace render::detail
         range(m.inverseAttenuationDistance, std::numeric_limits<float>::max());
         for (float x : m.attenuationColor)
             range(x, 1);
-        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture})
+        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture})
             if (*image && (!(*image)->width || !(*image)->height || (*image)->width > 8192 || (*image)->height > 8192
                 || (*image)->pixels.size() != size_t((*image)->width) * (*image)->height * 4))
                 throw std::invalid_argument("Volume maps require 1..8192 RGBA8 pixels");
@@ -123,14 +135,15 @@ namespace render::detail
         if (data.materials.size() > materialSlotLimit)
             throw std::invalid_argument("At most 256 material slots are supported");
         uint32_t tile = 1;
-        bool     texturedCoat = false;
+        bool     auxiliaryMaps = false;
         for (const auto& m : data.materials)
         {
             ValidateMaterial(m);
-            texturedCoat |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture);
+            auxiliaryMaps |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture
+              || m.sheenColorTexture || m.sheenRoughnessTexture);
             for (auto* im : maps(m))
                 tile = std::max({tile, im->width, im->height});
-            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture})
+            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture})
                 if (*map)
                     tile = std::max({tile, (*map)->width, (*map)->height});
         }
@@ -140,7 +153,7 @@ namespace render::detail
         std::copy(first.emissive.begin(), first.emissive.end(), data.emissive.begin());
         data.materialRecords.clear();
         const bool atlas = data.materials.size() > 1
-          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture;
+          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture || first.sheenColorTexture || first.sheenRoughnessTexture;
         tile             = std::min(tile, 2048u);
         uint32_t cols    = uint32_t(std::ceil(std::sqrt(double(data.materials.size())))),
                  rows = uint32_t((data.materials.size() + cols - 1) / cols), stride = tile + 4, w = cols * stride,
@@ -149,19 +162,19 @@ namespace render::detail
         {
             // Large models plus small helper materials must fit the same bounded atlas.
             while (tile > 1
-                   && (w > 8192 || h > 8192 || uint64_t(w) * h * (texturedCoat ? 32 : 20) > 512ull * 1024 * 1024))
+                   && (w > 8192 || h > 8192 || uint64_t(w) * h * (auxiliaryMaps ? 32 : 20) > 512ull * 1024 * 1024))
             {
                 tile   = std::max(1u, tile / 2);
                 stride = tile + 4;
                 w      = cols * stride;
                 h      = rows * stride;
             }
-            if (w > 8192 || h > 8192 || uint64_t(w) * h * (texturedCoat ? 32 : 20) > 512ull * 1024 * 1024)
+            if (w > 8192 || h > 8192 || uint64_t(w) * h * (auxiliaryMaps ? 32 : 20) > 512ull * 1024 * 1024)
                 throw std::runtime_error("Material atlas exceeds 512 MiB / 8192px limit");
             for (size_t k = 0; k < data.images.size(); ++k)
             {
                 auto& image = data.images[k];
-                if (k >= 5 && !texturedCoat)
+                if (k >= 5 && !auxiliaryMaps)
                 {
                     image = defaults[k];
                     continue;
@@ -197,7 +210,19 @@ namespace render::detail
             record[10] = float((m.specularTexture ? 1u : 0u) | (m.specularColorTexture ? 2u : 0u)
               | (m.specularTexCoords[0] << 2) | (m.specularTexCoords[1] << 3));
             record[9] = m.clearcoatNormalScale;
+            std::copy(m.attenuationColor.begin(), m.attenuationColor.end(), record.begin() + 12);
+            record[15] = m.thicknessFactor * m.inverseAttenuationDistance;
+            std::copy(m.sheenColorFactor.begin(), m.sheenColorFactor.end(), record.begin() + 16);
+            record[19] = m.sheenRoughnessFactor;
+            record[20] = float((m.sheenColorTexture ? 1u : 0u) | (m.sheenRoughnessTexture ? 2u : 0u)
+              | (m.sheenTexCoords[0] << 2) | (m.sheenTexCoords[1] << 3));
+            if (m.independentUVTransform)
+            {
+                std::copy(m.independentUVTransform->begin(), m.independentUVTransform->end(), record.begin() + 21);
+                record[27] = float(m.independentUVMaps);
+            }
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
+
             record[36] = m.metallic;
             record[37] = m.roughness;
             record[38] = m.normalScale;
@@ -214,7 +239,7 @@ namespace render::detail
                 auto images = maps(m);
                 for (size_t k = 0; k < data.images.size(); k++)
                 {
-                    if (k >= 5 && !texturedCoat)
+                    if (k >= 5 && !auxiliaryMaps)
                         break;
                     const auto& src = *images[k];
                     auto&       dst = data.images[k];
@@ -235,6 +260,11 @@ namespace render::detail
                             if (k == 3 && m.specularColorTexture)
                                 for (size_t channel = 0; channel < 3; ++channel)
                                     pixel[channel + 1] = uint8_t(std::lround(255 * SRGBToLinear(packedChannel(m.specularColorTexture, u, v, channel) / 255.f)));
+                            if (k == 5 && m.sheenColorTexture)
+                                for (size_t channel = 0; channel < 3; ++channel)
+                                    pixel[channel + 1] = uint8_t(std::lround(255 * SRGBToLinear(packedChannel(m.sheenColorTexture, u, v, channel) / 255.f)));
+                            if (k == 6 && m.sheenRoughnessTexture)
+                                pixel[3] = packedChannel(m.sheenRoughnessTexture, u, v, 3);
                             if (k == 2)
                             {
                                 pixel[0] = packedChannel(m.thicknessTexture, u, v, 1);

@@ -1,3 +1,4 @@
+#include "material-sheen.hlsli"
 struct Vertex
 {
     float4 position;
@@ -135,6 +136,11 @@ struct SurfaceMaterial
     float4 volume;
     float4 specular;
     uint specularMaps;
+    float4 sheen;
+    uint sheenMaps;
+    uint sheenMapOffset;
+    uint independentUVOffset;
+    uint independentUVMaps;
 };
 SurfaceMaterial surfaceMaterial(Vertex vertex)
 {
@@ -146,9 +152,14 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
     m.volume   = float4(1, 1, 1, 0);
     m.specular = 1;
     m.specularMaps = 0;
+    m.sheen = 0;
+    m.sheenMaps = 0;
+    m.sheenMapOffset = 0;
+    m.independentUVOffset = 0;
+    m.independentUVMaps = 0;
     if (asuint(parameters[27]).x > 0)
     {
-        uint at    = (uint(max(1, vertex.position.w)) - 1) * 25;
+        uint at    = (uint(max(1, vertex.position.w)) - 1) * 43;
         m.base     = asfloat(uint4(texels[at], texels[at + 1], texels[at + 2], texels[at + 3]));
         m.factors  = asfloat(uint4(texels[at + 4], texels[at + 5], texels[at + 6], texels[at + 7]));
         m.emission = asfloat(uint4(texels[at + 8], texels[at + 9], texels[at + 10], texels[at + 11]));
@@ -156,6 +167,11 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
         m.volume = asfloat(uint4(texels[at + 16], texels[at + 17], texels[at + 18], texels[at + 19]));
         m.specular = asfloat(uint4(texels[at + 20], texels[at + 21], texels[at + 22], texels[at + 23]));
         m.specularMaps = uint(asfloat(texels[at + 24]));
+        m.sheen = asfloat(uint4(texels[at + 25], texels[at + 26], texels[at + 27], texels[at + 28]));
+        m.sheenMaps = uint(asfloat(texels[at + 29]));
+        m.sheenMapOffset = at + 30;
+        m.independentUVMaps = uint(asfloat(texels[at + 42]));
+        m.independentUVOffset = at + 36;
     }
     return m;
 }
@@ -482,6 +498,15 @@ float4 coatMap(uint slot, uint index, float2 uv)
     uint at = slot + 6 + index * 3;
     return sampleImage(uint4(texels[at], texels[at + 1], texels[at + 2], 0), uv);
 }
+float2 independentTextureUV(SurfaceMaterial material, float2 uv, uint map, bool delta = false)
+{
+    if (!(material.independentUVMaps & map))
+        return uv;
+    uint at = material.independentUVOffset;
+    float3 mapped = float3(uv, delta ? 0 : 1);
+    return float2(dot(asfloat(uint3(texels[at], texels[at + 1], texels[at + 2])), mapped),
+                  dot(asfloat(uint3(texels[at + 3], texels[at + 4], texels[at + 5])), mapped));
+}
 struct PathVertex
 {
     float3 position;
@@ -500,6 +525,7 @@ struct PathVertex
     bool   unlit;
     float4 volume;
     float4 specular;
+    float4 sheen;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
 // whole path arrays by value would duplicate them at every connection.
@@ -526,17 +552,33 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
         if (mat.specularMaps & 2u)
             p.specular.rgb *= textureColor(3, mat.specularMaps & 8u ? atlasUV1 : textureUV).gba;
     }
+    p.sheen = mat.sheen;
+    if (mat.sheenMaps && any(p.sheen.rgb > 0))
+    {
+        float2 uv1 = a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z;
+        uint at = mat.sheenMapOffset;
+        if (mat.sheenMaps & 1u)
+        {
+            float3 rgb = sampleImage(uint4(texels[at], texels[at + 1], texels[at + 2], 0),
+                                     mat.sheenMaps & 4u ? uv1 : uv).rgb;
+            p.sheen.rgb *= lerp(rgb / 12.92, pow((rgb + .055) / 1.055, 2.4), step(.04045, rgb));
+        }
+        if (mat.sheenMaps & 2u)
+            p.sheen.a *= sampleImage(uint4(texels[at + 3], texels[at + 4], texels[at + 5], 0),
+                                     mat.sheenMaps & 8u ? uv1 : uv).a;
+    }
     p.geometric = normalize(cross(e, f));
     p.normal    = normalize(a.normal.xyz * bary.x + b.normal.xyz * bary.y + c.normal.xyz * bary.z);
     p.coatNormal = p.normal;
-    float2 du = b.uv.xy - a.uv.xy, dv = c.uv.xy - a.uv.xy;
+    float2 du = independentTextureUV(mat, b.uv.xy - a.uv.xy, 1u, true),
+           dv = independentTextureUV(mat, c.uv.xy - a.uv.xy, 1u, true);
     float  det = du.x * dv.y - du.y * dv.x;
     if (abs(det) > 1e-8)
     {
         float3 t = (e * dv.y - f * du.y) / det, bit = (-e * dv.x + f * du.x) / det;
         t             = normalize(t - p.normal * dot(p.normal, t));
         bit           = normalize(bit - p.normal * dot(p.normal, bit));
-        float3 mapped = textureColor(1, textureUV).xyz * 2 - 1;
+        float3 mapped = textureColor(1, materialUV(independentTextureUV(mat, uv, 1u), mat)).xyz * 2 - 1;
         mapped.xy *= mat.factors.z;
         p.normal = normalize(t * mapped.x + bit * mapped.y + p.normal * mapped.z);
     }
@@ -577,10 +619,12 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     float2 emissionUV = (uint(mat.emission.w) & 16u)
         ? materialUV(a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z, mat) : textureUV;
     p.emission     = pow(max(textureColor(4, emissionUV).rgb, 0), 2.2) * mat.emission.rgb;
-    float4 mr      = textureColor(2, textureUV);
+    float2 mrUV = materialUV(independentTextureUV(mat, uv, 2u), mat);
+    float4 mr = textureColor(2, mrUV);
     p.metal        = saturate(mr.b * mat.factors.x);
     p.roughness    = clamp(mr.g * mat.factors.y, .06, 1);
     uint flags = uint(mat.emission.w);
+    if ((mat.independentUVMaps & 2u) && (flags & 1536u)) mr.ra = textureColor(2, textureUV).ra;
     p.transmission = a.normal.w * ((flags & 512u) ? mr.a : 1);
     p.volume = mat.volume;
     p.volume.w *= a.uv1.z > .5 ? 1 : a.uv1.w;
@@ -755,7 +799,7 @@ float3 pathF(PathVertex p, float3 v, float3 l)
     float cosine = dot(g, l);
     float nl = dot(n, l);
     if (cosine > 1e-7 && nl > 0)
-        value += (1 - p.transmission) * brdf(n, v, l, p.base, p.metal, p.roughness, p.specular) * nl / cosine;
+        value += (1 - p.transmission) * sheenLayer(p.sheen, n, v, l, brdf(n, v, l, p.base, p.metal, p.roughness, p.specular)) * nl / cosine;
     if (p.coat.x <= 0)
         return value;
     float3 nc = coatFrame(p, g);

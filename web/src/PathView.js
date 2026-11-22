@@ -101,15 +101,28 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const metadata = [],
       images = []
     const materialCount = (data.materialRecords?.length || 0) / 48
-    const materialHeader = new Float32Array(materialCount * 25)
+    const materialWords = 43
+    const materialHeader = new Float32Array(materialCount * materialWords)
     for (let i = 0; i < materialCount; i++) {
-      const source = i * 48, dst = i * 25
+      const source = i * 48, dst = i * materialWords
       materialHeader.set(data.materialRecords.subarray(source + 32, source + 48), dst)
       materialHeader.set(data.materialRecords.subarray(source + 12, source + 16), dst + 16)
       materialHeader.set(data.materialRecords.subarray(source, source + 4), dst + 20)
       materialHeader[dst + 24] = data.materialRecords[source + 10]
+      materialHeader.set(data.materialRecords.subarray(source + 16, source + 21), dst + 25)
+      materialHeader.set(data.materialRecords.subarray(source + 21, source + 28), dst + 36)
     }
     let total = materialHeader.byteLength
+    const materialOffsets = new Uint32Array(materialHeader.buffer)
+    for (let slot = 0; slot < materialCount; slot++) {
+      const material = data.materials[slot]
+      for (const [i, map] of [material.sheenColorTexture, material.sheenRoughnessTexture].entries()) {
+        if (!map) continue
+        materialOffsets.set([total / 4, map.width, map.height], slot * materialWords + 30 + i * 3)
+        images.push(map.pixels)
+        total += map.pixels.byteLength
+      }
+    }
     const records = data.materialRecords ?? new Float32Array(0)
     const coatCount = records.length / 48
     const coated = Array.from({ length: coatCount }, (_, i) => records[i * 48 + 4]).some(

@@ -3,12 +3,15 @@ import { compile as compileShader } from './compiler.mjs'
 // Repository kernels are larger than editable snippets; HTTP compilation keeps its 64 KiB limit.
 const compile = (source, options = {}) =>
   compileShader(source, { ...options, maxSourceBytes: 262144 })
+const sheenSource = await readFile('render/shaders/material-sheen.hlsli', 'utf8')
+const readMaterialShader = async (name) =>
+  (await readFile(`render/shaders/${name}.hlsl`, 'utf8')).replace('#include "material-sheen.hlsli"', sheenSource)
 const result = await compile(await readFile('render/shaders/triangle.hlsl', 'utf8'))
 await mkdir('docs/public/generated', { recursive: true })
 await writeFile('docs/public/generated/triangle.json', JSON.stringify(result))
 console.log('HLSL → SPIR-V → WGSL generated')
 
-const model = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), { model: true })
+const model = await compile(await readMaterialShader('model'), { model: true })
 await writeFile('docs/public/generated/model.json', JSON.stringify(model))
 await writeFile(
   'docs/public/generated/DamagedHelmet.glb',
@@ -16,7 +19,7 @@ await writeFile(
 )
 console.log('Model HLSL and GLB generated for WebGPU')
 
-const sky = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), {
+const sky = await compile(await readMaterialShader('model'), {
   model: true,
   sky: true,
 })
@@ -45,7 +48,7 @@ for (const name of ['venice_sunset', 'kloppenheim_06', 'studio_small_09']) {
   await rm(`docs/public/generated/${name}.nenv`, { force: true })
 }
 
-const path = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
+const path = await compile(await readMaterialShader('pathtrace'), {
   compute: true,
 })
 await writeFile('docs/public/generated/pathtrace.json', JSON.stringify(path))
@@ -53,13 +56,13 @@ const present = await compile(await readFile('render/shaders/pathpresent.hlsl', 
 await writeFile('docs/public/generated/pathpresent.json', JSON.stringify(present))
 console.log('BVH path tracing HLSL → WGSL generated')
 
-const denoise = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
+const denoise = await compile(await readMaterialShader('pathtrace'), {
   compute: true,
   computeEntry: 'DenoiseMain',
 })
 await writeFile('docs/public/generated/denoise.json', JSON.stringify(denoise))
 
-const skinning = await compile(await readFile('render/shaders/model.hlsl', 'utf8'), {
+const skinning = await compile(await readMaterialShader('model'), {
   compute: true,
   computeEntry: 'SkinningCSMain',
 })
@@ -72,7 +75,7 @@ for (const [name, entry] of [
   ['mlt-reduce', 'MLTReduce'],
   ['mlt-mutate', 'MLTMutate'],
 ]) {
-  const shader = await compile(await readFile('render/shaders/pathtrace.hlsl', 'utf8'), {
+  const shader = await compile(await readMaterialShader('pathtrace'), {
     compute: true,
     computeEntry: entry,
   })
@@ -81,7 +84,7 @@ for (const [name, entry] of [
 
 const aoSource = (await readFile('render/shaders/ambient-occlusion.hlsl', 'utf8')).replace(
   '#include "pathtrace.hlsl"',
-  await readFile('render/shaders/pathtrace.hlsl', 'utf8'),
+  await readMaterialShader('pathtrace'),
 )
 for (const [name, entry] of [
   ['ao-prepare', 'AOPrepare'],
@@ -133,7 +136,7 @@ for (const [name, channels] of [
 console.log('AA HLSL and SMAA reference tables generated')
 
 const rasterSource =
-  '#define NOVA_RASTER_AA 1\n' + (await readFile('render/shaders/model.hlsl', 'utf8'))
+  '#define NOVA_RASTER_AA 1\n' + (await readMaterialShader('model'))
 for (const [name, vertexEntry, fragmentEntry] of [
   ['model-aa', 'VSMain', 'PSMain'],
   ['model-gbuffer', 'VSMain', 'GBufferPSMain'],

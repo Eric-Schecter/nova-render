@@ -39,7 +39,13 @@ namespace render
         std::array<float, 3> specularColorFactor{1, 1, 1};
         std::optional<Image> specularTexture, specularColorTexture;
         std::array<uint32_t, 2> specularTexCoords{};
+        std::array<float, 3> sheenColorFactor{};
+        float sheenRoughnessFactor = 0;
+        std::optional<Image> sheenColorTexture, sheenRoughnessTexture;
+        std::array<uint32_t, 2> sheenTexCoords{};
         float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
+        std::optional<std::array<float, 6>> independentUVTransform;
+        uint32_t independentUVMaps = 0; // Normal and metallic-roughness bits.
         uint32_t             occlusionTexCoord = 0; // 0 or 1 for the occlusion texture.
         std::optional<Image>    clearcoatTexture, clearcoatRoughnessTexture, clearcoatNormalTexture;
         float                   clearcoatNormalScale = 1;

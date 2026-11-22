@@ -126,6 +126,11 @@ namespace render::detail
                 coordinates.angle = read(extension.Get("rotation"));
             return coordinates;
         }
+        glm::mat2 textureLinearTransform(const TextureCoordinates& uv)
+        {
+            const auto sine = std::sin(uv.angle), cosine = std::cos(uv.angle);
+            return {cosine * uv.scale[0], -sine * uv.scale[0], sine * uv.scale[1], cosine * uv.scale[1]};
+        }
         const tinygltf::Value& materialExtension(const tinygltf::Material& material, const char* name)
         {
             static const tinygltf::Value empty;
@@ -518,7 +523,7 @@ namespace render::detail
                 if (
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_volume" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
-                  && extension != "KHR_materials_pbrSpecularGlossiness"
+                  && extension != "KHR_materials_pbrSpecularGlossiness" && extension != "KHR_materials_sheen"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
                   && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing" && extension != "KHR_materials_variants")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
@@ -544,6 +549,9 @@ namespace render::detail
             return std::array<float, 2>{transmission, ior};
         };
         convertSpecularGlossiness(gltf);
+        std::vector<std::optional<std::array<float, 6>>> independentUVTransforms(gltf.materials.size() + 1);
+        std::vector<uint32_t> independentUVMaps(gltf.materials.size() + 1);
+        std::vector<std::optional<uint32_t>> occlusionStreams(gltf.materials.size() + 1);
         selectMaterialVariant(gltf, variant);
         expandMeshInstances(gltf);
         auto              animation = ReadAnimationData(gltf);
@@ -604,21 +612,46 @@ namespace render::detail
                             throw std::runtime_error("Material requires independent texture coordinate streams");
                         coordinates[stream] = value;
                     };
-                    auto addTexture = [&](const auto& texture, int stream) {
-                        if (texture.index < 0)
-                            return;
+                    auto coordinatesFor = [&](const auto& texture) {
                         const auto extension = texture.extensions.find("KHR_texture_transform");
-                        assign(stream, textureCoordinates(texture.texCoord,
-                          extension == texture.extensions.end() ? tinygltf::Value{} : extension->second));
+                        return textureCoordinates(texture.texCoord,
+                          extension == texture.extensions.end() ? tinygltf::Value{} : extension->second);
+                    };
+                    auto addTexture = [&](const auto& texture, int stream) {
+                        if (texture.index >= 0)
+                            assign(stream, coordinatesFor(texture));
                     };
                     addTexture(pbr.baseColorTexture, 0);
-                    addTexture(pbr.metallicRoughnessTexture, 0);
-                    addTexture(material.normalTexture, 0);
+                    auto addIndependentTexture = [&](const auto& texture, uint32_t mask) {
+                        if (texture.index < 0)
+                            return;
+                        const auto target = coordinatesFor(texture);
+                        if (!coordinates[0] || !(*coordinates[0] != target))
+                            assign(0, target);
+                        else
+                        {
+                            const auto& base = *coordinates[0];
+                            const auto linear = textureLinearTransform(base);
+                            if (base.set != target.set || std::abs(glm::determinant(linear)) < 1e-12f)
+                                throw std::runtime_error("Independent texture mapping requires a shared invertible UV set");
+                            const auto relative = textureLinearTransform(target) * glm::inverse(linear);
+                            const auto offset = glm::vec2(target.offset[0], target.offset[1])
+                              - relative * glm::vec2(base.offset[0], base.offset[1]);
+                            const std::array transform{relative[0].x, relative[1].x, offset.x,
+                              relative[0].y, relative[1].y, offset.y};
+                            auto& mapping = independentUVTransforms[materialIndex];
+                            if (mapping && *mapping != transform)
+                                throw std::runtime_error("Material requires more than one independent texture transform");
+                            mapping = transform;
+                            independentUVMaps[materialIndex] |= mask;
+                        }
+                    };
+                    addIndependentTexture(pbr.metallicRoughnessTexture, 2);
+                    addIndependentTexture(material.normalTexture, 1);
                     const int emissionStream = material.emissiveTexture.texCoord == 1
                       && (pbr.baseColorTexture.index >= 0 || pbr.metallicRoughnessTexture.index >= 0
                           || material.normalTexture.index >= 0) ? 1 : 0;
                     addTexture(material.emissiveTexture, emissionStream);
-                    addTexture(ao, ao.texCoord);
                     for (const auto& pair : {std::pair{"KHR_materials_transmission", "transmissionTexture"},
                                             std::pair{"KHR_materials_volume", "thicknessTexture"}})
                     {
@@ -631,12 +664,16 @@ namespace render::detail
                         assign(0, textureCoordinates(texCoord, extensions.Has("KHR_texture_transform")
                             ? extensions.Get("KHR_texture_transform") : tinygltf::Value{}));
                     }
-                    const auto& specular = materialExtension(material, "KHR_materials_specular");
-                    for (const auto* key : {"specularTexture", "specularColorTexture"})
+                    for (const auto& [extension, key] : {
+                      std::pair{"KHR_materials_specular", "specularTexture"},
+                      std::pair{"KHR_materials_specular", "specularColorTexture"},
+                      std::pair{"KHR_materials_sheen", "sheenColorTexture"},
+                      std::pair{"KHR_materials_sheen", "sheenRoughnessTexture"}})
                     {
-                        if (extensionTextureIndex(specular, key) < 0)
+                        const auto& ext = materialExtension(material, extension);
+                        if (extensionTextureIndex(ext, key) < 0)
                             continue;
-                        const auto& texture = specular.Get(key);
+                        const auto& texture = ext.Get(key);
                         const auto source = extensionTexCoord(texture);
                         const auto& extensions = texture.Get("extensions");
                         assign(source, textureCoordinates(source, extensions.Has("KHR_texture_transform")
@@ -654,6 +691,15 @@ namespace render::detail
                                   ? extensions.Get("KHR_texture_transform") : tinygltf::Value{}));
                             }
                         }
+                    if (ao.index >= 0)
+                    {
+                        const auto target = coordinatesFor(ao);
+                        if (ao.texCoord < 0 || ao.texCoord > 1)
+                            throw std::runtime_error("AO texture coordinate set must be 0 or 1");
+                        const int stream = ao.texCoord == 0 && coordinates[0] && *coordinates[0] != target ? 1 : ao.texCoord;
+                        assign(stream, target);
+                        occlusionStreams[materialIndex] = uint32_t(stream);
+                    }
                     std::array<std::pair<glm::vec2, glm::mat2>, 2> transforms;
                     std::array<int, 2> uvAccessors{uv, uv1};
                     for (int stream = 0; stream < 2; ++stream)
@@ -666,9 +712,7 @@ namespace render::detail
                         if (accessor == p.attributes.end())
                             throw std::runtime_error("Textured material is missing its texture coordinate set");
                         uvAccessors[stream] = accessor->second;
-                        const auto sin = std::sin(c.angle), cos = std::cos(c.angle);
-                        transforms[stream] = {glm::vec2(c.offset[0], c.offset[1]),
-                          glm::mat2(cos * c.scale[0], -sin * c.scale[0], sin * c.scale[1], cos * c.scale[1])};
+                        transforms[stream] = {glm::vec2(c.offset[0], c.offset[1]), textureLinearTransform(c)};
                     }
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto& weights = node.weights.empty() ? gltf.meshes.at(node.mesh).weights : node.weights;
@@ -829,8 +873,9 @@ namespace render::detail
         }
         if (gltf.materials.size() > materialSlotLimit)
             throw std::runtime_error("At most 256 material slots are supported");
-        for (const auto& sourceMaterial : gltf.materials)
+        for (size_t materialIndex = 0; materialIndex < gltf.materials.size(); ++materialIndex)
         {
+            const auto& sourceMaterial = gltf.materials[materialIndex];
             Material slot;
             slot.name       = sourceMaterial.name;
             const auto& mat = sourceMaterial;
@@ -938,7 +983,9 @@ namespace render::detail
                 slot.emissive[k] = static_cast<float>(mat.emissiveFactor[k] * emissiveStrength);
             if (mat.occlusionTexture.texCoord < 0 || mat.occlusionTexture.texCoord > 1)
                 throw std::runtime_error("AO texture coordinate set must be 0 or 1");
-            slot.occlusionTexCoord = uint32_t(mat.occlusionTexture.texCoord);
+            slot.occlusionTexCoord = occlusionStreams[materialIndex].value_or(uint32_t(mat.occlusionTexture.texCoord));
+            slot.independentUVTransform = independentUVTransforms[materialIndex];
+            slot.independentUVMaps = independentUVMaps[materialIndex];
             const auto& volume = materialExtension(mat, "KHR_materials_volume");
             const auto& transmission = materialExtension(mat, "KHR_materials_transmission");
             auto number = [&](const char* key, float fallback) {
@@ -970,6 +1017,30 @@ namespace render::detail
                 }
             }
             const auto& specularExtension = materialExtension(mat, "KHR_materials_specular");
+            const auto& sheen = materialExtension(mat, "KHR_materials_sheen");
+            if (sheen.Has("sheenColorFactor"))
+            {
+                const auto& color = sheen.Get("sheenColorFactor");
+                if (!color.IsArray() || color.ArrayLen() != 3)
+                    throw std::runtime_error("Invalid glTF sheen color factor");
+                for (int i = 0; i < 3; ++i)
+                {
+                    if (!color.Get(i).IsNumber())
+                        throw std::runtime_error("Invalid glTF sheen color factor");
+                    slot.sheenColorFactor[i] = float(color.Get(i).GetNumberAsDouble());
+                }
+            }
+            if (sheen.Has("sheenRoughnessFactor"))
+            {
+                const auto& roughness = sheen.Get("sheenRoughnessFactor");
+                if (!roughness.IsNumber())
+                    throw std::runtime_error("Invalid glTF sheen roughness factor");
+                slot.sheenRoughnessFactor = float(roughness.GetNumberAsDouble());
+            }
+            if (sheen.Has("sheenColorTexture"))
+                slot.sheenTexCoords[0] = extensionTexCoord(sheen.Get("sheenColorTexture"));
+            if (sheen.Has("sheenRoughnessTexture"))
+                slot.sheenTexCoords[1] = extensionTexCoord(sheen.Get("sheenRoughnessTexture"));
             const int textures[]   = {
               pbr.baseColorTexture.index,
               mat.normalTexture.index,
@@ -982,7 +1053,9 @@ namespace render::detail
               extensionTextureIndex(transmission, "transmissionTexture"),
               extensionTextureIndex(volume, "thicknessTexture"),
               extensionTextureIndex(specularExtension, "specularTexture"),
-              extensionTextureIndex(specularExtension, "specularColorTexture")};
+              extensionTextureIndex(specularExtension, "specularColorTexture"),
+              extensionTextureIndex(sheen, "sheenColorTexture"),
+              extensionTextureIndex(sheen, "sheenRoughnessTexture")};
             std::optional<Image>* maps[] = {
               &slot.baseColorTexture,
               &slot.normalTexture,
@@ -995,7 +1068,9 @@ namespace render::detail
               &slot.transmissionTexture,
               &slot.thicknessTexture,
               &slot.specularTexture,
-              &slot.specularColorTexture};
+              &slot.specularColorTexture,
+              &slot.sheenColorTexture,
+              &slot.sheenRoughnessTexture};
             slot.metallic          = factors[0];
             slot.roughness         = factors[1];
             slot.normalScale       = factors[2];
