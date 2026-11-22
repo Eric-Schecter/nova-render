@@ -86,6 +86,7 @@ export async function loadGLB(url, { pack = true } = {}) {
           'KHR_xmp',
           'EXT_mesh_gpu_instancing',
           'KHR_materials_clearcoat',
+          'KHR_materials_unlit',
         ].includes(e),
     ) ||
     json.buffers.length !== 1 ||
@@ -489,6 +490,7 @@ export async function loadGLB(url, { pack = true } = {}) {
         alphaMode: material.alphaMode ?? 'OPAQUE',
         alphaCutoff: material.alphaCutoff ?? 0.5,
         doubleSided: material.doubleSided ?? false,
+        unlit: material.extensions?.KHR_materials_unlit !== undefined,
         normalScale: material.normalTexture?.scale ?? 1,
         occlusionStrength: material.occlusionTexture?.strength ?? 1,
         occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,

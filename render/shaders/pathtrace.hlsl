@@ -475,6 +475,7 @@ struct PathVertex
     float  transmission;
     float  ior;
     uint   primitive;
+    bool   unlit;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
 // whole path arrays by value would duplicate them at every connection.
@@ -547,10 +548,15 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     p.ior          = max(a.uv.w, 1.01);
     p.beta         = 1;
     p.primitive    = hit.primitive;
+    p.unlit        = (uint(mat.emission.w) & 8u) != 0;
+    if (p.unlit)
+        p.emission = p.base;
     return p;
 }
 float3 pathEmission(PathVertex p, float3 outgoing)
 {
+    if (p.unlit)
+        return p.base;
     if (p.coat.x <= 0)
         return p.emission;
     return p.emission * (1 - p.coat.x * fresnel(abs(dot(p.coatNormal, outgoing)), .04).x);
@@ -690,6 +696,8 @@ float coatDistribution(float nh, float roughness)
 // reverses evaluation directions to apply the adjoint shading-normal correction.
 float3 pathF(PathVertex p, float3 v, float3 l)
 {
+    if (p.unlit)
+        return 0;
     float glassValue = 0, glassPdf = 0;
     if (p.transmission > 0)
         glassKernel(p, v, l, glassValue, glassPdf);
@@ -722,6 +730,8 @@ float3 pathF(PathVertex p, float3 v, float3 l)
 }
 float pathPdf(PathVertex p, float3 v, float3 l)
 {
+    if (p.unlit)
+        return 0;
     float3 n, g;
     pathFrame(p, v, n, g);
     float value = 0, pdf = 0;
@@ -749,6 +759,12 @@ float3 cosineDirection(float3 n, inout uint state)
 }
 bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out float pdf)
 {
+    if (p.unlit)
+    {
+        l = 0;
+        pdf = 0;
+        return false;
+    }
     if (p.coat.x > 0)
     {
         float3 n, g;
