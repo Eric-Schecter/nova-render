@@ -1,5 +1,14 @@
 @PACKAGE_INIT@
 include(CMakeFindDependencyMacro)
+set(_nova_consumer_system "${CMAKE_SYSTEM_NAME}")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_SYSROOT MATCHES "[Ii][Pp]hone[Ss]imulator")
+    set(_nova_consumer_system "iOS-Simulator")
+endif()
+if(NOT _nova_consumer_system STREQUAL "@nova_sdk_system@")
+    set(Nova_FOUND FALSE)
+    set(Nova_NOT_FOUND_MESSAGE "This Nova SDK targets @nova_sdk_system@, but the consumer targets ${_nova_consumer_system}.")
+    return()
+endif()
 set(Nova_WINDOW_HOST_CONTROLS TRUE)
 # Search bundled dependencies first, while allowing conventional external packages.
 find_dependency(SDL3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/sdl3")

@@ -16,7 +16,7 @@ if(MSVC)
     endif()
 endif()
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/sdk-metadata/$<CONFIG>/sdk.json" CONTENT
-"{\n  \"name\": \"nova-render\",\n  \"version\": \"${PROJECT_VERSION}\",\n  \"system\": \"${CMAKE_SYSTEM_NAME}\",\n  \"architecture\": \"${CMAKE_SYSTEM_PROCESSOR}\",\n  \"compiler\": \"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\",\n  \"configuration\": \"$<CONFIG>\",\n  \"runtime\": \"${_nova_sdk_runtime}\",\n  \"linkage\": \"static\",\n  \"bundledDependencies\": \"${NOVA_BUNDLE_DEPENDENCIES}\",\n  \"vulkan\": \"${NOVA_ENABLE_VULKAN}\",\n  \"ui\": \"${NOVA_ENABLE_UI}\"\n}\n")
+"{\n  \"name\": \"nova-render\",\n  \"version\": \"${PROJECT_VERSION}\",\n  \"system\": \"${nova_sdk_system}\",\n  \"architecture\": \"${nova_sdk_arch}\",\n  \"compiler\": \"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\",\n  \"configuration\": \"$<CONFIG>\",\n  \"runtime\": \"${_nova_sdk_runtime}\",\n  \"linkage\": \"static\",\n  \"bundledDependencies\": \"${NOVA_BUNDLE_DEPENDENCIES}\",\n  \"vulkan\": \"${NOVA_ENABLE_VULKAN}\",\n  \"ui\": \"${NOVA_ENABLE_UI}\"\n}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sdk-metadata/$<CONFIG>/sdk.json" DESTINATION share/Nova)
 install(FILES "${PROJECT_SOURCE_DIR}/docs/SDK-README.md" DESTINATION . RENAME README.md)
 include(CPack)

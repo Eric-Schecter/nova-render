@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto'
 const native = resolve(process.argv[2]),
   web = resolve(process.argv[3]),
   output = resolve(process.argv[4] || 'build/packages/paired')
+const extraArchives = process.argv.slice(5).map((file) => resolve(file))
 const temporary = mkdtempSync(join(tmpdir(), 'nova-package-pair-'))
 function find(dir, name) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -61,13 +62,34 @@ try {
     },
     web: { ...artifact(web), packageName: '@nova/render-web' },
   }
+  if (extraArchives.length) {
+    manifest.nativeTargets = {}
+    for (const [index, file] of extraArchives.entries()) {
+      const dir = join(temporary, `native-${index}`)
+      mkdirSync(dir)
+      execFileSync('cmake', ['-E', 'tar', 'xf', file], { cwd: dir })
+      const info = JSON.parse(readFileSync(find(dir, 'build-info.json'), 'utf8'))
+      const platform = { iOS: 'ios', 'iOS-Simulator': 'ios-simulator', Android: 'android' }[info.platform]
+      if (!platform || info.architecture !== 'arm64' || info.configuration !== 'Release' ||
+          info.sourceDirty !== false || info.sourceCommit !== nativeInfo.sourceCommit ||
+          info.version !== nativeInfo.version)
+        throw Error('Invalid or mismatched mobile SDK: ' + file)
+      const key = `${platform}-arm64`
+      if (manifest.nativeTargets[key]) throw Error('Duplicate SDK target: ' + key)
+      manifest.nativeTargets[key] = {
+        ...artifact(file), platform: info.platform, architecture: info.architecture,
+        configuration: info.configuration, uiEnabled: info.uiEnabled, features: info.features,
+      }
+    }
+  }
   mkdirSync(output, { recursive: true })
-  for (const file of [native, web])
+  for (const file of [native, web, ...extraArchives])
     if (resolve(output, basename(file)) !== file) cpSync(file, join(output, basename(file)))
   writeFileSync(join(output, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
   writeFileSync(
     join(output, 'SHA256SUMS'),
-    [manifest.native, manifest.web].map((f) => `${f.sha256}  ${f.file}`).join('\n') + '\n',
+    [manifest.native, manifest.web, ...Object.values(manifest.nativeTargets ?? {})]
+      .map((f) => `${f.sha256}  ${f.file}`).join('\n') + '\n',
   )
   console.log('Paired SDK archives:', join(output, 'manifest.json'))
 } finally {
