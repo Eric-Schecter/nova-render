@@ -70,6 +70,21 @@ adb shell am start -n org.nova.render.triangle/.NovaActivity
 
 Boot an ARM64 emulator with Vulkan enabled, or connect an ARM64 Android device. The packaging script signs a local debug APK using the SDK command-line tools.
 
+## Mobile Damaged Helmet
+
+Both sample apps bundle the same GLB. Drag with one finger to orbit and pinch with two fingers to zoom.
+
+```sh
+cmake --build build/ios-simulator --target nova_ios_helmet
+xcrun simctl install booted build/ios-simulator/examples/ios/nova_ios_helmet.app
+xcrun simctl launch booted org.nova.render.ios-helmet
+
+cmake --build build/android --target nova_android_helmet
+examples/android/package.sh build/android helmet
+adb install -r build/android/nova-helmet-debug.apk
+adb shell am start -n org.nova.render.helmet/org.nova.render.triangle.NovaActivity
+```
+
 ## Browser examples
 
 With Node.js 22+ and DXC available, run `npm ci` then `npm run docs:dev`. `npm run docs:build` creates a static site with precompiled WGSL. Published [online examples](https://eric-schecter.github.io/nova-render/) need a WebGPU browser over HTTPS; HLSL editing is local-only.

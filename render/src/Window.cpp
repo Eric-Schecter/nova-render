@@ -6,6 +6,7 @@
 #include <exception>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace render
 {
@@ -32,12 +33,20 @@ namespace render
     } // namespace
     struct Window::Impl
     {
+        struct Finger
+        {
+            SDL_FingerID id;
+            float        x, y;
+        };
+
         Context                                                   context;
         std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window{nullptr, SDL_DestroyWindow};
         bool                                                      closeRequested = false;
         std::unique_ptr<Renderer>                                 renderer;
         std::optional<OrbitCamera>                                viewOrbit;
         bool                                                      orbitEnabled = false, dragging = false;
+        SDL_TouchID                                               touchDevice = 0;
+        std::vector<Finger>                                       fingers;
         bool                                                      closeOnEscape = true;
         std::exception_ptr                                        inputError;
         std::atomic_bool foreground{true};
@@ -81,6 +90,52 @@ namespace render
                 inputError = std::current_exception();
             }
         }
+        void HandleTouch(const SDL_TouchFingerEvent& event)
+        {
+            if (!orbitEnabled || event.touchID == SDL_MOUSE_TOUCHID)
+                return;
+            if (!fingers.empty() && event.touchID != touchDevice)
+                return;
+            auto finger = std::find_if(fingers.begin(), fingers.end(), [&](const Finger& active) {
+                return active.id == event.fingerID;
+            });
+            if (event.type == SDL_EVENT_FINGER_DOWN)
+            {
+                if (finger == fingers.end() && fingers.size() < 2 && !renderer->UIWantsMouse())
+                {
+                    touchDevice = event.touchID;
+                    fingers.push_back({event.fingerID, event.x, event.y});
+                }
+                return;
+            }
+            if (finger == fingers.end())
+                return;
+            if (event.type != SDL_EVENT_FINGER_MOTION)
+            {
+                fingers.erase(finger);
+                return;
+            }
+            const auto previous = *finger;
+            finger->x           = event.x;
+            finger->y           = event.y;
+            if (fingers.size() == 1)
+            {
+                UpdateCamera([&](OrbitCamera c) {
+                    return detail::DragOrbit(c, (event.x - previous.x) * 600.0, (event.y - previous.y) * 450.0);
+                });
+                return;
+            }
+            int width = 0, height = 0;
+            if (!SDL_GetWindowSize(window.get(), &width, &height))
+                return;
+            const auto& other = finger == fingers.begin() ? fingers.back() : fingers.front();
+            const auto span = [&](const Finger& point) {
+                return std::hypot(double(point.x - other.x) * width, double(point.y - other.y) * height);
+            };
+            const auto before = span(previous), after = span(*finger);
+            if (before > 1.0 && after > 1.0)
+                UpdateCamera([&](OrbitCamera c) { return detail::ZoomOrbit(c, 1000.0 * std::log(before / after)); });
+        }
         bool PollSDL()
         {
             SDL_Event  event;
@@ -97,8 +152,12 @@ namespace render
                     break;
                 case SDL_EVENT_WINDOW_FOCUS_LOST:
                     if (event.window.windowID == id)
+                    {
                         dragging = false;
+                        fingers.clear();
+                    }
                     break;
+                case SDL_EVENT_WILL_ENTER_BACKGROUND: fingers.clear(); break;
                 case SDL_EVENT_KEY_DOWN:
                     if (
                       event.key.windowID == id && event.key.key == SDLK_ESCAPE && !event.key.repeat && closeOnEscape
@@ -107,12 +166,14 @@ namespace render
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 case SDL_EVENT_MOUSE_BUTTON_UP:
-                    if (event.button.windowID == id && event.button.button == SDL_BUTTON_LEFT)
+                    if (
+                      event.button.windowID == id && event.button.which != SDL_TOUCH_MOUSEID
+                      && event.button.button == SDL_BUTTON_LEFT)
                         dragging =
                           event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && orbitEnabled && !renderer->UIWantsMouse();
                     break;
                 case SDL_EVENT_MOUSE_MOTION:
-                    if (event.motion.windowID == id && dragging && orbitEnabled)
+                    if (event.motion.windowID == id && event.motion.which != SDL_TOUCH_MOUSEID && dragging && orbitEnabled)
                         UpdateCamera(
                           [&](OrbitCamera c) { return detail::DragOrbit(c, event.motion.xrel, event.motion.yrel); });
                     break;
@@ -122,6 +183,13 @@ namespace render
                         // SDL's delta already follows the system scroll direction.
                         UpdateCamera([&](OrbitCamera c) { return detail::ZoomOrbit(c, -event.wheel.y * 100.0); });
                     }
+                    break;
+                case SDL_EVENT_FINGER_DOWN:
+                case SDL_EVENT_FINGER_UP:
+                case SDL_EVENT_FINGER_MOTION:
+                case SDL_EVENT_FINGER_CANCELED:
+                    if (event.tfinger.windowID == id)
+                        HandleTouch(event.tfinger);
                     break;
                 }
             }
@@ -270,6 +338,7 @@ namespace render
     void Window::EnableOrbitControls(bool enabled)
     {
         impl_->viewOrbit.reset();
+        impl_->fingers.clear();
         impl_->orbitEnabled = enabled;
         impl_->dragging     = false;
     }

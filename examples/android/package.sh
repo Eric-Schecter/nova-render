@@ -6,11 +6,21 @@ set -euo pipefail
 : "${SDL3_SOURCE_DIR:?Set SDL3_SOURCE_DIR to the source used by your SDL3 build}"
 project=$(cd "$(dirname "$0")/../.." && pwd)
 build=$(cd "${1:-$project/build/android}" && pwd)
+example=${2:-triangle}
 native="$build/examples/android/libmain.so"
+package=org.nova.render.triangle
+case "$example" in
+    triangle) ;;
+    helmet)
+        native="$build/examples/android/helmet/libmain.so"
+        package=org.nova.render.helmet
+        ;;
+    *) printf 'Unknown mobile example: %s\n' "$example" >&2; exit 2 ;;
+esac
 tools="$ANDROID_HOME/build-tools/35.0.0"
 platform="$ANDROID_HOME/platforms/android-35/android.jar"
 java_sources="$SDL3_SOURCE_DIR/android-project/app/src/main/java"
-out="$build/nova-triangle-debug.apk"
+out="$build/nova-$example-debug.apk"
 
 test -f "$native"
 test -f "$platform"
@@ -25,8 +35,18 @@ find "$java_sources" -type f -name '*.java' -print0 |
 (cd "$work/classes" && zip -qr "$work/classes.jar" .)
 "$tools/d8" --min-api 28 --lib "$platform" --output "$work" "$work/classes.jar"
 cp "$native" "$work/lib/arm64-v8a/libmain.so"
-"$tools/aapt2" link -I "$platform" --manifest "$project/examples/android/AndroidManifest.xml" -o "$work/unsigned.apk"
+manifest="$project/examples/android/AndroidManifest.xml"
+if [[ "$example" == helmet ]]; then
+    sed 's/Nova Triangle/Nova Damaged Helmet/' "$manifest" > "$work/AndroidManifest.xml"
+    manifest="$work/AndroidManifest.xml"
+    mkdir "$work/assets"
+    cp "$project/assets/DamagedHelmet/DamagedHelmet.glb" "$work/assets/"
+fi
+"$tools/aapt2" link -I "$platform" --manifest "$manifest" --rename-manifest-package "$package" -o "$work/unsigned.apk"
 (cd "$work" && zip -q -0 unsigned.apk classes.dex lib/arm64-v8a/libmain.so)
+if [[ "$example" == helmet ]]; then
+    (cd "$work" && zip -q unsigned.apk assets/DamagedHelmet.glb)
+fi
 "$tools/zipalign" -P 16 -f 4 "$work/unsigned.apk" "$work/aligned.apk"
 
 keystore="$build/nova-debug.jks"
