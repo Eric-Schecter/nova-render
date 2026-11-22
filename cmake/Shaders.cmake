@@ -49,6 +49,7 @@ if(shader_name MATCHES "^model-(hybrid-(ao|shadow|reflection)|probe-reflection)$
         "${PROJECT_SOURCE_DIR}/render/shaders/ao-blue-noise.hlsli"
         "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl")
 endif()
+list(APPEND _nova_shader_extra_deps "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli")
 if(shader_name MATCHES "^model-probe-update(-shared)?$")
     set(_nova_stages comp)
     if(shader_name STREQUAL "model-probe-update-shared")

@@ -43,6 +43,8 @@ export function validateMaterial(m) {
     roughness: m.roughness ?? 1,
     metallic: m.metallic ?? 1,
     normalScale: m.normalScale ?? 1,
+    independentUVTransform: m.independentUVTransform ? Array.from(m.independentUVTransform) : null,
+    independentUVMaps: m.independentUVMaps ?? 0,
     occlusionStrength: m.occlusionStrength ?? 1,
     occlusionTexCoord: m.occlusionTexCoord ?? 0,
     emissive: m.emissive ?? [0, 0, 0],
@@ -54,6 +56,9 @@ export function validateMaterial(m) {
     clearcoatTexCoords: Array.from(m.clearcoatTexCoords ?? [0, 0, 0]),
     specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
     specularTexCoords: Array.from(m.specularTexCoords ?? [0, 0]),
+    sheenColorFactor: Array.from(m.sheenColorFactor ?? [0, 0, 0]),
+    sheenRoughnessFactor: m.sheenRoughnessFactor ?? 0,
+    sheenTexCoords: Array.from(m.sheenTexCoords ?? [0, 0]),
   }
   if (![0,1,2,4,5,6,8,9,10].includes(out.baseColorWrap)) throw Error("Invalid base-color texture wrapping")
   if (![0, 1].includes(out.emissiveTexCoord)) throw Error('Emissive texture coordinate set must be 0 or 1')
@@ -71,6 +76,13 @@ export function validateMaterial(m) {
     throw Error('Clearcoat coordinate set must be 0 or 1')
   if (out.specularTexCoords.length !== 2 || out.specularTexCoords.some((uv) => uv !== 0 && uv !== 1))
     throw Error('Specular coordinate set must be 0 or 1')
+  if (out.sheenTexCoords.length !== 2 || out.sheenTexCoords.some((uv) => uv !== 0 && uv !== 1))
+    throw Error('Sheen coordinate set must be 0 or 1')
+  if (out.independentUVTransform && (out.independentUVTransform.length !== 6 ||
+    !out.independentUVTransform.every((v) => Number.isFinite(Math.fround(v)))))
+    throw Error('Invalid independent texture mapping')
+  if (![0, 1, 2, 3].includes(out.independentUVMaps) || (out.independentUVMaps && !out.independentUVTransform))
+    throw Error('Invalid independent texture map selection')
   if (![0, 1].includes(out.occlusionTexCoord))
     throw Error('AO texture coordinate set must be 0 or 1')
   if (typeof out.name !== 'string') throw Error('Material name must be a string')
@@ -86,6 +98,7 @@ export function validateMaterial(m) {
     ['baseColor', 4, 1],
     ['emissive', 3, 65504],
     ['specularColorFactor', 3, 3.4028234663852886e38],
+    ['sheenColorFactor', 3, 1],
   ]) {
     if (!(Array.isArray(out[key]) || out[key] instanceof Float32Array) || out[key].length !== n)
       throw Error('Invalid material color')
@@ -99,6 +112,7 @@ export function validateMaterial(m) {
     ['roughness', 1],
     ['metallic', 1],
     ['specularFactor', 1],
+    ['sheenRoughnessFactor', 1],
     ['clearcoatFactor', 1],
     ['clearcoatRoughnessFactor', 1],
     ['normalScale', 16],
@@ -111,7 +125,7 @@ export function validateMaterial(m) {
     range(out.hybridReflectionStrength, 1)
     out.hybridReflectionStrength = Math.fround(out.hybridReflectionStrength)
   }
-  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture", "specularTexture", "specularColorTexture"]) {
+  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture", "specularTexture", "specularColorTexture", "sheenColorTexture", "sheenRoughnessTexture"]) {
     const im = m[key]
     if (im == null) {
       out[key] = null
@@ -137,12 +151,12 @@ export function packMaterials(data) {
   if (data.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
   const materials = data.materials,
     first = materials[0],
-    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture || !!first.specularTexture || !!first.specularColorTexture
+    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture || !!first.specularTexture || !!first.specularColorTexture || !!first.sheenColorTexture || !!first.sheenRoughnessTexture
   data.baseColor = [...first.baseColor]
   data.material = [first.metallic, first.roughness, first.normalScale, first.occlusionStrength]
   data.emissive = [...first.emissive, 0]
   const texturedCoat = materials.some(
-    (m) => m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture,
+    (m) => m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture || m.sheenColorTexture || m.sheenRoughnessTexture,
   )
   const mapCount = texturedCoat ? materialTextureKeys.length : 5
   let tile = 1
@@ -152,7 +166,7 @@ export function packMaterials(data) {
       tile = Math.max(tile, im.width, im.height)
     }
   for (const m of materials)
-    for (const image of [m.transmissionTexture, m.thicknessTexture, m.specularTexture, m.specularColorTexture])
+    for (const image of [m.transmissionTexture, m.thicknessTexture, m.specularTexture, m.specularColorTexture, m.sheenColorTexture, m.sheenRoughnessTexture])
       if (image) tile = Math.max(tile, image.width, image.height)
   tile = Math.min(tile, 2048)
   const cols = Math.ceil(Math.sqrt(materials.length)),
@@ -201,6 +215,14 @@ export function packMaterials(data) {
     record[11] = m.hybridReflectionStrength ?? -1
     record.set(m.attenuationColor ?? [1, 1, 1], 12)
     record[15] = (m.thicknessFactor ?? 0) * (m.inverseAttenuationDistance ?? 0)
+    record.set(m.sheenColorFactor ?? [0, 0, 0], 16)
+    record[19] = m.sheenRoughnessFactor ?? 0
+    record[20] = (m.sheenColorTexture ? 1 : 0) | (m.sheenRoughnessTexture ? 2 : 0) |
+      ((m.sheenTexCoords?.[0] ?? 0) << 2) | ((m.sheenTexCoords?.[1] ?? 0) << 3)
+    if (m.independentUVTransform) {
+      record.set(m.independentUVTransform, 21)
+      record[27] = m.independentUVMaps
+    }
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)
@@ -239,17 +261,19 @@ export function packMaterials(data) {
               : 255
             const from = sourceRow + column
             dst[to++] = k === 2 ? packedChannel(m.thicknessTexture, 1) : src.pixels[from]
-            if (k === 3 && m.specularColorTexture) {
+            const packedColor = k === 3 ? m.specularColorTexture : k === 5 ? m.sheenColorTexture : null
+            if (packedColor) {
               for (let channel = 0; channel < 3; channel++)
               {
-                const value = packedChannel(m.specularColorTexture, channel) / 255
+                const value = packedChannel(packedColor, channel) / 255
                 dst[to++] = Math.round(255 * (value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4))
               }
             } else {
               dst[to++] = src.pixels[from + 1]
               dst[to++] = src.pixels[from + 2]
               dst[to++] = k === 2 ? packedChannel(m.transmissionTexture, 0) :
-                k === 1 && m.specularTexture ? packedChannel(m.specularTexture, 3) : src.pixels[from + 3]
+                k === 1 && m.specularTexture ? packedChannel(m.specularTexture, 3) :
+                k === 6 && m.sheenRoughnessTexture ? packedChannel(m.sheenRoughnessTexture, 3) : src.pixels[from + 3]
             }
           }
         }

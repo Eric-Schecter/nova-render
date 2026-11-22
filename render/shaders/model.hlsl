@@ -1,3 +1,4 @@
+#include "material-sheen.hlsli"
 #ifdef NOVA_D3D12
 cbuffer DrawOffsets : register(b1)
 {
@@ -424,6 +425,34 @@ float4 materialSpecular(InstanceData material)
 {
     return float4(material.world._m00, material.world._m10, material.world._m20, material.world._m30);
 }
+float2 independentTextureUV(InstanceData material, float2 uv, uint map, bool delta = false)
+{
+    if (!(uint(material.normalMatrix[3][2]) & map))
+        return uv;
+    float3 mapped = float3(uv, delta ? 0 : 1);
+    return float2(
+      dot(float3(material.normalMatrix[1][1], material.normalMatrix[2][1], material.normalMatrix[3][1]), mapped),
+      dot(float3(material.normalMatrix[0][2], material.normalMatrix[1][2], material.normalMatrix[2][2]), mapped));
+}
+float4 materialSheen(InstanceData material)
+{
+    return float4(material.normalMatrix[0][0], material.normalMatrix[1][0],
+                  material.normalMatrix[2][0], material.normalMatrix[3][0]);
+}
+uint materialSheenMaps(InstanceData material)
+{
+    return uint(material.normalMatrix[0][1]);
+}
+float4 sampleSheenMaps(InstanceData material, float2 uv0, float2 uv1)
+{
+    uint maps = materialSheenMaps(material);
+    float4 result = 1;
+    if (maps & 1u)
+        result.rgb = coatStrengthTexture.SampleLevel(textureSampler, maps & 4u ? uv1 : uv0, 0).gba;
+    if (maps & 2u)
+        result.a = coatRoughnessTexture.SampleLevel(textureSampler, maps & 8u ? uv1 : uv0, 0).a;
+    return result;
+}
 float2 materialClearcoat(InstanceData material)
 {
     return float2(material.world._m01, material.world._m11);
@@ -557,6 +586,8 @@ struct SurfaceData
     float4 volume;
     float4 specular;
     float4 specularMap;
+    float4 sheen;
+    float4 sheenMap;
     float2 clearcoat;
     float3 coatNormal;
     float4 visibility0, visibility1, visibility2, visibility3;
@@ -591,6 +622,7 @@ SurfaceData sampleSurface(VertexOut input)
 {
     float  alphaInfo  = .125;
     float4 specular   = 1, specularMap = 1;
+    float4 sheen = 0, sheenMap = 1;
     float2 clearcoat  = 0;
     InstanceData materialRecord = (InstanceData)0;
     float2 uv         = input.uv;
@@ -614,6 +646,9 @@ SurfaceData sampleSurface(VertexOut input)
             specularMap.a = normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? uv1 : uv, 0).a;
         if (specularMaps & 2u)
             specularMap.rgb = occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? uv1 : uv, 0).gba;
+        sheen = materialSheen(instance);
+        if (any(sheen.rgb > 0))
+            sheenMap = sampleSheenMaps(instance, uv, uv1);
         clearcoat             = materialClearcoat(instance);
         materialRecord        = instance;
     }
@@ -651,14 +686,19 @@ SurfaceData sampleSurface(VertexOut input)
                 coatDX * materialRecord.uv.xy, coatDY * materialRecord.uv.xy).xyz * 2 - 1,
                 coatUV.scale, dp1, dp2, coatDX, coatDY);
     }
-    float2 duv1 = ddx(input.uv), duv2 = ddy(input.uv);
+    float2 normalUV = independentTextureUV(materialRecord, input.uv, 1u);
+    float2 normalAtlasUV = lightDirection.w > .5 ? frac(normalUV) * materialRecord.uv.xy + materialRecord.uv.zw : normalUV;
+    float2 duv1 = ddx(normalUV), duv2 = ddy(normalUV);
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
     float3 t = p2perp * duv1.x + p1perp * duv2.x, b = p2perp * duv1.y + p1perp * duv2.y;
     float  scale   = rsqrt(max(max(dot(t, t), dot(b, b)), 0.00001));
-    float3 sampled = normalTexture.Sample(textureSampler, uv).xyz * 2 - 1;
+    float3 sampled = normalTexture.Sample(textureSampler, normalAtlasUV).xyz * 2 - 1;
     sampled.xy *= matFactor.z;
     n                    = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
-    float4      mr       = materialTexture.Sample(textureSampler, uv);
+    bool independentMR = (uint(materialRecord.normalMatrix[3][2]) & 2u) != 0;
+    float2 mrUV = independentMR ? frac(independentTextureUV(materialRecord, input.uv, 2u)) *
+      materialRecord.uv.xy + materialRecord.uv.zw : uv;
+    float4 mr = materialTexture.Sample(textureSampler, mrUV);
     bool useMirrorRoughness = irradiance[1].w > .5 && irradiance[3].w > .5
                                && instances[uint(irradiance[3].w) - 1].world._m13 > .5;
     float metallic = saturate(mr.b * matFactor.x);
@@ -668,6 +708,8 @@ SurfaceData sampleSurface(VertexOut input)
     result.useVisibility = 0;
     result.specular = specular * specularMap;
     result.specularMap = specularMap;
+    result.sheen = sheen * sheenMap;
+    result.sheenMap = sheenMap;
     result.clearcoat = clearcoat;
     result.coatNormal = coatNormal;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
@@ -676,6 +718,8 @@ SurfaceData sampleSurface(VertexOut input)
     uint materialFlags = uint(alphaInfo);
     result.volume = float4(materialRecord.world._m03, materialRecord.world._m13,
                           materialRecord.world._m23, materialRecord.world._m33 * input.dielectric.z);
+    if (independentMR && (materialFlags & 1536u))
+        mr.ra = materialTexture.SampleLevel(textureSampler, uv, 0).ra;
     if ((materialFlags & 512u) != 0)
         result.dielectric.x *= mr.a;
     if ((materialFlags & 1024u) != 0)
@@ -706,6 +750,13 @@ float clearcoatTransmission(SurfaceData s, float3 v)
 float3 surfaceDirectLight(SurfaceData s, float3 v, float3 l, float3 radiance, float transmission)
 {
     float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance);
+    float nl = saturate(dot(s.normal, l));
+    if (any(s.sheen.rgb > 0) && nl > 0)
+    {
+        float sheenScale = 1 - max(s.sheen.r, max(s.sheen.g, s.sheen.b)) *
+          max(sheenAlbedo(saturate(dot(s.normal, v)), s.sheen.a), sheenAlbedo(nl, s.sheen.a));
+        color = color * sheenScale + sheenLayer(s.sheen, s.normal, v, l, 0) * radiance * nl;
+    }
     if (s.clearcoat.x > 0)
         color = color * transmission + s.clearcoat.x * directLight(
           s.coatNormal, v, l, 0.04, 1, max(.06, s.clearcoat.y), 1, radiance);
@@ -809,10 +860,10 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
 
     float3 f0 = lerp(dielectricF0(s.specular), s.base, s.metallic);
     float f90 = lerp(s.specular.a, 1, s.metallic);
-    float3 diffuse = 0;
+    float3 diffuse = 0, sheen = 0;
     bool castShadow = light.uv.z > .5;
     uint samples = secondaryLighting ? 1 : castShadow ? rectangleShadowSamples() : 8;
-    if (s.metallic < 1)
+    if (s.metallic < 1 || any(s.sheen.rgb > 0))
     {
         [loop] for (uint i = 0; i < samples; ++i)
         {
@@ -829,7 +880,9 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
                 weight *= localLightVisibility(s.position, s.geometricNormal, samplePosition, 0);
             float3 h = normalize(v + l);
             diffuse += weight * (1 - diffuseFresnel(dot(v, h), fresnel(dot(v, h), f0, f90), s.specular));
+            sheen += weight * sheenLayer(s.sheen, s.normal, v, l, 0);
         }
+        sheen *= light.world._m30 * light.world._m31 * (4.0 / samples) * light.baseColor.rgb * light.baseColor.w;
         diffuse *= light.world._m30 * light.world._m31 * (4.0 / (samples * 3.14159265))
                    * light.baseColor.rgb * light.baseColor.w * (1 - s.metallic) * s.base;
     }
@@ -839,7 +892,8 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
     if (s.clearcoat.x > 0)
         coat = s.clearcoat.x * rectangleSpecular(light, s, v, s.coatNormal, max(.02, s.clearcoat.y),
                                                .04.xxx, 1, planeDistance, castShadow && !secondaryLighting);
-    return (diffuse + specular) * coatTransmission + coat;
+    float sheenScale = 1 - max(s.sheen.r, max(s.sheen.g, s.sheen.b)) * sheenAlbedo(saturate(dot(s.normal, v)), s.sheen.a);
+    return ((diffuse + specular) * sheenScale + sheen) * coatTransmission + coat;
 }
 
 float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection,
@@ -939,6 +993,18 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
             color += surfaceDirectLight(s, v, normalize(float3(1, 0.7, -1)), float3(1, 1.6, 2.7), coatTransmission);
         diffuseAmbient = diffuse * (all(s.specular == 1) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4;
         baseEnvironment = studio(reflect(-v, n), roughness) * f;
+    }
+    if (any(s.sheen.rgb > 0))
+    {
+        float energy = sheenAlbedo(nv, s.sheen.a);
+        float baseWeight = 1 - energy * max(s.sheen.r, max(s.sheen.g, s.sheen.b));
+        float3 reflected = reflect(-v, n);
+        float3 incident = cameraForward.w > .5
+          ? environmentTexture.SampleLevel(textureSampler, environmentDirection(reflected),
+              lerp(.5, 1, s.sheen.a) * environmentParams.w).rgb * environmentParams.z
+          : studio(reflected, lerp(.5, 1, s.sheen.a));
+        diffuseAmbient *= baseWeight;
+        baseEnvironment = baseEnvironment * baseWeight + s.sheen.rgb * (energy * incident);
     }
     diffuseAmbient *= 1 - probeSkyCoverage;
     if (tracedClearcoat)
@@ -1112,7 +1178,23 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     o.positionAO       = float4(high, depth - high, (uint(s.alphaInfo) & 8u) ? -1 : s.ao, slotDistance);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
-    o.specularMap      = s.specularMap;
+    o.specularMap = s.specularMap;
+    if (lightDirection.w > .5)
+    {
+        InstanceData material = instances[input.instanceIndex];
+        if (materialSheenMaps(material) & 3u)
+        {
+            if (uint(material.world._m22) & 3u)
+            {
+                // Two 7-bit samples per half component. The exponent offset avoids half subnormals.
+                uint4 packed = uint4(saturate(s.specularMap) * 127 + .5) |
+                              (uint4(saturate(s.sheenMap) * 127 + .5) << 7);
+                o.specularMap = f16tof32(packed + 1024);
+            }
+            else
+                o.specularMap = s.sheenMap;
+        }
+    }
     return o;
 }
 [[vk::binding(18, 1)]] Texture2D<float4> gNormals : register(t18);
@@ -1120,6 +1202,25 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 [[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
 [[vk::binding(31, 1)]] Texture2D<float4> gClearcoat : register(t31);
 [[vk::binding(33, 1)]] Texture2D<float4> gSpecularMap : register(t33);
+void deferredMaterialLayers(inout SurfaceData surface, InstanceData material, int3 pixel)
+{
+    float4 modulation = gSpecularMap.Load(pixel);
+    float4 specular = 1, sheen = 1;
+    bool useSpecularMaps = (uint(material.world._m22) & 3u) != 0;
+    bool useSheenMaps = (materialSheenMaps(material) & 3u) != 0;
+    if (useSpecularMaps && useSheenMaps)
+    {
+        uint4 packed = f32tof16(modulation) - 1024;
+        specular = float4(packed & 127u) / 127;
+        sheen = float4(packed >> 7) / 127;
+    }
+    else if (useSpecularMaps)
+        specular = modulation;
+    else if (useSheenMaps)
+        sheen = modulation;
+    surface.specular = materialSpecular(material) * specular;
+    surface.sheen = materialSheen(material) * sheen;
+}
 [[vk::binding(21, 1)]] Texture2D<float4> hybridShadow0 : register(t21);
 [[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
 [[vk::binding(23, 1)]] Texture2D<float4> hybridShadow2 : register(t23);
@@ -1384,6 +1485,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
         hit.specular.a *= normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? atlasUV1 : uv, 0).a;
     if (specularMaps & 2u)
         hit.specular.rgb *= occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? atlasUV1 : uv, 0).gba;
+    hit.sheen = materialSheen(mat) * sampleSheenMaps(mat, uv, atlasUV1);
     hit.clearcoat = materialClearcoat(mat);
     hit.normal = hit.geometricNormal = hit.coatNormal = worldNormal;
     if (hit.clearcoat.x > 0)
@@ -1406,7 +1508,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
                 uvSet ? uv1b - uv1a : uv1 - uv0, uvSet ? uv1c - uv1a : uv2 - uv0);
         }
     }
-    float2 deltaUV1 = uv1 - uv0, deltaUV2 = uv2 - uv0;
+    float2 deltaUV1 = independentTextureUV(mat, uv1 - uv0, 1u, true), deltaUV2 = independentTextureUV(mat, uv2 - uv0, 1u, true);
+    float2 normalAtlasUV = frac(independentTextureUV(mat, tex0, 1u)) * mat.uv.xy + mat.uv.zw;
     float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
     if (abs(uvDet) > 1e-8 && mat.material.z != 0)
     {
@@ -1416,7 +1519,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
         float3 t = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * sign(uvDet);
         float3 b = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * sign(uvDet);
         float  scale = rsqrt(max(max(dot(t, t), dot(b, b)), 1e-12));
-        float3 sampled = normalTexture.SampleLevel(textureSampler, uv, 0).xyz * 2 - 1;
+        float3 sampled = normalTexture.SampleLevel(textureSampler, normalAtlasUV, 0).xyz * 2 - 1;
         sampled.xy *= mat.material.z;
         float3 mapped = (t * sampled.x + b * sampled.y) * scale + worldNormal * sampled.z;
         if (dot(mapped, mapped) > 1e-12)
@@ -1425,7 +1528,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     hit.base      = baseTexture.SampleLevel(textureSampler, wrapBaseUV(tex0, mat.emissive.w) * mat.uv.xy + mat.uv.zw, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
     if ((uint(mat.emissive.w) & 8u) != 0)
         return hit.base;
-    float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
+    float2 mrUV = frac(independentTextureUV(mat, tex0, 2u)) * mat.uv.xy + mat.uv.zw;
+    float4 mr = materialTexture.SampleLevel(textureSampler, mrUV, 0);
     hit.metallic  = saturate(mr.b * mat.material.x);
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
     hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, aoUV, 0).r, mat.material.w);
@@ -1913,7 +2017,7 @@ float4 HybridReflectionPSMain(SkyOut input) : SV_Target
     s.metallic = gEmission.Load(pixel).w;
     s.specular = 1;
     if (pos.w > .5 && irradiance[3].w > pos.w)
-        s.specular = materialSpecular(instances[uint(irradiance[3].w - 1 - pos.w)]) * gSpecularMap.Load(pixel);
+        deferredMaterialLayers(s, instances[uint(irradiance[3].w - 1 - pos.w)], pixel);
     float4 coat = gClearcoat.Load(pixel);
     s.coatNormal = octDecode(coat.xy);
     s.clearcoat = coat.zw;
@@ -2090,6 +2194,7 @@ float4 DeferredPSMain(SkyOut input)
     s.emissive        = emission.rgb;
     s.metallic        = emission.w;
     s.specular        = 1;
+    s.sheen           = 0;
     float4 coat       = gClearcoat.Load(pixel);
     s.coatNormal      = octDecode(coat.xy);
     s.clearcoat       = coat.zw;
@@ -2097,7 +2202,7 @@ float4 DeferredPSMain(SkyOut input)
     if (pos.w > .5 && irradiance[3].w > pos.w)
     {
         InstanceData material = instances[uint(irradiance[3].w - 1 - pos.w)];
-        s.specular = materialSpecular(material) * gSpecularMap.Load(pixel);
+        deferredMaterialLayers(s, material, pixel);
         reflectionOverride = material.world._m32;
     }
     if (irradiance[1].w > .5)

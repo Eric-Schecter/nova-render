@@ -184,6 +184,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
           'KHR_materials_ior',
           'KHR_materials_specular',
           'KHR_materials_pbrSpecularGlossiness',
+          'KHR_materials_sheen',
           'KHR_materials_emissive_strength',
           'KHR_xmp_json_ld',
           'KHR_xmp',
@@ -355,6 +356,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
     max = [-Infinity, -Infinity, -Infinity],
     active = new Set()
   let hasTransmission = false
+  const independentUVTransforms = new Map(), independentUVMaps = new Map(), occlusionStreams = new Map()
   function visit(index, parent) {
     if (!json.nodes[index] || active.has(index)) throw Error('Invalid scene graph')
     active.add(index)
@@ -382,8 +384,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
           pbr = mat.pbrMetallicRoughness || {}
         const extensions = mat.extensions || {}
         const coordinates = [null, null]
-        function addTexture(texture, stream = 0) {
-          if (!texture) return
+        function coordinatesFor(texture) {
           const transform = texture.extensions?.KHR_texture_transform ?? {}
           const source = transform.texCoord ?? texture.texCoord ?? 0
           const offset = transform.offset ?? [0, 0], scale = transform.scale ?? [1, 1]
@@ -392,25 +393,61 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
             !Array.isArray(scale) || offset.length !== 2 || scale.length !== 2 ||
             ![...offset, ...scale, angle].every(Number.isFinite))
             throw Error('Invalid texture transform')
-          const next = [source, ...offset, ...scale, angle]
-          if (![0, 1].includes(stream) || coordinates[stream]?.some((v, i) => v !== next[i]))
+          return [source, ...offset, ...scale, angle]
+        }
+        const differs = (a, b) => a.some((v, i) => v !== b[i])
+        function addTexture(texture, stream = 0) {
+          if (!texture) return
+          const next = coordinatesFor(texture)
+          if (![0, 1].includes(stream) || (coordinates[stream] && differs(coordinates[stream], next)))
             throw Error('Material requires independent texture coordinate streams')
           coordinates[stream] = next
         }
-        for (const texture of [pbr.baseColorTexture, pbr.metallicRoughnessTexture, mat.normalTexture])
-          addTexture(texture)
+        addTexture(pbr.baseColorTexture)
+        function addIndependentTexture(texture, mask) {
+          if (!texture) return
+          const target = coordinatesFor(texture), base = coordinates[0]
+          if (!base || !differs(base, target)) addTexture(texture)
+          else {
+            const affine = ([, x, y, sx, sy, angle]) => [
+              Math.cos(angle) * sx, Math.sin(angle) * sy, x,
+              -Math.sin(angle) * sx, Math.cos(angle) * sy, y,
+            ]
+            const [a, b, x, c, d, y] = affine(base), [e, f, u, g, h, v] = affine(target)
+            const det = a * d - b * c
+            if (base[0] !== target[0] || Math.abs(det) < 1e-12)
+              throw Error('Independent texture mapping requires a shared invertible UV set')
+            const p = (e * d - f * c) / det, q = (f * a - e * b) / det,
+              r = (g * d - h * c) / det, t = (h * a - g * b) / det
+            const mapping = [p, q, u - p * x - q * y, r, t, v - r * x - t * y]
+            const previous = independentUVTransforms.get(materialIndex)
+            if (previous && differs(previous, mapping))
+              throw Error('Material requires more than one independent texture transform')
+            independentUVTransforms.set(materialIndex, mapping)
+            independentUVMaps.set(materialIndex, (independentUVMaps.get(materialIndex) ?? 0) | mask)
+          }
+        }
+        addIndependentTexture(pbr.metallicRoughnessTexture, 2)
+        addIndependentTexture(mat.normalTexture, 1)
         addTexture(mat.emissiveTexture, mat.emissiveTexture?.texCoord === 1 &&
           (pbr.baseColorTexture || pbr.metallicRoughnessTexture || mat.normalTexture) ? 1 : 0)
-        addTexture(mat.occlusionTexture, mat.occlusionTexture?.texCoord)
         addTexture(extensions.KHR_materials_transmission?.transmissionTexture)
         addTexture(extensions.KHR_materials_volume?.thicknessTexture)
-        for (const key of ['specularTexture', 'specularColorTexture']) {
-          const texture = extensions.KHR_materials_specular?.[key]
-          addTexture(texture, texture?.texCoord ?? 0)
-        }
+        for (const texture of [
+          extensions.KHR_materials_specular?.specularTexture,
+          extensions.KHR_materials_specular?.specularColorTexture,
+          extensions.KHR_materials_sheen?.sheenColorTexture,
+          extensions.KHR_materials_sheen?.sheenRoughnessTexture,
+        ]) addTexture(texture, texture?.texCoord ?? 0)
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
           addTexture(texture, texture?.texCoord)
+        }
+        if (mat.occlusionTexture) {
+          const target = coordinatesFor(mat.occlusionTexture), source = mat.occlusionTexture.texCoord ?? 0
+          const stream = source === 0 && coordinates[0] && differs(coordinates[0], target) ? 1 : source
+          addTexture(mat.occlusionTexture, stream)
+          occlusionStreams.set(materialIndex, stream)
         }
         const coordinateReaders = coordinates.map((coordinates, stream) => {
           const [set, ox, oy, sx, sy, angle] = coordinates ?? [stream, 0, 0, 1, 1, 0]
@@ -563,7 +600,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
   }
   if (json.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
   const materials = []
-  for (const material of json.materials) {
+  for (const [materialIndex, material] of json.materials.entries()) {
     const pbr = material.pbrMetallicRoughness || {}
     const emission = material.extensions?.KHR_materials_emissive_strength
     let emissiveStrength = 1
@@ -602,6 +639,11 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
     }
     if (!['OPAQUE', 'MASK', 'BLEND'].includes(material.alphaMode || 'OPAQUE'))
       throw Error('Invalid glTF alpha mode')
+    const sheen = material.extensions?.KHR_materials_sheen
+    if (sheen?.sheenColorFactor !== undefined && !Array.isArray(sheen.sheenColorFactor))
+      throw Error('Invalid glTF sheen color factor')
+    if (sheen?.sheenRoughnessFactor !== undefined && typeof sheen.sheenRoughnessFactor !== 'number')
+      throw Error('Invalid glTF sheen roughness factor')
     const volume = material.extensions?.KHR_materials_volume
     const distance = volume?.attenuationDistance
     if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0))
@@ -617,6 +659,8 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
       volume?.thicknessTexture,
       specular?.specularTexture,
       specular?.specularColorTexture,
+      sheen?.sheenColorTexture,
+      sheen?.sheenRoughnessTexture,
     ]
     const baseSampler = json.samplers?.[json.textures?.[pbr.baseColorTexture?.index]?.sampler]
     const wrap = (mode) => mode === 33071 ? 1 : mode === 33648 ? 2 : 0
@@ -649,7 +693,9 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
           (pbr.baseColorTexture || pbr.metallicRoughnessTexture || material.normalTexture) ? 1 : 0,
         normalScale: material.normalTexture?.scale ?? 1,
         occlusionStrength: material.occlusionTexture?.strength ?? 1,
-        occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,
+        occlusionTexCoord: occlusionStreams.get(materialIndex) ?? material.occlusionTexture?.texCoord ?? 0,
+        independentUVTransform: independentUVTransforms.get(materialIndex),
+        independentUVMaps: independentUVMaps.get(materialIndex),
         emissive: (material.emissiveFactor || [0, 0, 0]).map((v) => v * emissiveStrength),
         baseColorTexture: textures[0] ? images[0] : null,
         normalTexture: textures[1] ? images[1] : null,
@@ -667,6 +713,11 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
         thicknessFactor: volume?.thicknessFactor,
         attenuationColor: volume?.attenuationColor,
         inverseAttenuationDistance: distance === undefined ? 0 : 1 / distance,
+        sheenColorFactor: sheen?.sheenColorFactor,
+        sheenRoughnessFactor: sheen?.sheenRoughnessFactor,
+        sheenColorTexture: images[12],
+        sheenRoughnessTexture: images[13],
+        sheenTexCoords: [sheen?.sheenColorTexture?.texCoord ?? 0, sheen?.sheenRoughnessTexture?.texCoord ?? 0],
       }),
     )
   }

@@ -98,6 +98,7 @@ namespace render::detail
         {
             const auto& sky = BackgroundMips(environment ? *environment : FallbackEnvironment()).front();
             PathScene   data{*model, sky, {}, {}};
+            constexpr size_t materialWords = 43;
             for (const auto& record : model->materialRecords)
             {
                 const auto* bytes = reinterpret_cast<const unsigned char*>(record.data() + 32);
@@ -108,6 +109,26 @@ namespace render::detail
                 data.texels.insert(data.texels.end(), specular, specular + 16);
                 const auto* specularFlags = reinterpret_cast<const unsigned char*>(record.data() + 10);
                 data.texels.insert(data.texels.end(), specularFlags, specularFlags + 4);
+                const auto* sheen = reinterpret_cast<const unsigned char*>(record.data() + 16);
+                data.texels.insert(data.texels.end(), sheen, sheen + 20);
+                data.texels.resize(data.texels.size() + 24);
+                const auto* normalTransform = reinterpret_cast<const unsigned char*>(record.data() + 21);
+                data.texels.insert(data.texels.end(), normalTransform, normalTransform + 28);
+            }
+            for (size_t slot = 0; slot < model->materials.size(); ++slot)
+            {
+                const auto& material = model->materials[slot];
+                const std::array maps{&material.sheenColorTexture, &material.sheenRoughnessTexture};
+                for (size_t i = 0; i < maps.size(); ++i)
+                {
+                    if (!*maps[i])
+                        continue;
+                    const auto& map = **maps[i];
+                    const uint32_t descriptor[] = {uint32_t(data.texels.size() / 4), map.width, map.height};
+                    std::memcpy(data.texels.data() + (slot * materialWords + 30 + i * 3) * 4,
+                                descriptor, sizeof(descriptor));
+                    data.texels.insert(data.texels.end(), map.pixels.begin(), map.pixels.end());
+                }
             }
             for (size_t i = 0; i < 5; ++i)
             {
