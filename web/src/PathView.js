@@ -100,9 +100,12 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       params = buffer(new Uint8Array(1552))
     const metadata = [],
       images = []
-    const materialHeader = new Float32Array((data.materialRecords?.length || 0) / 3)
-    for (let i = 0; i < materialHeader.length / 16; i++)
-      materialHeader.set(data.materialRecords.subarray(i * 48 + 32, i * 48 + 48), i * 16)
+    const materialCount = (data.materialRecords?.length || 0) / 48
+    const materialHeader = new Float32Array(materialCount * 20)
+    for (let i = 0; i < materialCount; i++) {
+      materialHeader.set(data.materialRecords.subarray(i * 48 + 32, i * 48 + 48), i * 20)
+      materialHeader.set(data.materialRecords.subarray(i * 48 + 12, i * 48 + 16), i * 20 + 16)
+    }
     let total = materialHeader.byteLength
     const records = data.materialRecords ?? new Float32Array(0)
     const coatCount = records.length / 48

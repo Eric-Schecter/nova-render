@@ -346,7 +346,7 @@ struct VertexOut
     nointerpolation uint  instanceIndex : TEXCOORD4;
     nointerpolation float winding : TEXCOORD5;
     float2 uv1 : TEXCOORD6;
-    nointerpolation float2 dielectric : TEXCOORD7;
+    nointerpolation float3 dielectric : TEXCOORD7;
 };
 // Point and line primitives use camera-facing quads in the shared raster pipeline.
 float4 expandRasterPrimitive(float4 clip, float4 other, float2 primitive)
@@ -417,7 +417,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     o.uv1             = v.uv1.xy;
     o.color           = v.color;
     o.generatedNormal = v.uv.z;
-    o.dielectric      = float2(v.normal.w, v.uv.w);
+    o.dielectric      = float3(v.normal.w, v.uv.w, v.uv1.z > .5 ? 1 : v.uv1.w);
     return o;
 }
 float4 materialSpecular(InstanceData material)
@@ -554,6 +554,7 @@ struct SurfaceData
     float  metallic, roughness, ao;
     float  opacity, alphaInfo;
     float2 dielectric;
+    float4 volume;
     float4 specular;
     float2 clearcoat;
     float3 coatNormal;
@@ -663,7 +664,14 @@ SurfaceData sampleSurface(VertexOut input)
     result.coatNormal = coatNormal;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
     result.opacity                                                                    = baseSample.a * baseFactor.a;
-    result.dielectric = emissiveFactor.w > .5 ? input.dielectric : 0;
+    result.dielectric = emissiveFactor.w > .5 ? input.dielectric.xy : 0;
+    uint materialFlags = uint(alphaInfo);
+    result.volume = float4(materialRecord.world._m03, materialRecord.world._m13,
+                          materialRecord.world._m23, materialRecord.world._m33 * input.dielectric.z);
+    if ((materialFlags & 512u) != 0)
+        result.dielectric.x *= mr.a;
+    if ((materialFlags & 1024u) != 0)
+        result.volume.w *= mr.r;
     result.alphaInfo                                                                  = alphaInfo;
     result.position                                                                   = input.worldPosition;
     result.normal                                                                     = n;
@@ -1023,7 +1031,8 @@ float3 glassRadiance(SurfaceData s, float2 pixel)
     float f = (s.dielectric.y - 1) / (s.dielectric.y + 1);
     float3 reflectance = fresnel(saturate(dot(s.normal, view)), (f * f).xxx, 1);
     float3 reflection = applyFog(displayRadiance(reflected), s.position) * reflectance;
-    return transmitted * s.base * (1 - reflectance) + reflection;
+    float3 attenuation = s.volume.w > 0 ? pow(saturate(s.volume.rgb), s.volume.w) : 1;
+    return transmitted * s.base * attenuation * (1 - reflectance) + reflection;
 }
 
 struct OITOutput

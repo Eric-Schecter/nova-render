@@ -132,6 +132,7 @@ struct SurfaceMaterial
     float4 factors;
     float4 emission;
     float4 uv;
+    float4 volume;
 };
 SurfaceMaterial surfaceMaterial(Vertex vertex)
 {
@@ -140,13 +141,15 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
     m.factors  = parameters[6];
     m.emission = parameters[7];
     m.uv       = float4(1, 1, 0, 0);
+    m.volume   = float4(1, 1, 1, 0);
     if (asuint(parameters[27]).x > 0)
     {
-        uint at    = (uint(max(1, vertex.position.w)) - 1) * 16;
+        uint at    = (uint(max(1, vertex.position.w)) - 1) * 20;
         m.base     = asfloat(uint4(texels[at], texels[at + 1], texels[at + 2], texels[at + 3]));
         m.factors  = asfloat(uint4(texels[at + 4], texels[at + 5], texels[at + 6], texels[at + 7]));
         m.emission = asfloat(uint4(texels[at + 8], texels[at + 9], texels[at + 10], texels[at + 11]));
         m.uv       = asfloat(uint4(texels[at + 12], texels[at + 13], texels[at + 14], texels[at + 15]));
+        m.volume = asfloat(uint4(texels[at + 16], texels[at + 17], texels[at + 18], texels[at + 19]));
     }
     return m;
 }
@@ -485,6 +488,7 @@ struct PathVertex
     float  ior;
     uint   primitive;
     bool   unlit;
+    float4 volume;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
 // whole path arrays by value would duplicate them at every connection.
@@ -555,7 +559,11 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     float4 mr      = textureColor(2, textureUV);
     p.metal        = saturate(mr.b * mat.factors.x);
     p.roughness    = clamp(mr.g * mat.factors.y, .06, 1);
-    p.transmission = a.normal.w;
+    uint flags = uint(mat.emission.w);
+    p.transmission = a.normal.w * ((flags & 512u) ? mr.a : 1);
+    p.volume = mat.volume;
+    p.volume.w *= a.uv1.z > .5 ? 1 : a.uv1.w;
+    if ((flags & 1024u) != 0) p.volume.w *= mr.r;
     p.ior          = max(a.uv.w, 1.01);
     p.beta         = 1;
     p.primitive    = hit.primitive;
@@ -712,7 +720,10 @@ float3 pathF(PathVertex p, float3 v, float3 l)
     float glassValue = 0, glassPdf = 0;
     if (p.transmission > 0)
         glassKernel(p, v, l, glassValue, glassPdf);
-    float3 value = p.transmission * glassValue;
+    bool crossesSurface = dot(p.geometric, v) * dot(p.geometric, l) < 0;
+    float3 attenuation = crossesSurface && p.volume.w > 0 && dot(p.geometric, v) > 0
+        ? pow(saturate(p.volume.rgb), p.volume.w) : 1;
+    float3 value = p.transmission * glassValue * attenuation;
     float3 n, g;
     pathFrame(p, v, n, g);
     float cosine = dot(g, l);

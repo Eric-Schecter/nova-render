@@ -79,6 +79,7 @@ export async function loadGLB(url, { pack = true } = {}) {
       (e) =>
         ![
           'KHR_materials_transmission',
+          'KHR_materials_volume',
           'KHR_materials_ior',
           'KHR_materials_specular',
           'KHR_materials_emissive_strength',
@@ -262,6 +263,8 @@ export async function loadGLB(url, { pack = true } = {}) {
         addTexture(mat.emissiveTexture, mat.emissiveTexture?.texCoord === 1 &&
           (pbr.baseColorTexture || pbr.metallicRoughnessTexture || mat.normalTexture) ? 1 : 0)
         addTexture(mat.occlusionTexture, mat.occlusionTexture?.texCoord)
+        addTexture(extensions.KHR_materials_transmission?.transmissionTexture)
+        addTexture(extensions.KHR_materials_volume?.thicknessTexture)
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
           addTexture(texture, texture?.texCoord)
@@ -279,8 +282,6 @@ export async function loadGLB(url, { pack = true } = {}) {
         })
         const transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
           ior = extensions.KHR_materials_ior?.ior ?? 1.5
-        if (extensions.KHR_materials_transmission?.transmissionTexture)
-          throw Error('Transmission textures are not yet supported')
         if (
           !Number.isFinite(transmission) ||
           transmission < 0 ||
@@ -308,6 +309,7 @@ export async function loadGLB(url, { pack = true } = {}) {
         const count = primitiveCount * stride
         if (vertices.length / modelVertexFloats + count > 10000000)
           throw Error('Oversized model mesh')
+        const volumeScale = extensions.KHR_materials_volume ? Math.cbrt(Math.abs(det)) : 1
         const lineEndpoint = [0, 1, 0, 0, 1, 1]
         function vertexIndex(i) {
           const primitive = Math.floor(i / stride), corner = i % stride
@@ -391,7 +393,7 @@ export async function loadGLB(url, { pack = true } = {}) {
             ior,
             ...uv1,
             stride === 6 ? i % stride + 1 : 0,
-            stride === 6 ? (line ? 2 : 1) : 0,
+            stride === 6 ? (line ? 2 : 1) : volumeScale,
             ...readColor(p.attributes.COLOR_0, index),
           )
           if (animation) {
@@ -460,6 +462,10 @@ export async function loadGLB(url, { pack = true } = {}) {
     }
     if (!['OPAQUE', 'MASK', 'BLEND'].includes(material.alphaMode || 'OPAQUE'))
       throw Error('Invalid glTF alpha mode')
+    const volume = material.extensions?.KHR_materials_volume
+    const distance = volume?.attenuationDistance
+    if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0))
+      throw Error('Attenuation distance must be positive')
     const textures = [
       pbr.baseColorTexture,
       material.normalTexture,
@@ -467,6 +473,8 @@ export async function loadGLB(url, { pack = true } = {}) {
       material.occlusionTexture,
       material.emissiveTexture,
       ...coatTextureKeys.map((key) => coat?.[key]),
+      material.extensions?.KHR_materials_transmission?.transmissionTexture,
+      volume?.thicknessTexture,
     ]
     const baseSampler = json.samplers?.[json.textures?.[pbr.baseColorTexture?.index]?.sampler]
     const wrap = (mode) => mode === 33071 ? 1 : mode === 33648 ? 2 : 0
@@ -520,6 +528,11 @@ export async function loadGLB(url, { pack = true } = {}) {
         clearcoatTexture: textures[5] ? images[5] : null,
         clearcoatRoughnessTexture: textures[6] ? images[6] : null,
         clearcoatNormalTexture: textures[7] ? images[7] : null,
+        transmissionTexture: images[8],
+        thicknessTexture: images[9],
+        thicknessFactor: volume?.thicknessFactor,
+        attenuationColor: volume?.attenuationColor,
+        inverseAttenuationDistance: distance === undefined ? 0 : 1 / distance,
       }),
     )
   }

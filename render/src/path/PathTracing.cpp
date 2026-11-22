@@ -102,6 +102,8 @@ namespace render::detail
             {
                 const auto* bytes = reinterpret_cast<const unsigned char*>(record.data() + 32);
                 data.texels.insert(data.texels.end(), bytes, bytes + 64);
+                const auto* volume = reinterpret_cast<const unsigned char*>(record.data() + 12);
+                data.texels.insert(data.texels.end(), volume, volume + 16);
             }
             for (size_t i = 0; i < 5; ++i)
             {

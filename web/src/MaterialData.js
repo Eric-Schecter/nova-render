@@ -35,6 +35,9 @@ export function validateMaterial(m) {
     unlit: m.unlit ?? false,
     emissiveTexCoord: m.emissiveTexCoord ?? 0,
     baseColorWrap: m.baseColorWrap ?? 0,
+    thicknessFactor: m.thicknessFactor ?? 0,
+    inverseAttenuationDistance: m.inverseAttenuationDistance ?? 0,
+    attenuationColor: Array.from(m.attenuationColor ?? [1, 1, 1]),
     baseColor: m.baseColor ?? [1, 1, 1, 1],
     roughness: m.roughness ?? 1,
     metallic: m.metallic ?? 1,
@@ -71,6 +74,10 @@ export function validateMaterial(m) {
     if (typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > max)
       throw Error('Invalid material factor')
   }
+  range(out.thicknessFactor, 3.402823466e38)
+  range(out.inverseAttenuationDistance, 3.402823466e38)
+  if (out.attenuationColor.length !== 3) throw Error('Invalid attenuation color')
+  for (const value of out.attenuationColor) range(value, 1)
   for (const [key, n, max] of [
     ['baseColor', 4, 1],
     ['emissive', 3, 65504],
@@ -100,7 +107,7 @@ export function validateMaterial(m) {
     range(out.hybridReflectionStrength, 1)
     out.hybridReflectionStrength = Math.fround(out.hybridReflectionStrength)
   }
-  for (const key of materialTextureKeys) {
+  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture"]) {
     const im = m[key]
     if (im == null) {
       out[key] = null
@@ -126,7 +133,7 @@ export function packMaterials(data) {
   if (data.materials.length > 128) throw Error('At most 128 material slots are supported')
   const materials = data.materials,
     first = materials[0],
-    atlas = materials.length > 1
+    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture
   data.baseColor = [...first.baseColor]
   data.material = [first.metallic, first.roughness, first.normalScale, first.occlusionStrength]
   data.emissive = [...first.emissive, 0]
@@ -140,6 +147,9 @@ export function packMaterials(data) {
       const im = m[materialTextureKeys[k]] || defaults[k]
       tile = Math.max(tile, im.width, im.height)
     }
+  for (const m of materials)
+    for (const image of [m.transmissionTexture, m.thicknessTexture])
+      if (image) tile = Math.max(tile, image.width, image.height)
   tile = Math.min(tile, 2048)
   const cols = Math.ceil(Math.sqrt(materials.length)),
     rows = Math.ceil(materials.length / cols)
@@ -183,6 +193,8 @@ export function packMaterials(data) {
     record[8] = uv[0] | (uv[1] << 1) | (uv[2] << 2)
     record[9] = m.clearcoatNormalScale ?? 1
     record[11] = m.hybridReflectionStrength ?? -1
+    record.set(m.attenuationColor ?? [1, 1, 1], 12)
+    record[15] = (m.thicknessFactor ?? 0) * (m.inverseAttenuationDistance ?? 0)
     record.set(m.baseColor, 32)
     record.set([m.metallic, m.roughness, m.normalScale, m.occlusionStrength], 36)
     record.set(m.emissive, 40)
@@ -192,6 +204,8 @@ export function packMaterials(data) {
       (m.unlit ? 8 : 0) +
       (m.emissiveTexCoord ? 16 : 0) +
       (m.baseColorWrap ?? 0) * 32 +
+      (m.transmissionTexture ? 512 : 0) +
+      (m.thicknessTexture ? 1024 : 0) +
       (m.alphaCutoff ?? 0.5) * 0.25
     record.set(
       atlas
@@ -212,12 +226,16 @@ export function packMaterials(data) {
         for (let py = 0; py < stride; py++) {
           const sourceRow = coordinate(py, src.height) * src.width * 4
           let to = ((y + py) * width + x) * 4
-          for (const column of columns) {
+          for (let px = 0; px < columns.length; px++) {
+            const column = columns[px]
+            const volumeChannel = (image, channel) => image
+              ? image.pixels[(coordinate(py, image.height) * image.width + coordinate(px, image.width)) * 4 + channel]
+              : 255
             const from = sourceRow + column
-            dst[to++] = src.pixels[from]
+            dst[to++] = k === 2 ? volumeChannel(m.thicknessTexture, 1) : src.pixels[from]
             dst[to++] = src.pixels[from + 1]
             dst[to++] = src.pixels[from + 2]
-            dst[to++] = src.pixels[from + 3]
+            dst[to++] = k === 2 ? volumeChannel(m.transmissionTexture, 0) : src.pixels[from + 3]
           }
         }
       }
