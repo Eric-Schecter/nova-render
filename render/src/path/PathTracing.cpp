@@ -98,7 +98,7 @@ namespace render::detail
         {
             const auto& sky = BackgroundMips(environment ? *environment : FallbackEnvironment()).front();
             PathScene   data{*model, sky, {}, {}};
-            constexpr size_t materialWords = 43;
+            constexpr size_t materialWords = 53;
             for (const auto& record : model->materialRecords)
             {
                 const auto* bytes = reinterpret_cast<const unsigned char*>(record.data() + 32);
@@ -114,18 +114,23 @@ namespace render::detail
                 data.texels.resize(data.texels.size() + 24);
                 const auto* normalTransform = reinterpret_cast<const unsigned char*>(record.data() + 21);
                 data.texels.insert(data.texels.end(), normalTransform, normalTransform + 28);
+                const auto* film = reinterpret_cast<const unsigned char*>(record.data() + 28);
+                data.texels.insert(data.texels.end(), film, film + 16);
+                data.texels.resize(data.texels.size() + 24);
             }
             for (size_t slot = 0; slot < model->materials.size(); ++slot)
             {
                 const auto& material = model->materials[slot];
-                const std::array maps{&material.sheenColorTexture, &material.sheenRoughnessTexture};
+                const std::array maps{&material.sheenColorTexture, &material.sheenRoughnessTexture,
+                  &material.iridescenceTexture, &material.iridescenceThicknessTexture};
+                constexpr std::array offsets{30, 33, 47, 50};
                 for (size_t i = 0; i < maps.size(); ++i)
                 {
                     if (!*maps[i])
                         continue;
                     const auto& map = **maps[i];
                     const uint32_t descriptor[] = {uint32_t(data.texels.size() / 4), map.width, map.height};
-                    std::memcpy(data.texels.data() + (slot * materialWords + 30 + i * 3) * 4,
+                    std::memcpy(data.texels.data() + (slot * materialWords + offsets[i]) * 4,
                                 descriptor, sizeof(descriptor));
                     data.texels.insert(data.texels.end(), map.pixels.begin(), map.pixels.end());
                 }

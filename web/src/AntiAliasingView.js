@@ -80,6 +80,7 @@ const shadowMomentsA = reflectionAtrous + 1,
   shadowMomentsB = shadowMomentsA + 4,
   shadowAtrous = shadowMomentsB + 4
 const modelSpecularMapTarget = shadowAtrous + 1
+const modelFilmMapTarget = modelSpecularMapTarget + 1
 
 export async function createAntiAliasingView({
   canvas,
@@ -294,7 +295,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= modelSpecularMapTarget; i++)
+    for (let i = 0; i <= modelFilmMapTarget; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -438,12 +439,14 @@ export async function createAntiAliasingView({
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
           shadow.sources[10] = modelSpecularMapTarget
+          shadow.sources[11] = modelFilmMapTarget
         }
         if (halfReflections) {
           const reflection = add(-8, hybridReflectionTarget)
           reflection.sources.splice(0, 4, 85, 86, 87, 88)
           reflection.sources[8] = modelClearcoatTarget
           reflection.sources[10] = modelSpecularMapTarget
+          reflection.sources[11] = modelFilmMapTarget
           reflection.u[4] *= 0.5
           reflection.u[5] *= 0.5
         }
@@ -573,6 +576,7 @@ export async function createAntiAliasingView({
           trace.sources.splice(0, 4, 85, 86, 87, 88)
           trace.sources[8] = modelClearcoatTarget
           trace.sources[10] = modelSpecularMapTarget
+          trace.sources[11] = modelFilmMapTarget
           const currentAO = frames % 2 ? aoHistoryB : aoHistoryA
           const resolve = add(30, currentAO)
           resolve.sources.splice(
@@ -607,6 +611,7 @@ export async function createAntiAliasingView({
         p.sources.splice(0, 4, 85, 86, halfAO ? aoCombinedPosition : 87, 88)
         p.sources[8] = modelClearcoatTarget
         p.sources[10] = modelSpecularMapTarget
+        p.sources[11] = modelFilmMapTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
         add(-6, 89).sources[0] = 91
@@ -736,6 +741,7 @@ export async function createAntiAliasingView({
       if (p.program === -4) {
         used.add(modelClearcoatTarget)
         used.add(modelSpecularMapTarget)
+        used.add(modelFilmMapTarget)
       }
       if (p.program === 17 || p.program === -4 || p.program === -7) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
@@ -749,7 +755,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= modelSpecularMapTarget; i++) {
+    for (let i = 0; i <= modelFilmMapTarget; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -876,7 +882,7 @@ export async function createAntiAliasingView({
         {
           length:
             p.program === -4
-              ? 6
+              ? 7
               : p.program === 17 || p.program === -7
                 ? 4
                 : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
@@ -889,6 +895,8 @@ export async function createAntiAliasingView({
             : textures[
                 p.ms
                   ? (p.program === 17 ? 46 : native ? 19 : MC) + a
+                  : p.program === -4 && a === 6
+                    ? modelFilmMapTarget
                   : p.program === -4 && a === 5
                     ? modelSpecularMapTarget
                   : p.program === -4 && a === 4
@@ -948,7 +956,7 @@ export async function createAntiAliasingView({
               p.program === -7 ||
               p.program === -8 ||
               p.program === -9
-              ? p.sources.slice(0, 11).map((i) => textures[i])
+              ? p.sources.slice(0, 12).map((i) => textures[i])
               : null,
           )
         pass.end()

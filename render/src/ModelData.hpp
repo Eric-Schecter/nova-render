@@ -11,7 +11,7 @@
 #include <vector>
 namespace render::detail
 {
-    inline constexpr size_t materialSlotLimit = 256;
+    inline constexpr size_t materialSlotLimit = 512;
     inline constexpr size_t shadowBVHByteLimit = 384ull * 1024 * 1024;
 
     struct ModelVertex

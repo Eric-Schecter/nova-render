@@ -185,6 +185,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
           'KHR_materials_specular',
           'KHR_materials_pbrSpecularGlossiness',
           'KHR_materials_sheen',
+          'KHR_materials_iridescence',
           'KHR_materials_emissive_strength',
           'KHR_xmp_json_ld',
           'KHR_xmp',
@@ -438,6 +439,8 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
           extensions.KHR_materials_specular?.specularColorTexture,
           extensions.KHR_materials_sheen?.sheenColorTexture,
           extensions.KHR_materials_sheen?.sheenRoughnessTexture,
+          extensions.KHR_materials_iridescence?.iridescenceTexture,
+          extensions.KHR_materials_iridescence?.iridescenceThicknessTexture,
         ]) addTexture(texture, texture?.texCoord ?? 0)
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
@@ -598,7 +601,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
     animation.center = min.map((v, k) => (v + max[k]) * 0.5)
     animation.scale = 2 / size
   }
-  if (json.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
+  if (json.materials.length > materialSlotLimit) throw Error('At most 512 material slots are supported')
   const materials = []
   for (const [materialIndex, material] of json.materials.entries()) {
     const pbr = material.pbrMetallicRoughness || {}
@@ -644,6 +647,9 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
       throw Error('Invalid glTF sheen color factor')
     if (sheen?.sheenRoughnessFactor !== undefined && typeof sheen.sheenRoughnessFactor !== 'number')
       throw Error('Invalid glTF sheen roughness factor')
+    const film = material.extensions?.KHR_materials_iridescence
+    for (const key of ['iridescenceFactor', 'iridescenceIor', 'iridescenceThicknessMinimum', 'iridescenceThicknessMaximum'])
+      if (film?.[key] !== undefined && typeof film[key] !== 'number') throw Error('Invalid glTF ' + key)
     const volume = material.extensions?.KHR_materials_volume
     const distance = volume?.attenuationDistance
     if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0))
@@ -661,6 +667,8 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
       specular?.specularColorTexture,
       sheen?.sheenColorTexture,
       sheen?.sheenRoughnessTexture,
+      film?.iridescenceTexture,
+      film?.iridescenceThicknessTexture,
     ]
     const baseSampler = json.samplers?.[json.textures?.[pbr.baseColorTexture?.index]?.sampler]
     const wrap = (mode) => mode === 33071 ? 1 : mode === 33648 ? 2 : 0
@@ -717,6 +725,14 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
         sheenRoughnessFactor: sheen?.sheenRoughnessFactor,
         sheenColorTexture: images[12],
         sheenRoughnessTexture: images[13],
+        iridescenceFactor: film?.iridescenceFactor,
+        iridescenceBaseIor: material.extensions?.KHR_materials_ior?.ior,
+        iridescenceIor: film?.iridescenceIor,
+        iridescenceThicknessMinimum: film?.iridescenceThicknessMinimum,
+        iridescenceThicknessMaximum: film?.iridescenceThicknessMaximum,
+        iridescenceTexture: images[14],
+        iridescenceThicknessTexture: images[15],
+        iridescenceTexCoords: [film?.iridescenceTexture?.texCoord ?? 0, film?.iridescenceThicknessTexture?.texCoord ?? 0],
         sheenTexCoords: [sheen?.sheenColorTexture?.texCoord ?? 0, sheen?.sheenRoughnessTexture?.texCoord ?? 0],
       }),
     )

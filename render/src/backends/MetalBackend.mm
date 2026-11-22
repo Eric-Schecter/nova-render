@@ -369,7 +369,7 @@ namespace render::detail
                 for (int i = 1; i < 4; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
             if (std::string(file) == "model-gbuffer.metallib")
-                for (int i = 4; i < 6; i++)
+                for (int i = 4; i < 7; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
             if (std::string(file) == "model-oit.metallib")
             {
@@ -401,7 +401,7 @@ namespace render::detail
             oitDepthState          = [device newDepthStencilStateWithDescriptor:d];
             AAExternalScene external;
             external.device      = (__bridge void*)device;
-            external.bindGBuffer = [](void* encoder, const std::array<void*, 11>& views, int) {
+            external.bindGBuffer = [](void* encoder, const std::array<void*, 12>& views, int) {
                 auto e = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 for (size_t i = 0; i < views.size(); i++)
                     [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:(i < 8 ? 17 + i : 31 + i - 8)];

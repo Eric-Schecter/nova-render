@@ -101,7 +101,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const metadata = [],
       images = []
     const materialCount = (data.materialRecords?.length || 0) / 48
-    const materialWords = 43
+    const materialWords = 53
     const materialHeader = new Float32Array(materialCount * materialWords)
     for (let i = 0; i < materialCount; i++) {
       const source = i * 48, dst = i * materialWords
@@ -111,14 +111,18 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
       materialHeader[dst + 24] = data.materialRecords[source + 10]
       materialHeader.set(data.materialRecords.subarray(source + 16, source + 21), dst + 25)
       materialHeader.set(data.materialRecords.subarray(source + 21, source + 28), dst + 36)
+      materialHeader.set(data.materialRecords.subarray(source + 28, source + 32), dst + 43)
     }
     let total = materialHeader.byteLength
     const materialOffsets = new Uint32Array(materialHeader.buffer)
     for (let slot = 0; slot < materialCount; slot++) {
       const material = data.materials[slot]
-      for (const [i, map] of [material.sheenColorTexture, material.sheenRoughnessTexture].entries()) {
+      const maps = [material.sheenColorTexture, material.sheenRoughnessTexture,
+        material.iridescenceTexture, material.iridescenceThicknessTexture]
+      const offsets = [30, 33, 47, 50]
+      for (const [i, map] of maps.entries()) {
         if (!map) continue
-        materialOffsets.set([total / 4, map.width, map.height], slot * materialWords + 30 + i * 3)
+        materialOffsets.set([total / 4, map.width, map.height], slot * materialWords + offsets[i])
         images.push(map.pixels)
         total += map.pixels.byteLength
       }

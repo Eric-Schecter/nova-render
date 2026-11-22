@@ -122,7 +122,7 @@ void UploadModel()
     modelUniform = uploadBuffer(512);
     D3D12_DESCRIPTOR_HEAP_DESC heap{};
     heap.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    heap.NumDescriptors = 44;
+    heap.NumDescriptors = 47;
     heap.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     checkHR(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&modelHeap)), "Create model texture heap");
     checkHR(allocator->Reset(), "Reset model allocator");
@@ -229,7 +229,7 @@ void UploadModel()
     gRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     gRange.NumDescriptors     = 8;
     gRange.BaseShaderRegister = 17;
-    gRanges[1]                                    = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 31, 0, 8};
+    gRanges[1]                                    = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 31, 0, 8};
     params[9].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     params[9].DescriptorTable                     = {2, gRanges};
     params[9].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;

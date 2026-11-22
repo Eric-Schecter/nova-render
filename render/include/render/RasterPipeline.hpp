@@ -33,6 +33,6 @@ namespace render
         bool     forwardPlus = false, clusteredForward = false, deferredMSAA = false;
         bool     opaqueOnly = false, debugBypassesAAAndPost = true;
         bool     deferredRequiresModel = true;
-        unsigned gBufferTargets = 6, gBufferBytesPerPixel = 48;
+        unsigned gBufferTargets = 7, gBufferBytesPerPixel = 56;
     };
 } // namespace render

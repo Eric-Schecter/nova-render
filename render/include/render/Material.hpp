@@ -43,6 +43,10 @@ namespace render
         float sheenRoughnessFactor = 0;
         std::optional<Image> sheenColorTexture, sheenRoughnessTexture;
         std::array<uint32_t, 2> sheenTexCoords{};
+        float iridescenceFactor = 0, iridescenceIor = 1.3f, iridescenceBaseIor = 1.5f;
+        float iridescenceThicknessMinimum = 100, iridescenceThicknessMaximum = 400;
+        std::optional<Image> iridescenceTexture, iridescenceThicknessTexture;
+        std::array<uint32_t, 2> iridescenceTexCoords{};
         float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
         std::optional<std::array<float, 6>> independentUVTransform;
         uint32_t independentUVMaps = 0; // Normal and metallic-roughness bits.

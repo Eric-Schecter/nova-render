@@ -130,6 +130,7 @@ namespace render::detail
                         shadow->sources[i] = AAModelBase + i;
                     shadow->sources[8] = AAModelClearcoat;
                     shadow->sources[10] = AAModelSpecularMap;
+                    shadow->sources[11] = AAModelFilmMap;
                 }
                 if (halfReflections)
                 {
@@ -138,6 +139,7 @@ namespace render::detail
                         reflection->sources[i] = AAModelBase + i;
                     reflection->sources[8] = AAModelClearcoat;
                     reflection->sources[10] = AAModelSpecularMap;
+                    reflection->sources[11] = AAModelFilmMap;
                     reflection->uniforms[1][0] *= .5f;
                     reflection->uniforms[1][1] *= .5f;
                 }
@@ -281,6 +283,7 @@ namespace render::detail
                         trace->sources[i] = AAModelBase + i;
                     trace->sources[8] = AAModelClearcoat;
                     trace->sources[10] = AAModelSpecularMap;
+                    trace->sources[11] = AAModelFilmMap;
 
                     const int currentAO = frames % 2 ? AAAOHistoryB : AAAOHistoryA;
                     auto* resolve = add(30, currentAO);
@@ -315,6 +318,7 @@ namespace render::detail
                     p->sources[i] = AAModelBase + i;
                 p->sources[8] = AAModelClearcoat;
                 p->sources[10] = AAModelSpecularMap;
+                p->sources[11] = AAModelFilmMap;
                 if (halfAO)
                     p->sources[2] = AAAOCombinedPosition;
             }
