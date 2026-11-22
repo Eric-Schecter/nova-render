@@ -10,6 +10,8 @@ option(NOVA_ENABLE_UI "Build the optional parameter UI" ${nova_desktop_default})
 set(nova_vulkan_default ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(nova_vulkan_default OFF)
+    # SDL 3.2 uses the legacy UIKit lifecycle, which iOS 27 rejects.
+    list(PREPEND VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/ports-ios")
 endif()
 option(NOVA_ENABLE_VULKAN "Build the Vulkan backend" ${nova_vulkan_default})
 # Select manifest dependencies before the vcpkg toolchain runs inside project().

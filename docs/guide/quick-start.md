@@ -32,7 +32,7 @@ Shared HLSL compiles to backend binaries embedded by default; no external shader
 
 ## iOS Metal triangle
 
-On an Apple Silicon Mac, use Xcode with the Metal Toolchain component and an installed iOS simulator runtime. The pilot target uses SDL3 for the window and app events and embeds the same HLSL triangle shaders as the desktop sample.
+On an Apple Silicon Mac, use Xcode with the Metal Toolchain component and an installed iOS simulator runtime. The iOS vcpkg overlay pins SDL 3.4.20 for the UIKit scene lifecycle required by iOS 27. The triangle embeds the same HLSL shaders as the desktop sample.
 
 ```sh
 cmake -S . -B build/ios-simulator \

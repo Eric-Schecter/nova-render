@@ -1,0 +1,12 @@
+{
+  "name": "sdl3",
+  "version": "3.4.20",
+  "description": "Simple DirectMedia Layer with UIKit scene lifecycle support",
+  "homepage": "https://github.com/libsdl-org/SDL",
+  "license": "Zlib",
+  "supports": "ios",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}
