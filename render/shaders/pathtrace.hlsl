@@ -1,5 +1,6 @@
 #include "material-sheen.hlsli"
 #include "material-iridescence.hlsli"
+#include "material-anisotropy.hlsli"
 struct Vertex
 {
     float4 position;
@@ -145,6 +146,8 @@ struct SurfaceMaterial
     float4 film;
     uint filmMaps;
     uint filmMapOffset;
+    uint anisotropyFlags;
+    uint anisotropyMapOffset;
 };
 SurfaceMaterial surfaceMaterial(Vertex vertex)
 {
@@ -164,9 +167,11 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
     m.film = 0;
     m.filmMaps = 0;
     m.filmMapOffset = 0;
+    m.anisotropyFlags = 0;
+    m.anisotropyMapOffset = 0;
     if (asuint(parameters[27]).x > 0)
     {
-        uint at    = (uint(max(1, vertex.position.w)) - 1) * 53;
+        uint at    = (uint(max(1, vertex.position.w)) - 1) * 56;
         m.base     = asfloat(uint4(texels[at], texels[at + 1], texels[at + 2], texels[at + 3]));
         m.factors  = asfloat(uint4(texels[at + 4], texels[at + 5], texels[at + 6], texels[at + 7]));
         m.emission = asfloat(uint4(texels[at + 8], texels[at + 9], texels[at + 10], texels[at + 11]));
@@ -180,6 +185,8 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
         m.filmMaps = (layerMaps >> 4) & 15u;
         m.film = asfloat(uint4(texels[at + 43], texels[at + 44], texels[at + 45], texels[at + 46]));
         m.filmMapOffset = at + 47;
+        m.anisotropyFlags = layerMaps >> 20;
+        m.anisotropyMapOffset = at + 53;
         m.sheenMapOffset = at + 30;
         m.independentUVMaps = uint(asfloat(texels[at + 42]));
         m.independentUVOffset = at + 36;
@@ -377,7 +384,7 @@ float distribution(float nh, float roughness)
     float a = roughness * roughness, a2 = a * a, q = nh * nh * (a2 - 1) + 1;
     return a2 / max(PI * q * q, 1e-7);
 }
-float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughness, float4 specular, float3 film, float ior)
+float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughness, float4 specular, float3 film, float ior, float4 anisotropy)
 {
     float  nv = max(dot(n, v), 1e-5), nl = max(dot(n, l), 0);
     float3 h  = normalize(v + l);
@@ -396,7 +403,14 @@ float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughn
     float3 f = lerp(dielectricF, conductorF, metal);
     float diffuseF = max(dielectricF.r, max(dielectricF.g, dielectricF.b));
     float3 diffuse = (1 - (film.x > 0 && film.z > 0 ? dielectricF : all(specular == 1) ? f : diffuseF.xxx)) * (1 - metal) * base / PI;
-    return diffuse + distribution(nh, roughness) * g * f / max(4 * nv * nl, 1e-5);
+    float weight = distribution(nh, roughness) * g / max(4 * nv * nl, 1e-5);
+    if (anisotropy.w > 0)
+    {
+        float3 t = anisotropicTangent(n, anisotropy.xyz);
+        float2 alpha = anisotropicRoughness(roughness, anisotropy.w);
+        weight = anisotropicD(h, n, t, alpha) * anisotropicVisibility(v, l, n, t, alpha);
+    }
+    return diffuse + weight * f;
 }
 // Power heuristic for one sample from each strategy; scale first to avoid overflow.
 float misWeight(float a, float b)
@@ -499,7 +513,7 @@ float emitterPdf(uint primitive, float3 origin, float3 position)
     float  cosine = abs(dot(normalize(crossProduct), -normalize(delta)));
     return cosine > 1e-8 ? areaProbability() * pmf * distance2 / (area * cosine) : 0;
 }
-float bsdfPdf(float3 n, float3 v, float3 l, float metal, float roughness)
+float bsdfPdf(float3 n, float3 v, float3 l, float metal, float roughness, float4 anisotropy)
 {
     float nl = dot(n, l);
     if (nl <= 0)
@@ -508,7 +522,9 @@ float bsdfPdf(float3 n, float3 v, float3 l, float metal, float roughness)
     float3 h           = normalize(v + l);
     float  nh          = saturate(dot(n, h));
     return (1 - probability) * nl / PI
-           + probability * distribution(nh, roughness) * nh / max(4 * abs(dot(v, h)), 1e-20);
+           + probability * (anisotropy.w > 0
+              ? anisotropicD(h, n, anisotropicTangent(n, anisotropy.xyz), anisotropicRoughness(roughness, anisotropy.w))
+              : distribution(nh, roughness)) * nh / max(4 * abs(dot(v, h)), 1e-20);
 }
 // Each optional coat slot starts with six material words, followed by three image descriptors.
 float4 coatMap(uint slot, uint index, float2 uv)
@@ -545,6 +561,7 @@ struct PathVertex
     float4 specular;
     float4 sheen;
     float3 film;
+    float4 anisotropy;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
 // whole path arrays by value would duplicate them at every connection.
@@ -605,6 +622,7 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     float2 du = independentTextureUV(mat, b.uv.xy - a.uv.xy, 1u, true),
            dv = independentTextureUV(mat, c.uv.xy - a.uv.xy, 1u, true);
     float  det = du.x * dv.y - du.y * dv.x;
+    float3 tangent = anisotropicBasis(p.normal), bitangent = cross(p.normal, tangent);
     if (abs(det) > 1e-8)
     {
         float3 t = (e * dv.y - f * du.y) / det, bit = (-e * dv.x + f * du.x) / det;
@@ -613,6 +631,26 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
         float3 mapped = textureColor(1, materialUV(independentTextureUV(mat, uv, 1u), mat)).xyz * 2 - 1;
         mapped.xy *= mat.factors.z;
         p.normal = normalize(t * mapped.x + bit * mapped.y + p.normal * mapped.z);
+        tangent = anisotropicTangent(p.normal, t);
+        bitangent = cross(p.normal, tangent) * (dot(cross(p.normal, tangent), bit) < 0 ? -1 : 1);
+    }
+    p.anisotropy = 0;
+    float strength = float((mat.independentUVMaps >> 2) & 2047u) / 2047;
+    if (strength > 0)
+    {
+        float angle = float(mat.independentUVMaps >> 13) * (3.14159265 / 2048);
+        if (mat.anisotropyFlags & 1u)
+        {
+            uint at = mat.anisotropyMapOffset;
+            float2 uv1 = a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z;
+            float3 anisotropyMap = sampleImage(uint4(texels[at], texels[at + 1], texels[at + 2], 0),
+                                              mat.anisotropyFlags & 2u ? uv1 : uv).rgb;
+            float2 direction = anisotropyMap.rg * 2 - 1;
+            if (dot(direction, direction) > 1e-8)
+                angle += atan2(direction.y, direction.x);
+            strength *= anisotropyMap.b;
+        }
+        p.anisotropy = float4(tangent * cos(angle) + bitangent * sin(angle), strength);
     }
     p.coat = 0;
     uint coatHeader = texels[lightHeader() + 7];
@@ -849,7 +887,7 @@ float3 pathF(PathVertex p, float3 v, float3 l)
     float cosine = dot(g, l);
     float nl = dot(n, l);
     if (cosine > 1e-7 && nl > 0)
-        value += (1 - p.transmission) * sheenLayer(p.sheen, n, v, l, brdf(n, v, l, p.base, p.metal, p.roughness, p.specular, p.film, p.ior)) * nl / cosine;
+        value += (1 - p.transmission) * sheenLayer(p.sheen, n, v, l, brdf(n, v, l, p.base, p.metal, p.roughness, p.specular, p.film, p.ior, p.anisotropy)) * nl / cosine;
     if (p.coat.x <= 0)
         return value;
     float3 nc = coatFrame(p, g);
@@ -893,7 +931,7 @@ float pathPdf(PathVertex p, float3 v, float3 l)
         }
     }
     bool reflection = dot(g, l) > 0;
-    float base = p.transmission * pdf + (1 - p.transmission) * (reflection ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0);
+    float base = p.transmission * pdf + (1 - p.transmission) * (reflection ? bsdfPdf(n, v, l, p.metal, p.roughness, p.anisotropy) : 0);
     if (p.coat.x <= 0)
         return base;
     float3 nc = coatFrame(p, g);
@@ -978,6 +1016,9 @@ bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out f
     {
         float  alpha = p.roughness * p.roughness, c = sqrt((1 - q) / (1 + (alpha * alpha - 1) * q));
         float3 h = t * (cos(phi) * sqrt(max(0, 1 - c * c))) + b * (sin(phi) * sqrt(max(0, 1 - c * c))) + n * c;
+        if (p.anisotropy.w > 0)
+            h = anisotropicHalfVector(float2(q, phi / (2 * PI)), n,
+                anisotropicTangent(n, p.anisotropy.xyz), anisotropicRoughness(p.roughness, p.anisotropy.w));
         l        = reflect(-v, h);
     }
     else

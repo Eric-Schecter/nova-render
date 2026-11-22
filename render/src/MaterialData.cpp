@@ -101,6 +101,9 @@ namespace render::detail
         for (auto uv : m.iridescenceTexCoords)
             if (uv > 1)
                 throw std::invalid_argument("Iridescence coordinate set must be 0 or 1");
+        range(m.anisotropyStrength, 1);
+        if (!std::isfinite(m.anisotropyRotation) || m.anisotropyTexCoord > 1)
+            throw std::invalid_argument("Invalid anisotropy rotation or coordinate set");
         range(m.clearcoatFactor, 1);
         range(m.clearcoatRoughnessFactor, 1);
         if (!std::isfinite(m.clearcoatNormalScale))
@@ -128,7 +131,7 @@ namespace render::detail
         range(m.inverseAttenuationDistance, std::numeric_limits<float>::max());
         for (float x : m.attenuationColor)
             range(x, 1);
-        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture})
+        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture, &m.anisotropyTexture})
             if (*image && (!(*image)->width || !(*image)->height || (*image)->width > 8192 || (*image)->height > 8192
                 || (*image)->pixels.size() != size_t((*image)->width) * (*image)->height * 4))
                 throw std::invalid_argument("Volume maps require 1..8192 RGBA8 pixels");
@@ -150,10 +153,10 @@ namespace render::detail
         {
             ValidateMaterial(m);
             auxiliaryMaps |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture
-              || m.sheenColorTexture || m.sheenRoughnessTexture || m.iridescenceTexture || m.iridescenceThicknessTexture);
+              || m.sheenColorTexture || m.sheenRoughnessTexture || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture);
             for (auto* im : maps(m))
                 tile = std::max({tile, im->width, im->height});
-            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture})
+            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture, &m.anisotropyTexture})
                 if (*map)
                     tile = std::max({tile, (*map)->width, (*map)->height});
         }
@@ -163,7 +166,7 @@ namespace render::detail
         std::copy(first.emissive.begin(), first.emissive.end(), data.emissive.begin());
         data.materialRecords.clear();
         const bool atlas = data.materials.size() > 1
-          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture || first.sheenColorTexture || first.sheenRoughnessTexture || first.iridescenceTexture || first.iridescenceThicknessTexture;
+          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture || first.sheenColorTexture || first.sheenRoughnessTexture || first.iridescenceTexture || first.iridescenceThicknessTexture || first.anisotropyTexture;
         tile             = std::min(tile, 2048u);
         uint32_t cols    = uint32_t(std::ceil(std::sqrt(double(data.materials.size())))),
                  rows = uint32_t((data.materials.size() + cols - 1) / cols), stride = tile + 4, w = cols * stride,
@@ -228,7 +231,8 @@ namespace render::detail
               | (m.sheenTexCoords[0] << 2) | (m.sheenTexCoords[1] << 3)
               | (m.iridescenceTexture ? 16u : 0u) | (m.iridescenceThicknessTexture ? 32u : 0u)
               | (m.iridescenceTexCoords[0] << 6) | (m.iridescenceTexCoords[1] << 7)
-              | (uint32_t(std::lround((m.iridescenceBaseIor - 1) * 2047.5f)) << 8));
+              | (uint32_t(std::lround((m.iridescenceBaseIor - 1) * 2047.5f)) << 8)
+              | (m.anisotropyTexture ? 1u << 20 : 0u) | (m.anisotropyTexCoord << 21));
             record[28] = m.iridescenceFactor;
             record[29] = m.iridescenceIor;
             record[30] = m.iridescenceThicknessMinimum;
@@ -236,8 +240,12 @@ namespace render::detail
             if (m.independentUVTransform)
             {
                 std::copy(m.independentUVTransform->begin(), m.independentUVTransform->end(), record.begin() + 21);
-                record[27] = float(m.independentUVMaps);
             }
+            constexpr double pi = 3.141592653589793;
+            const double rotation = std::fmod(double(m.anisotropyRotation), pi) / pi;
+            const uint32_t turn = uint32_t(std::lround((rotation < 0 ? rotation + 1 : rotation) * 2048)) & 2047u;
+            record[27] = float(m.independentUVMaps | (uint32_t(std::lround(m.anisotropyStrength * 2047)) << 2)
+              | (turn << 13));
             std::copy(m.baseColor.begin(), m.baseColor.end(), record.begin() + 32);
 
             record[36] = m.metallic;
@@ -289,6 +297,16 @@ namespace render::detail
                                 if (m.iridescenceThicknessTexture)
                                     pixel[2] = packedChannel(m.iridescenceThicknessTexture, u, v, 1);
                             }
+                            if (k == 4 && m.anisotropyTexture)
+                            {
+                                const float dx = packedChannel(m.anisotropyTexture, u, v, 0) * (2.f / 255) - 1;
+                                const float dy = packedChannel(m.anisotropyTexture, u, v, 1) * (2.f / 255) - 1;
+                                double orientation = std::atan2(dy, dx) / pi;
+                                orientation -= std::floor(orientation);
+                                pixel[3] = uint8_t(std::lround(orientation * 256));
+                            }
+                            if (k == 7 && m.anisotropyTexture)
+                                pixel[3] = packedChannel(m.anisotropyTexture, u, v, 2);
                             if (k == 2)
                             {
                                 pixel[0] = packedChannel(m.thicknessTexture, u, v, 1);

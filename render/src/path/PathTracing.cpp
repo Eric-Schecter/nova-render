@@ -98,7 +98,7 @@ namespace render::detail
         {
             const auto& sky = BackgroundMips(environment ? *environment : FallbackEnvironment()).front();
             PathScene   data{*model, sky, {}, {}};
-            constexpr size_t materialWords = 53;
+            constexpr size_t materialWords = 56;
             for (const auto& record : model->materialRecords)
             {
                 const auto* bytes = reinterpret_cast<const unsigned char*>(record.data() + 32);
@@ -116,14 +116,14 @@ namespace render::detail
                 data.texels.insert(data.texels.end(), normalTransform, normalTransform + 28);
                 const auto* film = reinterpret_cast<const unsigned char*>(record.data() + 28);
                 data.texels.insert(data.texels.end(), film, film + 16);
-                data.texels.resize(data.texels.size() + 24);
+                data.texels.resize(data.texels.size() + 36);
             }
             for (size_t slot = 0; slot < model->materials.size(); ++slot)
             {
                 const auto& material = model->materials[slot];
                 const std::array maps{&material.sheenColorTexture, &material.sheenRoughnessTexture,
-                  &material.iridescenceTexture, &material.iridescenceThicknessTexture};
-                constexpr std::array offsets{30, 33, 47, 50};
+                  &material.iridescenceTexture, &material.iridescenceThicknessTexture, &material.anisotropyTexture};
+                constexpr std::array offsets{30, 33, 47, 50, 53};
                 for (size_t i = 0; i < maps.size(); ++i)
                 {
                     if (!*maps[i])

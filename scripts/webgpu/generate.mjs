@@ -5,9 +5,11 @@ const compile = (source, options = {}) =>
   compileShader(source, { ...options, maxSourceBytes: 262144 })
 const sheenSource = await readFile('render/shaders/material-sheen.hlsli', 'utf8')
 const filmSource = await readFile('render/shaders/material-iridescence.hlsli', 'utf8')
+const anisotropySource = await readFile('render/shaders/material-anisotropy.hlsli', 'utf8')
 const readMaterialShader = async (name) =>
   (await readFile(`render/shaders/${name}.hlsl`, 'utf8')).replace('#include "material-sheen.hlsli"', sheenSource)
     .replace('#include "material-iridescence.hlsli"', filmSource)
+    .replace('#include "material-anisotropy.hlsli"', anisotropySource)
 const result = await compile(await readFile('render/shaders/triangle.hlsl', 'utf8'))
 await mkdir('docs/public/generated', { recursive: true })
 await writeFile('docs/public/generated/triangle.json', JSON.stringify(result))

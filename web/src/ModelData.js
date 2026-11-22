@@ -186,6 +186,7 @@ export async function loadGLB(url, { materialVariant } = {}) {
           'KHR_materials_pbrSpecularGlossiness',
           'KHR_materials_sheen',
           'KHR_materials_iridescence',
+          'KHR_materials_anisotropy',
           'KHR_materials_emissive_strength',
           'KHR_xmp_json_ld',
           'KHR_xmp',
@@ -441,6 +442,7 @@ export async function loadGLB(url, { materialVariant } = {}) {
           extensions.KHR_materials_sheen?.sheenRoughnessTexture,
           extensions.KHR_materials_iridescence?.iridescenceTexture,
           extensions.KHR_materials_iridescence?.iridescenceThicknessTexture,
+          extensions.KHR_materials_anisotropy?.anisotropyTexture,
         ]) addTexture(texture, texture?.texCoord ?? 0)
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
@@ -650,6 +652,9 @@ export async function loadGLB(url, { materialVariant } = {}) {
     const film = material.extensions?.KHR_materials_iridescence
     for (const key of ['iridescenceFactor', 'iridescenceIor', 'iridescenceThicknessMinimum', 'iridescenceThicknessMaximum'])
       if (film?.[key] !== undefined && typeof film[key] !== 'number') throw Error('Invalid glTF ' + key)
+    const anisotropy = material.extensions?.KHR_materials_anisotropy
+    for (const key of ['anisotropyStrength', 'anisotropyRotation'])
+      if (anisotropy?.[key] !== undefined && typeof anisotropy[key] !== 'number') throw Error('Invalid glTF ' + key)
     const volume = material.extensions?.KHR_materials_volume
     const distance = volume?.attenuationDistance
     if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0))
@@ -669,6 +674,7 @@ export async function loadGLB(url, { materialVariant } = {}) {
       sheen?.sheenRoughnessTexture,
       film?.iridescenceTexture,
       film?.iridescenceThicknessTexture,
+      anisotropy?.anisotropyTexture,
     ]
     const fallback = [
       [255, 255, 255, 255],
@@ -679,6 +685,7 @@ export async function loadGLB(url, { materialVariant } = {}) {
       [255, 255, 255, 255],
       [255, 255, 255, 255],
       [128, 128, 255, 255],
+      [255, 255, 255, 255],
       [255, 255, 255, 255],
       [255, 255, 255, 255],
       [255, 255, 255, 255],
@@ -748,6 +755,10 @@ export async function loadGLB(url, { materialVariant } = {}) {
           iridescenceTexture: textures[14] ? images[14] : null,
           iridescenceThicknessTexture: textures[15] ? images[15] : null,
           iridescenceTexCoords: [film?.iridescenceTexture?.texCoord ?? 0, film?.iridescenceThicknessTexture?.texCoord ?? 0],
+          anisotropyStrength: anisotropy?.anisotropyStrength,
+          anisotropyRotation: anisotropy?.anisotropyRotation,
+          anisotropyTexture: textures[16] ? images[16] : null,
+          anisotropyTexCoord: anisotropy?.anisotropyTexture?.texCoord ?? 0,
           sheenTexCoords: [sheen?.sheenColorTexture?.texCoord ?? 0, sheen?.sheenRoughnessTexture?.texCoord ?? 0],
           thicknessFactor: volume?.thicknessFactor,
           attenuationColor: volume?.attenuationColor,

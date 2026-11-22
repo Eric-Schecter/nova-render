@@ -107,7 +107,7 @@ foreach(stage IN LISTS _nova_stages)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
                 ${_nova_shader_defines} ${vulkan_options} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
-            DEPENDS "${_hlsl}" "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-iridescence.hlsli" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+            DEPENDS "${_hlsl}" "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-iridescence.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-anisotropy.hlsli" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     endif()
     if(WIN32)
@@ -115,7 +115,7 @@ foreach(stage IN LISTS _nova_stages)
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12=1 ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${output}" "${_hlsl}"
-            DEPENDS "${_hlsl}" "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-iridescence.hlsli" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+            DEPENDS "${_hlsl}" "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-iridescence.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-anisotropy.hlsli" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     elseif(APPLE)
         # Metal uses D3D's Y convention: never reuse the Y-inverted Vulkan module.
@@ -126,7 +126,7 @@ foreach(stage IN LISTS _nova_stages)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0
                 ${_nova_shader_defines} -T ${profile} -E ${entry} -Fo "${spv}" "${_hlsl}"
-            DEPENDS "${_hlsl}" "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-iridescence.hlsli" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+            DEPENDS "${_hlsl}" "${PROJECT_SOURCE_DIR}/render/shaders/material-sheen.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-iridescence.hlsli" "${PROJECT_SOURCE_DIR}/render/shaders/material-anisotropy.hlsli" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
         add_custom_command(OUTPUT "${msl}"
             COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${spv}" --msl ${NOVA_METAL_PLATFORM_ARGS} --msl-version 20100 --msl-decoration-binding
                 --rename-entry-point ${entry} ${msl_entry} ${stage} --output "${msl}"
