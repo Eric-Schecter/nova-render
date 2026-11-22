@@ -123,6 +123,29 @@ try {
     'Capability restrictions',
   )
   await page.evaluate(async () => {
+    await load('Transmission')
+    r.setLighting('pbr')
+  })
+  const glass = await draw('glass-forward')
+  const size = await page.locator('canvas').evaluate((canvas) => [canvas.width, canvas.height])
+  const center = (Math.floor(size[1] / 2) * size[0] + Math.floor(size[0] / 2)) * 4
+  check(glass[center] > glass[center + 1] + 35, 'Opaque receiver is not visible through glass')
+  await page.evaluate(() => r.setRasterSettings({ pipeline: 'deferred' }))
+  check(diff(glass, await draw('glass-deferred')) < 0.4, 'Deferred glass does not match Forward')
+  await page.evaluate(() => {
+    r.setRasterSettings({ pipeline: 'forward' })
+    r.setPostProcessing({ enabled: false })
+  })
+  const defaultGlass = await draw('glass-default')
+  check(
+    defaultGlass[center] > defaultGlass[center + 1] + 35,
+    'Default raster path did not composite glass',
+  )
+  await page.evaluate(() => {
+    r.setPostProcessing({ enabled: true })
+    r.setLighting('unlit')
+  })
+  await page.evaluate(async () => {
     window.matrix = (x, y, z, tx = 0, ty = 0, tz = 0) => [
       x,
       0,
@@ -215,6 +238,9 @@ try {
       'shadow-off',
       'shadow-mask',
       'shadow-solid',
+      'glass-forward',
+      'glass-deferred',
+      'glass-default',
     ]) {
       const a = await decode(readFileSync(`${dir}/${name}.png`)),
         b = await decode(readFileSync(`build/validation/material-alpha/${api}/${name}.png`))

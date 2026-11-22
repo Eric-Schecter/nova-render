@@ -127,8 +127,8 @@ class Renderer {
     this.#check()
     return materialCapabilities()
   }
-  #hasBlend(data = this.#model?.data) {
-    return data?.materials?.some((m) => m.alphaMode === 'BLEND') || false
+  #hasRasterTransparency(data = this.#model?.data) {
+    return !!data?.hasTransmission || !!data?.materials?.some((m) => m.alphaMode === 'BLEND')
   }
   #hasAlpha(data = this.#model?.data) {
     return data?.materials?.some((m) => (m.alphaMode || 'OPAQUE') !== 'OPAQUE') || false
@@ -139,10 +139,10 @@ class Renderer {
     if (this.#hasAlpha(data) && (this.#renderMode === 'ray-tracing' || this.#aoSettings.enabled))
       throw Error('Alpha materials currently require raster rendering')
     if (
-      this.#hasBlend(data) &&
+      this.#hasRasterTransparency(data) &&
       (['msaa', 'taa'].includes(this.#aaSettings.method) || this.#aaSettings.split)
     )
-      throw Error('BLEND does not support MSAA, TAA or AA split')
+      throw Error('Raster transparency does not support MSAA, TAA or AA split')
   }
   #postSettings = defaultPostProcessing()
   #postRemaining = 0
@@ -214,8 +214,8 @@ class Renderer {
       throw Error('Invalid AA settings')
     if (this.#rasterSettings.pipeline === 'deferred' && next.method === 'msaa')
       throw Error('Deferred MSAA is not supported')
-    if (this.#hasBlend() && (['msaa', 'taa'].includes(next.method) || next.split))
-      throw Error('BLEND does not support MSAA, TAA or AA split')
+    if (this.#hasRasterTransparency() && (['msaa', 'taa'].includes(next.method) || next.split))
+      throw Error('Raster transparency does not support MSAA, TAA or AA split')
     this.#aaSettings = next
     this.#aaView?.setAntiAliasing(next)
     this.#resetAA()
@@ -255,7 +255,7 @@ class Renderer {
               : owner.#rasterSettings
           },
           get alphaBlend() {
-            return owner.#hasBlend()
+            return owner.#hasRasterTransparency()
           },
           get encoded() {
             return !owner.#model
@@ -1242,7 +1242,7 @@ class Renderer {
           this.#postSettings.enabled ||
           this.#rasterSettings.pipeline === 'deferred' ||
           this.#useHalfShadows() ||
-          this.#hasBlend())
+          this.#hasRasterTransparency())
       )
         await this.#drawAA(viewport.width, viewport.height)
       else if (this.#model) {

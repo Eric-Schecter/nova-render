@@ -79,6 +79,7 @@ export async function loadGLB(url) {
       (e) =>
         ![
           'KHR_materials_transmission',
+          'KHR_materials_volume',
           'KHR_materials_ior',
           'KHR_materials_specular',
           'KHR_materials_emissive_strength',
@@ -214,6 +215,7 @@ export async function loadGLB(url) {
     min = [Infinity, Infinity, Infinity],
     max = [-Infinity, -Infinity, -Infinity],
     active = new Set()
+  let hasTransmission = false
   function visit(index, parent) {
     if (!json.nodes[index] || active.has(index)) throw Error('Invalid scene graph')
     active.add(index)
@@ -261,6 +263,8 @@ export async function loadGLB(url) {
         addTexture(mat.emissiveTexture, mat.emissiveTexture?.texCoord === 1 &&
           (pbr.baseColorTexture || pbr.metallicRoughnessTexture || mat.normalTexture) ? 1 : 0)
         addTexture(mat.occlusionTexture, mat.occlusionTexture?.texCoord)
+        addTexture(extensions.KHR_materials_transmission?.transmissionTexture)
+        addTexture(extensions.KHR_materials_volume?.thicknessTexture)
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
           addTexture(texture, texture?.texCoord)
@@ -278,8 +282,6 @@ export async function loadGLB(url) {
         })
         const transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
           ior = extensions.KHR_materials_ior?.ior ?? 1.5
-        if (extensions.KHR_materials_transmission?.transmissionTexture)
-          throw Error('Transmission textures are not yet supported')
         if (
           !Number.isFinite(transmission) ||
           transmission < 0 ||
@@ -289,6 +291,7 @@ export async function loadGLB(url) {
           ior > 3
         )
           throw Error('Dielectric requires transmission 0..1 and IOR 1.01..3')
+        hasTransmission ||= transmission > 0
         if (
           p.indices !== undefined &&
           ![5121, 5123, 5125].includes(json.accessors[p.indices].componentType)
@@ -306,6 +309,7 @@ export async function loadGLB(url) {
         const count = primitiveCount * stride
         if (vertices.length / modelVertexFloats + count > 10000000)
           throw Error('Oversized model mesh')
+        const volumeScale = extensions.KHR_materials_volume ? Math.cbrt(Math.abs(det)) : 1
         const lineEndpoint = [0, 1, 0, 0, 1, 1]
         function vertexIndex(i) {
           const primitive = Math.floor(i / stride), corner = i % stride
@@ -389,7 +393,7 @@ export async function loadGLB(url) {
             ior,
             ...uv1,
             stride === 6 ? i % stride + 1 : 0,
-            stride === 6 ? (line ? 2 : 1) : 0,
+            stride === 6 ? (line ? 2 : 1) : volumeScale,
             ...readColor(p.attributes.COLOR_0, index),
           )
           if (animation) {
@@ -457,6 +461,10 @@ export async function loadGLB(url) {
     }
     if (!['OPAQUE', 'MASK', 'BLEND'].includes(material.alphaMode || 'OPAQUE'))
       throw Error('Invalid glTF alpha mode')
+    const volume = material.extensions?.KHR_materials_volume
+    const distance = volume?.attenuationDistance
+    if (distance !== undefined && (!Number.isFinite(distance) || distance <= 0))
+      throw Error('Attenuation distance must be positive')
     const textures = [
       pbr.baseColorTexture,
       material.normalTexture,
@@ -464,6 +472,8 @@ export async function loadGLB(url) {
       material.occlusionTexture,
       material.emissiveTexture,
       ...coatTextureKeys.map((key) => coat?.[key]),
+      material.extensions?.KHR_materials_transmission?.transmissionTexture,
+      volume?.thicknessTexture,
     ]
     const fallback = [
       [255, 255, 255, 255],
@@ -527,6 +537,11 @@ export async function loadGLB(url) {
           clearcoatTexture: textures[5] ? images[5] : null,
           clearcoatRoughnessTexture: textures[6] ? images[6] : null,
           clearcoatNormalTexture: textures[7] ? images[7] : null,
+          transmissionTexture: textures[8] ? images[8] : null,
+          thicknessTexture: textures[9] ? images[9] : null,
+          thicknessFactor: volume?.thicknessFactor,
+          attenuationColor: volume?.attenuationColor,
+          inverseAttenuationDistance: distance === undefined ? 0 : 1 / distance,
         }),
       )
     } catch (e) {
@@ -536,6 +551,7 @@ export async function loadGLB(url) {
   }
   return packMaterials({
     animation,
+    hasTransmission,
     vertices: new Float32Array(vertices),
     sourceMinimum: min,
     sourceMaximum: max,

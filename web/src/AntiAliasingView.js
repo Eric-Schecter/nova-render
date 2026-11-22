@@ -408,7 +408,7 @@ export async function createAntiAliasingView({
         p.sources[8] = modelClearcoatTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
-        add(-6, 89)
+        add(-6, 89).sources[0] = 91
         if (!reconstruct) add(29, 17).sources.splice(0, 3, 91, 89, 90)
       }
       const scale = effectiveMethod === 'ssaa' ? 2 : 1
@@ -717,7 +717,7 @@ export async function createAntiAliasingView({
             p.program === -2,
             p.ms ? 4 : 1,
             p.program,
-            p.program === -5 || p.program === -7
+            p.program === -5 || p.program === -6 || p.program === -7
               ? p.sources.slice(0, 9).map((i) => textures[i])
               : null,
           )

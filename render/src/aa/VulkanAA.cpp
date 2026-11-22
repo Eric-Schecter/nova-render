@@ -1109,7 +1109,7 @@ namespace render::detail
                         VkRect2D scissor{{0, 0}, {target.width, target.height}};
                         api.vkCmdSetViewport(command, 0, 1, &viewport);
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
-                        if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -6 || p.program == -7) && external.bindGBuffer)
                         {
                             std::array<void*, 9> views{};
                             for (size_t i = 0; i < views.size(); i++)

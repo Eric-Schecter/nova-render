@@ -36,10 +36,10 @@ namespace render::detail
             if (mode == RenderMode::RayTracing && HasAlpha(next))
                 throw std::invalid_argument("MASK/BLEND ray tracing is not supported; select raster first");
             if (
-              HasBlend(next)
+              HasRasterTransparency(next)
               && (rasterSettings.method == AAMethod::MSAA || rasterSettings.method == AAMethod::TAA || rasterSettings.split))
                 throw std::invalid_argument(
-                  "BLEND supports Off/FXAA/SMAA/SSAA without AA split; choose a compatible AA method first");
+                  "Raster transparency supports Off/FXAA/SMAA/SSAA without AA split; choose a compatible AA method first");
         }
         HybridSettings     hybrid;
         HybridCapabilities GetHybridCapabilities() const
@@ -529,8 +529,8 @@ namespace render::detail
               && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
                 throw std::invalid_argument("Hybrid supports Off/FXAA/SMAA/SSAA without AA split");
             if (
-              HasBlend(model.get()) && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
-                throw std::invalid_argument("BLEND supports Off/FXAA/SMAA/SSAA without AA split");
+              HasRasterTransparency(model.get()) && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
+                throw std::invalid_argument("Raster transparency supports Off/FXAA/SMAA/SSAA without AA split");
             if (modelRaster.pipeline == RasterPipeline::Deferred && value.method == AAMethod::MSAA)
                 throw std::invalid_argument("Deferred MSAA is not supported");
             if (
@@ -808,7 +808,7 @@ namespace render::detail
             {
                 if (
                   rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled
-                  && modelRaster.pipeline == RasterPipeline::Forward && !HasBlend(model.get()))
+                  && modelRaster.pipeline == RasterPipeline::Forward && !HasRasterTransparency(model.get()))
                     return nullptr;
                 if (modelRaster.pipeline == RasterPipeline::Deferred && (!model || aaTriangle))
                     throw std::runtime_error("Deferred requires a model or scene");
@@ -846,7 +846,7 @@ namespace render::detail
                   aaTriangle,
                   postSettings,
                   modelRaster,
-                  HasBlend(model.get()),
+                  HasRasterTransparency(model.get()),
                   mode == RenderMode::Hybrid,
                   mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,
                   hybrid);

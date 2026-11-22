@@ -45,6 +45,9 @@ namespace render
         bool                    unlit = false;
         uint32_t                emissiveTexCoord = 0;
         uint32_t                baseColorWrap = 0; // Two bits per axis: repeat, clamp, mirror.
+        std::optional<Image> transmissionTexture, thicknessTexture;
+        float thicknessFactor = 0, inverseAttenuationDistance = 0;
+        std::array<float, 3> attenuationColor{1, 1, 1};
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

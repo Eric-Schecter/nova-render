@@ -130,7 +130,7 @@ namespace render::detail
                 add(-1, sceneColor)->multisampled = settings.method == AAMethod::MSAA;
             if (oit)
             {
-                add(-6, AAOitAccum);
+                add(-6, AAOitAccum)->sources[0] = AARawOpaque;
             }
             if (oit && !reconstruct)
             {

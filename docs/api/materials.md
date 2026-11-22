@@ -67,6 +67,8 @@ GLB loading supports the two factor properties of [KHR_materials_specular](https
 
 The same pipelines support [KHR_materials_clearcoat](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat). The coating responds to scene lights and environment reflections. In Hybrid, the base layer can use traced reflections and the coat samples the environment. Hybrid secondary hits sample all three maps. Standalone Ray mode samples the same clearcoat maps on opaque materials. Its integrators share a GGX coat lobe, a matched mixture PDF, and Fresnel attenuation of the underlying BSDF and emission. The coat is a thin layer without its own refraction. The standalone path-tracing alpha restriction still applies.
 
+Forward, Deferred and Hybrid PBR use the GLB scalar `KHR_materials_transmission` and `KHR_materials_ior` factors for thin glass. The shared shader samples the opaque scene behind the surface, filters it by roughness and adds Fresnel-weighted environment reflections. This screen-space path uses the transparent composition pass and supports Off, FXAA, SMAA and SSAA without AA split. Transmission textures, glass thickness and refraction between transparent layers are outside this path.
+
 - `clearcoatTexture` multiplies the strength factor by its linear red channel.
 - `clearcoatRoughnessTexture` multiplies the roughness factor by its linear green channel.
 - `clearcoatNormalTexture` perturbs only the coat normal using linear RGB in a tangent frame derived from geometry and UVs. `clearcoatNormalScale` scales its tangent-plane components and defaults to 1.

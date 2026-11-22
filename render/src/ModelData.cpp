@@ -125,6 +125,21 @@ namespace render::detail
                 coordinates.angle = read(extension.Get("rotation"));
             return coordinates;
         }
+        const tinygltf::Value& materialExtension(const tinygltf::Material& material, const char* name)
+        {
+            static const tinygltf::Value empty;
+            const auto it = material.extensions.find(name);
+            return it == material.extensions.end() ? empty : it->second;
+        }
+        int volumeTextureIndex(const tinygltf::Value& extension, const char* name)
+        {
+            if (!extension.Has(name))
+                return -1;
+            const auto& info = extension.Get(name);
+            if (!info.Has("index") || !info.Get("index").IsInt() || info.Get("index").GetNumberAsInt() < 0)
+                throw std::runtime_error("Invalid glTF volume texture");
+            return info.Get("index").GetNumberAsInt();
+        }
         void expandMeshInstances(tinygltf::Model& model)
         {
             constexpr char extension[] = "EXT_mesh_gpu_instancing";
@@ -300,7 +315,7 @@ namespace render::detail
         for (const auto& list : {gltf.extensionsRequired, gltf.extensionsUsed})
             for (const auto& extension : list)
                 if (
-                  extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
+                  extension != "KHR_materials_transmission" && extension != "KHR_materials_volume" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
                   && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
@@ -310,8 +325,6 @@ namespace render::detail
             const auto t = m.extensions.find("KHR_materials_transmission");
             if (t != m.extensions.end())
             {
-                if (t->second.Has("transmissionTexture"))
-                    throw std::runtime_error("Transmission textures are not yet supported");
                 if (t->second.Has("transmissionFactor") && !t->second.Get("transmissionFactor").IsNumber())
                     throw std::runtime_error("Transmission factor must be numeric");
                 if (t->second.Has("transmissionFactor"))
@@ -373,6 +386,7 @@ namespace render::detail
                     if (p.material == -1 && gltf.materials.size() == defaultMaterial)
                         gltf.materials.emplace_back();
                     const auto glass = dielectric(gltf.materials.at(materialIndex));
+                    result->hasTransmission |= glass[0] > 0;
                     const int  position  = p.attributes.at("POSITION"),
                               uv         = p.attributes.count("TEXCOORD_0") ? p.attributes.at("TEXCOORD_0") : -1;
                     const int   uv1      = p.attributes.count("TEXCOORD_1") ? p.attributes.at("TEXCOORD_1") : -1;
@@ -401,6 +415,18 @@ namespace render::detail
                           || material.normalTexture.index >= 0) ? 1 : 0;
                     addTexture(material.emissiveTexture, emissionStream);
                     addTexture(ao, ao.texCoord);
+                    for (const auto& pair : {std::pair{"KHR_materials_transmission", "transmissionTexture"},
+                                            std::pair{"KHR_materials_volume", "thicknessTexture"}})
+                    {
+                        const auto& ext = materialExtension(material, pair.first);
+                        if (volumeTextureIndex(ext, pair.second) < 0)
+                            continue;
+                        const auto& texture = ext.Get(pair.second);
+                        const auto texCoord = texture.Has("texCoord") ? texture.Get("texCoord").GetNumberAsInt() : 0;
+                        const auto& extensions = texture.Get("extensions");
+                        assign(0, textureCoordinates(texCoord, extensions.Has("KHR_texture_transform")
+                            ? extensions.Get("KHR_texture_transform") : tinygltf::Value{}));
+                    }
                     if (const auto coat = material.extensions.find("KHR_materials_clearcoat");
                         coat != material.extensions.end())
                         for (size_t k = 0; k < coatTextureKeys.size(); ++k)
@@ -463,7 +489,10 @@ namespace render::detail
                     if (primitiveCount > (10000000 - result->vertices.size()) / stride)
                         throw std::runtime_error("Oversized model mesh");
                     const auto count = primitiveCount * stride;
-                    const auto mirrored = glm::determinant(glm::mat3(matrix)) < 0;
+                    const auto determinant = glm::determinant(glm::mat3(matrix));
+                    const auto mirrored = determinant < 0;
+                    const float volumeScale = material.extensions.count("KHR_materials_volume")
+                      ? std::cbrt(std::abs(determinant)) : 1.f;
                     constexpr std::array<size_t, 6> lineEndpoint{0, 1, 0, 0, 1, 1};
                     auto vertexIndex = [&](size_t i) {
                         const auto primitive = i / stride;
@@ -551,7 +580,7 @@ namespace render::detail
                            {n.x, n.y, n.z, glass[0]},
                            {t.x, t.y, normal < 0 ? 1.0f : 0.0f, glass[1]},
                            {t1.x, t1.y, stride == 6 ? float(corner + 1) : 0.0f,
-                            stride == 6 ? (line ? 2.0f : 1.0f) : 0.0f},
+                            stride == 6 ? (line ? 2.0f : 1.0f) : volumeScale},
                            {color.x, color.y, color.z, color.w}});
                     }
                 }
@@ -693,6 +722,36 @@ namespace render::detail
             if (mat.occlusionTexture.texCoord < 0 || mat.occlusionTexture.texCoord > 1)
                 throw std::runtime_error("AO texture coordinate set must be 0 or 1");
             slot.occlusionTexCoord = uint32_t(mat.occlusionTexture.texCoord);
+            const auto& volume = materialExtension(mat, "KHR_materials_volume");
+            const auto& transmission = materialExtension(mat, "KHR_materials_transmission");
+            auto number = [&](const char* key, float fallback) {
+                if (!volume.Has(key))
+                    return fallback;
+                const auto& v = volume.Get(key);
+                if (!v.IsNumber() || !std::isfinite(float(v.GetNumberAsDouble())) || v.GetNumberAsDouble() < 0)
+                    throw std::runtime_error("Invalid glTF volume parameter");
+                return float(v.GetNumberAsDouble());
+            };
+            slot.thicknessFactor = number("thicknessFactor", 0);
+            if (volume.Has("attenuationDistance"))
+            {
+                const auto distance = number("attenuationDistance", 0);
+                if (distance <= 0)
+                    throw std::runtime_error("Attenuation distance must be positive");
+                slot.inverseAttenuationDistance = 1 / distance;
+            }
+            if (volume.Has("attenuationColor"))
+            {
+                const auto& color = volume.Get("attenuationColor");
+                if (!color.IsArray() || color.ArrayLen() != 3)
+                    throw std::runtime_error("Invalid attenuation color");
+                for (size_t k = 0; k < 3; ++k)
+                {
+                    if (!color.Get(k).IsNumber())
+                        throw std::runtime_error("Invalid attenuation color");
+                    slot.attenuationColor[k] = float(color.Get(k).GetNumberAsDouble());
+                }
+            }
             const int textures[]   = {
               pbr.baseColorTexture.index,
               mat.normalTexture.index,
@@ -701,7 +760,9 @@ namespace render::detail
               mat.emissiveTexture.index,
               coatMaps[0].index,
               coatMaps[1].index,
-              coatMaps[2].index};
+              coatMaps[2].index,
+              volumeTextureIndex(transmission, "transmissionTexture"),
+              volumeTextureIndex(volume, "thicknessTexture")};
             std::optional<Image>* maps[] = {
               &slot.baseColorTexture,
               &slot.normalTexture,
@@ -710,7 +771,9 @@ namespace render::detail
               &slot.emissiveTexture,
               &slot.clearcoatTexture,
               &slot.clearcoatRoughnessTexture,
-              &slot.clearcoatNormalTexture};
+              &slot.clearcoatNormalTexture,
+              &slot.transmissionTexture,
+              &slot.thicknessTexture};
             slot.metallic          = factors[0];
             slot.roughness         = factors[1];
             slot.normalScale       = factors[2];

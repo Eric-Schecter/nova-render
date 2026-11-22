@@ -643,10 +643,10 @@ namespace render::detail
                         D3D12_RECT scissor{0, 0, LONG(target.width), LONG(target.height)};
                         commands->RSSetViewports(1, &viewport);
                         commands->RSSetScissorRects(1, &scissor);
-                        if (p.program == -5 || p.program == -7)
+                        if (p.program == -5 || p.program == -6 || p.program == -7)
                             for (int i = 0; i < 9; i++)
                                 Transition(textures[p.sources[i]], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                        if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -6 || p.program == -7) && external.bindGBuffer)
                         {
                             std::array<void*, 9> views{};
                             for (size_t i = 0; i < views.size(); i++)

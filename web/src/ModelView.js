@@ -202,6 +202,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     })
     let probes, probeDeferred, probeBounds, probeLightingKey, probeEnabled
     let bindGroup = group(cube, backgroundCube)
+    const opaqueColorLayout = device.createBindGroupLayout({
+      entries: [{ binding: 17, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }],
+    })
     async function pipelineFor(
       shader,
       sky = false,
@@ -228,7 +231,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             ? [layout, gBufferLayout, probeLayout]
             : deferred || hybridShadow
               ? [layout, gBufferLayout]
-              : [layout],
+              : oit ? [layout, opaqueColorLayout] : [layout],
         }),
         vertex: {
           module: vertex,
@@ -624,6 +627,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         const gbuffer = program === -4,
           oit = program === -6
         pass.setBindGroup(0, bindGroup)
+        if (oit)
+          pass.setBindGroup(
+            1,
+            device.createBindGroup({
+              layout: opaqueColorLayout,
+              entries: [{ binding: 17, resource: gbuffers[0].createView() }],
+            }),
+          )
         if (!gbuffer && !oit && environment && settings.showBackground) {
           pass.setPipeline(motion ? aaPipelines.skyMotion : aaPipelines['sky' + count])
           pass.draw(3)

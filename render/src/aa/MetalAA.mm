@@ -337,7 +337,7 @@ namespace render::detail
                             [e setCullMode:MTLCullModeNone];
                             [e setFrontFacingWinding:MTLWindingCounterClockwise];
                             [e setDepthStencilState:depthState];
-                            if ((p.program == -5 || p.program == -7) && external.bindGBuffer)
+                            if ((p.program == -5 || p.program == -6 || p.program == -7) && external.bindGBuffer)
                             {
                                 std::array<void*, 9> views{};
                                 for (size_t i = 0; i < views.size(); i++)

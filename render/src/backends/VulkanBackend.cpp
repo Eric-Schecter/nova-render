@@ -324,10 +324,11 @@ namespace render::detail
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
             external.bindGBuffer = [this](void* command, const std::array<void*, 9>& views, int program) {
-                auto                  activeSet = program == -7 ? hybridGBufferSet : gBufferSet;
+                auto                  activeSet = program == -6 ? oitColorSet : program == -7 ? hybridGBufferSet : gBufferSet;
                 VkDescriptorImageInfo images[9]{};
                 VkWriteDescriptorSet  writes[9]{};
-                for (uint32_t i = 0; i < views.size(); i++)
+                const auto count = program == -6 ? 1u : uint32_t(views.size());
+                for (uint32_t i = 0; i < count; i++)
                 {
                     images[i].imageView   = reinterpret_cast<VkImageView>(views[i]);
                     images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -339,7 +340,7 @@ namespace render::detail
                     w.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                     w.pImageInfo          = &images[i];
                 }
-                vkUpdateDescriptorSets(device, uint32_t(views.size()), writes, 0, nullptr);
+                vkUpdateDescriptorSets(device, count, writes, 0, nullptr);
                 vkCmdBindDescriptorSets(
                   reinterpret_cast<VkCommandBuffer>(command),
                   VK_PIPELINE_BIND_POINT_GRAPHICS,

@@ -45,6 +45,14 @@ namespace render::detail
            {1, 1, {255, 255, 255, 255}},
            {1, 1, {255, 255, 255, 255}},
            {1, 1, {128, 128, 255, 255}}}};
+        uint8_t volumeChannel(const std::optional<Image>& image, float u, float v, size_t channel)
+        {
+            if (!image)
+                return 255;
+            const auto x = uint32_t(std::round(u * (image->width - 1)));
+            const auto y = uint32_t(std::round(v * (image->height - 1)));
+            return image->pixels[(size_t(y) * image->width + x) * 4 + channel];
+        }
         std::array<const Image*, 8> maps(const Material& m)
         {
             return {
@@ -91,6 +99,14 @@ namespace render::detail
             throw std::invalid_argument("AO texture coordinate set must be 0 or 1");
         for (float x : m.emissive)
             range(x, 65504);
+        range(m.thicknessFactor, std::numeric_limits<float>::max());
+        range(m.inverseAttenuationDistance, std::numeric_limits<float>::max());
+        for (float x : m.attenuationColor)
+            range(x, 1);
+        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture})
+            if (*image && (!(*image)->width || !(*image)->height || (*image)->width > 8192 || (*image)->height > 8192
+                || (*image)->pixels.size() != size_t((*image)->width) * (*image)->height * 4))
+                throw std::invalid_argument("Volume maps require 1..8192 RGBA8 pixels");
         for (const auto* image : maps(m))
             if (
               !image->width || !image->height || image->width > 8192 || image->height > 8192
@@ -111,13 +127,17 @@ namespace render::detail
             texturedCoat |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture);
             for (auto* im : maps(m))
                 tile = std::max({tile, im->width, im->height});
+            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture})
+                if (*map)
+                    tile = std::max({tile, (*map)->width, (*map)->height});
         }
         auto& first    = data.materials.front();
         data.baseColor = first.baseColor;
         data.material  = {first.metallic, first.roughness, first.normalScale, first.occlusionStrength};
         std::copy(first.emissive.begin(), first.emissive.end(), data.emissive.begin());
         data.materialRecords.clear();
-        const bool atlas = data.materials.size() > 1;
+        const bool atlas = data.materials.size() > 1
+          || first.transmissionTexture.has_value() || first.thicknessTexture.has_value();
         tile             = std::min(tile, 2048u);
         uint32_t cols    = uint32_t(std::ceil(std::sqrt(double(data.materials.size())))),
                  rows = uint32_t((data.materials.size() + cols - 1) / cols), stride = tile + 4, w = cols * stride,
@@ -178,7 +198,7 @@ namespace render::detail
             record[38] = m.normalScale;
             record[39] = m.occlusionStrength;
             std::copy(m.emissive.begin(), m.emissive.end(), record.begin() + 40);
-            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + (m.unlit ? 8.f : 0.f) + (m.emissiveTexCoord ? 16.f : 0.f) + float(m.baseColorWrap * 32) + m.alphaCutoff * .25f;
+            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + (m.unlit ? 8.f : 0.f) + (m.emissiveTexCoord ? 16.f : 0.f) + float(m.baseColorWrap * 32) + (m.transmissionTexture ? 512.f : 0.f) + (m.thicknessTexture ? 1024.f : 0.f) + m.alphaCutoff * .25f;
             uint32_t x = uint32_t(i) % cols * stride, y = uint32_t(i) / cols * stride;
             if (atlas)
             {
@@ -204,6 +224,12 @@ namespace render::detail
                               dst.pixels.data() + (size_t(y + py) * w + x + px) * 4,
                               src.pixels.data() + (size_t(sy) * src.width + sx) * 4,
                               4);
+                            if (k == 2)
+                            {
+                                auto* pixel = dst.pixels.data() + (size_t(y + py) * w + x + px) * 4;
+                                pixel[0] = volumeChannel(m.thicknessTexture, u, v, 1);
+                                pixel[3] = volumeChannel(m.transmissionTexture, u, v, 0);
+                            }
                         }
                 }
             }
