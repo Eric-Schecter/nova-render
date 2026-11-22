@@ -84,6 +84,7 @@ export async function loadGLB(url, { pack = true } = {}) {
           'KHR_materials_emissive_strength',
           'KHR_xmp_json_ld',
           'KHR_xmp',
+          'EXT_mesh_gpu_instancing',
           'KHR_materials_clearcoat',
         ].includes(e),
     ) ||
@@ -93,7 +94,6 @@ export async function loadGLB(url, { pack = true } = {}) {
     throw Error('Expected embedded GLB data and supported glTF extensions')
   json.materials ??= []
   const defaultMaterial = json.materials.length
-  const animation = readAnimation(json, bin)
   const raw = new DataView(bin)
   function bufferElement(viewIndex, offset, row, stride, size) {
     const view = json.bufferViews[viewIndex]
@@ -103,13 +103,15 @@ export async function loadGLB(url, { pack = true } = {}) {
       throw Error('Out-of-bounds glTF accessor')
     return start
   }
-  function element(index, i, type, components, color = false) {
+  function element(index, i, type, components, color = false, rotation = false) {
     const a = json.accessors[index]
-    const size = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 }[a.componentType]
+    const size = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 }[a.componentType]
     const uvDivisor =
       (type === 'VEC2' || color) && a.normalized ? { 5121: 255, 5123: 65535 }[a.componentType] : 0
+    const signedDivisor = rotation && a.normalized ? {5120:127, 5122:32767}[a.componentType] : 0
     if (
-      (a.normalized && !uvDivisor) ||
+      (a.normalized && !uvDivisor && !signedDivisor) ||
+      (rotation && a.componentType !== 5126 && !signedDivisor) ||
       ((type === 'VEC2' || color) && a.componentType !== 5126 && !uvDivisor) ||
       a.type !== type || i >= a.count || !size
     )
@@ -145,7 +147,9 @@ export async function loadGLB(url, { pack = true } = {}) {
       start = bufferElement(a.bufferView, a.byteOffset ?? 0, i, stride, elementSize)
     }
     return Array.from({ length: components }, (_, k) =>
-      a.componentType === 5126
+      signedDivisor
+        ? Math.max(-1, (size === 1 ? raw.getInt8(start + k) : raw.getInt16(start + k * size, true)) / signedDivisor)
+        : a.componentType === 5126
         ? raw.getFloat32(start + k * size, true)
         : a.componentType === 5125
           ? raw.getUint32(start + k * size, true)
@@ -154,6 +158,47 @@ export async function loadGLB(url, { pack = true } = {}) {
             : raw.getUint8(start + k) / (uvDivisor || 1),
     )
   }
+  const instanceExtension = 'EXT_mesh_gpu_instancing'
+  const originalNodeCount = json.nodes.length
+  for (let i = 0; i < originalNodeCount; i++) {
+    const node = json.nodes[i], extension = node.extensions?.[instanceExtension]
+    if (!extension) continue
+    const mesh = json.meshes?.[node.mesh], attributes = extension.attributes
+    if (!mesh || node.skin !== undefined || !attributes ||
+      Array.isArray(attributes) || !Object.keys(attributes).length)
+      throw Error('Invalid glTF mesh instances')
+    let count = 0
+    for (const value of Object.values(attributes)) {
+      const rows = json.accessors[value]?.count
+      if (!Number.isInteger(value) || !Number.isSafeInteger(rows) || rows <= 0 || (count && rows !== count))
+        throw Error('Mismatched or invalid glTF instance accessors')
+      count = rows
+    }
+    const vertexCount = mesh.primitives.reduce((sum, p) => sum + json.accessors[p.attributes.POSITION].count, 0)
+    if (!vertexCount || count > 10000000 / vertexCount) throw Error('Oversized glTF mesh instances')
+    node.children ??= []
+    for (let row = 0; row < count; row++) {
+      const instance = {mesh: node.mesh, weights: node.weights}
+      for (const key of ['TRANSLATION', 'ROTATION', 'SCALE']) {
+        const index = attributes[key]
+        if (index === undefined) continue
+        if (key === 'ROTATION') {
+          const rotation = element(index, row, 'VEC4', 4, false, true)
+          if (!rotation.every(Number.isFinite)) throw Error('Invalid instance rotation')
+          instance.rotation = normalize(rotation)
+        } else {
+          if (json.accessors[index].componentType !== 5126) throw Error('Invalid glTF instance vector')
+          const vector = element(index, row, 'VEC3', 3)
+          if (!vector.every(Number.isFinite)) throw Error('Invalid glTF instance vector')
+          instance[key.toLowerCase()] = vector
+        }
+      }
+      node.children.push(json.nodes.push(instance) - 1)
+    }
+    delete node.mesh
+    delete node.extensions[instanceExtension]
+  }
+  const animation = readAnimation(json, bin)
   function readColor(index, vertex) {
     if (index === undefined) return [1, 1, 1, 1]
     const type = json.accessors[index].type
