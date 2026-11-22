@@ -326,7 +326,8 @@ export async function createAntiAliasingView({
       external.hybrid.shadowTemporalReconstruction &&
       !debug
     const reconstruct = !!external?.hybrid?.temporalReconstruction && !debug
-    const effectiveMethod = debug ? 'off' : settings.method
+    const effectiveMethod = debug ? 'off' :
+      external?.raster?.pipeline === 'deferred' && settings.method === 'msaa' ? 'fxaa' : settings.method
     const taa = effectiveMethod === 'taa',
       jitter = taa
         ? [halton((frames % 8) + 1, 2) - 0.5, halton((frames % 8) + 1, 3) - 0.5]

@@ -90,6 +90,10 @@ Specialized procedural laboratory views own their internal surfaces and do not e
 
 <ClientOnly><MaterialPlayground /></ClientOnly>
 
+## glTF material extensions
+
+Nova imports up to 512 material slots per model or scene. Supported glTF material features include transmission and volume attenuation maps, specular strength and color maps, fabric sheen, thin-film iridescence, and anisotropy. The archived specular-glossiness workflow is converted to metallic-roughness during import. Textured conversion uses a shared UV mapping and sampler for the diffuse and specular-glossiness maps.
+
 ## Alpha rendering and capabilities
 
 Forward and Deferred use OPAQUE/MASK depth writes and a separate weighted blended OIT pass for BLEND. OIT blends without draw sorting across slots and instances; it approximates layered transparency and does not simulate glass refraction. It composites in the current working color space before enabled post-processing. G-buffer diagnostics show only opaque/masked surfaces.

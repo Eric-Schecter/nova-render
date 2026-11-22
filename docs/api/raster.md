@@ -34,7 +34,7 @@ Settings:
 - `view`: `GBufferView::Final` / `'final'`, `BaseColor` / `'base-color'`, `WorldNormal` / `'world-normal'`, `GeometricNormal` / `'geometric-normal'`, `LinearDepth` / `'linear-depth'`, `Roughness` / `'roughness'`, `Metallic` / `'metallic'`, `Occlusion` / `'occlusion'`, `Emissive` / `'emissive'`, `WorldPosition` / `'world-position'`. Diagnostics require Deferred.
 - `debugRange`: positive finite distance ≤ 1,000,000, default 20. Depth maps 0…range to 0…1; world position maps −range…range to 0…1 per component. Normals map −1…1 to 0…1. Scalar/color diagnostic values are displayed numerically, without lighting, exposure or tone mapping; values outside 0…1 are clamped.
 
-Capabilities include `forward`, `deferred`, `gBuffer` (true); `forwardPlus`, `clusteredForward`, `deferredMSAA` (false); `opaqueOnly` (false); `deferredRequiresModel`, `debugBypassesAAAndPost` (true); `gBufferTargets: 5`, `gBufferBytesPerPixel: 40` (color targets only, excluding hardware depth). Deferred accepts a loaded model or scene, including an empty scene. The triangle shader is independent and does not implement this material G-buffer. WebGPU Deferred and Hybrid require at least 40 attachment bytes per sample and 20 sampled textures per shader stage. The optional half-resolution Hybrid reflection pass requires a 21st sampled texture. Lower-limit adapters retain Forward. The browser's separate BVH AO diagnostic path cannot be combined with Deferred; the setter reports this conflict.
+Deferred and Hybrid use seven RGBA16F color targets and a separate hardware depth attachment. `GetRasterCapabilities()` and `getRasterCapabilities()` report `gBufferTargets: 7` and `gBufferBytesPerPixel: 56`. WebGPU requires 56 color bytes per sample and 22 sampled textures per shader stage. Half-resolution Hybrid reflections use a 23rd sampled texture. WebGPU scenes with sheen select Deferred and report `materialDeferredRequired: true` in the raster capabilities. Deferred accepts a loaded model or scene, including an empty scene.
 
 The normal frame path retains the selected AA and post-processing. Deferred supports Off, FXAA, SMAA, SSAA and TAA. Either setting Deferred while MSAA is selected, or selecting MSAA while Deferred is active, raises an error without changing settings. The panel disables those incompatible options. Diagnostics temporarily bypass AA/post, preserving the requested values for Final. Their background is black. Forward uses the original direct path when neither AA nor post-processing is enabled.
 
@@ -42,12 +42,15 @@ The normal frame path retains the selected AA and post-processing. Deferred supp
 
 All surface sampling and PBR lighting live in `model.hlsl`. `GBufferPSMain` samples the same material factors, atlas, normal maps and GPU-skinned/instanced vertices used by `PSMain`. `DeferredPSMain` decodes the surface and calls the shared lighting function. Geometry is depth tested; full-screen lighting runs once per covered pixel. Empty pixels retain the configured clear color or sky background. Sky gradients are evaluated before coverage branching and sampled with explicit gradients for WebGPU derivative uniformity.
 
-Four RGBA16F targets fit WebGPU's baseline 32-byte color-attachment budget:
+The G-buffer stores seven RGBA16F targets.
 
 - Base RGB (linear), roughness A. Roughness is clamped to ≥ 0.06; zero identifies background.
 - Two octahedral normal pairs: XY = world-space material normal after normal mapping; ZW = unmapped vertex normal used for shadow bias. Both are signed octahedral coordinates.
-- Split logarithmic view depth in XY, material occlusion Z, reserved W. A half-representable high part and a residual preserve depth precision; camera rays reconstruct world position for both perspective and orthographic views without an extra target. This replaces the original half-float camera-relative XYZ encoding in current source.
+- Split logarithmic view depth in XY, material occlusion Z, relative material slot W. A half-representable high part and a residual preserve depth precision; camera rays reconstruct world position for both perspective and orthographic views without an extra target. This replaces the original half-float camera-relative XYZ encoding in current source.
 - Emissive RGB (linear HDR), metallic A.
+- Octahedral clearcoat normal, clearcoat strength and roughness.
+- Specular and sheen texture modulation.
+- Iridescence texture modulation, anisotropy tangent angle and strength.
 
 These targets remain GPU-resident between geometry and lighting. Native paths reuse the raster device and encode geometry/lighting in the same AA command sequence with resource transitions; Vulkan keeps material bindings and G-buffer bindings in separate descriptor sets. WebGPU uses two corresponding bind groups. Consumers do not manage backend image handles. Metal/DX12 AA retain their own command queue and synchronize completion before presentation. Raster retains the existing image bridge; Hybrid directly samples the owned GPU output texture and keeps readback explicit.
 

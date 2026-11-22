@@ -109,7 +109,7 @@ class Renderer {
           ...caps,
           supported: false,
           reason:
-            'Hybrid requires 40 color bytes per sample and 20 sampled textures per shader stage.',
+            `Hybrid requires ${deferredLimits.maxColorAttachmentBytesPerSample} color bytes per sample and ${deferredLimits.maxSampledTexturesPerShaderStage} sampled textures per shader stage.`,
         }
   }
   #rasterSettings = defaultRasterSettings()
@@ -119,14 +119,17 @@ class Renderer {
   }
   getRasterCapabilities() {
     this.#check()
-    return rasterCapabilities(canUseDeferred(this.#device.limits))
+    return {
+      ...rasterCapabilities(canUseDeferred(this.#device.limits)),
+      materialDeferredRequired: this.#requiresDeferredMaterialPass(),
+    }
   }
   setRasterSettings(value) {
     this.#check()
     const next = copyRasterSettings({ ...this.#rasterSettings, ...value })
     if (next.pipeline === 'deferred' && !canUseDeferred(this.#device.limits))
       throw Error(
-        'Deferred requires 40 color bytes per sample and 20 sampled textures per shader stage',
+        `Deferred requires ${deferredLimits.maxColorAttachmentBytesPerSample} color bytes per sample and ${deferredLimits.maxSampledTexturesPerShaderStage} sampled textures per shader stage`,
       )
     if (this.#renderMode === 'hybrid' && next.pipeline !== 'deferred')
       throw Error('Hybrid requires Deferred raster visibility')
@@ -248,6 +251,10 @@ class Renderer {
     this.#resetAA()
     this.#parameterPanel?.refresh()
   }
+  #requiresDeferredMaterialPass() {
+    return this.#renderMode === 'raster' && this.#lighting === 'pbr' &&
+      !!this.#model?.useDeferredMaterialLayers
+  }
   #useHalfShadows() {
     return (
       this.#sceneModel &&
@@ -266,6 +273,8 @@ class Renderer {
     )
   }
   async #drawAA(width, height) {
+    if (this.#requiresDeferredMaterialPass() && !canUseDeferred(this.#device.limits))
+      throw Error('Fabric sheen requires deferred WebGPU support')
     if (!this.#model && this.#rasterSettings.pipeline === 'deferred')
       throw Error('Deferred requires a model or scene')
     if (!this.#aaView) {
@@ -280,7 +289,7 @@ class Renderer {
             return owner.#useHalfShadows()
           },
           get raster() {
-            return owner.#useHalfShadows()
+            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass()
               ? { ...owner.#rasterSettings, pipeline: 'deferred' }
               : owner.#rasterSettings
           },
@@ -1325,6 +1334,7 @@ class Renderer {
         (this.#aaSettings.method !== 'off' ||
           this.#postSettings.enabled ||
           this.#rasterSettings.pipeline === 'deferred' ||
+          this.#requiresDeferredMaterialPass() ||
           this.#useHalfShadows() ||
           this.#hasRasterTransparency())
       )
