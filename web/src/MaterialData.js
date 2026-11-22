@@ -53,6 +53,7 @@ export function validateMaterial(m) {
     clearcoatNormalScale: m.clearcoatNormalScale ?? 1,
     clearcoatTexCoords: Array.from(m.clearcoatTexCoords ?? [0, 0, 0]),
     specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
+    specularTexCoords: Array.from(m.specularTexCoords ?? [0, 0]),
   }
   if (![0,1,2,4,5,6,8,9,10].includes(out.baseColorWrap)) throw Error("Invalid base-color texture wrapping")
   if (![0, 1].includes(out.emissiveTexCoord)) throw Error('Emissive texture coordinate set must be 0 or 1')
@@ -68,6 +69,8 @@ export function validateMaterial(m) {
     out.clearcoatTexCoords.some((uv) => uv !== 0 && uv !== 1)
   )
     throw Error('Clearcoat coordinate set must be 0 or 1')
+  if (out.specularTexCoords.length !== 2 || out.specularTexCoords.some((uv) => uv !== 0 && uv !== 1))
+    throw Error('Specular coordinate set must be 0 or 1')
   if (![0, 1].includes(out.occlusionTexCoord))
     throw Error('AO texture coordinate set must be 0 or 1')
   if (typeof out.name !== 'string') throw Error('Material name must be a string')
@@ -108,7 +111,7 @@ export function validateMaterial(m) {
     range(out.hybridReflectionStrength, 1)
     out.hybridReflectionStrength = Math.fround(out.hybridReflectionStrength)
   }
-  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture"]) {
+  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture", "specularTexture", "specularColorTexture"]) {
     const im = m[key]
     if (im == null) {
       out[key] = null
@@ -134,7 +137,7 @@ export function packMaterials(data) {
   if (data.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
   const materials = data.materials,
     first = materials[0],
-    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture
+    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture || !!first.specularTexture || !!first.specularColorTexture
   data.baseColor = [...first.baseColor]
   data.material = [first.metallic, first.roughness, first.normalScale, first.occlusionStrength]
   data.emissive = [...first.emissive, 0]
@@ -149,7 +152,7 @@ export function packMaterials(data) {
       tile = Math.max(tile, im.width, im.height)
     }
   for (const m of materials)
-    for (const image of [m.transmissionTexture, m.thicknessTexture])
+    for (const image of [m.transmissionTexture, m.thicknessTexture, m.specularTexture, m.specularColorTexture])
       if (image) tile = Math.max(tile, image.width, image.height)
   tile = Math.min(tile, 2048)
   const cols = Math.ceil(Math.sqrt(materials.length)),
@@ -183,6 +186,8 @@ export function packMaterials(data) {
     // Material records reuse the unused world matrix.
     record.set(m.specularColorFactor ?? [1, 1, 1], 0)
     record[3] = m.specularFactor ?? 1
+    record[10] = (m.specularTexture ? 1 : 0) | (m.specularColorTexture ? 2 : 0) |
+      ((m.specularTexCoords?.[0] ?? 0) << 2) | ((m.specularTexCoords?.[1] ?? 0) << 3)
     record[4] = m.clearcoatFactor ?? 0
     record[5] = m.clearcoatRoughnessFactor ?? 0
     record[6] = m.occlusionTexCoord ?? 0
@@ -229,14 +234,23 @@ export function packMaterials(data) {
           let to = ((y + py) * width + x) * 4
           for (let px = 0; px < columns.length; px++) {
             const column = columns[px]
-            const volumeChannel = (image, channel) => image
+            const packedChannel = (image, channel) => image
               ? image.pixels[(coordinate(py, image.height) * image.width + coordinate(px, image.width)) * 4 + channel]
               : 255
             const from = sourceRow + column
-            dst[to++] = k === 2 ? volumeChannel(m.thicknessTexture, 1) : src.pixels[from]
-            dst[to++] = src.pixels[from + 1]
-            dst[to++] = src.pixels[from + 2]
-            dst[to++] = k === 2 ? volumeChannel(m.transmissionTexture, 0) : src.pixels[from + 3]
+            dst[to++] = k === 2 ? packedChannel(m.thicknessTexture, 1) : src.pixels[from]
+            if (k === 3 && m.specularColorTexture) {
+              for (let channel = 0; channel < 3; channel++)
+              {
+                const value = packedChannel(m.specularColorTexture, channel) / 255
+                dst[to++] = Math.round(255 * (value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4))
+              }
+            } else {
+              dst[to++] = src.pixels[from + 1]
+              dst[to++] = src.pixels[from + 2]
+              dst[to++] = k === 2 ? packedChannel(m.transmissionTexture, 0) :
+                k === 1 && m.specularTexture ? packedChannel(m.specularTexture, 3) : src.pixels[from + 3]
+            }
           }
         }
       }

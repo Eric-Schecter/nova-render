@@ -37,6 +37,8 @@ namespace render
           emissiveTexture;
         float                specularFactor = 1;
         std::array<float, 3> specularColorFactor{1, 1, 1};
+        std::optional<Image> specularTexture, specularColorTexture;
+        std::array<uint32_t, 2> specularTexCoords{};
         float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
         uint32_t             occlusionTexCoord = 0; // 0 or 1 for the occlusion texture.
         std::optional<Image>    clearcoatTexture, clearcoatRoughnessTexture, clearcoatNormalTexture;

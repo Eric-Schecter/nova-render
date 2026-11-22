@@ -79,6 +79,7 @@ const reflectionMomentsA = aoCombinedPosition + 1,
 const shadowMomentsA = reflectionAtrous + 1,
   shadowMomentsB = shadowMomentsA + 4,
   shadowAtrous = shadowMomentsB + 4
+const modelSpecularMapTarget = shadowAtrous + 1
 
 export async function createAntiAliasingView({
   canvas,
@@ -293,7 +294,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= shadowAtrous; i++)
+    for (let i = 0; i <= modelSpecularMapTarget; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -436,11 +437,13 @@ export async function createAntiAliasingView({
           const shadow = add(-7, 92)
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
+          shadow.sources[10] = modelSpecularMapTarget
         }
         if (halfReflections) {
           const reflection = add(-8, hybridReflectionTarget)
           reflection.sources.splice(0, 4, 85, 86, 87, 88)
           reflection.sources[8] = modelClearcoatTarget
+          reflection.sources[10] = modelSpecularMapTarget
           reflection.u[4] *= 0.5
           reflection.u[5] *= 0.5
         }
@@ -569,6 +572,7 @@ export async function createAntiAliasingView({
           const trace = add(-9, hybridAO)
           trace.sources.splice(0, 4, 85, 86, 87, 88)
           trace.sources[8] = modelClearcoatTarget
+          trace.sources[10] = modelSpecularMapTarget
           const currentAO = frames % 2 ? aoHistoryB : aoHistoryA
           const resolve = add(30, currentAO)
           resolve.sources.splice(
@@ -602,6 +606,7 @@ export async function createAntiAliasingView({
             p.sources[4 + i] = (i < shadowGroups ? resolvedShadows : 92) + i
         p.sources.splice(0, 4, 85, 86, halfAO ? aoCombinedPosition : 87, 88)
         p.sources[8] = modelClearcoatTarget
+        p.sources[10] = modelSpecularMapTarget
       } else add(-1, sceneColor).ms = effectiveMethod === 'msaa'
       if (oit) {
         add(-6, 89).sources[0] = 91
@@ -728,7 +733,10 @@ export async function createAntiAliasingView({
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
       if (p.program === -6) used.add(p.target + 1)
-      if (p.program === -4) used.add(modelClearcoatTarget)
+      if (p.program === -4) {
+        used.add(modelClearcoatTarget)
+        used.add(modelSpecularMapTarget)
+      }
       if (p.program === 17 || p.program === -4 || p.program === -7) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
       }
@@ -741,7 +749,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= shadowAtrous; i++) {
+    for (let i = 0; i <= modelSpecularMapTarget; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -868,7 +876,7 @@ export async function createAntiAliasingView({
         {
           length:
             p.program === -4
-              ? 5
+              ? 6
               : p.program === 17 || p.program === -7
                 ? 4
                 : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
@@ -881,6 +889,8 @@ export async function createAntiAliasingView({
             : textures[
                 p.ms
                   ? (p.program === 17 ? 46 : native ? 19 : MC) + a
+                  : p.program === -4 && a === 5
+                    ? modelSpecularMapTarget
                   : p.program === -4 && a === 4
                     ? modelClearcoatTarget
                     : p.target + a
@@ -938,7 +948,7 @@ export async function createAntiAliasingView({
               p.program === -7 ||
               p.program === -8 ||
               p.program === -9
-              ? p.sources.slice(0, 10).map((i) => textures[i])
+              ? p.sources.slice(0, 11).map((i) => textures[i])
               : null,
           )
         pass.end()

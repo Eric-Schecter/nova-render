@@ -1,4 +1,5 @@
 #include "ModelData.hpp"
+#include "Color.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -45,7 +46,7 @@ namespace render::detail
            {1, 1, {255, 255, 255, 255}},
            {1, 1, {255, 255, 255, 255}},
            {1, 1, {128, 128, 255, 255}}}};
-        uint8_t volumeChannel(const std::optional<Image>& image, float u, float v, size_t channel)
+        uint8_t packedChannel(const std::optional<Image>& image, float u, float v, size_t channel)
         {
             if (!image)
                 return 255;
@@ -93,6 +94,8 @@ namespace render::detail
         for (auto uv : m.clearcoatTexCoords)
             if (uv > 1)
                 throw std::invalid_argument("Clearcoat coordinate set must be 0 or 1");
+        for (auto uv : m.specularTexCoords)
+            if (uv > 1) throw std::invalid_argument("Specular coordinate set must be 0 or 1");
         for (float x : m.specularColorFactor)
             range(x, std::numeric_limits<float>::max());
         range(m.normalScale, 16);
@@ -105,7 +108,7 @@ namespace render::detail
         range(m.inverseAttenuationDistance, std::numeric_limits<float>::max());
         for (float x : m.attenuationColor)
             range(x, 1);
-        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture})
+        for (const auto* image : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture})
             if (*image && (!(*image)->width || !(*image)->height || (*image)->width > 8192 || (*image)->height > 8192
                 || (*image)->pixels.size() != size_t((*image)->width) * (*image)->height * 4))
                 throw std::invalid_argument("Volume maps require 1..8192 RGBA8 pixels");
@@ -129,7 +132,7 @@ namespace render::detail
             texturedCoat |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture);
             for (auto* im : maps(m))
                 tile = std::max({tile, im->width, im->height});
-            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture})
+            for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture})
                 if (*map)
                     tile = std::max({tile, (*map)->width, (*map)->height});
         }
@@ -139,7 +142,7 @@ namespace render::detail
         std::copy(first.emissive.begin(), first.emissive.end(), data.emissive.begin());
         data.materialRecords.clear();
         const bool atlas = data.materials.size() > 1
-          || first.transmissionTexture.has_value() || first.thicknessTexture.has_value();
+          || first.transmissionTexture || first.thicknessTexture || first.specularTexture || first.specularColorTexture;
         tile             = std::min(tile, 2048u);
         uint32_t cols    = uint32_t(std::ceil(std::sqrt(double(data.materials.size())))),
                  rows = uint32_t((data.materials.size() + cols - 1) / cols), stride = tile + 4, w = cols * stride,
@@ -194,6 +197,8 @@ namespace render::detail
             record[8] =
               float(m.clearcoatTexCoords[0] | (m.clearcoatTexCoords[1] << 1) | (m.clearcoatTexCoords[2] << 2));
             record[9]  = m.clearcoatNormalScale;
+            record[10] = float((m.specularTexture ? 1u : 0u) | (m.specularColorTexture ? 2u : 0u)
+              | (m.specularTexCoords[0] << 2) | (m.specularTexCoords[1] << 3));
             record[11] = m.hybridReflectionStrength.value_or(-1.f);
             std::copy(m.attenuationColor.begin(), m.attenuationColor.end(), record.begin() + 12);
             record[15] = m.thicknessFactor * m.inverseAttenuationDistance;
@@ -229,11 +234,16 @@ namespace render::detail
                               dst.pixels.data() + (size_t(y + py) * w + x + px) * 4,
                               src.pixels.data() + (size_t(sy) * src.width + sx) * 4,
                               4);
+                            auto* pixel = dst.pixels.data() + (size_t(y + py) * w + x + px) * 4;
+                            if (k == 1 && m.specularTexture)
+                                pixel[3] = packedChannel(m.specularTexture, u, v, 3);
+                            if (k == 3 && m.specularColorTexture)
+                                for (size_t channel = 0; channel < 3; ++channel)
+                                    pixel[channel + 1] = uint8_t(std::lround(255 * SRGBToLinear(packedChannel(m.specularColorTexture, u, v, channel) / 255.f)));
                             if (k == 2)
                             {
-                                auto* pixel = dst.pixels.data() + (size_t(y + py) * w + x + px) * 4;
-                                pixel[0] = volumeChannel(m.thicknessTexture, u, v, 1);
-                                pixel[3] = volumeChannel(m.transmissionTexture, u, v, 0);
+                                pixel[0] = packedChannel(m.thicknessTexture, u, v, 1);
+                                pixel[3] = packedChannel(m.transmissionTexture, u, v, 0);
                             }
                         }
                 }

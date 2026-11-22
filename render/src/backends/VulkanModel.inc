@@ -331,12 +331,13 @@ void uploadModel()
     layoutInfo.bindingCount = uint32_t(bindings.size());
     layoutInfo.pBindings    = bindings.data();
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelSetLayout), "Create model descriptor layout");
-    VkDescriptorSetLayoutBinding gBindings[10]{};
+    VkDescriptorSetLayoutBinding gBindings[11]{};
     for (int i = 0; i < 8; i++)
         gBindings[i] = {uint32_t(17 + i), VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     gBindings[8]            = {31, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     gBindings[9]            = {32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    layoutInfo.bindingCount = 10;
+    gBindings[10]           = {33, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    layoutInfo.bindingCount = 11;
     layoutInfo.pBindings    = gBindings;
     check(vkCreateDescriptorSetLayout(device,&layoutInfo,nullptr,&gBufferSetLayout),"Create G-buffer descriptor layout");
     VkDescriptorSetLayoutBinding probeBindings[] = {
@@ -349,7 +350,7 @@ void uploadModel()
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 52},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 55},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets       = 7;

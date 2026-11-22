@@ -404,6 +404,10 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
         addTexture(mat.occlusionTexture, mat.occlusionTexture?.texCoord)
         addTexture(extensions.KHR_materials_transmission?.transmissionTexture)
         addTexture(extensions.KHR_materials_volume?.thicknessTexture)
+        for (const key of ['specularTexture', 'specularColorTexture']) {
+          const texture = extensions.KHR_materials_specular?.[key]
+          addTexture(texture, texture?.texCoord ?? 0)
+        }
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
           addTexture(texture, texture?.texCoord)
@@ -576,8 +580,6 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
     if (specular !== undefined) {
       if (!specular || typeof specular !== 'object' || Array.isArray(specular))
         throw Error('Invalid KHR_materials_specular')
-      if ('specularTexture' in specular || 'specularColorTexture' in specular)
-        throw Error('KHR_materials_specular textures are not supported')
       if ('specularFactor' in specular && typeof specular.specularFactor !== 'number')
         throw Error('Invalid glTF specularFactor')
       if ('specularColorFactor' in specular && !Array.isArray(specular.specularColorFactor))
@@ -613,6 +615,8 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
       ...coatTextureKeys.map((key) => coat?.[key]),
       material.extensions?.KHR_materials_transmission?.transmissionTexture,
       volume?.thicknessTexture,
+      specular?.specularTexture,
+      specular?.specularColorTexture,
     ]
     const baseSampler = json.samplers?.[json.textures?.[pbr.baseColorTexture?.index]?.sampler]
     const wrap = (mode) => mode === 33071 ? 1 : mode === 33648 ? 2 : 0
@@ -657,6 +661,9 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
         clearcoatNormalTexture: textures[7] ? images[7] : null,
         transmissionTexture: images[8],
         thicknessTexture: images[9],
+        specularTexture: images[10],
+        specularColorTexture: images[11],
+        specularTexCoords: [specular?.specularTexture?.texCoord ?? 0, specular?.specularColorTexture?.texCoord ?? 0],
         thicknessFactor: volume?.thicknessFactor,
         attenuationColor: volume?.attenuationColor,
         inverseAttenuationDistance: distance === undefined ? 0 : 1 / distance,

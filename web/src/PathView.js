@@ -101,10 +101,13 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const metadata = [],
       images = []
     const materialCount = (data.materialRecords?.length || 0) / 48
-    const materialHeader = new Float32Array(materialCount * 20)
+    const materialHeader = new Float32Array(materialCount * 25)
     for (let i = 0; i < materialCount; i++) {
-      materialHeader.set(data.materialRecords.subarray(i * 48 + 32, i * 48 + 48), i * 20)
-      materialHeader.set(data.materialRecords.subarray(i * 48 + 12, i * 48 + 16), i * 20 + 16)
+      const source = i * 48, dst = i * 25
+      materialHeader.set(data.materialRecords.subarray(source + 32, source + 48), dst)
+      materialHeader.set(data.materialRecords.subarray(source + 12, source + 16), dst + 16)
+      materialHeader.set(data.materialRecords.subarray(source, source + 4), dst + 20)
+      materialHeader[dst + 24] = data.materialRecords[source + 10]
     }
     let total = materialHeader.byteLength
     const records = data.materialRecords ?? new Float32Array(0)
@@ -115,7 +118,7 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     for (const [slot, source] of data.images.slice(0, 5).entries()) {
       // Baked AO is an ambient raster term. The path kernel uses ray visibility.
       const image =
-        slot === 3 ? { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) } : source
+        slot === 3 && !data.materials?.some((m) => m.specularColorTexture) ? { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) } : source
       let pixels = image.pixels
       if (!pixels) {
         const canvas = new OffscreenCanvas(image.width, image.height),

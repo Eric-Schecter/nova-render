@@ -158,7 +158,7 @@ namespace render::detail
             depth.depthCompareOp   = sky                                ? VK_COMPARE_OP_ALWAYS
                                      : std::string(name) == "model-oit" ? VK_COMPARE_OP_LESS_OR_EQUAL
                                                                         : VK_COMPARE_OP_LESS;
-            VkPipelineColorBlendAttachmentState color[5]{};
+            VkPipelineColorBlendAttachmentState color[6]{};
             for (auto& c : color)
                 c.colorWriteMask = 15;
             if (std::string(name) == "model-oit")
@@ -172,7 +172,7 @@ namespace render::detail
                     b.colorBlendOp = b.alphaBlendOp = VK_BLEND_OP_ADD;
                 }
             VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-            blend.attachmentCount                     = std::string(name) == "model-gbuffer"         ? 5
+            blend.attachmentCount                     = std::string(name) == "model-gbuffer"         ? 6
                                                         : std::string(name) == "model-hybrid-shadow" ? 4
                                                         : std::string(name) == "model-oit"           ? 2
                                                                                                      : 1;
@@ -378,10 +378,10 @@ namespace render::detail
             external.physical    = reinterpret_cast<void*>(physical);
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
-            external.bindGBuffer = [this](void* command, const std::array<void*, 10>& views, int program) {
+            external.bindGBuffer = [this](void* command, const std::array<void*, 11>& views, int program) {
                 auto activeSet = program == -5 ? gBufferSet : program == -6 ? oitColorSet : hybridGBufferSet;
-                VkDescriptorImageInfo images[10]{};
-                VkWriteDescriptorSet  writes[10]{};
+                VkDescriptorImageInfo images[11]{};
+                VkWriteDescriptorSet  writes[11]{};
                 for (uint32_t i = 0; i < views.size(); i++)
                 {
                     images[i].imageView   = reinterpret_cast<VkImageView>(views[i]);

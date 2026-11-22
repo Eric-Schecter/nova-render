@@ -132,14 +132,23 @@ namespace render::detail
             const auto it = material.extensions.find(name);
             return it == material.extensions.end() ? empty : it->second;
         }
-        int volumeTextureIndex(const tinygltf::Value& extension, const char* name)
+        int extensionTextureIndex(const tinygltf::Value& extension, const char* name)
         {
             if (!extension.Has(name))
                 return -1;
             const auto& info = extension.Get(name);
             if (!info.Has("index") || !info.Get("index").IsInt() || info.Get("index").GetNumberAsInt() < 0)
-                throw std::runtime_error("Invalid glTF volume texture");
+                throw std::runtime_error("Invalid glTF extension texture index");
             return info.Get("index").GetNumberAsInt();
+        }
+        uint32_t extensionTexCoord(const tinygltf::Value& texture)
+        {
+            if (!texture.Has("texCoord"))
+                return 0;
+            const auto& set = texture.Get("texCoord");
+            if (!set.IsInt() || set.GetNumberAsInt() < 0 || set.GetNumberAsInt() > 1)
+                throw std::runtime_error("Material extension texture coordinate set must be 0 or 1");
+            return uint32_t(set.GetNumberAsInt());
         }
         void selectMaterialVariant(tinygltf::Model& model, std::optional<uint32_t> active)
         {
@@ -614,12 +623,23 @@ namespace render::detail
                                             std::pair{"KHR_materials_volume", "thicknessTexture"}})
                     {
                         const auto& ext = materialExtension(material, pair.first);
-                        if (volumeTextureIndex(ext, pair.second) < 0)
+                        if (extensionTextureIndex(ext, pair.second) < 0)
                             continue;
                         const auto& texture = ext.Get(pair.second);
                         const auto texCoord = texture.Has("texCoord") ? texture.Get("texCoord").GetNumberAsInt() : 0;
                         const auto& extensions = texture.Get("extensions");
                         assign(0, textureCoordinates(texCoord, extensions.Has("KHR_texture_transform")
+                            ? extensions.Get("KHR_texture_transform") : tinygltf::Value{}));
+                    }
+                    const auto& specular = materialExtension(material, "KHR_materials_specular");
+                    for (const auto* key : {"specularTexture", "specularColorTexture"})
+                    {
+                        if (extensionTextureIndex(specular, key) < 0)
+                            continue;
+                        const auto& texture = specular.Get(key);
+                        const auto source = extensionTexCoord(texture);
+                        const auto& extensions = texture.Get("extensions");
+                        assign(source, textureCoordinates(source, extensions.Has("KHR_texture_transform")
                             ? extensions.Get("KHR_texture_transform") : tinygltf::Value{}));
                     }
                     if (const auto coat = material.extensions.find("KHR_materials_clearcoat");
@@ -823,8 +843,10 @@ namespace render::detail
                 const auto& extension = specular->second;
                 if (!extension.IsObject())
                     throw std::runtime_error("Invalid KHR_materials_specular");
-                if (extension.Has("specularTexture") || extension.Has("specularColorTexture"))
-                    throw std::runtime_error("KHR_materials_specular textures are not supported");
+                if (extension.Has("specularTexture"))
+                    slot.specularTexCoords[0] = extensionTexCoord(extension.Get("specularTexture"));
+                if (extension.Has("specularColorTexture"))
+                    slot.specularTexCoords[1] = extensionTexCoord(extension.Get("specularColorTexture"));
                 if (extension.Has("specularFactor"))
                 {
                     const auto& value = extension.Get("specularFactor");
@@ -947,6 +969,7 @@ namespace render::detail
                     slot.attenuationColor[k] = float(color.Get(k).GetNumberAsDouble());
                 }
             }
+            const auto& specularExtension = materialExtension(mat, "KHR_materials_specular");
             const int textures[]   = {
               pbr.baseColorTexture.index,
               mat.normalTexture.index,
@@ -956,8 +979,10 @@ namespace render::detail
               coatMaps[0].index,
               coatMaps[1].index,
               coatMaps[2].index,
-              volumeTextureIndex(transmission, "transmissionTexture"),
-              volumeTextureIndex(volume, "thicknessTexture")};
+              extensionTextureIndex(transmission, "transmissionTexture"),
+              extensionTextureIndex(volume, "thicknessTexture"),
+              extensionTextureIndex(specularExtension, "specularTexture"),
+              extensionTextureIndex(specularExtension, "specularColorTexture")};
             std::optional<Image>* maps[] = {
               &slot.baseColorTexture,
               &slot.normalTexture,
@@ -968,7 +993,9 @@ namespace render::detail
               &slot.clearcoatRoughnessTexture,
               &slot.clearcoatNormalTexture,
               &slot.transmissionTexture,
-              &slot.thicknessTexture};
+              &slot.thicknessTexture,
+              &slot.specularTexture,
+              &slot.specularColorTexture};
             slot.metallic          = factors[0];
             slot.roughness         = factors[1];
             slot.normalScale       = factors[2];
