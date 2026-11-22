@@ -1,5 +1,6 @@
 #include "material-sheen.hlsli"
 #include "material-iridescence.hlsli"
+#include "material-anisotropy.hlsli"
 #ifdef NOVA_D3D12
 cbuffer DrawOffsets : register(b1)
 {
@@ -437,8 +438,12 @@ float2 independentTextureUV(InstanceData material, float2 uv, uint map, bool del
 }
 float4 materialSheen(InstanceData material)
 {
+#if defined(NOVA_DISABLE_SHEEN)
+    return 0;
+#else
     return float4(material.normalMatrix[0][0], material.normalMatrix[1][0],
                   material.normalMatrix[2][0], material.normalMatrix[3][0]);
+#endif
 }
 uint materialSheenMaps(InstanceData material)
 {
@@ -459,7 +464,7 @@ float4 materialFilm(InstanceData material, float2 map)
     float factor = material.normalMatrix[0][3];
     if (factor <= 0)
         return 0;
-    float substrateIor = 1 + (uint(material.normalMatrix[0][1]) >> 8) / 2047.5;
+    float substrateIor = 1 + ((uint(material.normalMatrix[0][1]) >> 8) & 4095u) / 2047.5;
     return float4(factor * map.x, material.normalMatrix[1][3],
                   lerp(material.normalMatrix[2][3], material.normalMatrix[3][3], map.y), substrateIor);
 }
@@ -472,6 +477,50 @@ float2 sampleFilmMaps(InstanceData material, float2 uv0, float2 uv1)
     if (maps & 2u)
         result.y = coatRoughnessTexture.SampleLevel(textureSampler, maps & 8u ? uv1 : uv0, 0).b;
     return result;
+}
+float2 materialAnisotropy(InstanceData material, float2 uv0, float2 uv1)
+{
+    uint packed = uint(material.normalMatrix[3][2]);
+    float strength = float((packed >> 2) & 2047u) / 2047;
+    float turn = float(packed >> 13) / 2048;
+    uint textureFlags = uint(material.normalMatrix[0][1]);
+    if (strength > 0 && (textureFlags & (1u << 20)))
+    {
+        float2 uv = textureFlags & (1u << 21) ? uv1 : uv0;
+        uint width, height;
+        emissiveTexture.GetDimensions(width, height);
+        uint2 pixel = min(uint2(uv * float2(width, height)), uint2(width - 1, height - 1));
+        // An axis is periodic; point fetch prevents interpolating across the wrap discontinuity.
+        turn += emissiveTexture.Load(int3(pixel, 0)).a * (255.0 / 256);
+        strength *= coatNormalTexture.SampleLevel(textureSampler, uv, 0).a;
+    }
+    return float2(strength, turn);
+}
+float4 anisotropicFrame(float2 params, float3 normal, float3 tangent, float3 bitangent)
+{
+    if (params.x <= 0)
+        return 0;
+    float3 t = anisotropicTangent(normal, tangent);
+    float3 b = cross(normal, t);
+    if (dot(b, bitangent) < 0)
+        b = -b;
+    float angle = 3.14159265 * params.y;
+    return float4(t * cos(angle) + b * sin(angle), params.x);
+}
+float4 decodeAnisotropy(float3 n, float2 encoded)
+{
+    if (encoded.y <= 0)
+        return 0;
+    float3 t = anisotropicBasis(n);
+    float angle = 3.14159265 * encoded.x;
+    return float4(t * cos(angle) + cross(n, t) * sin(angle), encoded.y);
+}
+float2 encodeAnisotropy(float3 n, float4 anisotropy)
+{
+    if (anisotropy.w <= 0)
+        return 0;
+    float3 t = anisotropicBasis(n);
+    return float2(frac(atan2(dot(anisotropy.xyz, cross(n, t)), dot(anisotropy.xyz, t)) / 3.14159265), anisotropy.w);
 }
 float2 materialClearcoat(InstanceData material)
 {
@@ -502,11 +551,15 @@ float3 materialReflectance(float cosine, float3 base, float metallic, float4 spe
 {
     if (film.x <= 0 || film.z <= 0)
         return fresnel(cosine, lerp(dielectricF0(specular), base, metallic), lerp(specular.a, 1, metallic));
+    if (metallic <= 0)
+        return filmDielectricReflectance(cosine, specular, film);
     float3 conductor = blendThinFilm(fresnel(cosine, base, 1), cosine, base, film.xyz);
+    if (metallic >= 1)
+        return conductor;
     return lerp(filmDielectricReflectance(cosine, specular, film), conductor, metallic);
 }
 float3 directLight(
-  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance, float4 film = 0)
+  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance, float4 film = 0, float4 anisotropy = 0, float4 sheen = 0)
 {
     float3 halfVector = v + l;
     float3 h          = halfVector * rsqrt(max(dot(halfVector, halfVector), 1e-8));
@@ -518,9 +571,16 @@ float3 directLight(
     float  vh = dot(v, h);
     float3 f = materialReflectance(vh, base, metallic, specular, film);
     float3 dielectric = film.x > 0 && film.z > 0
-      ? filmDielectricReflectance(vh, specular, film) : diffuseFresnel(vh, f, specular);
+      ? f : diffuseFresnel(vh, f, specular);
     float3 diffuse = (1 - dielectric) * (1 - metallic) * base / 3.14159265;
-    return (diffuse + d * g * f / (4 * nv * max(nl, 0.001))) * radiance * nl;
+    float specularWeight = d * g / (4 * nv * max(nl, 0.001));
+    if (anisotropy.w > 0 && nl > 0)
+    {
+        float2 alpha = anisotropicRoughness(roughness, anisotropy.w);
+        specularWeight = anisotropicD(h, n, anisotropy.xyz, alpha) *
+                         anisotropicVisibility(v, l, n, anisotropy.xyz, alpha);
+    }
+    return sheenLayer(sheen, n, v, l, diffuse + specularWeight * f) * radiance * nl;
 }
 // Analytic studio environment; no external HDR file is required by this example.
 float3 studio(float3 r, float roughness)
@@ -624,6 +684,7 @@ struct SurfaceData
     float4 sheenMap;
     float4 film;
     float2 filmMap;
+    float4 anisotropy;
     float2 clearcoat;
     float3 coatNormal;
     float4 visibility0, visibility1, visibility2, visibility3;
@@ -659,7 +720,7 @@ SurfaceData sampleSurface(VertexOut input)
     float  alphaInfo  = .125;
     float4 specular   = 1, specularMap = 1;
     float4 sheen = 0, sheenMap = 1;
-    float2 filmMap = 1;
+    float2 filmMap = 1, anisotropy = 0;
     float2 clearcoat  = 0;
     InstanceData materialRecord = (InstanceData)0;
     float2 uv         = input.uv;
@@ -683,6 +744,7 @@ SurfaceData sampleSurface(VertexOut input)
             specularMap.a = normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? uv1 : uv, 0).a;
         if (specularMaps & 2u)
             specularMap.rgb = occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? uv1 : uv, 0).gba;
+        anisotropy = materialAnisotropy(instance, uv, uv1);
         if (instance.normalMatrix[0][3] > 0)
             filmMap = sampleFilmMaps(instance, uv, uv1);
         sheen = materialSheen(instance);
@@ -768,6 +830,7 @@ SurfaceData sampleSurface(VertexOut input)
     result.alphaInfo                                                                  = alphaInfo;
     result.position                                                                   = input.worldPosition;
     result.normal                                                                     = n;
+    result.anisotropy = anisotropicFrame(anisotropy, n, t, b);
     result.geometricNormal                                                            = normalize(input.normal);
     result.base                                                                       = base;
     result.metallic                                                                   = metallic;
@@ -790,16 +853,9 @@ float clearcoatTransmission(SurfaceData s, float3 v)
 }
 float3 surfaceDirectLight(SurfaceData s, float3 v, float3 l, float3 radiance, float transmission)
 {
-    float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance, s.film);
-    float nl = saturate(dot(s.normal, l));
-    if (any(s.sheen.rgb > 0) && nl > 0)
-    {
-        float sheenScale = 1 - max(s.sheen.r, max(s.sheen.g, s.sheen.b)) *
-          max(sheenAlbedo(saturate(dot(s.normal, v)), s.sheen.a), sheenAlbedo(nl, s.sheen.a));
-        color = color * sheenScale + sheenLayer(s.sheen, s.normal, v, l, 0) * radiance * nl;
-    }
+    float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance, s.film, s.anisotropy, s.sheen);
     if (s.clearcoat.x > 0)
-        color = color * transmission + s.clearcoat.x * directLight(
+        return color * transmission + s.clearcoat.x * directLight(
           s.coatNormal, v, l, 0.04, 1, max(.06, s.clearcoat.y), 1, radiance);
     return color;
 }
@@ -1018,6 +1074,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     float  nv = saturate(dot(n, v));
     float3 f = materialReflectance(nv, base, metallic, s.specular, s.film);
     float3 diffuse = (1 - metallic) * base;
+    float3 anisotropicReflection = anisotropicEnvironmentDirection(n, v, s.anisotropy.xyz, roughness, s.anisotropy.w);
     bool filmed = s.film.x > 0 && s.film.z > 0;
     float3 diffuseEnergy = 1 - (filmed ? filmDielectricReflectance(nv, s.specular, s.film) : diffuseFresnel(nv, f, s.specular));
     if (filmed)
@@ -1027,7 +1084,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     }
     if (cameraForward.w > 0.5)
     {
-        float3 reflected = environmentDirection(reflect(-v, n));
+        float3 reflected = environmentDirection(anisotropicReflection);
         float3 prefiltered =
           environmentTexture.SampleLevel(textureSampler, reflected, roughness * environmentParams.w).rgb;
         float2 brdf    = environmentBRDF(roughness, saturate(dot(n, v)));
@@ -1039,7 +1096,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         if (!collection)
             color += surfaceDirectLight(s, v, normalize(float3(1, 0.7, -1)), float3(1, 1.6, 2.7), coatTransmission);
         diffuseAmbient = diffuse * (all(s.specular == 1) && !filmed ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4;
-        baseEnvironment = studio(reflect(-v, n), roughness) * f;
+        baseEnvironment = studio(anisotropicReflection, roughness) * f;
     }
     if (any(s.sheen.rgb > 0))
     {
@@ -1228,7 +1285,7 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
     o.specularMap = s.specularMap;
-    o.filmMap = float4(s.filmMap, 0, 0);
+    o.filmMap = float4(s.filmMap, encodeAnisotropy(s.normal, s.anisotropy));
     if (lightDirection.w > .5)
     {
         InstanceData material = instances[input.instanceIndex];
@@ -1271,7 +1328,9 @@ void deferredMaterialLayers(inout SurfaceData surface, InstanceData material, in
         sheen = modulation;
     surface.specular = materialSpecular(material) * specular;
     surface.sheen = materialSheen(material) * sheen;
-    surface.film = materialFilm(material, gFilmMap.Load(pixel).rg);
+    float4 filmAndAnisotropy = gFilmMap.Load(pixel);
+    surface.film = materialFilm(material, filmAndAnisotropy.rg);
+    surface.anisotropy = decodeAnisotropy(surface.normal, filmAndAnisotropy.ba);
 }
 [[vk::binding(21, 1)]] Texture2D<float4> hybridShadow0 : register(t21);
 [[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
@@ -1564,7 +1623,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float2 deltaUV1 = independentTextureUV(mat, uv1 - uv0, 1u, true), deltaUV2 = independentTextureUV(mat, uv2 - uv0, 1u, true);
     float2 normalAtlasUV = frac(independentTextureUV(mat, tex0, 1u)) * mat.uv.xy + mat.uv.zw;
     float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
-    if (abs(uvDet) > 1e-8 && mat.material.z != 0)
+    float3 hitTangent = 0, hitBitangent = 0;
+    if (abs(uvDet) > 1e-8)
     {
         float3 edge1 = mul((float3x3)instances[instance].world, localEdge1);
         float3 edge2 = mul((float3x3)instances[instance].world, localEdge2);
@@ -1572,12 +1632,15 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
         float3 t = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * sign(uvDet);
         float3 b = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * sign(uvDet);
         float  scale = rsqrt(max(max(dot(t, t), dot(b, b)), 1e-12));
+        hitTangent = t;
+        hitBitangent = b;
         float3 sampled = normalTexture.SampleLevel(textureSampler, normalAtlasUV, 0).xyz * 2 - 1;
         sampled.xy *= mat.material.z;
         float3 mapped = (t * sampled.x + b * sampled.y) * scale + worldNormal * sampled.z;
         if (dot(mapped, mapped) > 1e-12)
             hit.normal = normalize(mapped);
     }
+    hit.anisotropy = anisotropicFrame(materialAnisotropy(mat, uv, atlasUV1), hit.normal, hitTangent, hitBitangent);
     hit.base      = baseTexture.SampleLevel(textureSampler, wrapBaseUV(tex0, mat.emissive.w) * mat.uv.xy + mat.uv.zw, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
     if ((uint(mat.emissive.w) & 8u) != 0)
         return hit.base;
@@ -1930,6 +1993,8 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
     uint samples = mirror ? 1 : uint(instances[header].world._m11);
     float3 tangent   = normalize(cross(abs(n.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), n)),
            bitangent = cross(n, tangent);
+    bool aniso = baseLayer && primary.anisotropy.w > 0;
+    float2 anisotropyRoughness = anisotropicRoughness(rough, primary.anisotropy.w);
     float  nv = max(.001, dot(n, v)), a = rough * rough;
     float3 sum = 0;
     float nearest = maxDistance, farthest = 0;
@@ -1943,7 +2008,9 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
             float u = (j + .5) / samples, phi = j * 2.39996323 + rotation;
             float cosTheta = sqrt((1 - u) / (1 + (a * a - 1) * u));
             float sinTheta = sqrt(max(0, 1 - cosTheta * cosTheta));
-            h = normalize(tangent * (sinTheta * cos(phi)) + bitangent * (sinTheta * sin(phi)) + n * cosTheta);
+            h = aniso ? anisotropicHalfVector(float2(u, frac(phi / 6.283185307)), n,
+              primary.anisotropy.xyz, anisotropyRoughness)
+              : normalize(tangent * (sinTheta * cos(phi)) + bitangent * (sinTheta * sin(phi)) + n * cosTheta);
         }
         float3 ray = reflect(-v, h);
         float  nl = dot(n, ray), nh = max(.001, dot(n, h)), vh = max(0, dot(v, h));
@@ -1988,6 +2055,8 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
         }
         float k = pow(rough + 1, 2) / 8;
         float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
+        if (aniso)
+            g = 4 * nv * nl * anisotropicVisibility(v, ray, n, primary.anisotropy.xyz, anisotropyRoughness);
         sum += radiance * reflectance * (g * vh / (nv * nh));
     }
     // Mixed sky/geometry or materially different hit distances have no stable virtual point.
@@ -2256,6 +2325,7 @@ float4 DeferredPSMain(SkyOut input)
     s.specular        = 1;
     s.sheen           = 0;
     s.film            = 0;
+    s.anisotropy      = 0;
     float4 coat       = gClearcoat.Load(pixel);
     s.coatNormal      = octDecode(coat.xy);
     s.clearcoat       = coat.zw;

@@ -523,7 +523,7 @@ namespace render::detail
                 if (
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_volume" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
-                  && extension != "KHR_materials_pbrSpecularGlossiness" && extension != "KHR_materials_sheen" && extension != "KHR_materials_iridescence"
+                  && extension != "KHR_materials_pbrSpecularGlossiness" && extension != "KHR_materials_sheen" && extension != "KHR_materials_iridescence" && extension != "KHR_materials_anisotropy"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
                   && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing" && extension != "KHR_materials_variants")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
@@ -670,7 +670,8 @@ namespace render::detail
                       std::pair{"KHR_materials_sheen", "sheenColorTexture"},
                       std::pair{"KHR_materials_sheen", "sheenRoughnessTexture"},
                       std::pair{"KHR_materials_iridescence", "iridescenceTexture"},
-                      std::pair{"KHR_materials_iridescence", "iridescenceThicknessTexture"}})
+                      std::pair{"KHR_materials_iridescence", "iridescenceThicknessTexture"},
+                      std::pair{"KHR_materials_anisotropy", "anisotropyTexture"}})
                     {
                         const auto& ext = materialExtension(material, extension);
                         if (extensionTextureIndex(ext, key) < 0)
@@ -1061,6 +1062,18 @@ namespace render::detail
                 slot.iridescenceTexCoords[0] = extensionTexCoord(film.Get("iridescenceTexture"));
             if (film.Has("iridescenceThicknessTexture"))
                 slot.iridescenceTexCoords[1] = extensionTexCoord(film.Get("iridescenceThicknessTexture"));
+            const auto& anisotropy = materialExtension(mat, "KHR_materials_anisotropy");
+            for (const auto& [key, output] : {std::pair{"anisotropyStrength", &slot.anisotropyStrength},
+                                            std::pair{"anisotropyRotation", &slot.anisotropyRotation}})
+                if (anisotropy.Has(key))
+                {
+                    const auto& value = anisotropy.Get(key);
+                    if (!value.IsNumber())
+                        throw std::runtime_error("Invalid glTF anisotropy factor");
+                    *output = float(value.GetNumberAsDouble());
+                }
+            if (anisotropy.Has("anisotropyTexture"))
+                slot.anisotropyTexCoord = extensionTexCoord(anisotropy.Get("anisotropyTexture"));
             const int textures[]   = {
               pbr.baseColorTexture.index,
               mat.normalTexture.index,
@@ -1077,7 +1090,8 @@ namespace render::detail
               extensionTextureIndex(sheen, "sheenColorTexture"),
               extensionTextureIndex(sheen, "sheenRoughnessTexture"),
               extensionTextureIndex(film, "iridescenceTexture"),
-              extensionTextureIndex(film, "iridescenceThicknessTexture")};
+              extensionTextureIndex(film, "iridescenceThicknessTexture"),
+              extensionTextureIndex(anisotropy, "anisotropyTexture")};
             std::optional<Image>* maps[] = {
               &slot.baseColorTexture,
               &slot.normalTexture,
@@ -1094,7 +1108,8 @@ namespace render::detail
               &slot.sheenColorTexture,
               &slot.sheenRoughnessTexture,
               &slot.iridescenceTexture,
-              &slot.iridescenceThicknessTexture};
+              &slot.iridescenceThicknessTexture,
+              &slot.anisotropyTexture};
             slot.metallic          = factors[0];
             slot.roughness         = factors[1];
             slot.normalScale       = factors[2];

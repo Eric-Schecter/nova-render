@@ -40,6 +40,7 @@ function cubeTexture(device, data) {
 export async function createModelView(device, context, url, shaderURL, suppliedData, loadOptions) {
   const data = suppliedData || (await loadGLB(url, loadOptions)),
     resources = []
+  const hasSheen = data.materials?.some((material) => material.sheenColorFactor?.some((value) => value > 0))
   let instanceBuffer,
     sceneDraws = null,
     rasterGlobals = 0,
@@ -57,7 +58,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     pathView
   try {
     const animator = createAnimationPlayer(data)
-    const response = await fetch(shaderURL)
+    // Compile the unused sheen lobe out of WebGPU forward pipelines.
+    const forwardShader = hasSheen ? shaderURL : shaderURL.replace(/model\.json$/, 'model-no-sheen.json')
+    const response = await fetch(forwardShader)
     if (!response.ok) throw Error('Missing model shader package: ' + shaderURL)
     const shader = await response.json()
     const makeBuffer = (bytes, usage, label) => {
@@ -574,13 +577,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
           const packages = await Promise.all(
             [
-              'model-aa',
+              hasSheen ? 'model-aa' : 'model-aa-no-sheen',
               'sky-aa',
               'model-motion',
               'sky-motion',
               'model-gbuffer',
               'model-deferred',
-              'model-oit',
+              hasSheen ? 'model-oit' : 'model-oit-no-sheen',
               'model-hybrid-shadow',
             ].map(async (n) => {
               const r = await fetch(dir + n + '.json')

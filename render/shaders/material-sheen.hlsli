@@ -27,6 +27,9 @@ float sheenAlbedo(float nv, float roughness)
 }
 float3 sheenLayer(float4 sheen, float3 n, float3 v, float3 l, float3 baseBrdf)
 {
+#if defined(NOVA_DISABLE_SHEEN)
+    return baseBrdf;
+#else
     if (!any(sheen.rgb > 0))
         return baseBrdf;
     float nv = saturate(dot(n, v)), nl = saturate(dot(n, l));
@@ -40,5 +43,6 @@ float3 sheenLayer(float4 sheen, float3 n, float3 v, float3 l, float3 baseBrdf)
     float distribution = (2 + invAlpha) * pow(saturate(1 - nh * nh), invAlpha * .5) / 6.283185307;
     float visibility = 1 / max(4 * (nv + nl - nv * nl), 1e-6);
     return baseBrdf * baseWeight + sheen.rgb * (distribution * visibility);
+#endif
 }
 #endif

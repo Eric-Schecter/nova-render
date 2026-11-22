@@ -47,6 +47,9 @@ namespace render
         float iridescenceThicknessMinimum = 100, iridescenceThicknessMaximum = 400;
         std::optional<Image> iridescenceTexture, iridescenceThicknessTexture;
         std::array<uint32_t, 2> iridescenceTexCoords{};
+        float anisotropyStrength = 0, anisotropyRotation = 0;
+        std::optional<Image> anisotropyTexture;
+        uint32_t anisotropyTexCoord = 0;
         float                clearcoatFactor = 0, clearcoatRoughnessFactor = 0;
         std::optional<std::array<float, 6>> independentUVTransform;
         uint32_t independentUVMaps = 0; // Normal and metallic-roughness bits.
