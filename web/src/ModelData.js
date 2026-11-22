@@ -404,6 +404,10 @@ export async function loadGLB(url, { materialVariant } = {}) {
         addTexture(mat.occlusionTexture, mat.occlusionTexture?.texCoord)
         addTexture(extensions.KHR_materials_transmission?.transmissionTexture)
         addTexture(extensions.KHR_materials_volume?.thicknessTexture)
+        for (const key of ['specularTexture', 'specularColorTexture']) {
+          const texture = extensions.KHR_materials_specular?.[key]
+          addTexture(texture, texture?.texCoord ?? 0)
+        }
         for (const key of coatTextureKeys) {
           const texture = extensions.KHR_materials_clearcoat?.[key]
           addTexture(texture, texture?.texCoord)
@@ -576,8 +580,6 @@ export async function loadGLB(url, { materialVariant } = {}) {
     if (specular !== undefined) {
       if (!specular || typeof specular !== 'object' || Array.isArray(specular))
         throw Error('Invalid KHR_materials_specular')
-      if ('specularTexture' in specular || 'specularColorTexture' in specular)
-        throw Error('KHR_materials_specular textures are not supported')
       if ('specularFactor' in specular && typeof specular.specularFactor !== 'number')
         throw Error('Invalid glTF specularFactor')
       if ('specularColorFactor' in specular && !Array.isArray(specular.specularColorFactor))
@@ -613,6 +615,8 @@ export async function loadGLB(url, { materialVariant } = {}) {
       ...coatTextureKeys.map((key) => coat?.[key]),
       material.extensions?.KHR_materials_transmission?.transmissionTexture,
       volume?.thicknessTexture,
+      specular?.specularTexture,
+      specular?.specularColorTexture,
     ]
     const fallback = [
       [255, 255, 255, 255],
@@ -623,6 +627,8 @@ export async function loadGLB(url, { materialVariant } = {}) {
       [255, 255, 255, 255],
       [255, 255, 255, 255],
       [128, 128, 255, 255],
+      [255, 255, 255, 255],
+      [255, 255, 255, 255],
     ]
     const baseSampler = json.samplers?.[json.textures?.[pbr.baseColorTexture?.index]?.sampler]
     const wrap = (mode) => mode === 33071 ? 1 : mode === 33648 ? 2 : 0
@@ -669,6 +675,9 @@ export async function loadGLB(url, { materialVariant } = {}) {
           clearcoatNormalTexture: textures[7] ? images[7] : null,
           transmissionTexture: textures[8] ? images[8] : null,
           thicknessTexture: textures[9] ? images[9] : null,
+          specularTexture: textures[10] ? images[10] : null,
+          specularColorTexture: textures[11] ? images[11] : null,
+          specularTexCoords: [specular?.specularTexture?.texCoord ?? 0, specular?.specularColorTexture?.texCoord ?? 0],
           thicknessFactor: volume?.thicknessFactor,
           attenuationColor: volume?.attenuationColor,
           inverseAttenuationDistance: distance === undefined ? 0 : 1 / distance,

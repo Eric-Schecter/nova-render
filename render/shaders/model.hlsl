@@ -538,6 +538,7 @@ struct SurfaceData
     float2 dielectric;
     float4 volume;
     float4 specular;
+    float4 specularMap;
     float2 clearcoat;
     float3 coatNormal;
     float4 visibility0, visibility1, visibility2, visibility3;
@@ -571,7 +572,7 @@ float3 applyCoatNormal(float3 n, float3 map, float scale, float3 dp1, float3 dp2
 SurfaceData sampleSurface(VertexOut input)
 {
     float  alphaInfo  = .125;
-    float4 specular   = 1;
+    float4 specular   = 1, specularMap = 1;
     float2 clearcoat  = 0;
     InstanceData materialRecord = (InstanceData)0;
     float2 uv         = input.uv;
@@ -589,6 +590,12 @@ SurfaceData sampleSurface(VertexOut input)
         emissionFactor.rgb    = instance.emissive.rgb;
         alphaInfo             = instance.emissive.w;
         specular              = materialSpecular(instance);
+        uint specularMaps = uint(instance.world._m22);
+        float2 uv1 = frac(input.uv1) * instance.uv.xy + instance.uv.zw;
+        if (specularMaps & 1u)
+            specularMap.a = normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? uv1 : uv, 0).a;
+        if (specularMaps & 2u)
+            specularMap.rgb = occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? uv1 : uv, 0).gba;
         clearcoat             = materialClearcoat(instance);
         materialRecord        = instance;
     }
@@ -638,7 +645,8 @@ SurfaceData sampleSurface(VertexOut input)
     float       ao = lerp(1, occlusionTexture.Sample(textureSampler, aoUV).r, matFactor.w);
     SurfaceData result;
     result.useVisibility = 0;
-    result.specular = specular;
+    result.specular = specular * specularMap;
+    result.specularMap = specularMap;
     result.clearcoat = clearcoat;
     result.coatNormal = coatNormal;
     result.visibility0 = result.visibility1 = result.visibility2 = result.visibility3 = 1;
@@ -917,6 +925,7 @@ struct ModelGBuffer
     float4 positionAO : SV_Target2;
     float4 emissiveMetallic : SV_Target3;
     float4 clearcoat : SV_Target4;
+    float4 specularMap : SV_Target5;
 };
 ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
 {
@@ -936,12 +945,14 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     o.positionAO       = float4(high, depth - high, (uint(s.alphaInfo) & 8u) ? -1 : s.ao, slotDistance);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
+    o.specularMap      = s.specularMap;
     return o;
 }
 [[vk::binding(18, 1)]] Texture2D<float4> gNormals : register(t18);
 [[vk::binding(19, 1)]] Texture2D<float4> gPosition : register(t19);
 [[vk::binding(20, 1)]] Texture2D<float4> gEmission : register(t20);
 [[vk::binding(31, 1)]] Texture2D<float4> gClearcoat : register(t31);
+[[vk::binding(32, 1)]] Texture2D<float4> gSpecularMap : register(t32);
 [[vk::binding(21, 1)]] Texture2D<float4> hybridShadow0 : register(t21);
 [[vk::binding(22, 1)]] Texture2D<float4> hybridShadow1 : register(t22);
 [[vk::binding(23, 1)]] Texture2D<float4> hybridShadow2 : register(t23);
@@ -1131,6 +1142,12 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     SurfaceData hit = (SurfaceData)0;
     hit.position = position;
     hit.specular = materialSpecular(mat);
+    uint specularMaps = uint(mat.world._m22);
+    float2 atlasUV1 = frac(tex1) * mat.uv.xy + mat.uv.zw;
+    if (specularMaps & 1u)
+        hit.specular.a *= normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? atlasUV1 : uv, 0).a;
+    if (specularMaps & 2u)
+        hit.specular.rgb *= occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? atlasUV1 : uv, 0).gba;
     hit.clearcoat = materialClearcoat(mat);
     hit.normal = hit.geometricNormal = hit.coatNormal = worldNormal;
     if (hit.clearcoat.x > 0)
@@ -1479,7 +1496,7 @@ float4 DeferredPSMain(SkyOut input)
     if (pos.w > .5 && irradiance[3].w > pos.w)
     {
         InstanceData material = instances[uint(irradiance[3].w - 1 - pos.w)];
-        s.specular = materialSpecular(material);
+        s.specular = materialSpecular(material) * gSpecularMap.Load(pixel);
     }
     if (irradiance[1].w > .5)
     {

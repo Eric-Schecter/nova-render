@@ -52,6 +52,7 @@ export function validateMaterial(m) {
     clearcoatNormalScale: m.clearcoatNormalScale ?? 1,
     clearcoatTexCoords: Array.from(m.clearcoatTexCoords ?? [0, 0, 0]),
     specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
+    specularTexCoords: Array.from(m.specularTexCoords ?? [0, 0]),
   }
   if (![0,1,2,4,5,6,8,9,10].includes(out.baseColorWrap)) throw Error("Invalid base-color texture wrapping")
   if (![0, 1].includes(out.emissiveTexCoord)) throw Error('Emissive texture coordinate set must be 0 or 1')
@@ -67,6 +68,8 @@ export function validateMaterial(m) {
     out.clearcoatTexCoords.some((uv) => uv !== 0 && uv !== 1)
   )
     throw Error('Clearcoat coordinate set must be 0 or 1')
+  if (out.specularTexCoords.length !== 2 || out.specularTexCoords.some((uv) => uv !== 0 && uv !== 1))
+    throw Error('Specular coordinate set must be 0 or 1')
   if (![0, 1].includes(out.occlusionTexCoord))
     throw Error('AO texture coordinate set must be 0 or 1')
   if (typeof out.name !== 'string') throw Error('Material name must be a string')
@@ -103,7 +106,7 @@ export function validateMaterial(m) {
     range(out[key], max)
     out[key] = Math.fround(out[key])
   }
-  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture"]) {
+  for (const key of [...materialTextureKeys, "transmissionTexture", "thicknessTexture", "specularTexture", "specularColorTexture"]) {
     const im = m[key]
     if (im == null) {
       out[key] = null
@@ -129,7 +132,7 @@ export function packMaterials(data) {
   if (data.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
   const materials = data.materials,
     first = materials[0],
-    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture
+    atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture || !!first.specularTexture || !!first.specularColorTexture
   data.baseColor = [...first.baseColor]
   data.material = [first.metallic, first.roughness, first.normalScale, first.occlusionStrength]
   data.emissive = [...first.emissive, 0]
@@ -144,7 +147,7 @@ export function packMaterials(data) {
       tile = Math.max(tile, im.width, im.height)
     }
   for (const m of materials)
-    for (const image of [m.transmissionTexture, m.thicknessTexture])
+    for (const image of [m.transmissionTexture, m.thicknessTexture, m.specularTexture, m.specularColorTexture])
       if (image) tile = Math.max(tile, image.width, image.height)
   tile = Math.min(tile, 2048)
   const cols = Math.ceil(Math.sqrt(materials.length)),
@@ -188,6 +191,8 @@ export function packMaterials(data) {
     const uv = m.clearcoatTexCoords ?? [0, 0, 0]
     record[8] = uv[0] | (uv[1] << 1) | (uv[2] << 2)
     record[9] = m.clearcoatNormalScale ?? 1
+    record[10] = (m.specularTexture ? 1 : 0) | (m.specularColorTexture ? 2 : 0) |
+      ((m.specularTexCoords?.[0] ?? 0) << 2) | ((m.specularTexCoords?.[1] ?? 0) << 3)
     record.set(m.attenuationColor ?? [1, 1, 1], 12)
     record[15] = (m.thicknessFactor ?? 0) * (m.inverseAttenuationDistance ?? 0)
     record.set(m.baseColor, 32)
@@ -223,15 +228,23 @@ export function packMaterials(data) {
               from = (sy * src.width + sx) * 4
             const target = ((y + py) * width + x + px) * 4
             dst.set(src.pixels.subarray(from, from + 4), target)
+            const channel = (map, component) => {
+              if (!map) return 255
+              const x = Math.round(Math.max(0, Math.min(1, (px - 2) / Math.max(1, tile - 1))) * (map.width - 1))
+              const y = Math.round(Math.max(0, Math.min(1, (py - 2) / Math.max(1, tile - 1))) * (map.height - 1))
+              return map.pixels[(y * map.width + x) * 4 + component]
+            }
             if (k === 2) {
-              const channel = (map, component) => {
-                if (!map) return 255
-                const x = Math.round(Math.max(0, Math.min(1, (px - 2) / Math.max(1, tile - 1))) * (map.width - 1))
-                const y = Math.round(Math.max(0, Math.min(1, (py - 2) / Math.max(1, tile - 1))) * (map.height - 1))
-                return map.pixels[(y * map.width + x) * 4 + component]
-              }
               dst[target] = channel(m.thicknessTexture, 1)
               dst[target + 3] = channel(m.transmissionTexture, 0)
+            }
+            if (k === 1 && m.specularTexture)
+              dst[target + 3] = channel(m.specularTexture, 3)
+            if (k === 3 && m.specularColorTexture) {
+              for (let component = 0; component < 3; component++) {
+                const value = channel(m.specularColorTexture, component) / 255
+                dst[target + component + 1] = Math.round(255 * (value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4))
+              }
             }
           }
       }

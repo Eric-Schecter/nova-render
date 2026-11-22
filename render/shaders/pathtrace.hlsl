@@ -133,6 +133,8 @@ struct SurfaceMaterial
     float4 emission;
     float4 uv;
     float4 volume;
+    float4 specular;
+    uint specularMaps;
 };
 SurfaceMaterial surfaceMaterial(Vertex vertex)
 {
@@ -142,14 +144,18 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
     m.emission = parameters[7];
     m.uv       = float4(1, 1, 0, 0);
     m.volume   = float4(1, 1, 1, 0);
+    m.specular = 1;
+    m.specularMaps = 0;
     if (asuint(parameters[27]).x > 0)
     {
-        uint at    = (uint(max(1, vertex.position.w)) - 1) * 20;
+        uint at    = (uint(max(1, vertex.position.w)) - 1) * 25;
         m.base     = asfloat(uint4(texels[at], texels[at + 1], texels[at + 2], texels[at + 3]));
         m.factors  = asfloat(uint4(texels[at + 4], texels[at + 5], texels[at + 6], texels[at + 7]));
         m.emission = asfloat(uint4(texels[at + 8], texels[at + 9], texels[at + 10], texels[at + 11]));
         m.uv       = asfloat(uint4(texels[at + 12], texels[at + 13], texels[at + 14], texels[at + 15]));
         m.volume = asfloat(uint4(texels[at + 16], texels[at + 17], texels[at + 18], texels[at + 19]));
+        m.specular = asfloat(uint4(texels[at + 20], texels[at + 21], texels[at + 22], texels[at + 23]));
+        m.specularMaps = uint(asfloat(texels[at + 24]));
     }
     return m;
 }
@@ -344,15 +350,19 @@ float distribution(float nh, float roughness)
     float a = roughness * roughness, a2 = a * a, q = nh * nh * (a2 - 1) + 1;
     return a2 / max(PI * q * q, 1e-7);
 }
-float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughness)
+float3 brdf(float3 n, float3 v, float3 l, float3 base, float metal, float roughness, float4 specular)
 {
     float  nv = max(dot(n, v), 1e-5), nl = max(dot(n, l), 0);
     float3 h  = normalize(v + l);
     float  nh = saturate(dot(n, h));
     float  k  = pow(roughness + 1, 2) / 8;
     float  g  = nv / (nv * (1 - k) + k) * nl / max(nl * (1 - k) + k, 1e-5);
-    float3 f  = fresnel(dot(v, h), lerp(float3(.04, .04, .04), base, metal));
-    return (1 - f) * (1 - metal) * base / PI + distribution(nh, roughness) * g * f / max(4 * nv * nl, 1e-5);
+    float grazing = pow(1 - saturate(dot(v, h)), 5);
+    float3 dielectricF = lerp(min(.04 * specular.rgb, 1) * specular.a, specular.a, grazing);
+    float3 f = lerp(dielectricF, fresnel(dot(v, h), base), metal);
+    float diffuseF = all(specular == 1) ? 0 : max(dielectricF.r, max(dielectricF.g, dielectricF.b));
+    float3 diffuse = (1 - (all(specular == 1) ? f : diffuseF.xxx)) * (1 - metal) * base / PI;
+    return diffuse + distribution(nh, roughness) * g * f / max(4 * nv * nl, 1e-5);
 }
 // Power heuristic for one sample from each strategy; scale first to avoid overflow.
 float misWeight(float a, float b)
@@ -489,6 +499,7 @@ struct PathVertex
     uint   primitive;
     bool   unlit;
     float4 volume;
+    float4 specular;
 };
 // Thread-private storage shared by the sequential subpath/MIS helpers. Passing
 // whole path arrays by value would duplicate them at every connection.
@@ -505,6 +516,16 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     float2          textureUV = materialUV(uv, mat);
     PathVertex p;
     p.position  = origin + direction * hit.distance;
+    p.specular  = mat.specular;
+    if (mat.specularMaps)
+    {
+        float2 uv1 = a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z;
+        float2 atlasUV1 = materialUV(uv1, mat);
+        if (mat.specularMaps & 1u)
+            p.specular.a *= textureColor(1, mat.specularMaps & 4u ? atlasUV1 : textureUV).a;
+        if (mat.specularMaps & 2u)
+            p.specular.rgb *= textureColor(3, mat.specularMaps & 8u ? atlasUV1 : textureUV).gba;
+    }
     p.geometric = normalize(cross(e, f));
     p.normal    = normalize(a.normal.xyz * bary.x + b.normal.xyz * bary.y + c.normal.xyz * bary.z);
     p.coatNormal = p.normal;
@@ -734,7 +755,7 @@ float3 pathF(PathVertex p, float3 v, float3 l)
     float cosine = dot(g, l);
     float nl = dot(n, l);
     if (cosine > 1e-7 && nl > 0)
-        value += (1 - p.transmission) * brdf(n, v, l, p.base, p.metal, p.roughness) * nl / cosine;
+        value += (1 - p.transmission) * brdf(n, v, l, p.base, p.metal, p.roughness, p.specular) * nl / cosine;
     if (p.coat.x <= 0)
         return value;
     float3 nc = coatFrame(p, g);

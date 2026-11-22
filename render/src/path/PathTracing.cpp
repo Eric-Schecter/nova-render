@@ -104,12 +104,17 @@ namespace render::detail
                 data.texels.insert(data.texels.end(), bytes, bytes + 64);
                 const auto* volume = reinterpret_cast<const unsigned char*>(record.data() + 12);
                 data.texels.insert(data.texels.end(), volume, volume + 16);
+                const auto* specular = reinterpret_cast<const unsigned char*>(record.data());
+                data.texels.insert(data.texels.end(), specular, specular + 16);
+                const auto* specularFlags = reinterpret_cast<const unsigned char*>(record.data() + 10);
+                data.texels.insert(data.texels.end(), specularFlags, specularFlags + 4);
             }
             for (size_t i = 0; i < 5; ++i)
             {
                 // Baked AO is an ambient raster term. Ray visibility is evaluated in the integrator.
                 constexpr std::array<unsigned char, 4> white{255, 255, 255, 255};
-                if (i == 3)
+                if (i == 3 && std::none_of(model->materials.begin(), model->materials.end(),
+                  [](const auto& material) { return material.specularColorTexture.has_value(); }))
                 {
                     data.images[i] = {uint32_t(data.texels.size() / 4), 1, 1, 0};
                     data.texels.insert(data.texels.end(), white.begin(), white.end());

@@ -11,7 +11,7 @@ import { loadGLB, sceneUniforms } from './ModelData.js'
 import { fallbackEnvironment } from './EnvironmentData.js'
 
 const modelTextureBinding = (i) => (i < 5 ? i + 2 : i + 23)
-const gBufferBindings = [17, 18, 19, 20, 21, 22, 23, 24, 31]
+const gBufferBindings = [17, 18, 19, 20, 21, 22, 23, 24, 31, 32]
 function cubeTexture(device, data) {
   const texture = device.createTexture({
     size: [data.mips[0].size, data.mips[0].size, 6],
@@ -263,7 +263,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                     : sky
                       ? 'SkyPSMain'
                       : 'PSMain',
-          targets: Array.from({ length: oit ? 2 : gbuffer ? 5 : hybridShadow ? 4 : 1 }, (_, i) => ({
+          targets: Array.from({ length: oit ? 2 : gbuffer ? 6 : hybridShadow ? 4 : 1 }, (_, i) => ({
             ...(oit
               ? {
                   blend:

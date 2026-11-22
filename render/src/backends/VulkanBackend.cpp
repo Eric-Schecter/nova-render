@@ -151,7 +151,7 @@ namespace render::detail
             depth.depthCompareOp   = sky                                ? VK_COMPARE_OP_ALWAYS
                                      : std::string(name) == "model-oit" ? VK_COMPARE_OP_LESS_OR_EQUAL
                                                                         : VK_COMPARE_OP_LESS;
-            VkPipelineColorBlendAttachmentState color[5]{};
+            VkPipelineColorBlendAttachmentState color[6]{};
             for (auto& c : color)
                 c.colorWriteMask = 15;
             if (std::string(name) == "model-oit")
@@ -165,7 +165,7 @@ namespace render::detail
                     b.colorBlendOp = b.alphaBlendOp = VK_BLEND_OP_ADD;
                 }
             VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-            blend.attachmentCount                     = std::string(name) == "model-gbuffer"         ? 5
+            blend.attachmentCount                     = std::string(name) == "model-gbuffer"         ? 6
                                                         : std::string(name) == "model-hybrid-shadow" ? 4
                                                         : std::string(name) == "model-oit"           ? 2
                                                                                                      : 1;
@@ -323,10 +323,10 @@ namespace render::detail
             external.physical    = reinterpret_cast<void*>(physical);
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
-            external.bindGBuffer = [this](void* command, const std::array<void*, 9>& views, int program) {
+            external.bindGBuffer = [this](void* command, const std::array<void*, 10>& views, int program) {
                 auto                  activeSet = program == -6 ? oitColorSet : program == -7 ? hybridGBufferSet : gBufferSet;
-                VkDescriptorImageInfo images[9]{};
-                VkWriteDescriptorSet  writes[9]{};
+                VkDescriptorImageInfo images[10]{};
+                VkWriteDescriptorSet  writes[10]{};
                 const auto count = program == -6 ? 1u : uint32_t(views.size());
                 for (uint32_t i = 0; i < count; i++)
                 {
@@ -335,7 +335,7 @@ namespace render::detail
                     auto& w               = writes[i];
                     w                     = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                     w.dstSet              = activeSet;
-                    w.dstBinding          = i < 8 ? 17 + i : 31;
+                    w.dstBinding          = i < 8 ? 17 + i : 31 + i - 8;
                     w.descriptorCount     = 1;
                     w.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                     w.pImageInfo          = &images[i];
