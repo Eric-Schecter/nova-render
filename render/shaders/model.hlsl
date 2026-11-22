@@ -141,6 +141,15 @@ float3 applyFog(float3 color, float3 position)
 #endif
     return lerp(color, fog, saturate(amount));
 }
+float wrapBaseAxis(float uv, uint mode)
+{
+    return mode == 1 ? saturate(uv) : mode == 2 ? 1 - abs(frac(uv * .5) * 2 - 1) : frac(uv);
+}
+float2 wrapBaseUV(float2 uv, float info)
+{
+    uint modes = uint(info) >> 5;
+    return float2(wrapBaseAxis(uv.x, modes & 3u), wrapBaseAxis(uv.y, (modes >> 2) & 3u));
+}
 float4 triangleColor(InstanceData tri, float2 bary)
 {
     const float4 a = float4(tri.world._m02, tri.world._m12, tri.world._m22, tri.world._m32);
@@ -200,7 +209,7 @@ bool intersectSceneTriangle(InstanceData tri, float3 origin, float3 direction, f
     {
         float2 uv =
           tri.uv.xy * (1 - u - v) + tri.uv.zw * u + float2(tri.normalMatrix[0][0], tri.normalMatrix[1][1]) * v;
-        uv = frac(uv) * material.uv.xy + material.uv.zw;
+        uv = wrapBaseUV(uv, material.emissive.w) * material.uv.xy + material.uv.zw;
         if (baseTexture.SampleLevel(textureSampler, uv, 0).a * material.baseColor.a * triangleColor(tri, float2(u, v)).a < frac(material.emissive.w) * 4)
             return false;
     }
@@ -584,10 +593,12 @@ SurfaceData sampleSurface(VertexOut input)
     InstanceData materialRecord = (InstanceData)0;
     float2 uv         = input.uv;
     float2 aoUV       = uv;
+    float2 baseUV     = uv;
     float4 baseFactor = baseColorFactor, matFactor = materialFactor, emissionFactor = emissiveFactor;
     if (lightDirection.w > .5)
     {
         InstanceData instance = instances[input.instanceIndex];
+        baseUV                = wrapBaseUV(uv, instance.emissive.w) * instance.uv.xy + instance.uv.zw;
         uv                    = frac(uv) * instance.uv.xy + instance.uv.zw;
         aoUV                  = instance.world._m21 > .5 ? frac(input.uv1) * instance.uv.xy + instance.uv.zw : uv;
         baseFactor            = instance.baseColor;
@@ -598,7 +609,7 @@ SurfaceData sampleSurface(VertexOut input)
         clearcoat             = materialClearcoat(instance);
         materialRecord        = instance;
     }
-    float4 baseSample = baseTexture.Sample(textureSampler, uv) * input.color;
+    float4 baseSample = baseTexture.Sample(textureSampler, baseUV) * input.color;
     float3 base       = baseSample.rgb * baseFactor.rgb;
     float3 n          = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
@@ -661,7 +672,8 @@ SurfaceData sampleSurface(VertexOut input)
     result.metallic                                                                   = metallic;
     result.roughness                                                                  = roughness;
     result.ao                                                                         = ao;
-    result.emissive = emissiveTexture.Sample(textureSampler, uv).rgb * emissionFactor.rgb;
+    float2 emissionUV = (uint(alphaInfo) & 16u) ? frac(input.uv1) * materialRecord.uv.xy + materialRecord.uv.zw : uv;
+    result.emissive = emissiveTexture.Sample(textureSampler, emissionUV).rgb * emissionFactor.rgb;
     return result;
 }
 float hybridVisibility(SurfaceData s, uint index)
@@ -1383,14 +1395,15 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
         if (dot(mapped, mapped) > 1e-12)
             hit.normal = normalize(mapped);
     }
-    hit.base      = baseTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
+    hit.base      = baseTexture.SampleLevel(textureSampler, wrapBaseUV(tex0, mat.emissive.w) * mat.uv.xy + mat.uv.zw, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
     if ((uint(mat.emissive.w) & 8u) != 0)
         return hit.base;
     float4 mr     = materialTexture.SampleLevel(textureSampler, uv, 0);
     hit.metallic  = saturate(mr.b * mat.material.x);
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
     hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, aoUV, 0).r, mat.material.w);
-    hit.emissive = emissiveTexture.SampleLevel(textureSampler, uv, 0).rgb * mat.emissive.rgb;
+    float2 emissionUV = (uint(mat.emissive.w) & 16u) ? frac(tex1) * mat.uv.xy + mat.uv.zw : uv;
+    hit.emissive = emissiveTexture.SampleLevel(textureSampler, emissionUV, 0).rgb * mat.emissive.rgb;
     float coverage = 0;
     float3 bounce = 0;
     if (probeFeedback > 0 && emissiveFactor.w > .5 && hit.metallic < 1)
@@ -2236,7 +2249,7 @@ float4 MotionPSMain(MotionOut input, bool face : SV_IsFrontFace)
     if (lightDirection.w > .5)
     {
         InstanceData m = instances[input.materialIndex];
-        uv             = frac(uv) * m.uv.xy + m.uv.zw;
+        uv             = wrapBaseUV(uv, m.emissive.w) * m.uv.xy + m.uv.zw;
         factor         = m.baseColor;
         info           = m.emissive.w;
     }

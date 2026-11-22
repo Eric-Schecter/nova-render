@@ -150,6 +150,15 @@ SurfaceMaterial surfaceMaterial(Vertex vertex)
     }
     return m;
 }
+float wrapBaseAxis(float uv, uint mode)
+{
+    return mode == 1 ? saturate(uv) : mode == 2 ? 1 - abs(frac(uv * .5) * 2 - 1) : frac(uv);
+}
+float2 wrapBaseUV(float2 uv, float info)
+{
+    uint modes = uint(info) >> 5;
+    return float2(wrapBaseAxis(uv.x, modes & 3u), wrapBaseAxis(uv.y, (modes >> 2) & 3u));
+}
 float2 materialUV(float2 uv, SurfaceMaterial m)
 {
     return frac(uv) * m.uv.xy + m.uv.zw;
@@ -538,9 +547,11 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
             p.coat.y = clamp(p.coat.y, .06, 1);
         }
     }
-    p.base         = pow(max(textureColor(0, textureUV).rgb, 0), 2.2) * mat.base.rgb
+    p.base         = pow(max(textureColor(0, wrapBaseUV(uv, mat.emission.w) * mat.uv.xy + mat.uv.zw).rgb, 0), 2.2) * mat.base.rgb
                    * (a.color.rgb * bary.x + b.color.rgb * bary.y + c.color.rgb * bary.z);
-    p.emission     = pow(max(textureColor(4, textureUV).rgb, 0), 2.2) * mat.emission.rgb;
+    float2 emissionUV = (uint(mat.emission.w) & 16u)
+        ? materialUV(a.uv1.xy * bary.x + b.uv1.xy * bary.y + c.uv1.xy * bary.z, mat) : textureUV;
+    p.emission     = pow(max(textureColor(4, emissionUV).rgb, 0), 2.2) * mat.emission.rgb;
     float4 mr      = textureColor(2, textureUV);
     p.metal        = saturate(mr.b * mat.factors.x);
     p.roughness    = clamp(mr.g * mat.factors.y, .06, 1);

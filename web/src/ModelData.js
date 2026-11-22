@@ -87,6 +87,7 @@ export async function loadGLB(url, { pack = true } = {}) {
           'EXT_mesh_gpu_instancing',
           'KHR_materials_clearcoat',
           'KHR_materials_unlit',
+          'KHR_texture_transform',
         ].includes(e),
     ) ||
     json.buffers.length !== 1 ||
@@ -239,25 +240,43 @@ export async function loadGLB(url, { pack = true } = {}) {
           json.materials.push({})
         const mat = json.materials[materialIndex],
           pbr = mat.pbrMetallicRoughness || {}
-        if (
-          p.attributes.TEXCOORD_0 === undefined &&
-          [
-            pbr.baseColorTexture,
-            pbr.metallicRoughnessTexture,
-            mat.normalTexture,
-            mat.occlusionTexture && (mat.occlusionTexture.texCoord ?? 0) === 0,
-            mat.emissiveTexture,
-          ].some(Boolean)
-        )
-          throw Error('Textured material requires TEXCOORD_0')
-        if (mat.occlusionTexture?.texCoord === 1 && p.attributes.TEXCOORD_1 === undefined)
-          throw Error('AO texture requires TEXCOORD_1')
         const extensions = mat.extensions || {}
-        for (const key of coatTextureKeys) {
-          const info = extensions.KHR_materials_clearcoat?.[key]
-          if (info && p.attributes['TEXCOORD_' + (info.texCoord ?? 0)] === undefined)
-            throw Error('Clearcoat texture requires its declared TEXCOORD set')
+        const coordinates = [null, null]
+        function addTexture(texture, stream = 0) {
+          if (!texture) return
+          const transform = texture.extensions?.KHR_texture_transform ?? {}
+          const source = transform.texCoord ?? texture.texCoord ?? 0
+          const offset = transform.offset ?? [0, 0], scale = transform.scale ?? [1, 1]
+          const angle = transform.rotation ?? 0
+          if (!Number.isInteger(source) || source < 0 || !Array.isArray(offset) ||
+            !Array.isArray(scale) || offset.length !== 2 || scale.length !== 2 ||
+            ![...offset, ...scale, angle].every(Number.isFinite))
+            throw Error('Invalid texture transform')
+          const next = [source, ...offset, ...scale, angle]
+          if (![0, 1].includes(stream) || coordinates[stream]?.some((v, i) => v !== next[i]))
+            throw Error('Material requires independent texture coordinate streams')
+          coordinates[stream] = next
         }
+        for (const texture of [pbr.baseColorTexture, pbr.metallicRoughnessTexture, mat.normalTexture])
+          addTexture(texture)
+        addTexture(mat.emissiveTexture, mat.emissiveTexture?.texCoord === 1 &&
+          (pbr.baseColorTexture || pbr.metallicRoughnessTexture || mat.normalTexture) ? 1 : 0)
+        addTexture(mat.occlusionTexture, mat.occlusionTexture?.texCoord)
+        for (const key of coatTextureKeys) {
+          const texture = extensions.KHR_materials_clearcoat?.[key]
+          addTexture(texture, texture?.texCoord)
+        }
+        const coordinateReaders = coordinates.map((coordinates, stream) => {
+          const [set, ox, oy, sx, sy, angle] = coordinates ?? [stream, 0, 0, 1, 1, 0]
+          const accessor = p.attributes['TEXCOORD_' + set]
+          if (coordinates && accessor === undefined) throw Error('Textured material is missing its texture coordinate set')
+          if (accessor === undefined) return null
+          const sin = Math.sin(angle), cos = Math.cos(angle)
+          return (vertex) => {
+            const [u, v] = element(accessor, vertex, 'VEC2', 2)
+            return [ox + cos * sx * u + sin * sy * v, oy - sin * sx * u + cos * sy * v]
+          }
+        })
         const transmission = extensions.KHR_materials_transmission?.transmissionFactor ?? 0,
           ior = extensions.KHR_materials_ior?.ior ?? 1.5
         if (extensions.KHR_materials_transmission?.transmissionTexture)
@@ -345,14 +364,8 @@ export async function loadGLB(url, { pack = true } = {}) {
               p.attributes.NORMAL !== undefined
                 ? morph('NORMAL', element(p.attributes.NORMAL, index, 'VEC3', 3), index)
                 : stride === 6 ? [0, 0, 1] : faceNormal(i),
-            uv =
-              p.attributes.TEXCOORD_0 === undefined
-                ? [0, 0]
-                : element(p.attributes.TEXCOORD_0, index, 'VEC2', 2),
-            uv1 =
-              p.attributes.TEXCOORD_1 === undefined
-                ? uv
-                : element(p.attributes.TEXCOORD_1, index, 'VEC2', 2)
+            uv = coordinateReaders[0]?.(index) ?? [0, 0],
+            uv1 = coordinateReaders[1]?.(index) ?? uv
           const world = pos.map(
             (_, r) => m[r] * pos[0] + m[4 + r] * pos[1] + m[8 + r] * pos[2] + m[12 + r],
           )
@@ -455,11 +468,12 @@ export async function loadGLB(url, { pack = true } = {}) {
       material.emissiveTexture,
       ...coatTextureKeys.map((key) => coat?.[key]),
     ]
+    const baseSampler = json.samplers?.[json.textures?.[pbr.baseColorTexture?.index]?.sampler]
+    const wrap = (mode) => mode === 33071 ? 1 : mode === 33648 ? 2 : 0
+    const baseColorWrap = wrap(baseSampler?.wrapS) | (wrap(baseSampler?.wrapT) << 2)
     const images = []
     for (const [i, texture] of textures.entries()) {
       if (!texture) continue
-      if (i < 5 && i !== 3 && (texture.texCoord ?? 0) !== 0)
-        throw Error('Only AO textures support TEXCOORD_1')
       const source = json.textures[texture.index].source
       if (!decodedImages.has(source)) {
         const image = json.images[source]
@@ -491,6 +505,9 @@ export async function loadGLB(url, { pack = true } = {}) {
         alphaCutoff: material.alphaCutoff ?? 0.5,
         doubleSided: material.doubleSided ?? false,
         unlit: material.extensions?.KHR_materials_unlit !== undefined,
+        baseColorWrap,
+        emissiveTexCoord: material.emissiveTexture?.texCoord === 1 &&
+          (pbr.baseColorTexture || pbr.metallicRoughnessTexture || material.normalTexture) ? 1 : 0,
         normalScale: material.normalTexture?.scale ?? 1,
         occlusionStrength: material.occlusionTexture?.strength ?? 1,
         occlusionTexCoord: material.occlusionTexture?.texCoord ?? 0,

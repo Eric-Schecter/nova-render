@@ -44,6 +44,8 @@ namespace render
         std::array<uint32_t, 3> clearcoatTexCoords{}; // Strength, roughness, normal.
         std::optional<float>    hybridReflectionStrength; // Falls back to HybridSettings.
         bool                    unlit = false;
+        uint32_t                emissiveTexCoord = 0;
+        uint32_t                baseColorWrap = 0; // Two bits per axis: repeat, clamp, mirror.
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

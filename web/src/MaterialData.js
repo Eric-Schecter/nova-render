@@ -33,6 +33,8 @@ export function validateMaterial(m) {
     alphaCutoff: m.alphaCutoff ?? 0.5,
     doubleSided: m.doubleSided ?? false,
     unlit: m.unlit ?? false,
+    emissiveTexCoord: m.emissiveTexCoord ?? 0,
+    baseColorWrap: m.baseColorWrap ?? 0,
     baseColor: m.baseColor ?? [1, 1, 1, 1],
     roughness: m.roughness ?? 1,
     metallic: m.metallic ?? 1,
@@ -48,6 +50,8 @@ export function validateMaterial(m) {
     clearcoatTexCoords: Array.from(m.clearcoatTexCoords ?? [0, 0, 0]),
     specularColorFactor: m.specularColorFactor ?? [1, 1, 1],
   }
+  if (![0,1,2,4,5,6,8,9,10].includes(out.baseColorWrap)) throw Error("Invalid base-color texture wrapping")
+  if (![0, 1].includes(out.emissiveTexCoord)) throw Error('Emissive texture coordinate set must be 0 or 1')
   if (!['OPAQUE', 'MASK', 'BLEND'].includes(out.alphaMode) || typeof out.doubleSided !== 'boolean' || typeof out.unlit !== 'boolean')
     throw Error('Invalid material alpha mode or sidedness')
   if (
@@ -186,6 +190,8 @@ export function packMaterials(data) {
       ['OPAQUE', 'MASK', 'BLEND'].indexOf(m.alphaMode ?? 'OPAQUE') +
       (m.doubleSided ? 4 : 0) +
       (m.unlit ? 8 : 0) +
+      (m.emissiveTexCoord ? 16 : 0) +
+      (m.baseColorWrap ?? 0) * 32 +
       (m.alphaCutoff ?? 0.5) * 0.25
     record.set(
       atlas
