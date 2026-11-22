@@ -459,6 +459,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     }
     return {
       data,
+      useDeferredMaterialLayers: !!hasSheen,
       setHybrid(settings) {
         if (hybrid !== settings) probes?.invalidate()
         hybrid = settings
