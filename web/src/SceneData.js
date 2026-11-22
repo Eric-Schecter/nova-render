@@ -1,4 +1,4 @@
-import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
+import { modelVertexFloats, modelTriangleFloats, shadowBVHByteLimit } from './ModelVertex.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 import { createAnimationPlayer, evaluateAnimation, poseAnimationGeometry } from './AnimationData.js'
 import { PickMesh, pickScene } from './Picking.js'
@@ -231,8 +231,8 @@ export class SceneData {
           m.shadowData = m.picking.shadowRecords()
           m.shadowNodes = m.picking.nodes.length
           shadowCount += m.shadowData.length
+          if (shadowCount * 4 > shadowBVHByteLimit) throw Error('Scene shadow BVHs exceed 384 MiB')
         }
-        if (shadowCount * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
         this.shadowRecords = new Float32Array(shadowCount)
         for (const m of next.values()) {
           this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
@@ -354,7 +354,7 @@ export class SceneData {
           length += mesh.shadowData.length
         }
       }
-      if (length * 4 > 64 * 1024 * 1024) throw Error('Scene shadow BVHs exceed 64 MiB')
+      if (length * 4 > shadowBVHByteLimit) throw Error('Scene shadow BVHs exceed 384 MiB')
       const records = new Float32Array(length)
       records.set(this.shadowRecords)
       for (const { mesh, offset } of entries) {

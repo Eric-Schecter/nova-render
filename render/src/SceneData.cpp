@@ -109,7 +109,10 @@ namespace render::detail
                 m.shadowFirst    = uint32_t(shadow.size());
                 m.shadowNodes    = m.picking->ShadowNodeCount();
                 size_t shadowRow = 0;
-                for (const auto& row : m.picking->ShadowRecords())
+                const auto rows = m.picking->ShadowRecords();
+                if (rows.size() > shadowBVHByteLimit / 192 - shadow.size())
+                    throw std::runtime_error("Scene shadow BVHs exceed 384 MiB");
+                for (const auto& row : rows)
                 {
                     InstanceData record;
                     std::memcpy(&record, row.data(), 192);
@@ -118,8 +121,6 @@ namespace render::detail
                     shadow.push_back(record);
                 }
             }
-            if (shadow.size() * 192ull > 64ull * 1024 * 1024)
-                throw std::runtime_error("Scene shadow BVHs exceed 64 MiB");
             shadowRecords = std::move(shadow);
             model         = std::move(packed);
             meshes        = std::move(next);
@@ -453,8 +454,8 @@ namespace render::detail
                     player.queryPick = std::make_shared<PickMesh>(PoseGeometry(instance.id));
                 const auto&  rows      = player.queryPick->ShadowRecords();
                 const size_t nodeCount = player.queryPick->ShadowNodeCount();
-                if ((records.size() - shadowBase + rows.size()) * 192ull > 64ull * 1024 * 1024)
-                    throw std::runtime_error("Scene shadow BVHs exceed 64 MiB");
+                if ((records.size() - shadowBase + rows.size()) * 192ull > shadowBVHByteLimit)
+                    throw std::runtime_error("Scene shadow BVHs exceed 384 MiB");
                 record.uv[1] = float(records.size() - shadowBase);
                 record.uv[3] = float(nodeCount);
                 const float materialOffset =

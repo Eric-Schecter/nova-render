@@ -11,6 +11,9 @@
 #include <vector>
 namespace render::detail
 {
+    inline constexpr size_t materialSlotLimit = 256;
+    inline constexpr size_t shadowBVHByteLimit = 384ull * 1024 * 1024;
+
     struct ModelVertex
     {
         float position[4]; // xyz: position; w: one-based material slot (shader restores homogeneous w).

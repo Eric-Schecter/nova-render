@@ -336,9 +336,9 @@ namespace render::detail
             if (i != m.extensions.end() && i->second.Has("ior"))
                 ior = float(i->second.Get("ior").GetNumberAsDouble());
             if (
-              !std::isfinite(transmission) || transmission < 0 || transmission > 1 || !std::isfinite(ior) || ior < 1.01f
+              !std::isfinite(transmission) || transmission < 0 || transmission > 1 || !std::isfinite(ior) || ior < 1.f
               || ior > 3)
-                throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1.01..3");
+                throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1..3");
             return std::array<float, 2>{transmission, ior};
         };
         expandMeshInstances(gltf);
@@ -612,8 +612,8 @@ namespace render::detail
             animation->scale  = 2.0f / size;
             result->animation = animation;
         }
-        if (gltf.materials.size() > 128)
-            throw std::runtime_error("At most 128 material slots are supported");
+        if (gltf.materials.size() > materialSlotLimit)
+            throw std::runtime_error("At most 256 material slots are supported");
         for (const auto& sourceMaterial : gltf.materials)
         {
             Material slot;

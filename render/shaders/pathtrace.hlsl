@@ -564,7 +564,7 @@ PathVertex        pathVertex(Hit hit, float3 origin, float3 direction)
     p.volume = mat.volume;
     p.volume.w *= a.uv1.z > .5 ? 1 : a.uv1.w;
     if ((flags & 1024u) != 0) p.volume.w *= mr.r;
-    p.ior          = max(a.uv.w, 1.01);
+    p.ior          = max(a.uv.w, 1);
     p.beta         = 1;
     p.primitive    = hit.primitive;
     p.unlit        = (uint(mat.emission.w) & 8u) != 0;
@@ -719,7 +719,12 @@ float3 pathF(PathVertex p, float3 v, float3 l)
         return 0;
     float glassValue = 0, glassPdf = 0;
     if (p.transmission > 0)
-        glassKernel(p, v, l, glassValue, glassPdf);
+    {
+        if (p.ior > 1.00001)
+            glassKernel(p, v, l, glassValue, glassPdf);
+        else if (dot(-v, l) > .999999)
+            glassValue = rcp(max(abs(dot(p.geometric, l)), 1e-7));
+    }
     bool crossesSurface = dot(p.geometric, v) * dot(p.geometric, l) < 0;
     float3 attenuation = crossesSurface && p.volume.w > 0 && dot(p.geometric, v) > 0
         ? pow(saturate(p.volume.rgb), p.volume.w) : 1;
@@ -758,7 +763,12 @@ float pathPdf(PathVertex p, float3 v, float3 l)
     pathFrame(p, v, n, g);
     float value = 0, pdf = 0;
     if (p.transmission > 0)
-        glassKernel(p, v, l, value, pdf);
+    {
+        if (p.ior > 1.00001)
+            glassKernel(p, v, l, value, pdf);
+        else if (dot(-v, l) > .999999)
+            pdf = 1;
+    }
     bool reflection = dot(g, l) > 0;
     float base = p.transmission * pdf + (1 - p.transmission) * (reflection ? bsdfPdf(n, v, l, p.metal, p.roughness) : 0);
     if (p.coat.x <= 0)
@@ -805,6 +815,12 @@ bool walkDirection(PathVertex p, float3 v, inout uint state, out float3 l, out f
     }
     if (p.transmission > 0 && random(state) < p.transmission)
     {
+        if (p.ior <= 1.00001)
+        {
+            l = -v;
+            pdf = p.transmission;
+            return true;
+        }
         float3 n   = dot(p.geometric, v) > 0 ? p.geometric : -p.geometric;
         float  eta = dot(p.geometric, v) > 0 ? p.ior : 1 / p.ior;
         float3 t = normalize(cross(abs(n.y) < .999 ? float3(0, 1, 0) : float3(1, 0, 0), n)), b = cross(n, t);

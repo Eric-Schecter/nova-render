@@ -1,3 +1,4 @@
+import { materialSlotLimit } from './ModelVertex.js'
 import { decodeMaterialImage } from './MaterialImage.js'
 export const materialTextureKeys = [
   'baseColorTexture',
@@ -125,7 +126,7 @@ export function validateMaterial(m) {
 }
 export function packMaterials(data) {
   if (!data.materials?.length) return data
-  if (data.materials.length > 128) throw Error('At most 128 material slots are supported')
+  if (data.materials.length > materialSlotLimit) throw Error('At most 256 material slots are supported')
   const materials = data.materials,
     first = materials[0],
     atlas = materials.length > 1 || !!first.transmissionTexture || !!first.thicknessTexture

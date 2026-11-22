@@ -1,4 +1,4 @@
-import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
+import { modelVertexFloats, modelTriangleFloats, shadowBVHByteLimit } from './ModelVertex.js'
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a, b) => [
   a[1] * b[2] - a[2] * b[1],
@@ -125,8 +125,9 @@ export class PickMesh {
     }
   }
   shadowRecords() {
-    const records = new Float32Array((this.nodes.length + this.triangles.length) * 48)
-    if (records.byteLength > 64 * 1024 * 1024) throw Error('Scene shadow BVH exceeds 64 MiB')
+    const count = this.nodes.length + this.triangles.length
+    if (count * 192 > shadowBVHByteLimit) throw Error('Scene shadow BVH exceeds 384 MiB')
+    const records = new Float32Array(count * 48)
     this.writeShadowPose(records)
     const escape = (index, next) => {
       const node = this.nodes[index],
