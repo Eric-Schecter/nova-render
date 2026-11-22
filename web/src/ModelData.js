@@ -48,6 +48,106 @@ export function nodeMatrix(n) {
     1,
   ]
 }
+const srgbLinear = (value) =>
+  value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+const linearSrgb = (value) =>
+  value <= 0.0031308 ? 12.92 * value : 1.055 * value ** (1 / 2.4) - 0.055
+const clampUnit = (value) => Math.min(1, Math.max(0, value))
+
+async function convertSpecularGlossiness(json, loadImage, decodedImages) {
+  for (const material of json.materials) {
+    const extension = material.extensions?.KHR_materials_pbrSpecularGlossiness
+    if (extension === undefined) continue
+    if (!extension || Array.isArray(extension) || typeof extension !== 'object')
+      throw Error('Invalid specular-glossiness material')
+    const factor = (value) => {
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw Error('Invalid specular-glossiness factor')
+      return value
+    }
+    const color = (value, size) => {
+      if (value === undefined) return Array(size).fill(1)
+      if (!Array.isArray(value) || value.length !== size) throw Error('Invalid specular-glossiness color factor')
+      return value.map(factor)
+    }
+    const diffuse = color(extension.diffuseFactor, 4),
+      specular = color(extension.specularFactor, 3),
+      gloss = factor(extension.glossinessFactor === undefined ? 1 : extension.glossinessFactor),
+      diffuseMap = extension.diffuseTexture,
+      specularMap = extension.specularGlossinessTexture
+    for (const map of [diffuseMap, specularMap]) {
+      if (map === undefined) continue
+      if (!map || !Number.isInteger(map.index) || map.index < 0 || !json.textures?.[map.index] ||
+        ![0, 1].includes(map.texCoord ?? 0)) throw Error('Invalid specular-glossiness texture')
+    }
+    const sampler = (map) => json.textures[map.index].sampler
+    if (diffuseMap && specularMap &&
+      ((diffuseMap.texCoord ?? 0) !== (specularMap.texCoord ?? 0) || sampler(diffuseMap) !== sampler(specularMap) ||
+        JSON.stringify(diffuseMap.extensions?.KHR_texture_transform) !==
+          JSON.stringify(specularMap.extensions?.KHR_texture_transform)))
+      throw Error('Specular-glossiness conversion requires matching texture coordinates and samplers')
+    // Khronos' archived workflow conversion assumes 4% dielectric reflectance.
+    const brightness = ([r, g, b]) => Math.sqrt(.299 * r * r + .587 * g * g + .114 * b * b)
+    const convert = (dc, sc) => {
+      const f0 = .04, oneMinusSpecular = 1 - Math.max(...sc), ss = brightness(sc)
+      const b = brightness(dc) * oneMinusSpecular / (1 - f0) + ss - 2 * f0
+      const metallic = ss < f0 ? 0 :
+        clampUnit((-b + Math.sqrt(Math.max(0, b * b - 4 * f0 * (f0 - ss)))) / (2 * f0))
+      const weight = metallic * metallic
+      const diffuseScale = oneMinusSpecular / ((1 - f0) * Math.max(1e-6, 1 - metallic))
+      return [
+        dc.map((channel, k) => clampUnit(
+          channel * diffuseScale * (1 - weight) + (sc[k] - f0 * (1 - metallic)) * weight / Math.max(1e-6, metallic),
+        )),
+        metallic,
+      ]
+    }
+    if (!diffuseMap && !specularMap) {
+      const [base, metallicFactor] = convert(diffuse.slice(0, 3), specular)
+      material.pbrMetallicRoughness = {
+        baseColorFactor: [...base, diffuse[3]], metallicFactor, roughnessFactor: 1 - gloss,
+      }
+      continue
+    }
+    const d = diffuseMap ? await loadImage(json.textures[diffuseMap.index].source) : null
+    const s = specularMap ? await loadImage(json.textures[specularMap.index].source) : null
+    const width = Math.min(2048, Math.max(d?.width || 1, s?.width || 1))
+    const height = Math.min(2048, Math.max(d?.height || 1, s?.height || 1))
+    const base = new Uint8Array(width * height * 4), mr = new Uint8Array(base.length)
+    const sample = (img, x, y) => {
+      if (!img) return [1, 1, 1, 1]
+      const offset = (Math.floor(y * img.height / height) * img.width + Math.floor(x * img.width / width)) * 4
+      const pixels = img.pixels
+      return [
+        srgbLinear(pixels[offset] / 255), srgbLinear(pixels[offset + 1] / 255),
+        srgbLinear(pixels[offset + 2] / 255), pixels[offset + 3] / 255,
+      ]
+    }
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        const dc = sample(d, x, y), sc = sample(s, x, y)
+        const [result, metallic] = convert(
+          diffuse.slice(0, 3).map((factor, i) => factor * dc[i]), specular.map((factor, i) => factor * sc[i]),
+        )
+        const offset = (y * width + x) * 4
+        for (let k = 0; k < 3; k++) base[offset + k] = Math.round(linearSrgb(result[k]) * 255)
+        base[offset + 3] = Math.round(dc[3] * diffuse[3] * 255)
+        mr[offset + 1] = Math.round((1 - sc[3] * gloss) * 255)
+        mr[offset + 2] = Math.round(metallic * 255)
+        mr[offset + 3] = 255
+      }
+    const sharedMap = diffuseMap ?? specularMap
+    const samplerIndex = sampler(sharedMap)
+    const addMap = (pixels) => {
+      const source = json.images.length
+      json.images.push({})
+      decodedImages.set(source, { width, height, pixels })
+      const index = json.textures.length
+      json.textures.push({ source, sampler: samplerIndex })
+      return { ...sharedMap, index }
+    }
+    material.pbrMetallicRoughness = { baseColorTexture: addMap(base), metallicRoughnessTexture: addMap(mr) }
+  }
+}
 export async function loadGLB(url, { materialVariant } = {}) {
   const response = await fetch(url)
   if (!response.ok) throw Error('Load GLB: HTTP ' + response.status)
@@ -83,6 +183,7 @@ export async function loadGLB(url, { materialVariant } = {}) {
           'KHR_materials_variants',
           'KHR_materials_ior',
           'KHR_materials_specular',
+          'KHR_materials_pbrSpecularGlossiness',
           'KHR_materials_emissive_strength',
           'KHR_xmp_json_ld',
           'KHR_xmp',
@@ -97,6 +198,22 @@ export async function loadGLB(url, { materialVariant } = {}) {
   )
     throw Error('Expected embedded GLB data and supported glTF extensions')
   json.materials ??= []
+  const decodedImages = new Map()
+  const loadImage = async (source) => {
+    if (!decodedImages.has(source)) {
+      const image = json.images[source]
+      if (image.bufferView === undefined) throw Error('GLB images must be embedded')
+      const view = json.bufferViews[image.bufferView],
+        offset = view.byteOffset || 0
+      if (offset + view.byteLength > bin.byteLength) throw Error('Image out of bounds')
+      const decoded = await decodeMaterialImage(
+        new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
+      )
+      decodedImages.set(source, decoded)
+    }
+    return decodedImages.get(source)
+  }
+  await convertSpecularGlossiness(json, loadImage, decodedImages)
   const variants = json.extensions?.KHR_materials_variants?.variants ?? []
   if (materialVariant !== undefined &&
     (!Number.isInteger(materialVariant) || materialVariant < 0 || materialVariant >= variants.length))
@@ -517,16 +634,7 @@ export async function loadGLB(url, { materialVariant } = {}) {
           images.push({ width: 1, height: 1, pixels: new Uint8Array(fallback[i]) })
           continue
         }
-        const image = json.images[json.textures[textures[i].index].source]
-        if (image.bufferView === undefined) throw Error('GLB images must be embedded')
-        const view = json.bufferViews[image.bufferView],
-          offset = view.byteOffset || 0
-        if (offset + view.byteLength > bin.byteLength) throw Error('Image out of bounds')
-        images.push(
-          await decodeMaterialImage(
-            new Blob([bin.slice(offset, offset + view.byteLength)], { type: image.mimeType }),
-          ),
-        )
+        images.push(await loadImage(json.textures[textures[i].index].source))
       }
       materials.push(
         validateMaterial({

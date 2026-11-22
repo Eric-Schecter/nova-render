@@ -2,6 +2,7 @@
 #include "ModelData.hpp"
 #include "AnimationData.hpp"
 #include "CameraData.hpp"
+#include "Color.hpp"
 #include <glm/gtc/quaternion.hpp>
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
@@ -347,6 +348,154 @@ namespace render::detail
             }
             return result;
         }
+        void convertSpecularGlossiness(tinygltf::Model& model)
+        {
+            for (auto& material : model.materials)
+            {
+                auto found = material.extensions.find("KHR_materials_pbrSpecularGlossiness");
+                if (found == material.extensions.end())
+                    continue;
+                const auto& extension = found->second;
+                if (!extension.IsObject())
+                    throw std::runtime_error("Invalid specular-glossiness material");
+                auto factor = [](const tinygltf::Value& value) {
+                    if (!value.IsNumber() || !std::isfinite(value.GetNumberAsDouble())
+                        || value.GetNumberAsDouble() < 0 || value.GetNumberAsDouble() > 1)
+                        throw std::runtime_error("Invalid specular-glossiness factor");
+                    return float(value.GetNumberAsDouble());
+                };
+                auto vectorFactor = [&](const char* name, auto& result) {
+                    if (!extension.Has(name))
+                        return;
+                    const auto& value = extension.Get(name);
+                    if (!value.IsArray() || value.ArrayLen() != result.size())
+                        throw std::runtime_error("Invalid specular-glossiness color factor");
+                    for (size_t k = 0; k < result.size(); ++k)
+                        result[k] = factor(value.Get(int(k)));
+                };
+                std::array<float, 4> diffuse{1, 1, 1, 1};
+                std::array<float, 3> specular{1, 1, 1};
+                vectorFactor("diffuseFactor", diffuse);
+                vectorFactor("specularFactor", specular);
+                const float gloss = extension.Has("glossinessFactor") ? factor(extension.Get("glossinessFactor")) : 1;
+                auto readMap = [&](const char* name) {
+                    tinygltf::TextureInfo result;
+                    if (!extension.Has(name))
+                        return result;
+                    const auto& info = extension.Get(name);
+                    if (!info.IsObject() || !info.Get("index").IsInt() || info.Get("index").GetNumberAsInt() < 0)
+                        throw std::runtime_error("Invalid specular-glossiness texture");
+                    result.index = info.Get("index").GetNumberAsInt();
+                    if (info.Has("texCoord"))
+                    {
+                        const auto& set = info.Get("texCoord");
+                        if (!set.IsInt() || set.GetNumberAsInt() < 0 || set.GetNumberAsInt() > 1)
+                            throw std::runtime_error("Invalid specular-glossiness texture coordinate");
+                        result.texCoord = set.GetNumberAsInt();
+                    }
+                    if (info.Has("extensions") && info.Get("extensions").Has("KHR_texture_transform"))
+                        result.extensions.emplace("KHR_texture_transform", info.Get("extensions").Get("KHR_texture_transform"));
+                    return result;
+                };
+                const auto diffuseMap = readMap("diffuseTexture");
+                const auto specularMap = readMap("specularGlossinessTexture");
+                auto sampler = [&](const auto& map) { return model.textures.at(map.index).sampler; };
+                if (diffuseMap.index >= 0 && specularMap.index >= 0
+                    && (diffuseMap.texCoord != specularMap.texCoord || diffuseMap.extensions != specularMap.extensions
+                        || sampler(diffuseMap) != sampler(specularMap)))
+                    throw std::runtime_error("Specular-glossiness conversion requires matching texture coordinates and samplers");
+                auto image = [&](const auto& map) -> const tinygltf::Image* {
+                    if (map.index < 0)
+                        return nullptr;
+                    const auto& img = model.images.at(model.textures.at(map.index).source);
+                    if (img.width < 1 || img.height < 1 || img.width > 8192 || img.height > 8192
+                        || img.bits != 8 || img.component != 4 || img.image.size() != size_t(img.width) * img.height * 4)
+                        throw std::runtime_error("Expected RGBA8 specular-glossiness texture");
+                    return &img;
+                };
+                const auto* d = image(diffuseMap);
+                const auto* s = image(specularMap);
+                auto convert = [&](glm::vec3 dc, glm::vec3 sc) {
+                    // Match Khronos' archived workflow conversion with a 4% dielectric reflectance.
+                    constexpr float f0 = .04f;
+                    constexpr glm::vec3 weights(.299f, .587f, .114f);
+                    const float oneMinusSpecular = 1 - std::max({sc.r, sc.g, sc.b});
+                    const float ds = std::sqrt(glm::dot(dc * dc, weights));
+                    const float ss = std::sqrt(glm::dot(sc * sc, weights));
+                    const float b = ds * oneMinusSpecular / (1 - f0) + ss - 2 * f0;
+                    const float metallic = ss < f0 ? 0.f :
+                      std::clamp((-b + std::sqrt(std::max(0.f, b * b - 4 * f0 * (f0 - ss)))) / (2 * f0), 0.f, 1.f);
+                    const auto fromDiffuse = dc * (oneMinusSpecular / ((1 - f0) * std::max(1e-6f, 1 - metallic)));
+                    const auto fromSpecular = (sc - f0 * (1 - metallic)) / std::max(1e-6f, metallic);
+                    return glm::vec4(glm::clamp(glm::mix(fromDiffuse, fromSpecular, metallic * metallic), 0.f, 1.f), metallic);
+                };
+                auto& pbr = material.pbrMetallicRoughness;
+                const glm::vec3 df(diffuse[0], diffuse[1], diffuse[2]), sf(specular[0], specular[1], specular[2]);
+                if (!d && !s)
+                {
+                    const auto converted = convert(df, sf);
+                    pbr.baseColorFactor = {converted.r, converted.g, converted.b, diffuse[3]};
+                    pbr.metallicFactor = converted.a;
+                    pbr.roughnessFactor = 1 - gloss;
+                    pbr.baseColorTexture = {};
+                    pbr.metallicRoughnessTexture = {};
+                    continue;
+                }
+                const auto& sharedMap = d ? diffuseMap : specularMap;
+                const int samplerIndex = sampler(sharedMap);
+                const int width = std::min(2048, std::max(d ? d->width : 1, s ? s->width : 1));
+                const int height = std::min(2048, std::max(d ? d->height : 1, s ? s->height : 1));
+                tinygltf::Image base, mr;
+                for (auto* target : {&base, &mr})
+                {
+                    target->width = width;
+                    target->height = height;
+                    target->component = 4;
+                    target->bits = 8;
+                    target->pixel_type = TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE;
+                    target->image.resize(size_t(width) * height * 4);
+                }
+                auto sample = [&](const tinygltf::Image* img, int x, int y) {
+                    if (!img)
+                        return glm::vec4(1.f);
+                    const size_t offset = (size_t(y * img->height / height) * img->width + x * img->width / width) * 4;
+                    const auto* px = img->image.data() + offset;
+                    return glm::vec4(SRGBToLinear(px[0] / 255.f), SRGBToLinear(px[1] / 255.f),
+                                     SRGBToLinear(px[2] / 255.f), px[3] / 255.f);
+                };
+                auto byte = [](float value) { return uint8_t(std::lround(value * 255.f)); };
+                auto srgb = [](float value) {
+                    return value <= .0031308f ? 12.92f * value : 1.055f * std::pow(value, 1.f / 2.4f) - .055f;
+                };
+                for (int y = 0; y < height; ++y)
+                    for (int x = 0; x < width; ++x)
+                    {
+                        const auto dc = sample(d, x, y), sc = sample(s, x, y);
+                        const auto converted = convert(glm::vec3(dc) * df, glm::vec3(sc) * sf);
+                        const size_t offset = (size_t(y) * width + x) * 4;
+                        for (int k = 0; k < 3; ++k)
+                            base.image[offset + k] = byte(srgb(converted[k]));
+                        base.image[offset + 3] = byte(dc.a * diffuse[3]);
+                        mr.image[offset + 1] = byte(1 - sc.a * gloss);
+                        mr.image[offset + 2] = byte(converted.a);
+                        mr.image[offset + 3] = 255;
+                    }
+                auto addMap = [&](tinygltf::Image&& pixels) {
+                    tinygltf::Texture texture;
+                    texture.source = int(model.images.size());
+                    texture.sampler = samplerIndex;
+                    model.images.push_back(std::move(pixels));
+                    auto info = sharedMap;
+                    info.index = int(model.textures.size());
+                    model.textures.push_back(std::move(texture));
+                    return info;
+                };
+                pbr.baseColorFactor = {1, 1, 1, 1};
+                pbr.metallicFactor = pbr.roughnessFactor = 1;
+                pbr.baseColorTexture = addMap(std::move(base));
+                pbr.metallicRoughnessTexture = addMap(std::move(mr));
+            }
+        }
     } // namespace
     std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path, std::optional<uint32_t> variant)
     {
@@ -360,6 +509,7 @@ namespace render::detail
                 if (
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_volume" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
+                  && extension != "KHR_materials_pbrSpecularGlossiness"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
                   && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing" && extension != "KHR_materials_variants")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
@@ -384,6 +534,7 @@ namespace render::detail
                 throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1..3");
             return std::array<float, 2>{transmission, ior};
         };
+        convertSpecularGlossiness(gltf);
         selectMaterialVariant(gltf, variant);
         expandMeshInstances(gltf);
         auto              animation = ReadAnimationData(gltf);
