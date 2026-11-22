@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string_view>
 #include <functional>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -84,6 +85,88 @@ namespace render::detail
             glm::vec3 v;
             std::memcpy(&v, element(m, a, i, TINYGLTF_TYPE_VEC3, TINYGLTF_COMPONENT_TYPE_FLOAT), 12);
             return v;
+        }
+        void expandMeshInstances(tinygltf::Model& model)
+        {
+            constexpr char extension[] = "EXT_mesh_gpu_instancing";
+            for (size_t i = 0, originalCount = model.nodes.size(); i < originalCount; ++i)
+            {
+                const auto node = model.nodes[i];
+                const auto found = node.extensions.find(extension);
+                if (found == node.extensions.end())
+                    continue;
+                const auto& attributes = found->second.Get("attributes");
+                if (node.mesh < 0 || node.skin >= 0 || !attributes.IsObject()
+                    || attributes.Keys().empty())
+                    throw std::runtime_error("Invalid glTF mesh instances");
+                size_t count = 0;
+                for (const auto& key : attributes.Keys())
+                {
+                    const auto& value = attributes.Get(key);
+                    if (!value.IsInt())
+                        throw std::runtime_error("Invalid instance accessor");
+                    const auto rows = model.accessors.at(value.GetNumberAsInt()).count;
+                    if (!rows || (count && count != rows))
+                        throw std::runtime_error("Mismatched glTF instance accessors");
+                    count = rows;
+                }
+                const auto& mesh = model.meshes.at(node.mesh);
+                size_t vertexCount = 0;
+                for (const auto& primitive : mesh.primitives)
+                    vertexCount += model.accessors.at(primitive.attributes.at("POSITION")).count;
+                if (!vertexCount || count > 10000000 / vertexCount)
+                    throw std::runtime_error("Oversized glTF mesh instances");
+                for (size_t row = 0; row < count; ++row)
+                {
+                    tinygltf::Node instance;
+                    instance.mesh = node.mesh;
+                    instance.weights = node.weights;
+                    for (const auto* key : {"TRANSLATION", "ROTATION", "SCALE"})
+                    {
+                        if (!attributes.Has(key))
+                            continue;
+                        const int index = attributes.Get(key).GetNumberAsInt();
+                        if (std::string_view(key) == "ROTATION")
+                        {
+                            const auto& accessor = model.accessors.at(index);
+                            const int type = accessor.componentType;
+                            if (!((type == 5126 && !accessor.normalized)
+                               || ((type == 5120 || type == 5122) && accessor.normalized)))
+                                throw std::runtime_error("Invalid instance rotation encoding");
+                            const auto* data = element(model, index, row, TINYGLTF_TYPE_VEC4, type);
+                            glm::vec4 rotation{};
+                            for (int k = 0; k < 4; ++k)
+                                if (type == 5126)
+                                    std::memcpy(&rotation[k], data + k * 4, 4);
+                                else if (type == 5120)
+                                    rotation[k] = std::max(-1.f, float(int8_t(data[k])) / 127.f);
+                                else
+                                {
+                                    int16_t component;
+                                    std::memcpy(&component, data + k * 2, 2);
+                                    rotation[k] = std::max(-1.f, float(component) / 32767.f);
+                                }
+                            const float length = glm::length(rotation);
+                            if (!std::isfinite(length) || length < 1e-8f)
+                                throw std::runtime_error("Invalid instance rotation");
+                            rotation /= length;
+                            instance.rotation.assign(&rotation[0], &rotation[0] + 4);
+                        }
+                        else
+                        {
+                            const auto v = vec3(model, index, row);
+                            if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z))
+                                throw std::runtime_error("Invalid glTF instance vector");
+                            auto& result = std::string_view(key) == "TRANSLATION" ? instance.translation : instance.scale;
+                            result = {v.x, v.y, v.z};
+                        }
+                    }
+                    model.nodes[i].children.push_back(int(model.nodes.size()));
+                    model.nodes.push_back(std::move(instance));
+                }
+                model.nodes[i].mesh = -1;
+                model.nodes[i].extensions.erase(extension);
+            }
         }
         glm::vec2 vec2(const tinygltf::Model& m, int a, size_t i)
         {
@@ -181,7 +264,7 @@ namespace render::detail
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
-                  && extension != "KHR_xmp")
+                  && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -206,6 +289,7 @@ namespace render::detail
                 throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1.01..3");
             return std::array<float, 2>{transmission, ior};
         };
+        expandMeshInstances(gltf);
         auto              animation = ReadAnimationData(gltf);
         auto              result    = std::make_shared<ModelData>();
         glm::vec3         minimum(std::numeric_limits<float>::max()), maximum(-std::numeric_limits<float>::max());
