@@ -245,7 +245,7 @@ namespace render::detail
             if ((pathAPI == GraphicsAPI::Metal || pathAPI == GraphicsAPI::Vulkan || pathAPI == GraphicsAPI::D3D12))
             {
                 c.directional = c.point = c.spot = c.directionalShadows = c.pointShadows = c.spotShadows = true;
-                c.rectangle = c.rectangleShadows = mode != RenderMode::RayTracing;
+                c.rectangle = c.rectangleShadows = mode != RenderMode::RayTracing || pathSettings.integrator == PathIntegrator::PathTracing;
                 c.maxLights                                                                              = 16;
                 c.shadowRequiresScene = mode == RenderMode::Raster;
                 c.estimator           = mode != RenderMode::RayTracing
@@ -272,8 +272,8 @@ namespace render::detail
             if (!GetLightingCapabilities().maxLights)
                 throw std::runtime_error(GetLightingCapabilities().reason);
             auto next = ValidateSceneLights(values);
-            if (mode == RenderMode::RayTracing && HasRectangleLights(next))
-                throw std::invalid_argument("Rectangle lights require Raster or Hybrid");
+            if (mode == RenderMode::RayTracing && pathSettings.integrator != PathIntegrator::PathTracing && HasRectangleLights(next))
+                throw std::invalid_argument("Rectangle lights require Raster, Hybrid, or the Path Tracing integrator");
             lights                = std::move(next);
             lightCollectionActive = true;
             RebuildRasterInstances();
@@ -530,8 +530,8 @@ namespace render::detail
             }
             if (value == RenderMode::RayTracing)
             {
-                if (HasRectangleLights(lights))
-                    throw std::invalid_argument("Rectangle lights require Raster or Hybrid");
+                if (pathSettings.integrator != PathIntegrator::PathTracing && HasRectangleLights(lights))
+                    throw std::invalid_argument("Rectangle lights require Raster, Hybrid, or the Path Tracing integrator");
                 if (!scene.active && (!model || model->vertices.empty()))
                     throw std::invalid_argument("Load a model before path tracing");
                 const auto caps = GetCapabilities();
@@ -631,6 +631,8 @@ namespace render::detail
             ValidatePathTracing(value);
             if (value.integrator == PathIntegrator::Metropolis && !GetCapabilities().metropolis)
                 throw std::runtime_error("MLT requires a supported GPU; DX12 WARP is not supported");
+            if (mode == RenderMode::RayTracing && value.integrator != PathIntegrator::PathTracing && HasRectangleLights(lights))
+                throw std::invalid_argument("Rectangle lights require the Path Tracing integrator");
             pathSettings = value;
             pathSession.Reset();
         }

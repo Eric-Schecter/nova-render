@@ -105,6 +105,20 @@ int main(int argc, char** argv)
         moved           = lights[4];
         moved.direction = {0, 0, 1};
         require(energy(render({moved})) < 1e-8, "Spot direction ignored");
+        SceneLight rectangle;
+        rectangle.id = "area";
+        rectangle.type = LightType::Rectangle;
+        rectangle.position = {0, 0, 2};
+        rectangle.direction = {0, 0, -1};
+        rectangle.up = {0, 1, 0};
+        rectangle.width = 2;
+        rectangle.height = 1;
+        const auto areaEnergy = energy(render({rectangle}));
+        require(areaEnergy > .001, "Rectangle emitted no light");
+        rectangle.width = .1f;
+        require(energy(render({rectangle})) < .2 * areaEnergy, "Rectangle area ignored");
+        rectangle.direction = {0, 0, 1};
+        require(energy(render({rectangle})) < 1e-8, "Rectangle emits through its back face");
         session.Reset();
         session.Render(model, nullptr, uniforms, settings, {0, 0, 0, 1}, 48, 48, nullptr, &lights, shadows);
         session.Render(model, nullptr, uniforms, settings, {0, 0, 0, 1}, 48, 48, nullptr, &lights, shadows);
@@ -129,18 +143,21 @@ int main(int argc, char** argv)
         local.position       = {-1, 0, 1};
         local.intensity      = 8;
         local.shadowSoftness = 0;
-        for (auto type : {LightType::Point, LightType::Spot})
+        for (auto type : {LightType::Point, LightType::Spot, LightType::Rectangle})
         {
             local.type           = type;
             local.direction      = {1, 0, -1};
             local.outerConeAngle = 1;
+            local.up            = {0, 1, 0};
             local.castShadow     = false;
             double off           = energy(render({local}));
             local.castShadow     = true;
             double on            = energy(render({local}));
             require(on < off * .99, "Ray local shadow missing");
             shadows.enabled = false;
-            require(std::abs(energy(render({local})) - off) < 1e-6, "Ray shadow master ignored");
+            // Disabling the master switch changes which stochastic dimensions are consumed.
+            const double tolerance = type == LightType::Rectangle ? off * .02 : 1e-6;
+            require(std::abs(energy(render({local})) - off) < tolerance, "Ray shadow master ignored");
             shadows.enabled = true;
         }
         // Each integrator retains its camera-path NEE contribution for analytic sources.

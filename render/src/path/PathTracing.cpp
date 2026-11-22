@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <glm/geometric.hpp>
+#include <glm/vec3.hpp>
 namespace render::detail
 {
     void ValidateAmbientOcclusion(const AmbientOcclusionSettings& s)
@@ -206,6 +208,17 @@ namespace render::detail
                       std::cos(light.outerConeAngle),
                       light.castShadow ? 1.f : 0.f,
                       light.shadowSoftness};
+                    if (light.type == LightType::Rectangle)
+                    {
+                        const glm::vec3 normal(light.direction[0], light.direction[1], light.direction[2]);
+                        const glm::vec3 up(light.up[0], light.up[1], light.up[2]);
+                        const auto axis = std::abs(normal.y) < .99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+                        const auto tangent = glm::normalize(glm::cross(normal, axis));
+                        const auto bitangent = glm::cross(normal, tangent);
+                        r[3][0] = light.width;
+                        r[3][1] = light.height;
+                        r[3][3] = std::atan2(glm::dot(up, bitangent), glm::dot(up, tangent));
+                    }
                 }
         }
         params.scene  = scene;

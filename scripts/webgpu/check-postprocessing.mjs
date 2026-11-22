@@ -42,9 +42,9 @@ try {
       const diff = (a, b) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length,
         results = [],
         images = []
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 6; i++) {
         view.setPostProcessing({
-          toneMapping: ['linear', 'reinhard', 'aces'][Math.min(i, 2)],
+          toneMapping: i === 5 ? 'agx' : ['linear', 'reinhard', 'aces'][Math.min(i, 2)],
           bloom: i === 3,
           saturation: i === 4 ? 0 : 1,
           autoExposure: false,
@@ -57,6 +57,7 @@ try {
         images.push(image)
       }
       if (diff(images[2], images[3]) < 0.1) throw Error('Bloom missing')
+      if (diff(images[2], images[5]) < 0.1) throw Error('AgX did not change the ACES reference')
       view.setPostProcessing({ toneMapping: 'linear', exposureEV: -4, bloom: false, saturation: 1 })
       await view.drawFrame(192, 128)
       const hdr = await pixels()

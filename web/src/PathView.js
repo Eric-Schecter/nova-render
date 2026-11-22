@@ -104,7 +104,8 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const materialWords = 56
     const materialHeader = new Float32Array(materialCount * materialWords)
     for (let i = 0; i < materialCount; i++) {
-      const source = i * 48, dst = i * materialWords
+      const source = i * 48,
+        dst = i * materialWords
       materialHeader.set(data.materialRecords.subarray(source + 32, source + 48), dst)
       materialHeader.set(data.materialRecords.subarray(source + 12, source + 16), dst + 16)
       materialHeader.set(data.materialRecords.subarray(source, source + 4), dst + 20)
@@ -117,8 +118,13 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     const materialOffsets = new Uint32Array(materialHeader.buffer)
     for (let slot = 0; slot < materialCount; slot++) {
       const material = data.materials[slot]
-      const maps = [material.sheenColorTexture, material.sheenRoughnessTexture,
-        material.iridescenceTexture, material.iridescenceThicknessTexture, material.anisotropyTexture]
+      const maps = [
+        material.sheenColorTexture,
+        material.sheenRoughnessTexture,
+        material.iridescenceTexture,
+        material.iridescenceThicknessTexture,
+        material.anisotropyTexture,
+      ]
       const offsets = [30, 33, 47, 50, 53]
       for (const [i, map] of maps.entries()) {
         if (!map) continue
@@ -135,7 +141,9 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
     for (const [slot, source] of data.images.slice(0, 5).entries()) {
       // Baked AO is an ambient raster term. The path kernel uses ray visibility.
       const image =
-        slot === 3 && !data.materials?.some((m) => m.specularColorTexture) ? { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) } : source
+        slot === 3 && !data.materials?.some((m) => m.specularColorTexture)
+          ? { width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255]) }
+          : source
       let pixels = image.pixels
       if (!pixels) {
         const canvas = new OffscreenCanvas(image.width, image.height),
@@ -393,8 +401,21 @@ export async function createPathView(device, data, shaderDirectory, { linearOutp
           words[129] = records.length / 48
           words[130] = shadows.enabled ? 1 : 0
           values[131] = shadows.bias
-          for (let i = 0; i < records.length / 48; i++)
-            values.set(records.subarray(i * 48 + 32, i * 48 + 48), 132 + i * 16)
+          for (let i = 0; i < records.length / 48; i++) {
+            const start = i * 48
+            const offset = 132 + i * 16
+            values.set(records.subarray(start + 32, start + 48), offset)
+            if (records[start + 43] === 3) {
+              const [x, y, z] = records.subarray(start + 40, start + 43)
+              const [a, b, c] = records.subarray(start + 4, start + 7)
+              const [tx, ty, tz] = Math.abs(y) < 0.99 ? [-z, 0, x] : [0, z, -y]
+              const cosine = a * tx + b * ty + c * tz
+              const sine = a * (y * tz - z * ty) + b * (z * tx - x * tz) + c * (x * ty - y * tx)
+              values[offset + 12] = records[start + 3] * 2
+              values[offset + 13] = records[start + 7] * 2
+              values[offset + 15] = Math.atan2(sine, cosine)
+            }
+          }
         }
         words.set([0, w, h, path.maxBounces], 96)
         words.set(

@@ -8,7 +8,7 @@ namespace render::detail
     inline void ValidatePostProcessing(const PostProcessingSettings& s)
     {
         if (
-          unsigned(s.toneMapping) > 2 || !std::isfinite(s.exposureEV) || s.exposureEV < -8 || s.exposureEV > 8
+          unsigned(s.toneMapping) > unsigned(ToneMapping::AgX) || !std::isfinite(s.exposureEV) || s.exposureEV < -8 || s.exposureEV > 8
           || !std::isfinite(s.minEV) || !std::isfinite(s.maxEV) || s.minEV < -10 || s.maxEV > 10 || s.minEV > s.maxEV
           || !std::isfinite(s.adaptationRate) || s.adaptationRate < .1f || s.adaptationRate > 10
           || !std::isfinite(s.bloomThreshold) || s.bloomThreshold < 0 || s.bloomThreshold > 20

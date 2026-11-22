@@ -15,7 +15,7 @@ Checked items are implemented; unchecked items are not yet supported.
 - [ ] iOS / Android
 - [ ] WebGL backend
 
-Release **0.10.29** provides C++ SDKs for macOS ARM64, iOS devices, iOS Simulator and Android ARM64, plus a WebGPU npm package. The [Windows x64 SDK 0.10.1](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.1) was validated with DirectX 12 and Vulkan.
+Release **0.10.30** provides C++ SDKs for macOS ARM64, iOS devices, iOS Simulator and Android ARM64, plus a WebGPU npm package. The [Windows x64 SDK 0.10.1](https://github.com/Eric-Schecter/nova-render/releases/tag/v0.10.1) was validated with DirectX 12 and Vulkan.
 
 ## Features
 

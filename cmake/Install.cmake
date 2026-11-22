@@ -55,6 +55,8 @@ if(NOVA_BUNDLE_DEPENDENCIES)
     endforeach()
 endif()
 
+install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/agx/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME AgX-LICENSE.txt)
 install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/smaa/LICENSE.txt"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/nova/licenses" RENAME SMAA-LICENSE.txt)
 install(FILES "${PROJECT_SOURCE_DIR}/render/shaders/third_party/fxaa/NOTICE.txt"

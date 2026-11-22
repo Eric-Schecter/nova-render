@@ -108,8 +108,7 @@ class Renderer {
       : {
           ...caps,
           supported: false,
-          reason:
-            `Hybrid requires ${deferredLimits.maxColorAttachmentBytesPerSample} color bytes per sample and ${deferredLimits.maxSampledTexturesPerShaderStage} sampled textures per shader stage.`,
+          reason: `Hybrid requires ${deferredLimits.maxColorAttachmentBytesPerSample} color bytes per sample and ${deferredLimits.maxSampledTexturesPerShaderStage} sampled textures per shader stage.`,
         }
   }
   #rasterSettings = defaultRasterSettings()
@@ -252,8 +251,11 @@ class Renderer {
     this.#parameterPanel?.refresh()
   }
   #requiresDeferredMaterialPass() {
-    return this.#renderMode === 'raster' && this.#lighting === 'pbr' &&
+    return (
+      this.#renderMode === 'raster' &&
+      this.#lighting === 'pbr' &&
       !!this.#model?.useDeferredMaterialLayers
+    )
   }
   #useHalfShadows() {
     return (
@@ -675,8 +677,11 @@ class Renderer {
         )
     }
     if (mode === 'ray-tracing') {
-      if (this.#lights?.some((light) => light.enabled && light.type === 'rectangle'))
-        throw Error('Rectangle lights require Raster or Hybrid')
+      if (
+        this.#pathSettings.integrator !== 'path' &&
+        this.#lights?.some((light) => light.enabled && light.type === 'rectangle')
+      )
+        throw Error('Rectangle lights require Raster, Hybrid, or the Path Tracing integrator')
       if (!this.getCapabilities().pathTracing) throw Error(this.getCapabilities().reason)
       if (!this.#sceneModel && !this.#model?.triangles)
         throw Error('Path tracing requires a loaded model')
@@ -808,6 +813,12 @@ class Renderer {
   setPathTracing(settings) {
     this.#check()
     validatePathTracing(settings)
+    if (
+      this.#renderMode === 'ray-tracing' &&
+      (settings.integrator ?? 'path') !== 'path' &&
+      this.#lights?.some((light) => light.enabled && light.type === 'rectangle')
+    )
+      throw Error('Rectangle lights require the Path Tracing integrator')
     this.#pathSettings = {
       ...settings,
       denoise: settings.denoise ?? false,
@@ -934,9 +945,10 @@ class Renderer {
     const next = copySceneLights(lights)
     if (
       this.#renderMode === 'ray-tracing' &&
+      this.#pathSettings.integrator !== 'path' &&
       next.some((light) => light.enabled && light.type === 'rectangle')
     )
-      throw Error('Rectangle lights require Raster or Hybrid')
+      throw Error('Rectangle lights require Raster, Hybrid, or the Path Tracing integrator')
     this.#lights = next
     this.#resetAA()
     this.resetAccumulation()
@@ -962,8 +974,12 @@ class Renderer {
       directional: supported,
       point: supported,
       spot: supported,
-      rectangle: supported && this.#renderMode !== 'ray-tracing',
-      rectangleShadows: supported && this.#renderMode !== 'ray-tracing',
+      rectangle:
+        supported &&
+        (this.#renderMode !== 'ray-tracing' || this.#pathSettings.integrator === 'path'),
+      rectangleShadows:
+        supported &&
+        (this.#renderMode !== 'ray-tracing' || this.#pathSettings.integrator === 'path'),
       maxLights: supported ? 16 : 0,
       directionalShadows: supported,
       pointShadows: supported,

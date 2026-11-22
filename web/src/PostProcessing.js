@@ -1,3 +1,4 @@
+const toneMappings = ['linear', 'reinhard', 'aces', 'agx']
 export const defaultPostProcessing = () => ({
   enabled: false,
   toneMapping: 'aces',
@@ -16,7 +17,7 @@ export const defaultPostProcessing = () => ({
 export function copyPostProcessing(value) {
   const s = { ...defaultPostProcessing(), ...value }
   if (
-    !['linear', 'reinhard', 'aces'].includes(s.toneMapping) ||
+    !toneMappings.includes(s.toneMapping) ||
     !['enabled', 'autoExposure', 'bloom'].every((k) => typeof s[k] === 'boolean')
   )
     throw Error('Invalid post-processing settings')
@@ -62,7 +63,7 @@ export function appendPostProcessing(passes, color, baseline, w, h, s, state, ba
     44,
     4,
     1,
-    ['linear', 'reinhard', 'aces'].indexOf(s.toneMapping),
+    toneMappings.indexOf(s.toneMapping),
     s.exposureEV,
     s.autoExposure ? 1 : 0,
   )

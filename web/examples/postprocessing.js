@@ -12,7 +12,7 @@ export async function showPostProcessing(canvas, shaderDirectory = '/generated/'
     panelLabel: 'Post-processing parameters',
     describe: (view) => {
       const p = view.getPostProcessing()
-      return `${p.enabled ? { linear: 'Linear', reinhard: 'Reinhard', aces: 'ACES fit' }[p.toneMapping] : 'Bypass'} · ${p.autoExposure ? 'Auto exposure' : 'Manual exposure'} · `
+      return `${p.enabled ? { linear: 'Linear', reinhard: 'Reinhard', aces: 'ACES fit', agx: 'AgX' }[p.toneMapping] : 'Bypass'} · ${p.autoExposure ? 'Auto exposure' : 'Manual exposure'} · `
     },
     extraControls: (api) => {
       addPostProcessingControls(api)

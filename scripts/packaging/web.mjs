@@ -27,6 +27,7 @@ for (const file of assets)
   cpSync(join(root, 'docs/public/generated', file), join(stage, 'assets', file))
 mkdirSync(join(stage, 'licenses'), { recursive: true })
 for (const [source, name] of [
+  ['render/shaders/third_party/agx/LICENSE.txt', 'AgX-LICENSE.txt'],
   ['render/shaders/third_party/smaa/LICENSE.txt', 'SMAA-LICENSE.txt'],
   ['render/shaders/third_party/fxaa/NOTICE.txt', 'FXAA-NOTICE.txt'],
 ])

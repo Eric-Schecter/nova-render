@@ -21,7 +21,7 @@ Native getters return complete settings; web setters accept partial objects. Inv
 ## Settings
 
 - `enabled`: default false for ordinary renderers, true in the HDR example.
-- `toneMapping`: Linear / Reinhard / ACES, lowercase on web; default ACES, using Narkowicz's fit rather than full ACES color management.
+- `toneMapping`: Linear / Reinhard / ACES / AgX, lowercase on web. The default is the Narkowicz ACES fit. AgX uses a real-time approximation of the SDR default look, without Blender's OpenColorIO looks or display transforms.
 - `exposureEV`: −8–8, default 0; each EV doubles input. With auto exposure this becomes compensation.
 - `autoExposure`: default false; geometric mean luminance targets 0.18 gray with exponential adaptation using actual frame intervals.
 - `minEV` / `maxEV`: −10–10, defaults −6 / 6; min must not exceed max.

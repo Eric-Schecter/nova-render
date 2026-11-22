@@ -25,9 +25,9 @@ int main(int argc, char** argv)
         json << "[";
         std::vector<render::Image> images;
         auto                       draw = [&] { return view.DrawFrame(192, 128); };
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < 6; i++)
         {
-            post.toneMapping  = render::ToneMapping(std::min(i, 2));
+            post.toneMapping  = i == 5 ? render::ToneMapping::AgX : render::ToneMapping(std::min(i, 2));
             post.bloom        = i == 3;
             post.saturation   = i == 4 ? 0 : 1;
             post.autoExposure = false;
@@ -56,11 +56,13 @@ int main(int argc, char** argv)
                 sum += std::abs(int(a.pixels[i]) - int(b.pixels[i]));
             return sum / a.pixels.size();
         };
-        for (int i = 1; i < 5; i++)
+        for (size_t i = 1; i < images.size(); i++)
             if (diff(images[0], images[i]) < .1)
                 throw std::runtime_error("Post-processing did not affect image");
         if (diff(images[2], images[3]) < .1)
             throw std::runtime_error("Bloom did not affect image");
+        if (diff(images[2], images[5]) < .1)
+            throw std::runtime_error("AgX did not change the ACES reference");
         post.toneMapping = render::ToneMapping::Linear;
         post.exposureEV  = -4;
         post.bloom       = false;

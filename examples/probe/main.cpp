@@ -95,7 +95,7 @@ int main(int argc, char** argv)
                         ImGui::TableNextColumn();
                         changed |= ImGui::Checkbox("Post-processing", &post.enabled);
                         int tone = int(post.toneMapping);
-                        if (ImGui::Combo("Tone mapping", &tone, "Linear\0Reinhard\0ACES fit\0"))
+                        if (ImGui::Combo("Tone mapping", &tone, "Linear\0Reinhard\0ACES fit\0AgX\0"))
                         {
                             post.toneMapping = render::ToneMapping(tone);
                             changed          = true;
@@ -261,7 +261,7 @@ int main(int argc, char** argv)
             performance.scale  = scale * limit * ss;
             performance.samples =
               settings.method == render::AAMethod::MSAA || settings.method == render::AAMethod::SSAA ? 4 : 1;
-            const char* toneNames[] = {"Linear", "Reinhard", "ACES fit"};
+            const char* toneNames[] = {"Linear", "Reinhard", "ACES fit", "AgX"};
             metricMethod =
               std::string(reflections.boxProjection ? "Probe | Box projection | " : "Probe | Uncorrected | ")
               + std::string(post.enabled ? toneNames[unsigned(post.toneMapping)] : "Bypass") + " | "

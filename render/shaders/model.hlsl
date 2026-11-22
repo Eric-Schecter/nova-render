@@ -960,6 +960,17 @@ float3 rectangleSpecular(InstanceData light, SurfaceData s, float3 v, float3 nor
     float2 brdf = environmentBRDF(roughness, saturate(nv));
     return light.baseColor.rgb * light.baseColor.w * response * (f0 * brdf.x + f90 * brdf.y);
 }
+float3 rectangleGGX(float3 n, float3 v, float3 l, float3 h, float roughness, float3 f0, float f90)
+{
+    float nv = saturate(dot(n, v)), nl = saturate(dot(n, l)), nh = saturate(dot(n, h));
+    if (nv <= 0 || nl <= 0)
+        return 0;
+    float a2 = roughness * roughness * roughness * roughness;
+    float d = nh * nh * (a2 - 1) + 1;
+    float k = (roughness + 1) * (roughness + 1) / 8;
+    float visibility = .25 / ((nv * (1 - k) + k) * (nl * (1 - k) + k));
+    return fresnel(saturate(dot(v, h)), f0, f90) * (a2 * visibility / (3.14159265 * d * d));
+}
 float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float coatTransmission,
                            bool secondaryLighting)
 {
@@ -969,10 +980,14 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
 
     float3 f0 = lerp(dielectricF0(s.specular), s.base, s.metallic);
     float f90 = lerp(s.specular.a, 1, s.metallic);
-    float3 diffuse = 0, sheen = 0;
+    float3 diffuse = 0, sheen = 0, roughSpecular = 0, roughCoat = 0;
     bool castShadow = light.uv.z > .5;
     uint samples = secondaryLighting ? 1 : castShadow ? rectangleShadowSamples() : 8;
-    if (s.metallic < 1 || any(s.sheen.rgb > 0))
+    float baseBlend = secondaryLighting || samples == 1 ? 0 : smoothstep(.35, .65, s.roughness);
+    float coatBlend = secondaryLighting || samples == 1 || s.clearcoat.x <= 0
+      ? 0 : smoothstep(.35, .65, s.clearcoat.y);
+    float3 emitted = light.baseColor.rgb * light.baseColor.w * (4 * light.world._m30 * light.world._m31 / samples);
+    if (s.metallic < 1 || any(s.sheen.rgb > 0) || baseBlend > 0 || coatBlend > 0)
     {
         [loop] for (uint i = 0; i < samples; ++i)
         {
@@ -983,24 +998,41 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
             float3 l = delta / max(distance, 1e-5);
             float weight = saturate(dot(s.normal, l)) * saturate(-dot(light.emissive.xyz, l))
                            * rectangleRange(distance, light.material.w) / max(distanceSquared, .0001);
-            if (weight <= 0)
+            float coatWeight = coatBlend > 0 ? saturate(dot(s.coatNormal, l))
+                * saturate(-dot(light.emissive.xyz, l)) * rectangleRange(distance, light.material.w)
+                / max(distanceSquared, .0001) : 0;
+            if (weight <= 0 && coatWeight <= 0)
                 continue;
             if (castShadow)
-                weight *= localLightVisibility(s.position, s.geometricNormal, samplePosition, 0);
-            float3 h = normalize(v + l);
+            {
+                float visible = localLightVisibility(s.position, s.geometricNormal, samplePosition, 0);
+                weight *= visible;
+                coatWeight *= visible;
+            }
+            float3 h = (v + l) * rsqrt(max(dot(v + l, v + l), 1e-8));
             diffuse += weight * (1 - diffuseFresnel(dot(v, h), fresnel(dot(v, h), f0, f90), s.specular));
             sheen += weight * sheenLayer(s.sheen, s.normal, v, l, 0);
+            if (baseBlend > 0)
+                roughSpecular += weight * rectangleGGX(s.normal, v, l, h, s.roughness, f0, f90);
+            if (coatBlend > 0)
+                roughCoat += coatWeight * rectangleGGX(s.coatNormal, v, l, h, s.clearcoat.y, .04.xxx, 1);
         }
-        sheen *= light.world._m30 * light.world._m31 * (4.0 / samples) * light.baseColor.rgb * light.baseColor.w;
-        diffuse *= light.world._m30 * light.world._m31 * (4.0 / (samples * 3.14159265))
-                   * light.baseColor.rgb * light.baseColor.w * (1 - s.metallic) * s.base;
+        sheen *= emitted;
+        diffuse *= emitted * (1 - s.metallic) * s.base / 3.14159265;
     }
-    float3 specular = rectangleSpecular(light, s, v, s.normal, s.roughness, f0, f90, planeDistance,
-                                        castShadow && !secondaryLighting);
+    float3 specular = roughSpecular * emitted * baseBlend;
+    if (baseBlend < 1)
+        specular += (1 - baseBlend) * rectangleSpecular(light, s, v, s.normal, s.roughness, f0, f90,
+                                                       planeDistance, castShadow && !secondaryLighting);
     float3 coat = 0;
     if (s.clearcoat.x > 0)
-        coat = s.clearcoat.x * rectangleSpecular(light, s, v, s.coatNormal, max(.02, s.clearcoat.y),
-                                               .04.xxx, 1, planeDistance, castShadow && !secondaryLighting);
+    {
+        coat = roughCoat * emitted * coatBlend;
+        if (coatBlend < 1)
+            coat += (1 - coatBlend) * rectangleSpecular(light, s, v, s.coatNormal, max(.02, s.clearcoat.y),
+                                                       .04.xxx, 1, planeDistance, castShadow && !secondaryLighting);
+        coat *= s.clearcoat.x;
+    }
     float sheenScale = 1 - max(s.sheen.r, max(s.sheen.g, s.sheen.b)) * sheenAlbedo(saturate(dot(s.normal, v)), s.sheen.a);
     return ((diffuse + specular) * sheenScale + sheen) * coatTransmission + coat;
 }

@@ -1039,7 +1039,7 @@ uint localSourceCount()
     uint  count = 0;
     if (info.x != 0)
         for (uint i = 0; i < info.y; ++i)
-            if (parameters[35 + 4 * i].w > .5 && parameters[33 + 4 * i].w > 0 && any(parameters[33 + 4 * i].rgb > 0))
+            if (parameters[35 + 4 * i].w > .5 && parameters[35 + 4 * i].w < 2.5 && parameters[33 + 4 * i].w > 0 && any(parameters[33 + 4 * i].rgb > 0))
                 ++count;
     return count;
 }
@@ -1051,7 +1051,7 @@ uint localSourceIndex(uint selected)
 {
     uint count = 0;
     for (uint i = 0; i < asuint(parameters[32]).y; ++i)
-        if (parameters[35 + 4 * i].w > .5 && parameters[33 + 4 * i].w > 0 && any(parameters[33 + 4 * i].rgb > 0))
+        if (parameters[35 + 4 * i].w > .5 && parameters[35 + 4 * i].w < 2.5 && parameters[33 + 4 * i].w > 0 && any(parameters[33 + 4 * i].rgb > 0))
         {
             if (count++ == selected)
                 return i;
@@ -1093,7 +1093,7 @@ float sourceDirectionPdf(PathVertex p, float3 direction)
                         : (dot(axis.xyz, direction) >= cosine ? 1 / max(2 * PI * (1 - cosine), 1e-20) : 0);
 }
 // Analytic direct lighting for PT and the photon camera pass.
-// They are delta lights (not visible emitter geometry); visibility softness is a filter.
+// Rectangle lights sample a finite emitting surface in the PT direct-light estimator.
 float3 analyticLights(
   PathVertex surface, float3 v, inout uint state, bool includeLocal = true, bool includeDirectional = true)
 {
@@ -1119,11 +1119,23 @@ float3 analyticLights(
         uint   type        = uint(directionType.w);
         if ((type != 0 && !includeLocal) || (type == 0 && !includeDirectional))
             continue;
+        float3 lightPosition = positionRange.xyz;
+        if (type == 3)
+        {
+            float3 normal = directionType.xyz;
+            float3 axis = abs(normal.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0);
+            float3 tangent = normalize(cross(normal, axis));
+            float3 bitangent = cross(normal, tangent);
+            float3 up = cos(options.w) * tangent + sin(options.w) * bitangent;
+            float u = random(state);
+            float w = random(state);
+            lightPosition += (u - .5) * options.x * cross(normal, up) + (w - .5) * options.y * up;
+        }
         float3 l           = directionType.xyz;
         float  attenuation = 1, maxDistance = 1e30;
         if (type != 0)
         {
-            float3 delta           = positionRange.xyz - surface.position;
+            float3 delta           = lightPosition - surface.position;
             float  distanceSquared = dot(delta, delta), distance = sqrt(distanceSquared);
             l           = distance > 1e-6 ? delta / distance : float3(0, 1, 0);
             attenuation = 1 / max(distanceSquared, .01);
@@ -1135,6 +1147,8 @@ float3 analyticLights(
                 attenuation *=
                   options.x > options.y + 1e-6 ? smoothstep(options.y, options.x, cone) : step(options.y, cone);
             }
+            if (type == 3)
+                attenuation *= options.x * options.y * saturate(dot(-l, directionType.xyz));
             maxDistance = distance;
         }
         // A dielectric can scatter into either geometric hemisphere. Test
@@ -1151,7 +1165,7 @@ float3 analyticLights(
             float3 axis = abs(l.y) < .99 ? float3(0, 1, 0) : float3(1, 0, 0), t = normalize(cross(l, axis)),
                    b      = cross(l, t);
             float3 offset = 0;
-            if (options.w > 0)
+            if (type != 3 && options.w > 0)
             {
                 float r = radiusSample * options.w * .006;
                 offset  = r * (cos(angleSample) * t + sin(angleSample) * b);
@@ -1160,7 +1174,7 @@ float3 analyticLights(
                 ray = normalize(l + offset);
             else
             {
-                float3 delta = positionRange.xyz + offset - origin;
+                float3 delta = lightPosition + offset - origin;
                 maxDistance  = length(delta);
                 ray          = maxDistance > 1e-6 ? delta / maxDistance : l;
             }

@@ -26,13 +26,11 @@ try {
       device.addEventListener('uncapturederror', (e) => errors.push(e.error.message))
       const data = emptyModelData()
       data.vertices = new Float32Array([
-          -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-          1, -1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-          1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-          -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-          1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-          -1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-        ])
+        -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, -1, 0, 1, 0, 0, 1, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
+        -1, -1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1,
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
+      ])
       data.images[0].pixels = new Uint8Array([200, 200, 200, 255])
       data.material = [0, 0.8, 1, 1]
       const view = await createPathView(device, data, '/generated/', { linearOutput: true }),
@@ -93,6 +91,23 @@ try {
         (await energy([{ ...lights[4], direction: [0, 0, 1] }])) > 1e-8
       )
         throw Error('Range/cone ignored')
+      const [rectangle] = copySceneLights([
+        {
+          id: 'area',
+          up: [0, 1, 0],
+          type: 'rectangle',
+          position: [0, 0, 2],
+          direction: [0, 0, -1],
+          width: 2,
+          height: 1,
+        },
+      ])
+      const areaEnergy = await energy([rectangle])
+      if (areaEnergy < 0.001) throw Error('Rectangle emitted no light')
+      if ((await energy([{ ...rectangle, width: 0.1 }])) > 0.2 * areaEnergy)
+        throw Error('Rectangle area ignored')
+      if ((await energy([{ ...rectangle, direction: [0, 0, 1] }])) > 1e-8)
+        throw Error('Rectangle emits through its back face')
       const active = copySceneLights(lights)
       await energy(active)
       view.draw(

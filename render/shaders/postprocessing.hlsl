@@ -24,6 +24,26 @@ float4 rgbL(float3 c)
 {
     return float4(c, dot(gammaRGB(c), float3(.299, .587, .114)));
 }
+// AgX default-look approximation in Rec.2020, following the three.js/Filament
+// transform and Benjamin Wrensch's contrast fit. Returns linear Rec.709 for presentation.
+float3 agxToneMap(float3 c)
+{
+    const float3x3 toWide = float3x3(
+        .6274, .3293, .0433, .0691, .9195, .0113, .0164, .0880, .8956);
+    const float3x3 inset = float3x3(
+        .85662715, .09512124, .04825161,
+        .13731897, .76124199, .10143904,
+        .11189821, .07679942, .81130237);
+    const float3x3 outset = float3x3(
+        1.12710058, -.11060664, -.01649394,
+        -.14132976, 1.15782370, -.01649394,
+        -.14132976, -.11060664, 1.25193641);
+    const float3x3 toDisplay = float3x3(
+        1.6605, -.5876, -.0728, -.1246, 1.1329, -.0083, -.0182, -.1006, 1.1187);
+    float3 x = saturate((log2(max(mul(inset, mul(toWide, c)), 1e-10)) + 12.47393) / 16.5);
+    float3 film = (((((15.5 * x - 40.14) * x + 31.96) * x - 6.868) * x + .4298) * x + .1191) * x - .00232;
+    return saturate(mul(toDisplay, pow(max(mul(outset, film), 0), 2.2)));
+}
 #if AA_PASS == 16
 struct Geometry
 {
@@ -267,8 +287,10 @@ float4 PSMain(Varying i)
         c = saturate(c);
     else if (aa[11].y < 1.5)
         c = c / (1 + c);
-    else
+    else if (aa[11].y < 2.5)
         c = saturate((c * (2.51 * c + .03)) / (c * (2.43 * c + .59) + .14));
+    else
+        c = agxToneMap(c);
     return rgbL(c);
 #endif
 }
