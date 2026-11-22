@@ -43,6 +43,8 @@ namespace render
         float                   clearcoatNormalScale = 1;
         std::array<uint32_t, 3> clearcoatTexCoords{}; // Strength, roughness, normal.
         bool                    unlit = false;
+        uint32_t                emissiveTexCoord = 0;
+        uint32_t                baseColorWrap = 0; // Two bits per axis: repeat, clamp, mirror.
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

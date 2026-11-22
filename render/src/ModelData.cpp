@@ -86,6 +86,45 @@ namespace render::detail
             std::memcpy(&v, element(m, a, i, TINYGLTF_TYPE_VEC3, TINYGLTF_COMPONENT_TYPE_FLOAT), 12);
             return v;
         }
+        struct TextureCoordinates
+        {
+            int set = 0;
+            std::array<float, 2> offset{0, 0}, scale{1, 1};
+            float angle = 0;
+            bool operator!=(const TextureCoordinates& rhs) const
+            {
+                return set != rhs.set || offset != rhs.offset || scale != rhs.scale || angle != rhs.angle;
+            }
+        };
+        TextureCoordinates textureCoordinates(int source, const tinygltf::Value& extension)
+        {
+            TextureCoordinates coordinates;
+            coordinates.set = source;
+            if (extension.Has("texCoord"))
+            {
+                if (!extension.Get("texCoord").IsInt())
+                    throw std::runtime_error("Invalid texture coordinate override");
+                coordinates.set = extension.Get("texCoord").GetNumberAsInt();
+            }
+            if (coordinates.set < 0)
+                throw std::runtime_error("Invalid texture coordinate set");
+            auto read = [](const tinygltf::Value& value) {
+                if (!value.IsNumber() || !std::isfinite(float(value.GetNumberAsDouble())))
+                    throw std::runtime_error("Invalid texture transform");
+                return float(value.GetNumberAsDouble());
+            };
+            for (auto [key, output] : {std::pair{"offset", &coordinates.offset}, std::pair{"scale", &coordinates.scale}})
+                if (extension.Has(key))
+                {
+                    const auto& values = extension.Get(key);
+                    if (!values.IsArray() || values.ArrayLen() != 2)
+                        throw std::runtime_error("Invalid texture transform");
+                    *output = {read(values.Get(0)), read(values.Get(1))};
+                }
+            if (extension.Has("rotation"))
+                coordinates.angle = read(extension.Get("rotation"));
+            return coordinates;
+        }
         void expandMeshInstances(tinygltf::Model& model)
         {
             constexpr char extension[] = "EXT_mesh_gpu_instancing";
@@ -264,7 +303,7 @@ namespace render::detail
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
-                  && extension != "KHR_materials_unlit" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
+                  && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -341,20 +380,55 @@ namespace render::detail
                     const auto& material = gltf.materials.at(materialIndex);
                     const auto& pbr      = material.pbrMetallicRoughness;
                     const auto& ao       = material.occlusionTexture;
-                    if (uv < 0 && (pbr.baseColorTexture.index >= 0 || pbr.metallicRoughnessTexture.index >= 0
-                        || material.normalTexture.index >= 0 || material.emissiveTexture.index >= 0
-                        || (ao.index >= 0 && ao.texCoord == 0)))
-                        throw std::runtime_error("Textured material requires TEXCOORD_0");
-                    if (ao.index >= 0 && ao.texCoord == 1 && uv1 < 0)
-                        throw std::runtime_error("AO texture requires TEXCOORD_1");
+                    std::array<std::optional<TextureCoordinates>, 2> coordinates;
+                    auto assign = [&](int stream, TextureCoordinates value) {
+                        if (stream < 0 || stream > 1 || (coordinates[stream] && *coordinates[stream] != value))
+                            throw std::runtime_error("Material requires independent texture coordinate streams");
+                        coordinates[stream] = value;
+                    };
+                    auto addTexture = [&](const auto& texture, int stream) {
+                        if (texture.index < 0)
+                            return;
+                        const auto extension = texture.extensions.find("KHR_texture_transform");
+                        assign(stream, textureCoordinates(texture.texCoord,
+                          extension == texture.extensions.end() ? tinygltf::Value{} : extension->second));
+                    };
+                    addTexture(pbr.baseColorTexture, 0);
+                    addTexture(pbr.metallicRoughnessTexture, 0);
+                    addTexture(material.normalTexture, 0);
+                    const int emissionStream = material.emissiveTexture.texCoord == 1
+                      && (pbr.baseColorTexture.index >= 0 || pbr.metallicRoughnessTexture.index >= 0
+                          || material.normalTexture.index >= 0) ? 1 : 0;
+                    addTexture(material.emissiveTexture, emissionStream);
+                    addTexture(ao, ao.texCoord);
                     if (const auto coat = material.extensions.find("KHR_materials_clearcoat");
                         coat != material.extensions.end())
                         for (size_t k = 0; k < coatTextureKeys.size(); ++k)
                         {
                             const auto info = readCoatTexture(coat->second, k);
-                            if (info.index >= 0 && (info.uv ? uv1 : uv) < 0)
-                                throw std::runtime_error("Clearcoat texture requires its declared TEXCOORD set");
+                            if (info.index >= 0)
+                            {
+                                const auto& extensions = coat->second.Get(coatTextureKeys[k]).Get("extensions");
+                                assign(info.uv, textureCoordinates(info.uv, extensions.Has("KHR_texture_transform")
+                                  ? extensions.Get("KHR_texture_transform") : tinygltf::Value{}));
+                            }
                         }
+                    std::array<std::pair<glm::vec2, glm::mat2>, 2> transforms;
+                    std::array<int, 2> uvAccessors{uv, uv1};
+                    for (int stream = 0; stream < 2; ++stream)
+                    {
+                        transforms[stream] = {glm::vec2(0), glm::mat2(1)};
+                        if (!coordinates[stream])
+                            continue;
+                        const auto& c = *coordinates[stream];
+                        const auto accessor = p.attributes.find("TEXCOORD_" + std::to_string(c.set));
+                        if (accessor == p.attributes.end())
+                            throw std::runtime_error("Textured material is missing its texture coordinate set");
+                        uvAccessors[stream] = accessor->second;
+                        const auto sin = std::sin(c.angle), cos = std::cos(c.angle);
+                        transforms[stream] = {glm::vec2(c.offset[0], c.offset[1]),
+                          glm::mat2(cos * c.scale[0], -sin * c.scale[0], sin * c.scale[1], cos * c.scale[1])};
+                    }
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
                     const auto& weights = node.weights.empty() ? gltf.meshes.at(node.mesh).weights : node.weights;
                     if (!weights.empty() && weights.size() != p.targets.size())
@@ -445,8 +519,10 @@ namespace render::detail
                         const auto localPosition = positionAt(v);
                         const glm::vec3 pos = glm::vec3(matrix * glm::vec4(localPosition, 1));
                         const glm::vec3 n   = glm::normalize(normals * localNormal);
-                        const glm::vec2 t   = uv >= 0 ? vec2(gltf, uv, v) : glm::vec2(0);
-                        const glm::vec2 t1  = uv1 >= 0 ? vec2(gltf, uv1, v) : t;
+                        const glm::vec2 t = uvAccessors[0] >= 0
+                          ? transforms[0].first + transforms[0].second * vec2(gltf, uvAccessors[0], v) : glm::vec2(0);
+                        const glm::vec2 t1 = uvAccessors[1] >= 0
+                          ? transforms[1].first + transforms[1].second * vec2(gltf, uvAccessors[1], v) : t;
                         for (int k = 0; k < 3; ++k)
                             if (!std::isfinite(pos[k]) || !std::isfinite(n[k]))
                                 throw std::runtime_error("Non-finite model data");
@@ -576,6 +652,19 @@ namespace render::detail
             slot.alphaCutoff = float(mat.alphaCutoff);
             slot.doubleSided = mat.doubleSided;
             slot.unlit = mat.extensions.count("KHR_materials_unlit") != 0;
+            if (pbr.baseColorTexture.index >= 0)
+            {
+                const auto samplerIndex = gltf.textures.at(pbr.baseColorTexture.index).sampler;
+                if (samplerIndex >= 0)
+                {
+                    const auto& sampler = gltf.samplers.at(samplerIndex);
+                    auto wrap = [](int mode) { return mode == 33071 ? 1u : mode == 33648 ? 2u : 0u; };
+                    slot.baseColorWrap = wrap(sampler.wrapS) | (wrap(sampler.wrapT) << 2);
+                }
+            }
+            slot.emissiveTexCoord = mat.emissiveTexture.texCoord == 1
+              && (pbr.baseColorTexture.index >= 0 || pbr.metallicRoughnessTexture.index >= 0
+                  || mat.normalTexture.index >= 0) ? 1 : 0;
             std::array<float, 4> factors;
             for (int k = 0; k < 4; ++k)
                 slot.baseColor[k] = static_cast<float>(pbr.baseColorFactor[k]);
@@ -601,10 +690,6 @@ namespace render::detail
             }
             for (int k = 0; k < 3; ++k)
                 slot.emissive[k] = static_cast<float>(mat.emissiveFactor[k] * emissiveStrength);
-            if (
-              pbr.baseColorTexture.texCoord || mat.normalTexture.texCoord || pbr.metallicRoughnessTexture.texCoord
-              || mat.emissiveTexture.texCoord)
-                throw std::runtime_error("Only TEXCOORD_0 is supported");
             if (mat.occlusionTexture.texCoord < 0 || mat.occlusionTexture.texCoord > 1)
                 throw std::runtime_error("AO texture coordinate set must be 0 or 1");
             slot.occlusionTexCoord = uint32_t(mat.occlusionTexture.texCoord);

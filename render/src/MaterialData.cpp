@@ -64,6 +64,10 @@ namespace render::detail
             if (!std::isfinite(x) || x < 0 || x > max)
                 throw std::invalid_argument("Invalid material factor");
         };
+        if (m.baseColorWrap > 10 || (m.baseColorWrap & 3) == 3)
+            throw std::invalid_argument("Invalid base-color texture wrapping");
+        if (m.emissiveTexCoord > 1)
+            throw std::invalid_argument("Emissive texture coordinate set must be 0 or 1");
         if (unsigned(m.alphaMode) > 2)
             throw std::invalid_argument("Invalid alpha mode");
         range(m.alphaCutoff, 1);
@@ -174,7 +178,7 @@ namespace render::detail
             record[38] = m.normalScale;
             record[39] = m.occlusionStrength;
             std::copy(m.emissive.begin(), m.emissive.end(), record.begin() + 40);
-            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + (m.unlit ? 8.f : 0.f) + m.alphaCutoff * .25f;
+            record[43] = float(m.alphaMode) + (m.doubleSided ? 4.f : 0.f) + (m.unlit ? 8.f : 0.f) + (m.emissiveTexCoord ? 16.f : 0.f) + float(m.baseColorWrap * 32) + m.alphaCutoff * .25f;
             uint32_t x = uint32_t(i) % cols * stride, y = uint32_t(i) / cols * stride;
             if (atlas)
             {
