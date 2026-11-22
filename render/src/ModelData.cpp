@@ -23,28 +23,61 @@ namespace render::detail
 {
     namespace
     {
-        // Embedded GLBs; each primitive keeps its material slot.
+        const unsigned char* bufferElement(
+          const tinygltf::Model& model, int viewIndex, size_t offset, size_t index, size_t stride, size_t size)
+        {
+            const auto& view = model.bufferViews.at(viewIndex);
+            const auto& data = model.buffers.at(view.buffer).data;
+            if (stride < size || view.byteOffset > data.size() || view.byteLength > data.size() - view.byteOffset
+                || offset > view.byteLength || size > view.byteLength - offset
+                || index > (view.byteLength - offset - size) / stride)
+                throw std::runtime_error("Invalid glTF buffer bounds");
+            return data.data() + view.byteOffset + offset + index * stride;
+        }
         const unsigned char* element(
           const tinygltf::Model& model, int accessorIndex, size_t index, int type, int component)
         {
             const auto& a = model.accessors.at(accessorIndex);
-            if (
-              a.sparse.isSparse || a.type != type || a.componentType != component || index >= a.count
-              || a.bufferView < 0)
+            if (a.type != type || a.componentType != component || index >= a.count)
                 throw std::runtime_error("Unsupported glTF accessor");
-            const auto&  view   = model.bufferViews.at(a.bufferView);
-            const auto&  data   = model.buffers.at(view.buffer).data;
-            const int    stride = a.ByteStride(view);
-            const size_t size   = tinygltf::GetComponentSizeInBytes(component) * tinygltf::GetNumComponentsInType(type);
-            if (
-              stride <= 0 || view.byteOffset > data.size() || view.byteLength > data.size() - view.byteOffset
-              || a.byteOffset > view.byteLength
-              || index > (view.byteLength - a.byteOffset) / static_cast<size_t>(stride))
-                throw std::runtime_error("Invalid glTF buffer bounds");
-            const size_t offset = a.byteOffset + index * static_cast<size_t>(stride);
-            if (offset > view.byteLength || size > view.byteLength - offset)
-                throw std::runtime_error("Truncated glTF accessor");
-            return data.data() + view.byteOffset + offset;
+            const size_t size = tinygltf::GetComponentSizeInBytes(component) * tinygltf::GetNumComponentsInType(type);
+            if (a.sparse.isSparse)
+            {
+                const auto& sparse = a.sparse;
+                const int componentType = sparse.indices.componentType;
+                if (sparse.count <= 0 || size_t(sparse.count) > a.count
+                    || (componentType != 5121 && componentType != 5123 && componentType != 5125))
+                    throw std::runtime_error("Invalid sparse glTF accessor");
+                const size_t width = tinygltf::GetComponentSizeInBytes(componentType);
+                size_t first = 0, last = size_t(sparse.count);
+                while (first < last)
+                {
+                    const auto row = first + (last - first) / 2;
+                    const auto* bytes = bufferElement(
+                      model, sparse.indices.bufferView, sparse.indices.byteOffset, row, width, width);
+                    uint32_t vertex = 0;
+                    std::memcpy(&vertex, bytes, width);
+                    if (vertex >= a.count)
+                        throw std::runtime_error("Invalid sparse glTF index");
+                    if (vertex == index)
+                        return bufferElement(model, sparse.values.bufferView, sparse.values.byteOffset, row, size, size);
+                    if (vertex < index)
+                        first = row + 1;
+                    else
+                        last = row;
+                }
+            }
+            if (a.bufferView < 0)
+            {
+                static constexpr unsigned char zero[16]{};
+                if (!a.sparse.isSparse || size > sizeof(zero))
+                    throw std::runtime_error("Missing glTF buffer view");
+                return zero;
+            }
+            const int stride = a.ByteStride(model.bufferViews.at(a.bufferView));
+            if (stride <= 0)
+                throw std::runtime_error("Invalid glTF buffer stride");
+            return bufferElement(model, a.bufferView, a.byteOffset, index, size_t(stride), size);
         }
         glm::vec3 vec3(const tinygltf::Model& m, int a, size_t i)
         {
@@ -209,8 +242,8 @@ namespace render::detail
             if (node.mesh >= 0)
                 for (const auto& p : gltf.meshes.at(node.mesh).primitives)
                 {
-                    if (p.mode < TINYGLTF_MODE_POINTS || p.mode > TINYGLTF_MODE_TRIANGLE_FAN || !p.targets.empty())
-                        throw std::runtime_error("Unsupported glTF primitive mode or morph targets");
+                    if (p.mode < TINYGLTF_MODE_POINTS || p.mode > TINYGLTF_MODE_TRIANGLE_FAN)
+                        throw std::runtime_error("Unsupported glTF primitive mode");
                     if (p.material < -1 || (p.material >= 0 && size_t(p.material) >= defaultMaterial))
                         throw std::runtime_error("Invalid glTF material index");
                     const auto materialIndex = p.material == -1 ? defaultMaterial : size_t(p.material);
@@ -240,6 +273,23 @@ namespace render::detail
                                 throw std::runtime_error("Clearcoat texture requires its declared TEXCOORD set");
                         }
                     const int  normal = p.attributes.count("NORMAL") ? p.attributes.at("NORMAL") : -1;
+                    const auto& weights = node.weights.empty() ? gltf.meshes.at(node.mesh).weights : node.weights;
+                    if (!weights.empty() && weights.size() != p.targets.size())
+                        throw std::runtime_error("Invalid morph weight count");
+                    auto morph = [&](const char* semantic, glm::vec3 base, size_t vertex) {
+                        for (size_t target = 0; target < weights.size(); ++target)
+                        {
+                            if (!std::isfinite(weights[target]))
+                                throw std::runtime_error("Invalid morph weight");
+                            const auto delta = p.targets[target].find(semantic);
+                            if (delta != p.targets[target].end() && weights[target] != 0)
+                                base += float(weights[target]) * vec3(gltf, delta->second, vertex);
+                        }
+                        return base;
+                    };
+                    auto positionAt = [&](size_t vertex) {
+                        return morph("POSITION", vec3(gltf, position, vertex), vertex);
+                    };
                     const auto inputCount =
                       p.indices >= 0 ? gltf.accessors.at(p.indices).count : gltf.accessors.at(position).count;
                     const bool pointList = p.mode == TINYGLTF_MODE_POINTS;
@@ -298,18 +348,19 @@ namespace render::detail
                         const auto v = vertexIndex(windingIndex);
                         glm::vec3  localNormal;
                         if (normal >= 0)
-                            localNormal = vec3(gltf, normal, v);
+                            localNormal = morph("NORMAL", vec3(gltf, normal, v), v);
                         else if (stride == 6)
                             localNormal = glm::vec3(0, 0, 1);
                         else
                         {
                             const auto first = i - i % 3;
-                            const auto a     = vec3(gltf, position, vertexIndex(first)),
-                                       b     = vec3(gltf, position, vertexIndex(first + 1)),
-                                       c     = vec3(gltf, position, vertexIndex(first + 2));
+                            const auto a     = positionAt(vertexIndex(first)),
+                                       b     = positionAt(vertexIndex(first + 1)),
+                                       c     = positionAt(vertexIndex(first + 2));
                             localNormal      = glm::normalize(glm::cross(b - a, c - a));
                         }
-                        const glm::vec3 pos = glm::vec3(matrix * glm::vec4(vec3(gltf, position, v), 1));
+                        const auto localPosition = positionAt(v);
+                        const glm::vec3 pos = glm::vec3(matrix * glm::vec4(localPosition, 1));
                         const glm::vec3 n   = glm::normalize(normals * localNormal);
                         const glm::vec2 t   = uv >= 0 ? vec2(gltf, uv, v) : glm::vec2(0);
                         const glm::vec2 t1  = uv1 >= 0 ? vec2(gltf, uv1, v) : t;
@@ -321,7 +372,19 @@ namespace render::detail
                         minimum = glm::min(minimum, pos);
                         maximum = glm::max(maximum, pos);
                         if (animation)
-                            AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix, localNormal);
+                        {
+                            AppendSkinVertex(*animation, gltf, node.skin, index, p, v, matrix,
+                              vec3(gltf, position, v), normal >= 0 ? vec3(gltf, normal, v) : localNormal);
+                            auto& deltas = animation->vertices.back().morphDeltas;
+                            for (const auto& target : p.targets)
+                            {
+                                auto readDelta = [&](const char* semantic) {
+                                    const auto it = target.find(semantic);
+                                    return it == target.end() ? glm::vec3(0) : vec3(gltf, it->second, v);
+                                };
+                                deltas.push_back({readDelta("POSITION"), readDelta("NORMAL")});
+                            }
+                        }
                         const auto color = colorIndex == p.attributes.end()
                                              ? glm::vec4(1) : vertexColor(gltf, colorIndex->second, v);
                         result->vertices.push_back(

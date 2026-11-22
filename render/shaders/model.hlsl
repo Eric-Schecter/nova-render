@@ -66,6 +66,19 @@ Vertex skinVertex(uint id, uint paletteOffset = 0, bool animate = true)
     if (skyParams.w > .5 && animate)
     {
         SkinInput input = skinInputs[id];
+        if (input.normal.w > 0)
+        {
+            uint first = uint(input.normal.w) - 1;
+            uint count = skinInputs[first].joints.z;
+            for (uint i = 0; i < count; ++i)
+            {
+                SkinInput delta = skinInputs[first + i];
+                uint component = delta.joints.y;
+                float weight = jointMatrix(paletteOffset + delta.joints.x)[component % 4][component / 4];
+                input.position.xyz += weight * delta.position.xyz;
+                input.normal.xyz += weight * delta.normal.xyz;
+            }
+        }
         float4x4  m     = jointMatrix(paletteOffset + input.joints.x) * input.weights.x
                      + jointMatrix(paletteOffset + input.joints.y) * input.weights.y
                      + jointMatrix(paletteOffset + input.joints.z) * input.weights.z
@@ -2163,8 +2176,21 @@ MotionOut MotionVSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     Vertex current = skinVertex(id, paletteOffset, palette > .5), old = vertices[id];
     if (skyParams.w > .5 && palette > .5)
     {
-        SkinInput input    = skinInputs[id];
-        float4    position = 0;
+        SkinInput input = skinInputs[id];
+        if (input.normal.w > 0)
+        {
+            uint first = uint(input.normal.w) - 1;
+            uint count = skinInputs[first].joints.z;
+            for (uint i = 0; i < count; ++i)
+            {
+                SkinInput delta = skinInputs[first + i];
+                JointMatrix packed = previousJoints[paletteOffset + delta.joints.x];
+                float4x4 weights = float4x4(packed.c0, packed.c1, packed.c2, packed.c3);
+                uint component = delta.joints.y;
+                input.position.xyz += weights[component / 4][component % 4] * delta.position.xyz;
+            }
+        }
+        float4 position = 0;
         [unroll] for (uint j = 0; j < 4; j++)
         {
             JointMatrix m      = previousJoints[paletteOffset + input.joints[j]];

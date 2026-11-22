@@ -746,7 +746,7 @@ class Renderer {
     return {
       skeletal: supported,
       nodeTRS: supported,
-      morph: false,
+      morph: true,
       instancePlayback: supported,
       gpuSkinning: supported,
       manualClock: true,

@@ -86,8 +86,21 @@ namespace render::detail
                 packed->skinInputs.resize(packed->vertices.size());
                 for (const auto& [id, m] : next)
                     if (m.data->animation)
-                        std::copy(
-                          m.data->skinInputs.begin(), m.data->skinInputs.end(), packed->skinInputs.begin() + m.first);
+                    {
+                        const auto& inputs = m.data->skinInputs;
+                        const auto vertices = m.data->vertices.size();
+                        const auto extra = packed->skinInputs.size();
+                        if (extra + inputs.size() - vertices > (1u << 24))
+                            throw std::runtime_error("Scene morph data exceeds the storage index range");
+                        for (size_t i = 0; i < vertices; ++i)
+                        {
+                            auto input = inputs[i];
+                            if (input.normal[3] > 0)
+                                input.normal[3] += float(extra - vertices);
+                            packed->skinInputs[m.first + i] = input;
+                        }
+                        packed->skinInputs.insert(packed->skinInputs.end(), inputs.begin() + vertices, inputs.end());
+                    }
             }
             PackMaterials(*packed);
             std::vector<InstanceData> shadow;
@@ -545,13 +558,24 @@ namespace render::detail
     {
         auto out      = std::make_shared<ModelData>();
         out->vertices = source.vertices;
-        for (size_t i = 0; i < source.skinInputs.size(); ++i)
+        for (size_t i = 0; i < source.vertices.size(); ++i)
         {
             const auto& input = source.skinInputs[i];
             glm::mat4   matrix(0);
             for (int j = 0; j < 4; ++j)
                 matrix += input.weights[j] * glm::make_mat4(palette.at(input.joints[j]).data());
-            auto position = matrix * glm::make_vec4(input.position.data());
+            auto local = glm::make_vec4(input.position.data());
+            if (input.normal[3] > 0)
+            {
+                const auto first = size_t(input.normal[3]) - 1;
+                const auto count = source.skinInputs.at(first).joints[2];
+                for (size_t j = 0; j < count; ++j)
+                {
+                    const auto& delta = source.skinInputs.at(first + j);
+                    local += glm::make_vec4(delta.position.data()) * palette.at(delta.joints[0])[delta.joints[1]];
+                }
+            }
+            auto position = matrix * local;
             for (int k = 0; k < 3; ++k)
                 out->vertices[i].position[k] = position[k];
         }

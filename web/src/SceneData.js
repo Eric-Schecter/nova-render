@@ -194,15 +194,27 @@ export class SceneData {
       let vertexCount = 0
       for (const m of next.values()) vertexCount += m.data.vertices.length
       packed.vertices = new Float32Array(vertexCount)
-      if ([...next.values()].some((m) => m.data.animation))
-        packed.skinInputs = new Uint8Array((vertexCount / modelVertexFloats) * 64)
-      let offset = 0
+      if ([...next.values()].some((m) => m.data.animation)) {
+        let bytes = (vertexCount / modelVertexFloats) * 64
+        for (const {data} of next.values())
+          if (data.skinInputs) bytes += data.skinInputs.length - data.vertices.length / modelVertexFloats * 64
+        if (bytes / 64 > 2 ** 24) throw Error("Scene morph data exceeds the storage index range")
+        packed.skinInputs = new Uint8Array(bytes)
+      }
+      let offset = 0, deltaOffset = vertexCount / modelVertexFloats * 64
       for (const m of next.values()) {
         m.first = offset / modelVertexFloats
         m.count = m.data.vertices.length / modelVertexFloats
         packed.vertices.set(m.data.vertices, offset)
-        if (m.data.skinInputs)
-          packed.skinInputs.set(m.data.skinInputs, (offset / modelVertexFloats) * 64)
+        if (m.data.skinInputs) {
+          const start = offset / modelVertexFloats * 64, size = m.data.vertices.length / modelVertexFloats * 64
+          packed.skinInputs.set(m.data.skinInputs.subarray(0, size), start)
+          packed.skinInputs.set(m.data.skinInputs.subarray(size), deltaOffset)
+          const inputs = new Float32Array(packed.skinInputs.buffer, start, size / 4)
+          for (let i = 7; i < inputs.length; i += 16)
+            if (inputs[i] > 0) inputs[i] += (deltaOffset - size) / 64
+          deltaOffset += m.data.skinInputs.length - size
+        }
         for (let i = offset + 3; i < offset + m.data.vertices.length; i += modelVertexFloats)
           packed.vertices[i] += packed.materials.length
         packed.materials.push(...m.data.materials)

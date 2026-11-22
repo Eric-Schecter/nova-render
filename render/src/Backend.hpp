@@ -487,6 +487,7 @@ namespace render::detail
         AnimationCapabilities GetAnimationCapabilities() const
         {
             AnimationCapabilities c;
+            c.morph = true;
             c.dynamicShadows = mode == RenderMode::Raster;
             if (mode != RenderMode::Raster)
             {

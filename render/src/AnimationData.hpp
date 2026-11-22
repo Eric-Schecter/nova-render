@@ -15,6 +15,7 @@ namespace render::detail
         glm::quat rotation{1, 0, 0, 0};
         glm::mat4 matrix{1};
         bool      hasMatrix = false;
+        std::vector<float> morphWeights;
     };
     struct AnimationTrack
     {
@@ -22,6 +23,7 @@ namespace render::detail
         std::string            path, interpolation;
         std::vector<float>     times;
         std::vector<glm::vec4> values, inTangents, outTangents;
+        size_t morphTarget = 0;
     };
     struct SkinVertex
     {
@@ -31,6 +33,7 @@ namespace render::detail
         int        skin = -1;
         int        node = -1;
         glm::mat4  matrix{1};
+        std::vector<std::array<glm::vec3, 2>> morphDeltas;
     };
     struct AnimationSkin
     {
@@ -56,6 +59,7 @@ namespace render::detail
                                 const tinygltf::Primitive&,
                                 uint32_t,
                                 const glm::mat4&,
+                                const glm::vec3&,
                                 const glm::vec3&);
     std::vector<JointMatrix> EvaluateAnimation(const AnimationData&, const AnimationState&);
     AnimationState           ValidateAnimationState(const std::vector<AnimationClip>&, const AnimationState&);
