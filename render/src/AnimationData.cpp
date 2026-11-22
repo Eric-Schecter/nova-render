@@ -76,6 +76,16 @@ namespace render::detail
         {
             const auto& n    = m.nodes[i];
             auto&       node = out->nodes[i];
+            if (n.mesh >= 0)
+            {
+                const auto& mesh = m.meshes.at(n.mesh);
+                const auto count = mesh.primitives.empty() ? 0 : mesh.primitives.front().targets.size();
+                const auto& weights = n.weights.empty() ? mesh.weights : n.weights;
+                if (!weights.empty() && weights.size() != count)
+                    throw std::runtime_error("Invalid morph weights");
+                node.morphWeights.resize(count);
+                std::copy(weights.begin(), weights.end(), node.morphWeights.begin());
+            }
             if (n.translation.size() == 3)
                 node.translation = {n.translation[0], n.translation[1], n.translation[2]};
             if (n.scale.size() == 3)
@@ -152,41 +162,50 @@ namespace render::detail
                 track.path          = channel.target_path;
                 track.interpolation = sampler.interpolation.empty() ? "LINEAR" : sampler.interpolation;
                 if (
-                  track.node < 0 || size_t(track.node) >= m.nodes.size() || out->nodes[track.node].hasMatrix
+                  track.node < 0 || size_t(track.node) >= m.nodes.size() || (out->nodes[track.node].hasMatrix && track.path != "weights")
                   || !targets.insert({track.node, track.path}).second)
                     throw std::runtime_error("Invalid animation target");
-                if (track.path != "translation" && track.path != "rotation" && track.path != "scale")
-                    throw std::runtime_error("Morph animation is not supported");
+                if (track.path != "translation" && track.path != "rotation" && track.path != "scale" && track.path != "weights")
+                    throw std::runtime_error("Unsupported animation channel");
                 const bool cubic = track.interpolation == "CUBICSPLINE";
                 if (!cubic && track.interpolation != "LINEAR" && track.interpolation != "STEP")
                     throw std::runtime_error("Unsupported animation interpolation");
                 const auto& input  = m.accessors.at(sampler.input);
                 const auto& output = m.accessors.at(sampler.output);
-                if (
-                  input.componentType != 5126 || output.componentType != 5126 || input.count != output.count / (cubic ? 3 : 1)
-                  || (cubic && output.count % 3 != 0)
-                  || !input.count)
+                const bool weights = track.path == "weights";
+                const size_t targetsCount = weights ? out->nodes[track.node].morphWeights.size() : 1;
+                const size_t rows = (cubic ? 3 : 1) * targetsCount;
+                if (input.componentType != 5126 || output.componentType != 5126 || !input.count
+                    || !rows || output.count / rows != input.count || output.count % rows)
                     throw std::runtime_error("Invalid animation sampler");
                 for (size_t i = 0; i < input.count; ++i)
                 {
-                    float t = Read(m, sampler.input, i, 1).x;
+                    const float t = Read(m, sampler.input, i, 1).x;
                     if (t < 0 || (!track.times.empty() && t <= track.times.back()))
                         throw std::runtime_error("Invalid animation times");
                     track.times.push_back(t);
-                    const int components = track.path == "rotation" ? 4 : 3;
-                    const size_t key = cubic ? i * 3 + 1 : i;
-                    auto value = Read(m, sampler.output, key, components);
-                    if (cubic)
+                }
+                for (size_t target = 0; target < targetsCount; ++target)
+                {
+                    auto channelTrack = track;
+                    channelTrack.morphTarget = target;
+                    const int components = weights ? 1 : track.path == "rotation" ? 4 : 3;
+                    for (size_t i = 0; i < input.count; ++i)
                     {
-                        track.inTangents.push_back(Read(m, sampler.output, key - 1, components));
-                        track.outTangents.push_back(Read(m, sampler.output, key + 1, components));
+                        const size_t key = (cubic ? i * 3 + 1 : i) * targetsCount + target;
+                        const auto value = Read(m, sampler.output, key, components);
+                        if (cubic)
+                        {
+                            channelTrack.inTangents.push_back(Read(m, sampler.output, key - targetsCount, components));
+                            channelTrack.outTangents.push_back(Read(m, sampler.output, key + targetsCount, components));
+                        }
+                        if (track.path == "rotation")
+                            Quaternion(value);
+                        channelTrack.values.push_back(value);
                     }
-                    if (track.path == "rotation")
-                        Quaternion(value);
-                    track.values.push_back(value);
+                    tracks.push_back(std::move(channelTrack));
                 }
                 clip.duration = std::max(clip.duration, track.times.back());
-                tracks.push_back(std::move(track));
             }
             if (tracks.empty() || clip.duration <= 0)
                 throw std::runtime_error("Empty animation clip");
@@ -203,10 +222,11 @@ namespace render::detail
       const tinygltf::Primitive& p,
       uint32_t                   index,
       const glm::mat4&           matrix,
+      const glm::vec3&           localPosition,
       const glm::vec3&           localNormal)
     {
         SkinVertex v;
-        v.position = Read(m, p.attributes.at("POSITION"), index, 3);
+        v.position = localPosition;
         v.normal   = localNormal;
         v.matrix   = matrix;
         v.skin     = skin;
@@ -340,6 +360,8 @@ namespace render::detail
                                        : glm::slerp(Quaternion(track.values[l]), Quaternion(track.values[r]), t);
                 else if (track.path == "translation")
                     n.translation = value;
+                else if (track.path == "weights")
+                    n.morphWeights[track.morphTarget] = value.x;
                 else
                     n.scale = value;
             }
@@ -376,6 +398,13 @@ namespace render::detail
                 append(normalize * global(skin.joints[i]) * skin.inverseBind[i]);
         for (size_t i = 0; i < nodes.size(); ++i)
             append(normalize * global(int(i)));
+        for (const auto& node : nodes)
+            for (size_t i = 0; i < node.morphWeights.size(); i += 16)
+            {
+                JointMatrix weights{};
+                std::copy_n(node.morphWeights.begin() + i, std::min(size_t(16), node.morphWeights.size() - i), weights.begin());
+                matrices.push_back(weights);
+            }
         return matrices;
     }
     void AnimationPlayer::Apply()
@@ -394,7 +423,14 @@ namespace render::detail
         count += a.nodes.size();
         if (posed->skinInputs.empty())
         {
-            posed->skinInputs.reserve(a.vertices.size());
+            std::vector<uint32_t> morphOffsets;
+            for (const auto& node : a.nodes)
+            {
+                morphOffsets.push_back(uint32_t(count));
+                count += (node.morphWeights.size() + 15) / 16;
+            }
+            posed->skinInputs.resize(a.vertices.size());
+            size_t vertex = 0;
             for (const auto& v : a.vertices)
             {
                 SkinInput input;
@@ -405,7 +441,23 @@ namespace render::detail
                     input.joints[k]  = v.skin >= 0 ? offsets[v.skin] + v.joints[k] : nodeOffset + uint32_t(v.node);
                     input.weights[k] = v.skin >= 0 ? v.weights[k] : (k == 0 ? 1.f : 0.f);
                 }
-                posed->skinInputs.push_back(input);
+                if (!v.morphDeltas.empty())
+                {
+                    if (posed->skinInputs.size() + v.morphDeltas.size() > (1u << 24))
+                        throw std::runtime_error("Morph vertex data exceeds the storage index range");
+                    input.normal[3] = float(posed->skinInputs.size() + 1);
+                    for (size_t i = 0; i < v.morphDeltas.size(); ++i)
+                    {
+                        SkinInput delta;
+                        const auto& d = v.morphDeltas[i];
+                        delta.position = {d[0].x, d[0].y, d[0].z, 0};
+                        delta.normal = {d[1].x, d[1].y, d[1].z, 0};
+                        delta.joints = {morphOffsets[v.node] + uint32_t(i / 16), uint32_t(i % 16),
+                                        uint32_t(v.morphDeltas.size()), 0};
+                        posed->skinInputs.push_back(delta);
+                    }
+                }
+                posed->skinInputs[vertex++] = input;
             }
         }
         posed->jointMatrices = EvaluateAnimation(a, state);

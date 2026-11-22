@@ -88,6 +88,13 @@ export function readAnimation(json, bin) {
       ),
     }
   })
+  for (let i = 0; i < nodes.length; i++) {
+    const source = json.nodes[i], mesh = json.meshes?.[source.mesh]
+    const count = mesh?.primitives[0]?.targets?.length ?? 0
+    nodes[i].morphWeights = source.weights ?? mesh?.weights ?? Array(count).fill(0)
+    if (nodes[i].morphWeights.length !== count || !nodes[i].morphWeights.every(Number.isFinite))
+      throw Error('Invalid morph weights')
+  }
   const tracks = [],
     clips = []
   for (const animation of json.animations || []) {
@@ -99,22 +106,23 @@ export function readAnimation(json, bin) {
           path = c.target.path,
           key = node + ':' + path,
           interpolation = sampler.interpolation || 'LINEAR'
-        if (!nodes[node] || nodes[node].matrix || targets.has(key))
+        if (!nodes[node] || (nodes[node].matrix && path !== "weights") || targets.has(key))
           throw Error('Invalid animation target')
         targets.add(key)
         if (
-          !['translation', 'rotation', 'scale'].includes(path) ||
+          !['translation', 'rotation', 'scale', 'weights'].includes(path) ||
           !['LINEAR', 'STEP', 'CUBICSPLINE'].includes(interpolation)
         )
-          throw Error('Animation supports TRS channels and glTF interpolation modes')
+          throw Error('Unsupported animation channel or interpolation mode')
         const input = json.accessors[sampler.input],
           output = json.accessors[sampler.output],
-          cubic = interpolation === 'CUBICSPLINE'
+          cubic = interpolation === 'CUBICSPLINE',
+          weightCount = path === 'weights' ? nodes[node].morphWeights.length : 1
         if (
           input.componentType !== 5126 ||
           output.componentType !== 5126 ||
           !input.count ||
-          input.count * (cubic ? 3 : 1) !== output.count
+          !weightCount || input.count * (cubic ? 3 : 1) * weightCount !== output.count
         )
           throw Error('Invalid animation sampler')
         const times = [],
@@ -127,10 +135,13 @@ export function readAnimation(json, bin) {
           times.push(t)
           const components = path === 'rotation' ? 4 : 3
           const key = cubic ? i * 3 + 1 : i
-          const value = read(sampler.output, key, components)
+          const readKey = (row) => path === 'weights'
+            ? Array.from({length: weightCount}, (_, k) => read(sampler.output, row * weightCount + k, 1)[0])
+            : read(sampler.output, row, components)
+          const value = readKey(key)
           if (cubic) {
-            inTangents.push(read(sampler.output, key - 1, components))
-            outTangents.push(read(sampler.output, key + 1, components))
+            inTangents.push(readKey(key - 1))
+            outTangents.push(readKey(key + 1))
           }
           if (path === 'rotation') normalize(value)
           values.push(value)
@@ -150,9 +161,10 @@ export function readAnimation(json, bin) {
     vertices: [],
     center: [0, 0, 0],
     scale: 1,
-    addVertex(skin, p, index, matrix, node, normal) {
+    addVertex(skin, p, index, matrix, node, position, normal, deltas) {
       const v = {
-        position: read(p.attributes.POSITION, index, 3),
+        position: [...position],
+        deltas,
         normal: [...normal],
         skin,
         node,
@@ -185,11 +197,25 @@ export function createAnimationPlayer(data) {
   const nodeOffset = paletteCount
   paletteCount += a?.nodes.length || 0
   if (a) {
-    const bytes = new ArrayBuffer(a.vertices.length * 64),
+    const morphOffsets = a.nodes.map((n) => {
+      const offset = paletteCount
+      paletteCount += Math.ceil(n.morphWeights.length / 16)
+      return offset
+    })
+    let nextDelta = a.vertices.length
+    const count = a.vertices.reduce((sum, vertex) => sum + vertex.deltas.length, nextDelta)
+    if (count > 2 ** 24) throw Error("Morph vertex data exceeds the storage index range")
+    const bytes = new ArrayBuffer(count * 64),
       floats = new Float32Array(bytes),
       words = new Uint32Array(bytes)
     a.vertices.forEach((v, i) => {
-      floats.set([...v.position, 1, ...v.normal, 0], i * 16)
+      floats.set([...v.position, 1, ...v.normal, v.deltas.length ? nextDelta + 1 : 0], i * 16)
+      v.deltas.forEach(([position, normal], target) => {
+        const start = nextDelta++ * 16
+        floats.set(position, start)
+        floats.set(normal, start + 4)
+        words.set([morphOffsets[v.node] + Math.floor(target / 16), target % 16, v.deltas.length], start + 8)
+      })
       for (let k = 0; k < 4; k++) {
         words[i * 16 + 8 + k] = v.skin >= 0 ? offsets[v.skin] + v.joints[k] : nodeOffset + v.node
         floats[i * 16 + 12 + k] = v.skin >= 0 ? v.weights[k] : k === 0 ? 1 : 0
@@ -247,7 +273,8 @@ export function createAnimationPlayer(data) {
 export function evaluateAnimation(data, state) {
   const a = data.animation
   const count = a.nodes.length + a.skins.reduce((n, s) => n + s.joints.length, 0)
-  const matrices = new Float32Array(count * 16)
+  const morphCount = a.nodes.reduce((n, node) => n + Math.ceil(node.morphWeights.length / 16), 0)
+  const matrices = new Float32Array((count + morphCount) * 16)
   const nodes = a.nodes.map((n) => ({
     ...n,
     translation: [...n.translation],
@@ -273,10 +300,10 @@ export function evaluateAnimation(data, state) {
           (-2 * t3 + 3 * t2) * track.values[r][k] +
           (t3 - t2) * dt * track.inTangents[r][k],
       )
-      nodes[track.node][track.path] = track.path === 'rotation' ? normalize(value) : value
+      nodes[track.node][track.path === 'weights' ? 'morphWeights' : track.path] = track.path === 'rotation' ? normalize(value) : value
       continue
     }
-    nodes[track.node][track.path] =
+    nodes[track.node][track.path === 'weights' ? 'morphWeights' : track.path] =
       track.path === 'rotation'
         ? slerp(track.values[l], track.values[r], t)
         : track.values[l].map((v, k) => v + (track.values[r][k] - v) * t)
@@ -302,6 +329,9 @@ export function evaluateAnimation(data, state) {
   for (const skin of a.skins)
     skin.joints.forEach((joint, i) => append(multiply(global(joint), skin.inverseBind[i])))
   a.nodes.forEach((_, i) => append(global(i)))
+  for (const node of nodes)
+    for (let i = 0; i < node.morphWeights.length; i += 16)
+      matrices.set(node.morphWeights.slice(i, i + 16), index++ * 16)
   return matrices
 }
 
@@ -315,9 +345,18 @@ export function poseAnimationGeometry(source, palette) {
     vertex < vertices.length;
     vertex += modelVertexFloats, input += 16
   ) {
-    const x = values[input],
-      y = values[input + 1],
-      z = values[input + 2]
+    let x = values[input], y = values[input + 1], z = values[input + 2]
+    const first = values[input + 7] - 1
+    if (first >= 0) {
+      const count = joints[first * 16 + 10]
+      for (let i = 0; i < count; i++) {
+        const at = (first + i) * 16
+        const weight = palette[joints[at + 8] * 16 + joints[at + 9]]
+        x += values[at] * weight
+        y += values[at + 1] * weight
+        z += values[at + 2] * weight
+      }
+    }
     let px = 0,
       py = 0,
       pz = 0

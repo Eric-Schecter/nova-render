@@ -95,26 +95,55 @@ export async function loadGLB(url) {
   const defaultMaterial = json.materials.length
   const animation = readAnimation(json, bin)
   const raw = new DataView(bin)
+  function bufferElement(viewIndex, offset, row, stride, size) {
+    const view = json.bufferViews[viewIndex]
+    const start = (view.byteOffset ?? 0) + offset + row * stride
+    if (view.buffer !== 0 || stride < size || offset < 0 || start < 0
+      || offset + row * stride + size > view.byteLength || start + size > bin.byteLength)
+      throw Error('Out-of-bounds glTF accessor')
+    return start
+  }
   function element(index, i, type, components, color = false) {
-    const a = json.accessors[index],
-      v = json.bufferViews[a.bufferView]
-    const size = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 }[a.componentType],
-      stride = v.byteStride || size * components
+    const a = json.accessors[index]
+    const size = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 }[a.componentType]
     const uvDivisor =
       (type === 'VEC2' || color) && a.normalized ? { 5121: 255, 5123: 65535 }[a.componentType] : 0
-    const start = (v.byteOffset || 0) + (a.byteOffset || 0) + i * stride
     if (
-      a.sparse ||
       (a.normalized && !uvDivisor) ||
       ((type === 'VEC2' || color) && a.componentType !== 5126 && !uvDivisor) ||
-      a.type !== type ||
-      i >= a.count ||
-      !size ||
-      v.buffer !== 0 ||
-      start + size * components > (v.byteOffset || 0) + v.byteLength ||
-      start + size * components > bin.byteLength
+      a.type !== type || i >= a.count || !size
     )
-      throw Error('Unsupported or out-of-bounds accessor')
+      throw Error('Unsupported glTF accessor')
+    const elementSize = size * components
+    let start
+    if (a.sparse) {
+      const { count, indices, values } = a.sparse
+      const width = { 5121: 1, 5123: 2, 5125: 4 }[indices.componentType]
+      if (!width || !Number.isInteger(count) || count <= 0 || count > a.count)
+        throw Error('Invalid sparse glTF accessor')
+      let first = 0, last = count
+      while (first < last) {
+        const row = Math.floor((first + last) / 2)
+        const offset = bufferElement(indices.bufferView, indices.byteOffset ?? 0, row, width, width)
+        const vertex = width === 1 ? raw.getUint8(offset)
+          : width === 2 ? raw.getUint16(offset, true) : raw.getUint32(offset, true)
+        if (vertex >= a.count) throw Error('Invalid sparse glTF index')
+        if (vertex === i) {
+          start = bufferElement(values.bufferView, values.byteOffset ?? 0, row, elementSize, elementSize)
+          break
+        }
+        if (vertex < i) first = row + 1
+        else last = row
+      }
+    }
+    if (start === undefined) {
+      if (a.bufferView === undefined) {
+        if (!a.sparse) throw Error('Missing glTF buffer view')
+        return Array(components).fill(0)
+      }
+      const stride = json.bufferViews[a.bufferView].byteStride || elementSize
+      start = bufferElement(a.bufferView, a.byteOffset ?? 0, i, stride, elementSize)
+    }
     return Array.from({ length: components }, (_, k) =>
       a.componentType === 5126
         ? raw.getFloat32(start + k * size, true)
@@ -154,8 +183,8 @@ export async function loadGLB(url) {
     if (node.mesh !== undefined)
       for (const p of json.meshes[node.mesh].primitives) {
         const mode = p.mode ?? 4
-        if (!Number.isInteger(mode) || mode < 0 || mode > 6 || p.targets?.length)
-          throw Error('Unsupported glTF primitive mode or morph targets')
+        if (!Number.isInteger(mode) || mode < 0 || mode > 6)
+          throw Error('Unsupported glTF primitive mode')
         if (p.material !== undefined && (!Number.isInteger(p.material) || p.material < 0 || p.material >= defaultMaterial))
           throw Error('Invalid glTF material index')
         const materialIndex = p.material ?? defaultMaterial
@@ -225,10 +254,25 @@ export async function loadGLB(url) {
             i = corner === 0 ? 0 : primitive + corner
           return p.indices === undefined ? i : element(p.indices, i, 'SCALAR', 1)[0]
         }
+        const weights = node.weights ?? json.meshes[node.mesh].weights ?? []
+        if (weights.length && weights.length !== (p.targets?.length ?? 0))
+          throw Error('Invalid morph weight count')
+        if (weights.some(weight => !Number.isFinite(weight))) throw Error('Invalid morph weight')
+        function morph(semantic, base, vertex) {
+          for (let i = 0; i < weights.length; i++) {
+            const accessor = p.targets[i][semantic]
+            if (accessor === undefined || weights[i] === 0) continue
+            const delta = element(accessor, vertex, 'VEC3', 3)
+            for (let k = 0; k < 3; k++) base[k] += weights[i] * delta[k]
+          }
+          return base
+        }
+        const positionAt = (vertex) =>
+          morph('POSITION', element(p.attributes.POSITION, vertex, 'VEC3', 3), vertex)
         function faceNormal(i) {
           const first = i - (i % 3),
             positions = [0, 1, 2].map((k) =>
-              element(p.attributes.POSITION, vertexIndex(first + k), 'VEC3', 3),
+              positionAt(vertexIndex(first + k)),
             )
           return normalize(
             cross(
@@ -248,10 +292,10 @@ export async function loadGLB(url) {
           const index = vertexIndex(
               det < 0 && stride === 3 ? i - (i % 3) + (i % 3 === 1 ? 2 : i % 3 === 2 ? 1 : 0) : i,
             ),
-            pos = element(p.attributes.POSITION, index, 'VEC3', 3),
+            pos = positionAt(index),
             normal =
               p.attributes.NORMAL !== undefined
-                ? element(p.attributes.NORMAL, index, 'VEC3', 3)
+                ? morph('NORMAL', element(p.attributes.NORMAL, index, 'VEC3', 3), index)
                 : stride === 6 ? [0, 0, 1] : faceNormal(i),
             uv =
               p.attributes.TEXCOORD_0 === undefined
@@ -289,7 +333,13 @@ export async function loadGLB(url) {
             stride === 6 ? (line ? 2 : 1) : 0,
             ...readColor(p.attributes.COLOR_0, index),
           )
-          animation?.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex, normal)
+          if (animation) {
+            const delta = (accessor) => accessor === undefined ? [0, 0, 0] : element(accessor, index, 'VEC3', 3)
+            const deltas = (p.targets ?? []).map(t => [delta(t.POSITION), delta(t.NORMAL)])
+            animation.addVertex(node.skin ?? -1, p, index, m, meshNodeIndex,
+              element(p.attributes.POSITION, index, 'VEC3', 3),
+              p.attributes.NORMAL === undefined ? normal : element(p.attributes.NORMAL, index, 'VEC3', 3), deltas)
+          }
         }
       }
     for (const child of node.children || []) visit(child, m)
