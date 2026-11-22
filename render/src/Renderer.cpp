@@ -245,6 +245,13 @@ namespace render
         impl_->backend->LoadModel(std::move(data));
         impl_->backend->assets.modelPath = path;
     }
+    void Renderer::LoadModel(const std::filesystem::path& path, uint32_t materialVariant)
+    {
+        auto data = detail::LoadGLB(path, materialVariant);
+        impl_->backend->ValidateMaterialState(data.get());
+        impl_->backend->LoadModel(std::move(data));
+        impl_->backend->assets.modelPath = path;
+    }
     OrbitCamera Renderer::GetCamera() const
     {
         return impl_->backend->GetCamera();

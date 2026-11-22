@@ -506,7 +506,7 @@ class Renderer {
       this.#parameterPanel?.refresh()
     })
   }
-  loadModel(url) {
+  loadModel(url, { materialVariant } = {}) {
     return this.#enqueue(async () => {
       this.#check()
       this.#device.pushErrorScope('validation')
@@ -517,6 +517,8 @@ class Renderer {
           this.#context,
           url,
           this.#shaderDirectory.replace(/\/?$/, '/') + 'model.json',
+          undefined,
+          { materialVariant },
         )
         this.#validateMaterials(next.data)
         if (this.#environment)

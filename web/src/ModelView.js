@@ -36,8 +36,8 @@ function cubeTexture(device, data) {
     throw error
   }
 }
-export async function createModelView(device, context, url, shaderURL, suppliedData) {
-  const data = suppliedData || (await loadGLB(url)),
+export async function createModelView(device, context, url, shaderURL, suppliedData, loadOptions) {
+  const data = suppliedData || (await loadGLB(url, loadOptions)),
     resources = []
   let instanceBuffer,
     sceneDraws = null,

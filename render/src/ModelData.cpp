@@ -140,6 +140,49 @@ namespace render::detail
                 throw std::runtime_error("Invalid glTF volume texture");
             return info.Get("index").GetNumberAsInt();
         }
+        void selectMaterialVariant(tinygltf::Model& model, std::optional<uint32_t> active)
+        {
+            constexpr char extension[] = "KHR_materials_variants";
+            const auto root = model.extensions.find(extension);
+            const auto count = root != model.extensions.end() && root->second.Has("variants")
+              ? root->second.Get("variants").ArrayLen() : 0;
+            if (active && *active >= count)
+                throw std::invalid_argument("Unknown glTF material variant");
+            for (auto& mesh : model.meshes)
+                for (auto& primitive : mesh.primitives)
+                {
+                    const auto found = primitive.extensions.find(extension);
+                    if (found == primitive.extensions.end())
+                        continue;
+                    if (!found->second.Has("mappings") || !found->second.Get("mappings").IsArray())
+                        throw std::runtime_error("Invalid glTF material variant mappings");
+                    const auto& mappings = found->second.Get("mappings");
+                    std::vector<bool> used(count);
+                    for (size_t i = 0; i < mappings.ArrayLen(); ++i)
+                    {
+                        const auto& mapping = mappings.Get(i);
+                        if (!mapping.Has("material") || !mapping.Get("material").IsInt() ||
+                            !mapping.Has("variants") || !mapping.Get("variants").IsArray())
+                            throw std::runtime_error("Invalid glTF material variant mapping");
+                        const int material = mapping.Get("material").GetNumberAsInt();
+                        if (material < 0 || size_t(material) >= model.materials.size())
+                            throw std::runtime_error("Invalid glTF variant material index");
+                        const auto& variants = mapping.Get("variants");
+                        for (size_t j = 0; j < variants.ArrayLen(); ++j)
+                        {
+                            const auto& id = variants.Get(j);
+                            if (!id.IsInt() || id.GetNumberAsInt() < 0 || size_t(id.GetNumberAsInt()) >= count)
+                                throw std::runtime_error("Invalid glTF material variant index");
+                            const auto index = uint32_t(id.GetNumberAsInt());
+                            if (used[index])
+                                throw std::runtime_error("Duplicate glTF material variant mapping");
+                            used[index] = true;
+                            if (active && index == *active)
+                                primitive.material = material;
+                        }
+                    }
+                }
+        }
         void expandMeshInstances(tinygltf::Model& model)
         {
             constexpr char extension[] = "EXT_mesh_gpu_instancing";
@@ -305,7 +348,7 @@ namespace render::detail
             return result;
         }
     } // namespace
-    std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path)
+    std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path, std::optional<uint32_t> variant)
     {
         tinygltf::Model    gltf;
         tinygltf::TinyGLTF loader;
@@ -318,7 +361,7 @@ namespace render::detail
                   extension != "KHR_materials_transmission" && extension != "KHR_materials_volume" && extension != "KHR_materials_ior"
                   && extension != "KHR_materials_specular" && extension != "KHR_materials_clearcoat"
                   && extension != "KHR_materials_emissive_strength" && extension != "KHR_xmp_json_ld"
-                  && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing")
+                  && extension != "KHR_materials_unlit" && extension != "KHR_texture_transform" && extension != "KHR_xmp" && extension != "EXT_mesh_gpu_instancing" && extension != "KHR_materials_variants")
                     throw std::runtime_error("Unsupported glTF extension: " + extension);
         auto dielectric = [](const tinygltf::Material& m) {
             float      transmission = 0, ior = 1.5f;
@@ -341,6 +384,7 @@ namespace render::detail
                 throw std::runtime_error("Dielectric requires transmission 0..1 and IOR 1..3");
             return std::array<float, 2>{transmission, ior};
         };
+        selectMaterialVariant(gltf, variant);
         expandMeshInstances(gltf);
         auto              animation = ReadAnimationData(gltf);
         auto              result    = std::make_shared<ModelData>();

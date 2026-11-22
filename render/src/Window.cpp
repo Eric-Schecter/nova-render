@@ -244,6 +244,10 @@ namespace render
     {
         impl_->renderer->LoadModel(path);
     }
+    void Window::LoadModel(const std::filesystem::path& path, uint32_t materialVariant)
+    {
+        impl_->renderer->LoadModel(path, materialVariant);
+    }
     OrbitCamera Window::GetCamera() const
     {
         return impl_->renderer->GetCamera();

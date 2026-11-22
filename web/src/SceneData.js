@@ -129,6 +129,7 @@ export class SceneData {
         },
     )
     const paths = new Map()
+    const variants = new Map()
     for (const a of assets) {
       if (
         !a ||
@@ -137,10 +138,13 @@ export class SceneData {
         paths.has(a.id) ||
         typeof a.url !== 'string' ||
         !a.url ||
-        (a.sourceSpace !== undefined && typeof a.sourceSpace !== 'boolean')
+        (a.sourceSpace !== undefined && typeof a.sourceSpace !== 'boolean') ||
+        (a.materialVariant !== undefined &&
+          (!Number.isInteger(a.materialVariant) || a.materialVariant < 0 || a.materialVariant > 0xffffffff))
       )
-        throw Error('Scene assets require unique nonempty IDs, URLs and a boolean sourceSpace')
+        throw Error('Invalid scene asset ID, URL, sourceSpace or materialVariant')
       paths.set(a.id, a.url)
+      variants.set(a.id, a.materialVariant)
     }
     const ids = new Set(),
       referenced = new Set()
@@ -162,15 +166,18 @@ export class SceneData {
       ids.add(i.id)
       referenced.add(i.assetId)
     }
-    const key = JSON.stringify([...referenced].sort().map((id) => [id, paths.get(id)]))
+    const key = JSON.stringify([...referenced].sort().map((id) => [id, paths.get(id), variants.get(id)]))
     if (!this.model || key !== this.key) {
       const next = new Map()
       const fresh = []
       try {
         for (const id of [...referenced].sort()) {
           const previous = this.meshes.get(id)
+          const materialVariant = variants.get(id)
           const data =
-            previous?.url === paths.get(id) ? previous.data : await loadGLB(paths.get(id))
+            previous?.url === paths.get(id) && previous.materialVariant === materialVariant
+              ? previous.data
+              : await loadGLB(paths.get(id), { materialVariant })
           if (data !== previous?.data) {
             fresh.push(data)
             for (const image of data.images)
@@ -189,6 +196,7 @@ export class SceneData {
           next.set(id, {
             data,
             url: paths.get(id),
+            materialVariant,
             picking: previous?.data === data ? previous.picking : new PickMesh(data),
           })
         }

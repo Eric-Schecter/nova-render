@@ -35,6 +35,7 @@ namespace render
         // false: centered, longest axis spans [-1, 1] (legacy LoadModel behavior).
         // true: retain glTF scene units, origin and authored node transforms.
         bool sourceSpace = false;
+        std::optional<uint32_t> materialVariant;
     };
 
     struct SceneInstance

@@ -69,6 +69,7 @@ namespace render
         void                    SetMaterial(uint32_t slot, const Material& material, const std::string& assetId = {});
         void                    SetCloseOnEscape(bool enabled);
         void                    LoadModel(const std::filesystem::path& glbPath);
+        void                    LoadModel(const std::filesystem::path& glbPath, uint32_t materialVariant);
         RendererCapabilities    GetCapabilities() const;
         void                    SetHybrid(const HybridSettings& settings);
         HybridSettings          GetHybrid() const;
