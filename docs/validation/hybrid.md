@@ -114,6 +114,12 @@ With minimum X at −500 and maximum unchanged at `(335, 151, 200)`, the far-wal
 
 Extending the near end of this volume from X = 335 to X = 395 lowers the near right-pillar sample from 39.6 to 30.5, compared with 26.0 in the reference. The far wall shifts from 13.2 to 14.9, and the shaded floor remains at 45.7. The left wall remains near its reference at 18.7 versus 18.8. Sideways translations of the original volume failed to improve the pillar without substantially altering the wall or pillar brightness. The revised bounds are `(-500, 1, -100)` to `(395, 151, 200)`. The floor fill still looks cooler than the reference. This comparison covers angle 1.
 
+### Sponza shadow-fill color
+
+Angle 1 uses the same camera, exposure, sun, probe bounds and sky intensity 0.45. The color variants blend each linear environment RGB value toward its Rec.709 luminance times a warm RGB vector `(1.18, 1.00, 0.68)` normalized to unit luminance. Apply the same linear transform to the lighting cube mip chain and the diffuse SH coefficients. The separately stored background cube is kept intact.
+
+At blend 0.55 the shaded floor moves from RGB (43, 47, 45) to (54, 46, 35), close to reference (57, 46, 36). Its display luma moves from 45.7 to 46.8 (reference 47.3). Sunlit floor luma stays at 217.6, and the far-wall sample moves from 14.9 to 15.2 (reference 14.2). The near right pillar remains slightly bright at 31.0 versus 26.0. Metal, Vulkan and Chrome WebGPU rendered the 640 × 360 comparison. The reference/baseline/warm triptych is `build/validation/sponza-reference/warm55-comparison.png`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
