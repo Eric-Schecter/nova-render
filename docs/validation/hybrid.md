@@ -76,6 +76,12 @@ The shared shader now skips punctual-light work at a secondary hit when both its
 
 With the full production shaders, synchronized Chrome moving-frame medians were 59.45 → 56.80 ms and 63.95 → 52.50 ms in the two test orders. Still medians were 65.45 → 62.70 ms and 52.10 → 62.10 ms. The spread in whole-frame timings limits the attributable speedup to the directly measured reflection-pass result. The fixed and last moving captures were pixel-identical before and after on WebGPU, Metal and Vulkan (MoltenVK), compared within each backend. Captures and timing data are under `build/validation/pica-half-trace`.
 
+## Sponza reference import
+
+The first camera from the pinned Sponza fixture renders all 262,267 triangles at 640 × 360 on Metal, Vulkan (MoltenVK) and Chrome WebGPU. The initial OBJ-to-GLB export assigned full glTF transmission to 24 of 25 materials, including the stone floor. The exported floor base-color image contains the expected stone texture. The base-color view was nearly black and changing culling or alpha coverage alone left the transparent appearance. Removing the unintended transmission extension from this comparison asset restored the floor, columns and fabric across all three backends. Nova's glTF transmission implementation was left intact.
+
+The comparison uses the same 512-pixel texture cap before and after. The resulting asset is about 35 MiB. The original 117 MiB conversion closed the Chrome page during loading in this run. The screenshots in `build/validation/sponza-reference` use the shared validation lighting. The reference still has a more localized sun patch and darker galleries. Authored lighting, sky fill, and indirect illumination remain to be matched.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
