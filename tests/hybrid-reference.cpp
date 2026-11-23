@@ -199,6 +199,9 @@ int main(int argc, char** argv)
                     profile.aoStrength = options.value("aoStrength", profile.aoStrength);
                     profile.halfResolutionAO = options.value("halfResolutionAO", false);
                     profile.reflections = true;
+                    profile.halfResolutionReflections = options.value("halfResolutionReflections", false);
+                    profile.reflectionDenoising = options.value("reflectionDenoising", false);
+                    profile.reflectionSVGF = options.value("reflectionSVGF", false);
                     profile.probeGI = profile.probeSkyLighting = profile.probeMultiBounce = true;
                     profile.probeSharedRays = profile.probeOctahedral = true;
                     backend->SetHybrid(profile);

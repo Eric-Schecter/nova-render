@@ -421,7 +421,7 @@ float4 reflectionAtrous(int2 pixel, int2 last, float4 current, float4 depth, flo
     float2 moments = historyTex.Load(int3(pixel, 0)).xy;
     float variance = max(0, moments.y - moments.x * moments.x);
     float center = reflectionLuma(current.rgb);
-    float tolerance = max(.02 + center * .06, sqrt(variance) * 1.5);
+    float minimumTolerance = .02 + center * .06;
     float3 sum = current.rgb * 4;
     float mass = 4;
     [unroll] for (int y = -1; y <= 1; ++y)
@@ -449,6 +449,12 @@ float4 reflectionAtrous(int2 pixel, int2 last, float4 current, float4 depth, flo
             float alignment = dot(normal, reflectionNormal(encoded));
             if (alignment < .92 || dr > .12)
                 continue;
+            // A stable-looking center can have zero variance when sparse
+            // glossy samples repeatedly miss. Use the same-surface tap's
+            // moments too, without borrowing uncertainty across an edge.
+            float2 tapMoments = historyTex.Load(int3(tap, 0)).xy;
+            float tapVariance = max(0, tapMoments.y - tapMoments.x * tapMoments.x);
+            float tolerance = max(minimumTolerance, 1.5 * sqrt(.5 * (variance + tapVariance)));
             float weight = (x == 0 || y == 0 ? 2 : 1)
                 * exp2(-120 * dz / step - 18 * dr - abs(reflectionLuma(color.rgb) - center) / tolerance)
                 * pow(saturate(alignment), 32);

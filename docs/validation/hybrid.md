@@ -42,6 +42,14 @@ On Apple M4, synchronized median still/moving frame times in milliseconds change
 
 In the Web capture, the shadow-patch mean display luma was 17.60 before and 17.25 after. The mean absolute deviation from the four-neighbor luma average in the shadow interior was 2.05 before, 1.17 with independent history alone, and 1.11 with spatial filtering. At the final camera position, the console-region image error between the moving frame and the settled frame fell from 6.15 to 5.40/255. This includes sampling noise as well as temporal error. Captures are in `build/validation/pica-ao-filter` and `build/validation/pica-transport/{metal,vulkan}`.
 
+## Pica Pica independent reflection reconstruction
+
+A fixed-camera and 16-frame X-translation comparison uses one ray per reflection sample and retains the previous independent AO settings (radius 7, strength 1.2, four samples per half-resolution pixel). The optimized profile uses half-resolution reflections with full-resolution fallback for pixels without compatible guides, separate reflection history, and three À-Trous passes. The spatial luma tolerance blends center and compatible tap variances. These weights are computed only after depth, material, normal and clearcoat compatibility checks.
+
+At the same pose on Chrome WebGPU, four-neighbor display-luma deviation fell from 4.23 to 1.69 on the console panel and 1.11 to 0.40 on the shaded floor. At the last moving pose, console-region MAE against the settled capture fell from 5.40 to 4.50/255. That error includes both temporal lag and sample noise. The main gain comes from the separate history and spatial filtering. Averaging center and tap variances only modestly improves this fixture over center variance alone.
+
+Synchronized median still/moving frame times in milliseconds changed from 177.8/174.1 to 104.3/104.2 on Metal, 170.6/179.6 to 101.1/108.2 on Vulkan/MoltenVK, and 310.1/311.9 to 227.9/233.8 on Chrome WebGPU. The comparisons include the full Hybrid frame, not only AO and reflections. The Web captures and motion-to-settled comparisons are under `build/validation/pica-reflection-filter`. The native transport fixture accepts `halfResolutionReflections`, `reflectionDenoising` and `reflectionSVGF`, and native captures are under `build/validation/pica-transport/{metal,vulkan}`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
