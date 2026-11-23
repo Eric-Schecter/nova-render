@@ -194,6 +194,8 @@ int main(int argc, char** argv)
                     HybridSettings profile;
                     profile.shadows = profile.shadowTemporalReconstruction = true;
                     profile.ambientOcclusion = profile.temporalReconstruction = true;
+                    profile.aoRadius = fixture["transport"].value("aoRadius", profile.aoRadius);
+                    profile.aoStrength = fixture["transport"].value("aoStrength", profile.aoStrength);
                     profile.reflections = true;
                     profile.probeGI = profile.probeSkyLighting = profile.probeMultiBounce = true;
                     profile.probeSharedRays = profile.probeOctahedral = true;

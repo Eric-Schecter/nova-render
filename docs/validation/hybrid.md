@@ -28,6 +28,12 @@ Generate the compatible comparison asset with `python3 scripts/reference/prepare
 
 The 32-frame fixed WebGPU captures retain the same camera, ACES exposure, directional light, and radius 0.1 with four shadow samples. The floor sample averaged (57, 98, 113) before and (12, 39, 54) with the material conversion alone at the previous sky intensity of 0.18. At sky intensity 1.0, with the same HDR asset and background intensity, it averages (23, 68, 98) versus (33, 74, 103) in the reference screenshot. The higher sky intensity also raises fill inside shadows, so it is a separate comparison setting. Metal and Vulkan also rendered the converted asset under both sky strengths. Captures are in `build/validation/pica-floor-color` and `build/validation/pica-transport/{metal,vulkan}`.
 
+## Pica Pica indirect fill in shadows
+
+With the converted materials and sky intensity 1.0, the selected floor patch under the console was zero in the direct-only render. Disabling DDGI or traced reflections increased the patch brightness, while disabling AO also raised it. The reference's AO uses a ray length of 7 world units and an upsample power of 1.2. Nova's transport comparison had used radius 1 and strength 1.
+
+For the reference comparison, set `aoRadius: 7` and `aoStrength: 1.2` while leaving the shared default values in place for other scenes. The native transport fixture accepts these settings, and the Web uses the same values through `setHybrid`. At the same camera, exposure, sky, directional shadow sampling and four AO samples, the selected shaded patch averaged (18, 37, 55) before and (8, 19, 30) after, against reference RGB (7, 16, 24). The illuminated floor changed by less than one 8-bit code value per channel. Wider AO produces more visible noise at this sample count than the reference's separately filtered AO. The Web comparison is under `build/validation/pica-shadow-fill`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
