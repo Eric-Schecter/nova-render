@@ -71,7 +71,7 @@ outlines.selectedIds = {"car-1"};
 window.SetSceneOutlines(outlines);
 ```
 
-An empty options object clears both states. IDs refer to committed scene instances, with selection taking precedence over hover. Colors are linear RGB in [0, 1] and widths are 1–4 render pixels. The outline follows the visible silhouette from the depth-tested G-buffer, including holes and occlusion boundaries. Adjacent selected pixels share a single outline group. The pass covers opaque and alpha-masked geometry in the Raster and Hybrid final views. Alpha-blended objects and ray-traced views have no outline. Raster uses the deferred pipeline while an outline is active.
+An empty options object clears both states. IDs refer to committed scene instances, with selection taking precedence over hover. Colors are linear RGB in [0, 1] and widths are 1–4 render pixels. The outline follows the projected geometry, including holes, and shows through scene occluders by default. The scene itself uses normal depth visibility. Adjacent selected pixels share a single outline group. Separate masks for hover and selection keep one group from occluding the other. The overlay supports opaque and alpha-masked geometry in the Raster and Hybrid final views. It is composited after temporal reconstruction and tone mapping. Alpha-blended objects and ray-traced views have no outline.
 
 ## Updates and limits
 

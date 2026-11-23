@@ -295,9 +295,12 @@ class Renderer {
             return owner.#useHalfShadows()
           },
           get raster() {
-            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass() || owner.#hasSceneOutlines()
+            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass()
               ? { ...owner.#rasterSettings, pipeline: 'deferred' }
               : owner.#rasterSettings
+          },
+          get outlines() {
+            return owner.#hasSceneOutlines() ? owner.#sceneOutlines : null
           },
           get alphaBlend() {
             return owner.#hasRasterTransparency()
@@ -354,9 +357,9 @@ class Renderer {
               })
             }
           },
-          draw: (pass, motion, count, program, gbuffers) => {
+          draw: (pass, motion, count, program, gbuffers, outlineGroup) => {
             if (this.#model)
-              this.#model.drawAA(pass, motion, count, this.#environmentSettings, program, gbuffers)
+              this.#model.drawAA(pass, motion, count, this.#environmentSettings, program, gbuffers, outlineGroup)
             else {
               pass.setPipeline(this.#triangleAA[count])
               pass.draw(3)

@@ -81,6 +81,8 @@ const shadowMomentsA = reflectionAtrous + 1,
   shadowAtrous = shadowMomentsB + 4
 const modelSpecularMapTarget = shadowAtrous + 1
 const modelFilmMapTarget = modelSpecularMapTarget + 1
+const hoverOutlineMask = modelFilmMapTarget + 1
+const selectedOutlineMask = hoverOutlineMask + 1
 
 export async function createAntiAliasingView({
   canvas,
@@ -295,7 +297,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= modelFilmMapTarget; i++)
+    for (let i = 0; i <= selectedOutlineMask; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -720,7 +722,26 @@ export async function createAntiAliasingView({
       b.sources[2] = W
       filtered = F
     }
+    const outlines = !debug ? external?.outlines : null
+    const scale = effectiveMethod === 'ssaa' ? 2 : 1
+    if (outlines?.hoveredId) {
+      add(-4, 85).outlineGroup = 1
+      crop(hoverOutlineMask, 85, width * scale, height * scale, false)
+    }
+    if (outlines?.selectedIds.length) {
+      add(-4, 85).outlineGroup = 2
+      crop(selectedOutlineMask, 85, width * scale, height * scale, false)
+    }
     const p = add(8, O)
+    if (outlines?.hoveredId || outlines?.selectedIds.length) p.u[27] = 5
+    if (outlines?.hoveredId) {
+      p.sources[1] = hoverOutlineMask
+      p.u.splice(48, 4, ...outlines.hovered.color, outlines.hovered.width)
+    }
+    if (outlines?.selectedIds.length) {
+      p.sources[2] = selectedOutlineMask
+      p.u.splice(52, 4, ...outlines.selected.color, outlines.selected.width)
+    }
     p.sources[0] = filtered
     if ((!shadowScene && !hdrScene && !reflectionScene) || settings.split)
       p.sources[3] = post.baseline
@@ -763,7 +784,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= modelFilmMapTarget; i++) {
+    for (let i = 0; i <= selectedOutlineMask; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -783,6 +804,7 @@ export async function createAntiAliasingView({
           i === 22 ? shadowSettings.resolution : i === DUMMY ? 1 : h * (big ? 2 : 1) + (raw ? 2 : 0)
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
+      if (i === hoverOutlineMask || i === selectedOutlineMask) [tw, th] = [w, h]
       if ((i >= 85 && i < 96) || i === modelClearcoatTarget) {
         const scale = superSample ? 2 : 1
         tw = w * scale + 2
@@ -966,6 +988,7 @@ export async function createAntiAliasingView({
               p.program === -9
               ? p.sources.slice(0, 12).map((i) => textures[i])
               : null,
+            p.outlineGroup || 0,
           )
         pass.end()
         return

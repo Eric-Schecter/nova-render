@@ -3,6 +3,7 @@
 #include "ModelData.hpp"
 #include "PostProcessing.hpp"
 #include "render/Hybrid.hpp"
+#include "render/Scene.hpp"
 namespace render::detail
 {
     class RasterAA
@@ -41,7 +42,8 @@ namespace render::detail
           bool                          hybrid           = false,
           bool                          hybridDebug      = false,
           const HybridSettings&         hybridSettings   = {},
-          size_t                        shadowLightCount = 0)
+          size_t                        shadowLightCount = 0,
+          const SceneOutlines*          outlines = nullptr)
         {
             auto settings     = requestedSettings;
             auto postSettings = requestedPost;
@@ -418,7 +420,37 @@ namespace render::detail
                 p->sources[2]               = AAWeights;
                 filtered                    = AAFiltered;
             }
+            const OutlineStyle* hover = nullptr;
+            const OutlineStyle* selected = nullptr;
+            if (outlines && !hybridDebug && modelSettings.view == GBufferView::Final)
+            {
+                const uint32_t scale = settings.method == AAMethod::SSAA ? 2 : 1;
+                if (!outlines->hoveredId.empty())
+                {
+                    add(-4, AAModelBase)->outlineGroup = 1;
+                    crop(AAHoverOutlineMask, AAModelBase, w * scale, h * scale, false);
+                    hover = &outlines->hovered;
+                }
+                if (!outlines->selectedIds.empty())
+                {
+                    add(-4, AAModelBase)->outlineGroup = 2;
+                    crop(AASelectedOutlineMask, AAModelBase, w * scale, h * scale, false);
+                    selected = &outlines->selected;
+                }
+            }
             auto* p       = add(8, AAOutput);
+            if (hover || selected)
+                p->uniforms[6][3] = 5;
+            if (hover)
+            {
+                p->sources[1] = AAHoverOutlineMask;
+                p->uniforms[12] = {hover->color[0], hover->color[1], hover->color[2], float(hover->width)};
+            }
+            if (selected)
+            {
+                p->sources[2] = AASelectedOutlineMask;
+                p->uniforms[13] = {selected->color[0], selected->color[1], selected->color[2], float(selected->width)};
+            }
             p->sources[0] = filtered;
             if (settings.split)
                 p->sources[3] = post.baseline;

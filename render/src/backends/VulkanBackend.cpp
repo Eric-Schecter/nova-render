@@ -488,10 +488,9 @@ namespace render::detail
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                     if (scene.active)
                     {
-                        for (const auto& draw : scene.draws)
-                            if (draw.instanceCount)
-                                vkCmdDraw(
-                                  cmd, draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+                        DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
+                            vkCmdDraw(cmd, draw.vertexCount, count, draw.firstVertex, first);
+                        });
                     }
                     else
                         vkCmdDraw(cmd, uint32_t(model->vertices.size()), 1, 0, 0);

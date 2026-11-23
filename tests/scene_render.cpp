@@ -277,6 +277,42 @@ int main(int argc, char** argv)
             draw();
             backend->SetRenderMode(render::RenderMode::Raster);
         }
+        backend->SetAntiAliasing({render::AAMethod::Off});
+        backend->SetRasterSettings({render::RasterPipeline::Deferred});
+        cameraView.position = {0, 0, 5};
+        cameraView.orientation = {0, 0, 0, 1};
+        cameraView.nearPlane = .01f;
+        cameraView.farPlane = 200;
+        backend->SetViewCamera(cameraView);
+        const render::SceneInstance subject{"subject", "red"};
+        render::SceneInstance blocker{"blocker", "blue"};
+        blocker.world[0] = blocker.world[5] = 1.25f;
+        blocker.world[14] = 2;
+        outlines.hoveredId.clear();
+        outlines.selectedIds = {"subject"};
+        backend->SetScene(models, {subject});
+        backend->SetSceneOutlines(outlines);
+        draw();
+        const auto visible = backend->GetRasterAAImage();
+        backend->SetScene(models, {subject, blocker});
+        draw();
+        const auto blocked = backend->GetRasterAAImage();
+        backend->SetSceneOutlines({});
+        draw();
+        const auto& unmarked = backend->GetRasterAAImage();
+        auto marked = [](const unsigned char* p) { return p[0] > 225 && p[1] < 10 && p[2] > 225; };
+        size_t edge = 0;
+        for (size_t i = 0; i < blocked.pixels.size(); i += 4)
+        {
+            if (marked(&visible.pixels[i]) != marked(&blocked.pixels[i]))
+                throw std::runtime_error("Scene occlusion altered the selection silhouette");
+            if (marked(&blocked.pixels[i]))
+                ++edge;
+            else if (!std::equal(blocked.pixels.data() + i, blocked.pixels.data() + i + 4, unmarked.pixels.data() + i))
+                throw std::runtime_error("Selection modified scene pixels away from its outline");
+        }
+        if (edge < 50)
+            throw std::runtime_error("Missing selection silhouette behind blocker");
         backend.reset();
         CloseTestWindow(window);
         window = {};

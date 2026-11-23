@@ -338,7 +338,6 @@ namespace render::detail
         {
             if (!scene.active || rasterGlobals >= rasterInstances.size())
                 return;
-            auto& globals = rasterInstances[rasterGlobals];
             for (size_t i = 0; i < scene.drawInstanceIds.size(); ++i)
             {
                 const auto& id = scene.drawInstanceIds[i];
@@ -347,13 +346,21 @@ namespace render::detail
                   std::find(selected.begin(), selected.end(), id) != selected.end() ? 2.f :
                   id == sceneOutlines.hoveredId ? 1.f : 0.f;
             }
-            const auto styles = {&sceneOutlines.hovered, &sceneOutlines.selected};
-            unsigned at = 0;
-            for (const auto* style : styles)
+        }
+        template<class Draw>
+        void DrawRasterInstances(const AAPass& pass, Draw&& submit) const
+        {
+            for (const auto& draw : scene.draws)
             {
-                std::copy(style->color.begin(), style->color.end(), globals.normal + at);
-                globals.normal[at + 3] = HasSceneOutlines() ? float(style->width) : 0.f;
-                at += 4;
+                if (!pass.outlineGroup)
+                {
+                    if (draw.instanceCount)
+                        submit(draw, draw.instanceCount, draw.firstInstance);
+                    continue;
+                }
+                for (uint32_t i = draw.firstInstance; i < draw.firstInstance + draw.instanceCount; ++i)
+                    if (rasterInstances[i].normal[13] == float(pass.outlineGroup))
+                        submit(draw, 1, i);
             }
         }
         void RebuildRasterInstances(bool resetProbes = true)
@@ -963,9 +970,6 @@ namespace render::detail
                     : 0.f;
                 rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
                 rasterAA.current.irradiance[8][3] = float(modelRaster.view);
-                auto effectiveRaster = modelRaster;
-                if (HasSceneOutlines())
-                    effectiveRaster.pipeline = RasterPipeline::Deferred;
                 const auto& image = rasterAA.Render(
                   width,
                   height,
@@ -973,12 +977,13 @@ namespace render::detail
                   ClearColorForTarget(true),
                   aaTriangle,
                   postSettings,
-                  effectiveRaster,
+                  modelRaster,
                   HasRasterTransparency(model.get()),
                   mode == RenderMode::Hybrid,
                   mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,
                   hybrid,
-                  lightCollectionActive ? lights.size() : 1);
+                  lightCollectionActive ? lights.size() : 1,
+                  HasSceneOutlines() ? &sceneOutlines : nullptr);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }

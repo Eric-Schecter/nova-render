@@ -369,10 +369,7 @@ float4 hybridAOResolve(int2 pixel)
                 mass += w;
             }
         if (mass > .001)
-        {
-            float tag = 2 * floor(abs(position.z) * .5);
-            position.z = sign(position.z) * (tag + (abs(position.z) - tag) * saturate(weighted / mass));
-        }
+            position.z *= saturate(weighted / mass);
         return position;
     }
 
@@ -740,6 +737,37 @@ float4 PSMain(Varying i)
         c = historyTex.SampleLevel(PointSampler, uv, 0).rgb;
     if (aa[3].w > .5 && abs(i.uv.x - .5) < texel.x)
         c = float3(.2, .5, .8);
+    // Each mask is rasterized with fresh depth from only one highlight group.
+    // Resolve after temporal AA and tone mapping so the overlay has no history.
+    [loop] for (int group = aa[6].w == 5 ? 1 : -1; group >= 0; --group)
+    {
+        float4 style = aa[12 + group];
+        if (style.w <= 0)
+            continue;
+        float coverage = group ? weightTex.SampleLevel(PointSampler, uv, 0).a
+                               : edgeTex.SampleLevel(PointSampler, uv, 0).a;
+        if (coverage <= 0)
+            continue;
+        const int2 neighbors[8] = {
+          int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1),
+          int2(-1, -1), int2(1, -1), int2(-1, 1), int2(1, 1)};
+        bool border = false;
+        [loop] for (int step = 1; step <= int(style.w) && !border; ++step)
+        {
+            [unroll] for (int j = 0; j < 8; ++j)
+            {
+                float2 tap = uv + float2(neighbors[j] * step) * texel;
+                float value = group ? weightTex.SampleLevel(PointSampler, tap, 0).a
+                                    : edgeTex.SampleLevel(PointSampler, tap, 0).a;
+                border = border || value <= 0;
+            }
+        }
+        if (border)
+        {
+            c = style.rgb;
+            break;
+        }
+    }
     return float4(aa[6].z > .5 ? encodeSRGB(c) : gammaRGB(c), 1);
 #endif
 }

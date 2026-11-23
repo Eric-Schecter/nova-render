@@ -560,13 +560,11 @@ namespace render::detail
                     cmd->SetPipelineState(pipeline.Get());
                     if (scene.active)
                     {
-                        for (const auto& draw : scene.draws)
-                            if (draw.instanceCount)
-                            {
-                                const UINT offsets[]{draw.firstVertex, draw.firstInstance};
-                                cmd->SetGraphicsRoot32BitConstants(8, 2, offsets, 0);
-                                cmd->DrawInstanced(draw.vertexCount, draw.instanceCount, 0, 0);
-                            }
+                        DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
+                            const UINT offsets[]{draw.firstVertex, first};
+                            cmd->SetGraphicsRoot32BitConstants(8, 2, offsets, 0);
+                            cmd->DrawInstanced(draw.vertexCount, count, 0, 0);
+                        });
                     }
                     else
                         cmd->DrawInstanced(UINT(model->vertices.size()), 1, 0, 0);

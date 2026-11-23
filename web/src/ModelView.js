@@ -427,23 +427,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       )
       probeEnabled = true
     }
-    let outlines = null, outlinedIds = null, previousOutlineMarks = new Map()
-    function writeOutlineMarks() {
-      const marks = new Map()
-      if (outlines && outlinedIds && sceneDraws) {
-        const selected = new Set(outlines.selectedIds)
-        outlinedIds.forEach((id, index) => {
-          if (selected.has(id)) marks.set(index, 2)
-          else if (id === outlines.hoveredId) marks.set(index, 1)
-        })
-      }
-      for (const index of new Set([...previousOutlineMarks.keys(), ...marks.keys()])) {
-        const value = marks.get(index) ?? 0
-        if (value !== previousOutlineMarks.get(index))
-          device.queue.writeBuffer(instanceBuffer, (index * 48 + 29) * 4, new Float32Array([value]))
-      }
-      previousOutlineMarks = marks
-    }
+    let outlines = null, outlinedIds = null, outlineMarks = new Map()
     function writeGlobals() {
       const record = new Float32Array(48)
       record.set(
@@ -475,10 +459,6 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         (hybrid?.blueNoiseShadows ? 2 : 0) |
         (hybrid?.blueNoiseReflections ? 4 : 0)
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
-      if (outlines) {
-        record.set([...outlines.hovered.color, outlines.hovered.width], 16)
-        record.set([...outlines.selected.color, outlines.selected.width], 20)
-      }
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
       record.set(
@@ -530,8 +510,6 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           encodedLights,
         )
       sceneDraws = draws
-      previousOutlineMarks = new Map()
-      if (draws && outlinedIds?.length === shadowInstanceCount) writeOutlineMarks()
       writeGlobals()
     }
     uploadInstances(data.materialRecords || new Float32Array(0), null)
@@ -805,7 +783,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         uniforms.splice(48, 12, ...currentScene.subarray(40, 52))
         uniforms.splice(60, 4, ...previous.subarray(16, 20))
       },
-      drawAA(pass, motion, count, settings, program, gbuffers) {
+      drawAA(pass, motion, count, settings, program, gbuffers, outlineGroup) {
         if (program === -5 || program === -7 || program === -8 || program === -9) {
           const half = hybrid?.reflections && hybrid.halfResolutionReflections
           const halfCombine = program === -5 && half
@@ -875,14 +853,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                   : aaPipelines['model' + count],
           )
           if (sceneDraws !== null) {
-            for (const draw of sceneDraws)
-              if (draw.instanceCount)
-                pass.draw(
-                  draw.vertexCount,
-                  draw.instanceCount,
-                  draw.firstVertex,
-                  draw.firstInstance,
-                )
+            for (const draw of sceneDraws) {
+              if (outlineGroup) {
+                for (let i = draw.firstInstance; i < draw.firstInstance + draw.instanceCount; ++i)
+                  if (outlineMarks.get(i) === outlineGroup) pass.draw(draw.vertexCount, 1, draw.firstVertex, i)
+              } else if (draw.instanceCount) {
+                pass.draw(draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance)
+              }
+            }
           } else pass.draw(data.vertices.length / modelVertexFloats)
         }
       },
@@ -1019,8 +997,14 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (outlines === value && outlinedIds === ids) return
         outlines = value
         outlinedIds = ids
-        writeOutlineMarks()
-        writeGlobals()
+        outlineMarks = new Map()
+        if (value && ids) {
+          const selected = new Set(value.selectedIds)
+          ids.forEach((id, index) => {
+            if (selected.has(id)) outlineMarks.set(index, 2)
+            else if (id === value.hoveredId) outlineMarks.set(index, 1)
+          })
+        }
       },
       setInstances(bytes, draws, shadowRecords) {
         if (disposed) throw Error('Model has been disposed')

@@ -526,13 +526,13 @@ namespace render::detail
                     [e setDepthStencilState:oit ? oitDepthState : depthState];
                     if (scene.active)
                     {
-                        for (const auto& draw : scene.draws)
-                            if (draw.instanceCount)
-                                [e drawPrimitives:MTLPrimitiveTypeTriangle
-                                      vertexStart:draw.firstVertex
-                                      vertexCount:draw.vertexCount
-                                    instanceCount:draw.instanceCount
-                                     baseInstance:draw.firstInstance];
+                        DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
+                            [e drawPrimitives:MTLPrimitiveTypeTriangle
+                                  vertexStart:draw.firstVertex
+                                  vertexCount:draw.vertexCount
+                                instanceCount:count
+                                 baseInstance:first];
+                        });
                     }
                     else
                         [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:model->vertices.size()];

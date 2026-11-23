@@ -100,6 +100,8 @@ namespace render::detail
         AAShadowAtrous = AAShadowMomentsB + 4,
         AAModelSpecularMap,
         AAModelFilmMap,
+        AAHoverOutlineMask,
+        AASelectedOutlineMask,
         AAResourceCount
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;
@@ -110,6 +112,7 @@ namespace render::detail
         AAPass() { sources.fill(AADummy); }
         AAUniforms uniforms{};
         bool       multisampled = false;
+        unsigned   outlineGroup = 0;
     };
 
     struct AAExternalScene
@@ -129,6 +132,8 @@ namespace render::detail
     inline AASpec AAResourceSpec(
       int id, uint32_t w, uint32_t h, bool ss, bool external, uint32_t shadowSize = 1024, bool reflection = false)
     {
+        if (id == AAHoverOutlineMask || id == AASelectedOutlineMask)
+            return {w, h, 1};
         if ((id >= AAHybridAO && id < AAAOCombinedPosition) || (id >= AAReflectionMomentsA && id <= AAReflectionAtrous))
             return {(w * (ss ? 2u : 1u) + 1) / 2 + 2, (h * (ss ? 2u : 1u) + 1) / 2 + 2, 1};
         if (id >= AAShadowHistoryA)
