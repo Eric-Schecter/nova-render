@@ -82,6 +82,12 @@ The first camera from the pinned Sponza fixture renders all 262,267 triangles at
 
 The comparison uses the same 512-pixel texture cap before and after. The resulting asset is about 35 MiB. The original 117 MiB conversion closed the Chrome page during loading in this run. The screenshots in `build/validation/sponza-reference` use the shared validation lighting. The reference still has a more localized sun patch and darker galleries. Authored lighting, sky fill, and indirect illumination remain to be matched.
 
+### Sponza sunlight and shadow fill
+
+Angle 1 uses a directional light transformed from the reference's Z rotation of 30° and X rotation of −10°. Nova's direction toward the light is approximately `(-0.4924, 0.8529, -0.1736)`. The comparison uses source intensity 10, disk radius 0.08 and four shadow samples. The floor's sun patch becomes localized along the left arcade with the source direction. The environment asset used to vary fill is the existing Pica sky, so this is a transport comparison with a substitute sky.
+
+At 640 × 360, the reference, validation baseline, direct sun alone, and sun with sky intensity 0.40 and DDGI gave mean display luma of 214.5/163.2/214.2/215.6 on the sunlit floor, 18.8/99.1/0.0/18.6 on the left wall, and 26.0/142.5/0.0/12.0 on the right column. These are 11 × 11 pixel patches on a 0–255 scale. At sky intensity 0.15 the right column measured 43.1 with DDGI disabled and 8.8 with it enabled. Increasing the sky alone does not match both sides of the arcade. The next comparison should isolate probe coverage and the local diffuse bounce. Captures are under `build/validation/sponza-reference`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
