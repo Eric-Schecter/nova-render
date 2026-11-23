@@ -28,7 +28,8 @@ int main(int argc, char** argv)
         auto              fixture         = nlohmann::json::parse(source);
         const bool        probeComparison = argc > 3 && std::string_view(argv[3]) == "--probe-comparison";
         const bool bounceBaseline = probeComparison || (argc > 3 && std::string_view(argv[3]) == "--bounce-baseline");
-        const bool effects        = !bounceBaseline && fixture.contains("hybridEffects");
+        const bool transport      = fixture.contains("transport");
+        const bool effects        = !transport && !bounceBaseline && fixture.contains("hybridEffects");
         RendererConfig config;
         config.api = api == "metal" ? GraphicsAPI::Metal : api == "vulkan" ? GraphicsAPI::Vulkan : GraphicsAPI::D3D12;
         config.useWarp = argc > 1 && TestUseWarp(argv[1]);
@@ -66,7 +67,8 @@ int main(int argc, char** argv)
         post.toneMapping  = ToneMapping::ACES;
         backend->SetPostProcessing(post);
         auto dir = std::filesystem::path(
-                     bounceBaseline ? "build/validation/hybrid-gi-baseline"
+                     transport      ? "build/validation/pica-transport"
+                     : bounceBaseline ? "build/validation/hybrid-gi-baseline"
                      : effects      ? "build/validation/hybrid-reference-effects"
                                     : "build/validation/hybrid-reference")
                    / api;
@@ -100,6 +102,21 @@ int main(int argc, char** argv)
         light.color     = {1, 1, 1};
         light.intensity = 4;
         backend->SetDirectionalLight(light);
+        if (transport)
+        {
+            const auto& profile = fixture["transport"];
+            backend->LoadEnvironment(detail::LoadEnvironmentFile(profile["environment"].get<std::string>()));
+            EnvironmentSettings environment;
+            environment.intensity = profile["environmentIntensity"];
+            backend->SetEnvironment(environment);
+            SceneLight sun;
+            sun.id = "sun";
+            sun.direction = light.direction;
+            sun.intensity = fixture["light"]["intensity"];
+            sun.castShadow = true;
+            sun.shadowSoftness = profile["shadowSoftness"];
+            backend->SetLights({sun});
+        }
         backend->SetLighting(LightingMode::PBR);
         SceneShadowSettings shadows;
         shadows.enabled  = true;
@@ -166,11 +183,27 @@ int main(int argc, char** argv)
                 Camera camera;
                 camera.position    = c["position"].get<std::array<float, 3>>();
                 camera.orientation = c["orientation"].get<std::array<float, 4>>();
-                camera.verticalFov = 60;
+                camera.verticalFov = c.value("verticalFov", 60.f);
                 camera.nearPlane   = 1;
                 camera.farPlane    = 1000;
                 backend->SetViewCamera(camera);
                 std::string name = scene["id"].get<std::string>() + "-" + c["id"].get<std::string>();
+                if (transport)
+                {
+                    backend->SetRenderMode(RenderMode::Hybrid);
+                    HybridSettings profile;
+                    profile.shadows = profile.shadowTemporalReconstruction = true;
+                    profile.ambientOcclusion = profile.temporalReconstruction = true;
+                    profile.reflections = true;
+                    profile.probeGI = profile.probeSkyLighting = profile.probeMultiBounce = true;
+                    profile.probeSharedRays = profile.probeOctahedral = true;
+                    backend->SetHybrid(profile);
+                    for (int frame = 0; frame < 32; ++frame)
+                        gpuFrame();
+                    captureGPU(name);
+                    ++captures;
+                    continue;
+                }
                 if (bounceBaseline)
                 {
                     backend->SetRenderMode(RenderMode::Hybrid);
@@ -332,7 +365,10 @@ int main(int argc, char** argv)
         backend.reset();
         CloseTestWindow(window);
         QuitTestWindowHost();
-        std::cout << api << " reference captures=" << captures << ", max Raster/Hybrid MAE=" << maximum << "/255\n";
+        std::cout << api << " reference captures=" << captures;
+        if (!transport)
+            std::cout << ", max Raster/Hybrid MAE=" << maximum << "/255";
+        std::cout << '\n';
         return 0;
     }
     catch (const std::exception& e)

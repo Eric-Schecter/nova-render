@@ -48,6 +48,21 @@ const modelWGSLPasses = [
   'merge-blocks',
   'simplify-instructions',
 ]
+export async function readMaterialShader(name) {
+  const source = await readFile(`render/shaders/${name}.hlsl`, 'utf8')
+  const includes = [
+    'material-sheen.hlsli',
+    'material-iridescence.hlsli',
+    'material-anisotropy.hlsli',
+  ]
+  const bodies = await Promise.all(
+    includes.map((file) => readFile(`render/shaders/${file}`, 'utf8')),
+  )
+  return includes.reduce(
+    (shader, file, index) => shader.replace(`#include "${file}"`, bodies[index]),
+    source,
+  )
+}
 export async function compile(
   source,
   {

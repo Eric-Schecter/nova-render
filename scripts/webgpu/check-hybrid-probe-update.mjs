@@ -1,25 +1,24 @@
-import { readFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
-import { compile } from './compiler.mjs'
+import { compile, readMaterialShader } from './compiler.mjs'
 
-const source = await readFile('render/shaders/model.hlsl', 'utf8')
+const source = await readMaterialShader('model')
 const { compute } = await compile(source, {
   compute: true,
   computeEntry: 'HybridProbeUpdateCS',
   optimizeCompute: true,
-  maxSourceBytes: 128 * 1024,
+  maxSourceBytes: 256 * 1024,
 })
 const { compute: sharedCompute } = await compile('#define NOVA_SHARED_PROBE_RAYS 1\n' + source, {
   compute: true,
   computeEntry: 'HybridProbeUpdateCS',
   optimizeCompute: true,
-  maxSourceBytes: 128 * 1024,
+  maxSourceBytes: 256 * 1024,
 })
 const { compute: sampling } = await compile('#define NOVA_PROBE_SAMPLE_VALIDATION 1\n' + source, {
   compute: true,
   computeEntry: 'HybridProbeSampleCS',
   optimizeCompute: true,
-  maxSourceBytes: 128 * 1024,
+  maxSourceBytes: 256 * 1024,
 })
 const browser = await chromium.launch({
   channel: 'chrome',

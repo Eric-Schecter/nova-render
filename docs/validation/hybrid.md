@@ -12,6 +12,14 @@ The twelve reference cameras rendered all 108 effect captures on each of Metal a
 
 The reference directional light samples a disk of radius 0.1 in tangent space. Nova's previous collection limit of 4 mapped to 0.024. Directional lights now accept up to 20, allowing a reference match with `shadowSoftness = 0.1 / 0.006`. Both comparison captures use ACES at exposure 1 (0 post EV), four shadow samples, shadow history, and the same fitted camera, sky, light intensity, and Hybrid settings. At 766 × 431 after 32 frames, the wider disk softens the ground shadows around the console, boxes and loose props. The reference still has a bluer ground and brighter console trim. Changing the tone curve alone does not reproduce those differences. Captures are under `build/validation/pica-reflection-current`.
 
+## Pica Pica transport isolation
+
+The fixed WebGPU camera uses 766 × 431, ACES at 0 EV, the same sky and directional intensity, four shadow samples at disk radius 0.1, and 32 frames of history. The image-level comparison in `build/validation/pica-transport` isolates DDGI, local probe lighting at reflection hits, and replacement of environment specular by traced reflections. The sampled floor changed from RGB (57, 98, 113) to (56, 97, 112) without DDGI. With both DDGI and reflections disabled, direct-only lighting produced (48, 82, 92) and the environment-only diagnostic (9, 27, 40). The floor difference therefore persists in direct-dominated lighting. The reference screenshot remains bluer in that area.
+
+The console trim sample averaged RGB (41, 43, 44) before the fix and (53, 56, 57) after. Turning off hit-probe lighting or DDGI changes this sample by less than one level per channel. The correction uses height-correlated Smith GGX for reflection-ray throughput, replacing the remapped Schlick direct-light approximation. DDGI visibility now queries slightly off the geometric surface while keeping interpolation and facing at the original point. The reference console trim remains brighter than the updated renderer.
+
+The transport profile in `nova_hybrid_reference_test` accepts a fixture with a `transport` section containing the environment path, intensity, and shadow softness. Metal and Vulkan rendered identical 766 × 432 Pica captures. Both native Hybrid tests, the Chrome WebGPU Hybrid regression and the DDGI probe kernel test passed.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

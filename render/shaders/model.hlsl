@@ -1632,7 +1632,8 @@ float hybridRotation(uint2 pixel)
 {
     return hybridFrameRotation(pixel, irradiance[6].w);
 }
-float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out float coverage);
+float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out float coverage,
+                          float3 geometricNormal = 0);
 float3 probeDiffuseRadiance(SurfaceData surface, float3 view, float3 irradiance)
 {
     float nv = saturate(dot(surface.normal, view));
@@ -1731,7 +1732,7 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float3 bounce = 0;
     if (probeFeedback > 0 && emissiveFactor.w > .5 && hit.metallic < 1)
     {
-        float3 cached = hybridSampleProbes(hit.position, hit.normal, true, coverage);
+        float3 cached = hybridSampleProbes(hit.position, hit.normal, true, coverage, hit.geometricNormal);
         // Conservative feedback limits accumulation through light leaks in the coarse grid.
         bounce = probeFeedback * probeDiffuseRadiance(hit, -ray, cached);
     }
@@ -1946,7 +1947,8 @@ float hybridProbeVisibility(float normalizedDistance, float2 moments)
     return bound * bound;
 }
 
-float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out float coverage)
+float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out float coverage,
+                          float3 geometricNormal)
 {
     coverage = 0;
     uint3 dimensions = probeDimensionsFirst.xyz;
@@ -1960,6 +1962,10 @@ float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out 
     // Fade from the outermost probe centers to the boundary of the volume.
     float boundaryWeight = smoothstep(0, .5, edgeDistance);
 
+    // Bias only the visibility lookup. Interpolation and facing use the
+    // unshifted surface so probes do not swim with the view.
+    float bias = .05 * min(probeSpacingDistance.x, min(probeSpacingDistance.y, probeSpacingDistance.z));
+    float3 visibilityPosition = position + geometricNormal * bias;
     float3 grid = clamp(rel, 0, float3(dimensions - 1));
     uint3 first = uint3(floor(grid));
     float3 fraction = frac(grid);
@@ -1983,8 +1989,11 @@ float3 hybridSampleProbes(float3 position, float3 normal, bool skyLighting, out 
         float3 toSurface = position - center;
         float distance = length(toSurface);
         float3 direction = distance > 1e-5 ? toSurface / distance : normal;
-        float2 moments = hybridProbeDirection(probe, direction, true).xy;
-        float visibility = hybridProbeVisibility(distance / probeSpacingDistance.w, moments);
+        float3 toVisibilityPoint = visibilityPosition - center;
+        float visibilityDistance = length(toVisibilityPoint);
+        float3 momentDirection = visibilityDistance > 1e-5 ? toVisibilityPoint / visibilityDistance : direction;
+        float2 moments = hybridProbeDirection(probe, momentDirection, true).xy;
+        float visibility = hybridProbeVisibility(visibilityDistance / probeSpacingDistance.w, moments);
         float facing = saturate(.5 - .5 * dot(normal, direction));
         total += irradiance.rgb * (weight * visibility * facing);
         // Keep blocked probes in the denominator so normalization cannot restore leaked light.
@@ -2051,7 +2060,7 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
     {
         float coverage;
         float3 reflected = reflect(-v, n);
-        float3 incident = hybridSampleProbes(primary.position, reflected, true, coverage);
+        float3 incident = hybridSampleProbes(primary.position, reflected, true, coverage, primary.geometricNormal);
         if (coverage >= .999)
         {
             filteredByProbe = true;
@@ -2131,8 +2140,13 @@ float3 hybridReflectionLobe(SurfaceData primary, uint header, float3 v, float3 n
             sum = radiance * reflectance;
             break;
         }
-        float k = pow(rough + 1, 2) / 8;
-        float g = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
+        // Height-correlated Smith GGX, consistent with the roughness used to
+        // sample the half vector. The direct-light Schlick fit overmasks
+        // smooth reflection lobes at glancing angles.
+        float a2 = a * a;
+        float maskV = nl * sqrt(a2 + (1 - a2) * nv * nv);
+        float maskL = nv * sqrt(a2 + (1 - a2) * nl * nl);
+        float g = 2 * nv * nl / max(maskV + maskL, 1e-6);
         if (aniso)
             g = 4 * nv * nl * anisotropicVisibility(v, ray, n, primary.anisotropy.xyz, anisotropyRoughness);
         sum += radiance * reflectance * (g * vh / (nv * nh));
@@ -2460,7 +2474,7 @@ float4 DeferredPSMain(SkyOut input)
             {
                 float coverage;
                 bool probeSky = cameraForward.w > .5 && loadInstance(header).world._m22 > .5;
-                float3 probeLight = hybridSampleProbes(s.position, s.normal, probeSky, coverage);
+                float3 probeLight = hybridSampleProbes(s.position, s.normal, probeSky, coverage, s.geometricNormal);
                 probeDiffuse = probeLight * s.base * (1 - s.metallic)
                                * clearcoatTransmission(s, viewDirection);
                 if (probeSky)
