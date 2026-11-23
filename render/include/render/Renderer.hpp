@@ -89,6 +89,7 @@ namespace render
         std::optional<Bounds>      GetSceneInstanceBounds(const std::string& instanceId) const;
         // Replace the raster scene; assets are shared by ID. Empty lists clear geometry.
         // See Scene.hpp for coordinate spaces and matrix layout. DrawFrame submits the update.
+        void SetSceneOutlines(const SceneOutlines& outlines);
         void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances);
         // Bounds in selected asset-local space; absent for unreferenced/inactive IDs.
         std::optional<Bounds> GetSceneAssetBounds(const std::string& assetId) const;

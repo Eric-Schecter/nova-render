@@ -75,7 +75,7 @@ set(nova_ui_enabled false)
 if(NOVA_ENABLE_UI)
     set(nova_ui_enabled true)
 endif()
-set(nova_sdk_features static-scenes camera-viewport scene-picking material-slots scene-bvh-shadows
+set(nova_sdk_features static-scenes camera-viewport scene-picking scene-outlines material-slots scene-bvh-shadows
     raster-fog environment-clear scene-lights material-alpha weighted-oit model-deferred hybrid-rendering
     scene-animation scene-animation-queries scene-animation-shadows single-animation-shadows)
 if(NOVA_ENABLE_UI)

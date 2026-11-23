@@ -307,6 +307,55 @@ namespace render::detail
             if (SingleSkinnedShadows() && (singleBVHModel != model || singleBVHRevision != model->revision))
                 RebuildRasterInstances();
         }
+        SceneOutlines sceneOutlines;
+        void SetSceneOutlines(const SceneOutlines& outlines)
+        {
+            if (sceneOutlines.hoveredId == outlines.hoveredId &&
+                sceneOutlines.selectedIds == outlines.selectedIds &&
+                sceneOutlines.hovered.color == outlines.hovered.color &&
+                sceneOutlines.selected.color == outlines.selected.color &&
+                sceneOutlines.hovered.width == outlines.hovered.width &&
+                sceneOutlines.selected.width == outlines.selected.width)
+                return;
+            for (const auto* style : {&outlines.hovered, &outlines.selected})
+            {
+                if (style->width < 1 || style->width > 4)
+                    throw std::invalid_argument("Outline width must be 1–4 pixels");
+                for (float color : style->color)
+                    if (!std::isfinite(color) || color < 0 || color > 1)
+                        throw std::invalid_argument("Outline colors must be in [0, 1]");
+            }
+            sceneOutlines = outlines;
+            ApplySceneOutlines();
+            rasterAA.Reset();
+        }
+        bool HasSceneOutlines() const
+        {
+            return scene.active && !scene.drawInstanceIds.empty() &&
+                   (!sceneOutlines.hoveredId.empty() || !sceneOutlines.selectedIds.empty());
+        }
+        void ApplySceneOutlines()
+        {
+            if (!scene.active || rasterGlobals >= rasterInstances.size())
+                return;
+            auto& globals = rasterInstances[rasterGlobals];
+            for (size_t i = 0; i < scene.drawInstanceIds.size(); ++i)
+            {
+                const auto& id = scene.drawInstanceIds[i];
+                const auto& selected = sceneOutlines.selectedIds;
+                rasterInstances[i].normal[13] =
+                  std::find(selected.begin(), selected.end(), id) != selected.end() ? 2.f :
+                  id == sceneOutlines.hoveredId ? 1.f : 0.f;
+            }
+            const auto styles = {&sceneOutlines.hovered, &sceneOutlines.selected};
+            unsigned at = 0;
+            for (const auto* style : styles)
+            {
+                std::copy(style->color.begin(), style->color.end(), globals.normal + at);
+                globals.normal[at + 3] = HasSceneOutlines() ? float(style->width) : 0.f;
+                at += 4;
+            }
+        }
         void RebuildRasterInstances(bool resetProbes = true)
         {
             if (resetProbes)
@@ -419,6 +468,7 @@ namespace render::detail
                     ++count;
                 }
             rasterInstances[rasterGlobals].uv[1] = float(count);
+            ApplySceneOutlines();
         }
         SceneShadowSettings shadowSettings;
         void                SetShadows(const SceneShadowSettings& value)
@@ -871,7 +921,8 @@ namespace render::detail
             {
                 if (
                   rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled
-                  && modelRaster.pipeline == RasterPipeline::Forward && !HasRasterTransparency(model.get()))
+                  && modelRaster.pipeline == RasterPipeline::Forward && !HasRasterTransparency(model.get())
+                  && !HasSceneOutlines())
                     return nullptr;
                 if (modelRaster.pipeline == RasterPipeline::Deferred && (!model || aaTriangle))
                     throw std::runtime_error("Deferred requires a model or scene");
@@ -912,14 +963,17 @@ namespace render::detail
                     : 0.f;
                 rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
                 rasterAA.current.irradiance[8][3] = float(modelRaster.view);
-                const auto& image                 = rasterAA.Render(
+                auto effectiveRaster = modelRaster;
+                if (HasSceneOutlines())
+                    effectiveRaster.pipeline = RasterPipeline::Deferred;
+                const auto& image = rasterAA.Render(
                   width,
                   height,
                   rasterSettings,
                   ClearColorForTarget(true),
                   aaTriangle,
                   postSettings,
-                  modelRaster,
+                  effectiveRaster,
                   HasRasterTransparency(model.get()),
                   mode == RenderMode::Hybrid,
                   mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,

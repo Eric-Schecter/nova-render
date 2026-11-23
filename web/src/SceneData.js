@@ -292,6 +292,7 @@ export class SceneData {
     )
       this.model = { ...this.model, jointMatrices: palette }
     this.players = players
+    const drawInstanceIds = []
     const instances = new Float32Array(
         input.length * 48 + (this.model.materialRecords?.length || 0),
       ),
@@ -351,6 +352,7 @@ export class SceneData {
           }
           if (!values.every((v) => Number.isFinite(v) && Number.isFinite(Math.fround(v))))
             throw Error('Instance transform overflows float32')
+          drawInstanceIds.push(i.id)
           instances.set(values, index * 48)
           index++
         }
@@ -366,6 +368,7 @@ export class SceneData {
     this.inputSnapshot = structuredClone(input)
     this.pickInstances = effective.map((i) => ({ ...i, world: Array.from(i.world, Math.fround) }))
     this.sourceSpaces = spaces
+    this.drawInstanceIds = drawInstanceIds
     this.instanceBytes = instances
     this.draws = draws
     return { model: this.model, ...this.shadowInstances() }

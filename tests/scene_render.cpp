@@ -102,7 +102,40 @@ int main(int argc, char** argv)
             inspect();
         }
         const auto normalized = inspect();
+        render::SceneOutlines outlines;
+        outlines.hoveredId = "upper";
+        outlines.hovered = {{0, 1, 0}, 2};
+        outlines.selectedIds = {"lower"};
+        outlines.selected = {{1, 0, 1}, 2};
+        backend->SetSceneOutlines(outlines);
+        draw();
+        const auto outlined = inspect();
+        size_t green = 0, magenta = 0;
+        for (uint32_t y = 0; y < outlined.height; ++y)
+            for (uint32_t x = 0; x < outlined.width; ++x)
+            {
+                const auto* pixel = &outlined.pixels[(size_t(y) * outlined.width + x) * 4];
+                if (pixel[1] > 200 && pixel[0] < 30 && pixel[2] < 30)
+                {
+                    if (x >= outlined.width / 2 || y >= outlined.height / 2)
+                        throw std::runtime_error("Hover outline leaked to another instance");
+                    ++green;
+                }
+                if (pixel[0] > 200 && pixel[1] < 30 && pixel[2] > 200)
+                {
+                    if (x >= outlined.width / 2 || y < outlined.height / 2)
+                        throw std::runtime_error("Selection outline leaked to another instance");
+                    ++magenta;
+                }
+            }
+        if (green < 20 || magenta < 20)
+            throw std::runtime_error("Missing independent instance outlines");
+        backend->SetSceneOutlines({});
+        draw();
         std::filesystem::create_directories("validation/scene");
+        stbi_write_png(
+          ("validation/scene/" + api + "-outlines.png").c_str(),
+          outlined.width, outlined.height, 4, outlined.pixels.data(), outlined.width * 4);
         stbi_write_png(
           ("validation/scene/" + api + "-instances.png").c_str(),
           normalized.width,

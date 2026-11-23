@@ -375,6 +375,7 @@ struct VertexOut
     nointerpolation float winding : TEXCOORD5;
     float2 uv1 : TEXCOORD6;
     nointerpolation float3 dielectric : TEXCOORD7;
+    nointerpolation uint outline : TEXCOORD9;
 };
 // Point and line primitives use camera-facing quads in the shared raster pipeline.
 float4 expandRasterPrimitive(float4 clip, float4 other, float2 primitive)
@@ -425,6 +426,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     if (lightDirection.w > .5 && lightDirection.w < 1.5)
         o.winding = determinant((float3x3)loadInstance(instanceId).world) < 0 ? -1 : 1;
     o.instanceIndex   = materialIndex;
+    o.outline = scene ? uint(loadInstance(instanceId).normalMatrix._m13) : 0;
     o.position        = mul(viewProjection, v.position);
     if (v.uv1.z > .5)
     {
@@ -1362,7 +1364,10 @@ ModelGBuffer GBufferPSMain(VertexOut input, bool face : SV_IsFrontFace)
     // index fits exactly in half precision even when the scene has many instances.
     float slotDistance = lightDirection.w > .5 && irradiance[3].w > .5
                          ? irradiance[3].w - 1 - float(input.instanceIndex) : 0;
-    o.positionAO       = float4(high, depth - high, (uint(s.alphaInfo) & 8u) ? -1 : s.ao, slotDistance);
+    // Preserve the sign used by unlit materials and the underlying AO value.
+    float taggedAO = ((uint(s.alphaInfo) & 8u) ? -1 : 1)
+                     * ((uint(s.alphaInfo) & 8u ? 1 : s.ao) + 2 * input.outline);
+    o.positionAO = float4(high, depth - high, taggedAO, slotDistance);
     o.emissiveMetallic = float4(s.emissive, s.metallic);
     o.clearcoat        = float4(octEncode(s.coatNormal), s.clearcoat);
     o.specularMap = s.specularMap;
@@ -2395,6 +2400,29 @@ float4 DeferredPSMain(SkyOut input)
         discard;
     }
     float4      normals = gNormals.Load(pixel), pos = gPosition.Load(pixel), emission = gEmission.Load(pixel);
+    uint outline = uint(abs(pos.z) * .5);
+    if (outline != 0 && debug == 0 && irradiance[3].w > .5 &&
+        (irradiance[1].w <= .5 || loadInstance(uint(irradiance[3].w) - 1).world._m30 == 0))
+    {
+        InstanceData globals = loadInstance(uint(irradiance[3].w) - 1);
+        uint styleIndex = outline - 1;
+        float4 style = float4(globals.normalMatrix[0][styleIndex], globals.normalMatrix[1][styleIndex],
+                             globals.normalMatrix[2][styleIndex], globals.normalMatrix[3][styleIndex]);
+        const int2 neighbors[8] = {
+          int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1),
+          int2(-1, -1), int2(1, -1), int2(-1, 1), int2(1, 1)};
+        uint width, height;
+        gPosition.GetDimensions(width, height);
+        [loop] for (int step = 1; step <= int(style.w); ++step)
+        {
+            [unroll] for (int i = 0; i < 8; ++i)
+            {
+                int2 tap = clamp(pixel.xy + step * neighbors[i], int2(0, 0), int2(width, height) - 1);
+                if (uint(abs(gPosition.Load(int3(tap, 0)).z) * .5) != outline)
+                    return float4(style.rgb, 1);
+            }
+        }
+    }
     SurfaceData s;
     s.useVisibility = irradiance[1].w > .5 ? 1 : 0;
     s.visibility0 = s.visibility1 = s.visibility2 = s.visibility3 = 1;
@@ -2414,7 +2442,7 @@ float4 DeferredPSMain(SkyOut input)
     if (irradiance[1].z > .5 && irradiance[3].w > .5)
         upsampleRasterShadows(s, pixel.xy, pos.x + pos.y, s.geometricNormal);
     s.position        = surfacePosition(input, pos.xy);
-    s.ao              = max(0, pos.z);
+    s.ao              = pos.z < 0 ? 0 : pos.z - 2 * outline;
     s.alphaInfo       = pos.z < 0 ? 8 : 0;
     if (debug == 0 && s.alphaInfo > 0)
         return shadeSurface(s);

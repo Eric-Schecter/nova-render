@@ -111,6 +111,10 @@ class Renderer {
           reason: `Hybrid requires ${deferredLimits.maxColorAttachmentBytesPerSample} color bytes per sample and ${deferredLimits.maxSampledTexturesPerShaderStage} sampled textures per shader stage.`,
         }
   }
+  #sceneOutlines = null
+  #hasSceneOutlines() {
+    return !!this.#sceneModel && !!this.#sceneOutlines
+  }
   #rasterSettings = defaultRasterSettings()
   getRasterSettings() {
     this.#check()
@@ -291,7 +295,7 @@ class Renderer {
             return owner.#useHalfShadows()
           },
           get raster() {
-            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass()
+            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass() || owner.#hasSceneOutlines()
               ? { ...owner.#rasterSettings, pipeline: 'deferred' }
               : owner.#rasterSettings
           },
@@ -308,6 +312,11 @@ class Renderer {
           prepare: async (w, h, settings, frames) => {
             if (this.#model)
               this.#model.setHybrid(this.#renderMode === 'hybrid' ? this.#hybrid : null)
+            if (this.#model)
+              this.#model.setOutlines(
+                this.#hasSceneOutlines() ? this.#sceneOutlines : null,
+                this.#sceneData.drawInstanceIds,
+              )
             if (this.#model)
               await this.#model.prepareAA(
                 this.getViewCamera(),
@@ -438,6 +447,30 @@ class Renderer {
   getSceneAssetBounds(id) {
     this.#check()
     return this.#sceneModel ? this.#sceneData.assetBounds(id) : null
+  }
+  /** Set visible scene outlines. Empty IDs clear the overlay. */
+  setSceneOutlines({ hoveredId = '', selectedIds = [], hovered = {}, selected = {} } = {}) {
+    this.#check()
+    const style = (value, fallback) => {
+      const { color = fallback, width = 2 } = value
+      if (!Array.isArray(color) || color.length !== 3 ||
+          color.some((v) => !Number.isFinite(v) || v < 0 || v > 1) ||
+          !Number.isInteger(width) || width < 1 || width > 4)
+        throw Error('Outline color must be in [0, 1] and width must be 1–4 pixels')
+      return { color: [...color], width }
+    }
+    if (typeof hoveredId !== 'string' || !Array.isArray(selectedIds) ||
+        selectedIds.some((id) => typeof id !== 'string'))
+      throw Error('Outline IDs must be strings')
+    const next = hoveredId || selectedIds.length ? {
+      hoveredId, selectedIds: [...selectedIds],
+      hovered: style(hovered, [.35, .65, 1]), selected: style(selected, [1, .42, .08]),
+    } : null
+    if (next && !canUseDeferred(this.#device.limits))
+      throw Error('Scene outlines require deferred WebGPU support')
+    if (JSON.stringify(next) === JSON.stringify(this.#sceneOutlines)) return
+    this.#sceneOutlines = next
+    this.#resetAA()
   }
   /** Replace static raster instances. Assets: {id,url,sourceSpace?}; instances: {id,assetId,world?}. */
   setScene(assets, instances) {
@@ -1351,6 +1384,7 @@ class Renderer {
           this.#postSettings.enabled ||
           this.#rasterSettings.pipeline === 'deferred' ||
           this.#requiresDeferredMaterialPass() ||
+          this.#hasSceneOutlines() ||
           this.#useHalfShadows() ||
           this.#hasRasterTransparency())
       )

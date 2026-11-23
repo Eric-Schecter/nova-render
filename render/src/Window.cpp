@@ -307,6 +307,10 @@ namespace render
     {
         return impl_->renderer->PickScene(ray);
     }
+    void Window::SetSceneOutlines(const SceneOutlines& outlines)
+    {
+        impl_->renderer->SetSceneOutlines(outlines);
+    }
     void Window::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
     {
         impl_->renderer->SetScene(assets, instances);

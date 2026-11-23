@@ -369,7 +369,10 @@ float4 hybridAOResolve(int2 pixel)
                 mass += w;
             }
         if (mass > .001)
-            position.z *= saturate(weighted / mass);
+        {
+            float tag = 2 * floor(abs(position.z) * .5);
+            position.z = sign(position.z) * (tag + (abs(position.z) - tag) * saturate(weighted / mass));
+        }
         return position;
     }
 

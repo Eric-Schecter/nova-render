@@ -169,6 +169,7 @@ namespace render::detail
         }
         std::vector<InstanceData> gpu;
         std::vector<SceneDraw>    groups;
+        drawInstanceIds.clear();
         for (const auto& [id, m] : meshes)
         {
             uint32_t start = uint32_t(gpu.size());
@@ -225,6 +226,7 @@ namespace render::detail
                         if (!std::isfinite(value))
                             throw std::invalid_argument("Instance normal transform overflows float32");
                     gpu.push_back(v);
+                    drawInstanceIds.push_back(i.id);
                 }
             groups.push_back({m.first, m.count, start, uint32_t(gpu.size()) - start});
         }

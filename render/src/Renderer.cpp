@@ -226,6 +226,10 @@ namespace render
     {
         return impl_->backend->scene.Pick(ray);
     }
+    void Renderer::SetSceneOutlines(const SceneOutlines& outlines)
+    {
+        impl_->backend->SetSceneOutlines(outlines);
+    }
     void Renderer::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
     {
         impl_->backend->SetScene(assets, instances);

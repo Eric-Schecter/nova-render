@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -45,5 +46,19 @@ namespace render
         // Maps the selected asset space into world space. Identity by default.
         Matrix4 world{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         bool    castShadow = true;
+    };
+
+    struct OutlineStyle
+    {
+        std::array<float, 3> color{};
+        uint32_t width = 2;
+    };
+
+    struct SceneOutlines
+    {
+        std::string hoveredId;
+        std::vector<std::string> selectedIds;
+        OutlineStyle hovered{{.35f, .65f, 1.f}, 2};
+        OutlineStyle selected{{1.f, .42f, .08f}, 2};
     };
 } // namespace render

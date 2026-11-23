@@ -51,6 +51,28 @@ const bounds = renderer.getSceneAssetBounds('chair')
 await renderer.drawFrame()
 ```
 
+## Visible outlines
+
+`Window::SetSceneOutlines` and `Renderer::SetSceneOutlines` take a `render::SceneOutlines`. Web uses `renderer.setSceneOutlines(options)`.
+
+```js
+renderer.setSceneOutlines({
+  hoveredId: 'car-2',
+  selectedIds: ['car-1'],
+  hovered: { color: [0.35, 0.65, 1], width: 2 },
+  selected: { color: [1, 0.42, 0.08], width: 2 },
+})
+```
+
+```cpp
+render::SceneOutlines outlines;
+outlines.hoveredId = "car-2";
+outlines.selectedIds = {"car-1"};
+window.SetSceneOutlines(outlines);
+```
+
+An empty options object clears both states. IDs refer to committed scene instances, with selection taking precedence over hover. Colors are linear RGB in [0, 1] and widths are 1–4 render pixels. The outline follows the visible silhouette from the depth-tested G-buffer, including holes and occlusion boundaries. Adjacent selected pixels share a single outline group. The pass covers opaque and alpha-masked geometry in the Raster and Hybrid final views. Alpha-blended objects and ray-traced views have no outline. Raster uses the deferred pipeline while an outline is active.
+
 ## Updates and limits
 
 Transform-only updates reuse packed geometry and textures, uploading instance data at draw time. Adding or removing referenced assets rebuilds the packed asset set. IDs plus paths/URLs identify cached assets; changing file contents at the same path is not a hot-reload operation. Validation and asset-loading failures preserve the previous scene. TAA history resets when the scene is updated, preventing stale transforms from ghosting.

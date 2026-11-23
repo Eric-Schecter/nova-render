@@ -34,6 +34,7 @@ namespace render::detail
         std::vector<InstanceData>        shadowRecords;
         void                   AppendAnimatedShadows(std::vector<InstanceData>& records, size_t shadowBase) const;
         std::vector<SceneDraw> draws;
+        std::vector<std::string> drawInstanceIds;
         // Asset topology changes rebuild packed resources; transform updates only replace instance data.
         std::optional<SceneHit> Pick(const Ray& ray) const;
         std::optional<Bounds>   AssetBounds(const std::string& id) const;
