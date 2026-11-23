@@ -66,6 +66,16 @@ The prototype expanded the search to a 3 × 3 neighborhood around the nearest ha
 
 Metal and Vulkan (MoltenVK) both passed the native Hybrid tests and rendered the fixed and moving cameras with the prototype. On each backend, the moving capture differed from the baseline by more than eight 8-bit codes in at least one channel at 19 of 330,912 pixels. Production retains the original 2 × 2 upsample and full-resolution trace for rejected pixels. The diagnostic captures, including the upstream fixed view, baseline, prototype and moving comparison, are under `build/validation/pica-fallback`.
 
+### Half-resolution reflection tracing after SAH
+
+The same Pica Pica camera path was tested on Chrome WebGPU on Apple M4. The diagnostic serialized GPU passes and rotated the order of the half-resolution reflection variants at each of the 16 camera positions. All variants used the same SAH scene and one reflection ray per sampled pixel. They affected only the half-resolution pass and held the full-resolution fallback, AO, contact shadows and reflection denoiser fixed.
+
+The full half-resolution pass took 7.75 ms at the median. Keeping the closest hit, barycentric coordinates and hit distance but replacing its lighting with a diagnostic color saved a paired median of 2.68 ms. Suppressing the closest-hit BVH search in that diagnostic saved a further 0.67 ms. Skipping point, spot and directional shadow evaluation at the reflected hits alone saved 2.18 ms against the full pass and visibly changed the reflections. These deltas include shader execution and scheduling effects and are not additive. Hit shading, particularly its shadow visibility queries, was the larger cost on this fixture.
+
+The shared shader now skips punctual-light work at a secondary hit when both its base shading normal and any active clearcoat normal face away from the light. Those lobes contribute zero direct radiance. The check applies to directional, point and spot lights and retains the separate area-light path. The pass median changed from 7.75 to 7.35 ms, with a paired median saving of 0.31 ms. The alternative BVH-bound test and material-texture shortcuts did not improve the paired median and were discarded.
+
+With the full production shaders, synchronized Chrome moving-frame medians were 59.45 → 56.80 ms and 63.95 → 52.50 ms in the two test orders. Still medians were 65.45 → 62.70 ms and 52.10 → 62.10 ms. The spread in whole-frame timings limits the attributable speedup to the directly measured reflection-pass result. The fixed and last moving captures were pixel-identical before and after on WebGPU, Metal and Vulkan (MoltenVK), compared within each backend. Captures and timing data are under `build/validation/pica-half-trace`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

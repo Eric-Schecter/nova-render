@@ -1119,7 +1119,12 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
                                                                        : step(source.uv.y, cone);
                 }
             }
-            if (attenuation <= 0)
+            // A secondary hit facing away from the light receives no direct
+            // radiance. Avoid launching its shadow rays. The clearcoat lobe
+            // can still face the light because it has a separate normal.
+            if (attenuation <= 0 ||
+                (secondaryLighting && dot(n, l) <= 0 &&
+                 (s.clearcoat.x <= 0 || dot(s.coatNormal, l) <= 0)))
                 continue;
             float visibility = 1;
             if (s.useVisibility)
@@ -1132,7 +1137,8 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
               s, v, l, source.baseColor.rgb * source.baseColor.w * attenuation * visibility, coatTransmission);
         }
     }
-    else
+    else if (!secondaryLighting || dot(n, lightDirection.xyz) > 0 ||
+             (s.clearcoat.x > 0 && dot(s.coatNormal, lightDirection.xyz) > 0))
         color = surfaceDirectLight(
           s,
           v,
