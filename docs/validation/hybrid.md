@@ -106,6 +106,12 @@ At the first camera and sky intensity 0.22, diagnostic shader variants separatel
 
 Extending the volume to the rear wall while retaining the old vertical placement yielded 20.0 at the far wall and 6.8 on the floor. Starting the lowest probe layer above the floor, with bounds `(-350, 1, -100)` to `(335, 151, 200)`, gives 21.4/23.5 and holds the sunlit floor at 216.2 (reference 214.5). This is a Sponza comparison setting. Blue-noise shadows, four shadow samples, AO, reflection filters and exposure were held fixed. Metal and Vulkan captures match each other exactly, and the mean absolute RGB difference from WebGPU is 0.18/255. The comparison and component sheet are under `build/validation/sponza-reference`.
 
+### Sponza rear-wall coverage and floor fill
+
+The floor at world Y ≈ −0.75 sits below the volume's lower bound of Y = 1. The coverage output confirms zero probe coverage there, so the previous floor improvement came from restored sky diffuse. Raising and sliding the volume left that pixel patch at display luma 23.5. Increasing the substitute sky intensity to 0.45 raises it to 45.7 (reference 47.3), but the far wall also rises to 39.6 with minimum X at −350.
+
+With minimum X at −500 and maximum unchanged at `(335, 151, 200)`, the far-wall sample falls to 13.2 (reference 14.2) while the floor stays at 45.7. The sunlit floor changes from 216.2 to 217.6 (reference 214.5). The left wall reaches 18.9 (reference 18.8), and the near right pillar increases to 39.6 (reference 26.0). The candidate is a first-camera comparison setting. The light, exposure, shadow samples, AO and reflection reconstruction are shared with the preceding comparison. Captures are under `build/validation/sponza-reference`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
