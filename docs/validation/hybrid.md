@@ -100,6 +100,12 @@ The first camera retains the local probe volume, sun direction, sunlight intensi
 
 Reducing substitute sky intensity from 0.40 to 0.22 at the same camera reduced the far-wall display luma from 53.8 to 32.1 (reference 14.2). The sunlit patch stayed at 215.7 (reference 214.5). The shaded floor sample dropped from 19.5 to 13.2 (reference 47.3), so the lower sky level addresses the far wall but also exposes the remaining uneven indirect fill. The comparison uses a scene-local setting. Screenshots and the raw penumbra crop are under `build/validation/sponza-reference`.
 
+### Sponza diffuse-light decomposition
+
+At the first camera and sky intensity 0.22, diagnostic shader variants separately present residual sky diffuse, probe diffuse and probe coverage. The far-wall patch is outside the local volume near `(-301, 43, 48)`. Its reference/baseline display luma is 14.2/32.1, and the isolated sky diffuse is 32.1. The shaded floor patch near `(208, -0.75, -44)` is fully covered. Its reference/baseline luma is 47.3/13.2, with isolated probe diffuse 13.1. Bypassing the probe visibility weight for a diagnostic left that floor value at 13.1. The displayed component values are tone-mapped and should not be added.
+
+Extending the volume to the rear wall while retaining the old vertical placement yielded 20.0 at the far wall and 6.8 on the floor. Starting the lowest probe layer above the floor, with bounds `(-350, 1, -100)` to `(335, 151, 200)`, gives 21.4/23.5 and holds the sunlit floor at 216.2 (reference 214.5). This is a Sponza comparison setting. Blue-noise shadows, four shadow samples, AO, reflection filters and exposure were held fixed. Metal and Vulkan captures match each other exactly, and the mean absolute RGB difference from WebGPU is 0.18/255. The comparison and component sheet are under `build/validation/sponza-reference`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
