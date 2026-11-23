@@ -112,6 +112,8 @@ The floor at world Y ≈ −0.75 sits below the volume's lower bound of Y = 1. T
 
 With minimum X at −500 and maximum unchanged at `(335, 151, 200)`, the far-wall sample falls to 13.2 (reference 14.2) while the floor stays at 45.7. The sunlit floor changes from 216.2 to 217.6 (reference 214.5). The left wall reaches 18.9 (reference 18.8), and the near right pillar increases to 39.6 (reference 26.0). The candidate is a first-camera comparison setting. The light, exposure, shadow samples, AO and reflection reconstruction are shared with the preceding comparison. Captures are under `build/validation/sponza-reference`.
 
+Extending the near end of this volume from X = 335 to X = 395 lowers the near right-pillar sample from 39.6 to 30.5, compared with 26.0 in the reference. The far wall shifts from 13.2 to 14.9, and the shaded floor remains at 45.7. The left wall remains near its reference at 18.7 versus 18.8. Sideways translations of the original volume failed to improve the pillar without substantially altering the wall or pillar brightness. The revised bounds are `(-500, 1, -100)` to `(395, 151, 200)`. The floor fill still looks cooler than the reference. This comparison covers angle 1.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
