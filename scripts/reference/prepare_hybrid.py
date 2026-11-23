@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package pinned opaque reference meshes; no renderer/importer behavior is changed."""
+"""Package pinned reference meshes for rendering comparisons."""
 import argparse
 import base64
 import hashlib
@@ -23,8 +23,10 @@ def prepare(archive, output, profile):
     if digest.hexdigest() != manifest['archive']['sha256']:
         raise ValueError('Reference archive SHA-256 differs from the pinned manifest')
     output.mkdir(parents=True, exist_ok=True)
+    pica_reference = profile == 'pica-reference'
+    names = ('scene',) if pica_reference else NAMES
     with zipfile.ZipFile(archive) as source:
-        for name in NAMES:
+        for name in names:
             document = json.loads(source.read('meshes/' + name + '.gltf'))
             if len(document['buffers']) != 1 or document.get('skins') or document.get('animations'):
                 raise ValueError('Expected a single-buffer static reference mesh')
@@ -53,7 +55,15 @@ def prepare(archive, output, profile):
                 image['bufferView'] = len(document.setdefault('bufferViews', []))
                 image['mimeType'] = mime
                 document['bufferViews'].append(view)
-            if profile == 'reference-import':
+            if pica_reference:
+                # The pinned ray_traced_scene.cpp applies a 2.2 power to
+                # constant albedo. fetch_albedo bypasses that value for textures.
+                for material in document.get('materials', []):
+                    pbr = material.get('pbrMetallicRoughness', {})
+                    factor = pbr.get('baseColorFactor')
+                    if factor is not None and 'baseColorTexture' not in pbr:
+                        pbr['baseColorFactor'] = [c ** 2.2 for c in factor[:3]] + factor[3:]
+            if profile in ('reference-import', 'pica-reference'):
                 # Pinned dwSampleFramework Mesh::load reads aiMesh vertices and
                 # never traverses node transforms. Reproduce that convention
                 # here, while leaving Nova's conforming glTF importer intact.
@@ -67,7 +77,8 @@ def prepare(archive, output, profile):
             glb = (struct.pack('<III', 0x46546C67, 2, 28 + len(encoded) + len(binary))
                    + struct.pack('<II', len(encoded), 0x4E4F534A) + encoded
                    + struct.pack('<II', len(binary), 0x004E4942) + binary)
-            (output / (name + '.glb')).write_bytes(glb)
+            filename = 'pica-pica.glb' if pica_reference else name + '.glb'
+            (output / filename).write_bytes(glb)
             print(name, 'profile=' + profile, len(glb), 'bytes')
 
 
@@ -75,7 +86,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, default=ROOT / 'build/reference/hybrid-rendering/HybridRendering_1.1.0.zip')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/reference/hybrid-rendering/models')
-    parser.add_argument('--profile', choices=('gltf', 'reference-import'), default='reference-import')
+    parser.add_argument('--profile', choices=('gltf', 'reference-import', 'pica-reference'), default='reference-import')
     parser.add_argument('--download', action='store_true', help='Fetch the pinned archive when absent')
     args = parser.parse_args()
     if args.download and not args.archive.exists():

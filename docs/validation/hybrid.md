@@ -20,6 +20,14 @@ The console trim sample averaged RGB (41, 43, 44) before the fix and (53, 56, 57
 
 The transport profile in `nova_hybrid_reference_test` accepts a fixture with a `transport` section containing the environment path, intensity, and shadow softness. Metal and Vulkan rendered identical 766 × 432 Pica captures. Both native Hybrid tests, the Chrome WebGPU Hybrid regression and the DDGI probe kernel test passed.
 
+## Pica Pica reference material color
+
+The source GLTF floor material, `Plastic_Blue`, has no base color image and declares a linear RGB factor of approximately (0.1651, 0.3419, 0.4020). The pinned Assimp importer forwards that factor as the diffuse color. The reference's `dwSampleFramework/extras/ray_traced_scene.cpp` applies a power of 2.2 during GPU material upload, and its ray hit and G-buffer shaders both read that constant. The converted linear values are (0.0190, 0.0943, 0.1347). Nova's ordinary glTF importer keeps the original linear factor.
+
+Generate the compatible comparison asset with `python3 scripts/reference/prepare_hybrid.py --profile pica-reference --output build/validation/pica-floor-color`. This profile reproduces the reference mesh assembly and converts untextured RGB factors. Alpha, textures and binary geometry were verified identical to the previous Pica comparison asset. The direct-light implementations both use cosine-weighted GGX and Lambert. The reference additionally multiplies its diffuse base by (1 − F0) before applying Fresnel, a 4% reduction for this dielectric, which does not account for the chromatic difference.
+
+The 32-frame fixed WebGPU captures retain the same camera, ACES exposure, directional light, and radius 0.1 with four shadow samples. The floor sample averaged (57, 98, 113) before and (12, 39, 54) with the material conversion alone at the previous sky intensity of 0.18. At sky intensity 1.0, with the same HDR asset and background intensity, it averages (23, 68, 98) versus (33, 74, 103) in the reference screenshot. The higher sky intensity also raises fill inside shadows, so it is a separate comparison setting. Metal and Vulkan also rendered the converted asset under both sky strengths. Captures are in `build/validation/pica-floor-color` and `build/validation/pica-transport/{metal,vulkan}`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
