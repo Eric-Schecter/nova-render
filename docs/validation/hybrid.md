@@ -50,6 +50,14 @@ At the same pose on Chrome WebGPU, four-neighbor display-luma deviation fell fro
 
 Synchronized median still/moving frame times in milliseconds changed from 177.8/174.1 to 104.3/104.2 on Metal, 170.6/179.6 to 101.1/108.2 on Vulkan/MoltenVK, and 310.1/311.9 to 227.9/233.8 on Chrome WebGPU. The comparisons include the full Hybrid frame, not only AO and reflections. The Web captures and motion-to-settled comparisons are under `build/validation/pica-reflection-filter`. The native transport fixture accepts `halfResolutionReflections`, `reflectionDenoising` and `reflectionSVGF`, and native captures are under `build/validation/pica-transport/{metal,vulkan}`.
 
+## Pica Pica WebGPU BVH performance
+
+With the same 16-frame X translation and AO, shadow, reflection and temporal settings, diagnostic variants separated the main costs. The initial median-split run measured 258.5 ms per moving frame. Freezing only probe updates measured 260.8 ms, within run variation; the update dispatch measured about 4 ms by timestamp. Replacing material shading for half-resolution reflection hits measured 217.0 ms, then skipping the half-resolution traversal measured 196.3 ms. Independently skipping the full-resolution fallback measured 222.9 ms. Each diagnostic affects output, so timings are differential whole-frame estimates and should not be added. Concurrent render-pass timestamp windows can overlap.
+
+An experimental default-texture shortcut preserved images but regressed moving frame time from 256.1 to 283.5 ms, so it was reverted. Using existing binned SAH with the same shader packages changed median still/moving times from 247.6/251.7 to 45.9/53.7 ms. The production automatic selection measured 49.4/54.7 ms, and disabling DDGI on that path measured 47.8/54.1 ms. BVH construction dropped from 1,415 to 184 ms in the measured browser run, and node count fell from 32,767 to 26,905.
+
+Web scene assets now automatically select SAH for static meshes with at least 32,768 triangle records. Both explicit strategies remain supported. AO, reflection denoising, fallback rays and lighting settings remain identical. At 766 × 431 the maximum channel difference was one 8-bit code value in both Web captures. Native Metal and Vulkan retain their existing BVH path. Timing JSON and screenshots are in `build/validation/pica-reflection-perf`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

@@ -145,7 +145,7 @@ export class SceneData {
       )
         throw Error('Invalid scene asset ID, URL, sourceSpace or BVH strategy')
       paths.set(a.id, a.url)
-      strategies.set(a.id, a.bvh ?? 'median')
+      strategies.set(a.id, a.bvh)
       variants.set(a.id, a.materialVariant)
     }
     const ids = new Set(),
@@ -180,7 +180,13 @@ export class SceneData {
             ? previous.data
             : await loadGLB(paths.get(id), { pack: false, materialVariant: variants.get(id) })
         if (data.animation && !data.skinInputs) createAnimationPlayer(data)
-        const strategy = strategies.get(id)
+        // Larger static meshes amortize SAH construction and benefit from
+        // tighter bounds across the AO, shadow and reflection passes.
+        const strategy =
+          strategies.get(id) ??
+          (!data.animation && data.vertices.length / modelTriangleFloats >= 32_768
+            ? 'sah'
+            : 'median')
         next.set(id, {
           data,
           strategy,

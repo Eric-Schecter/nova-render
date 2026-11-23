@@ -18,6 +18,7 @@ try {
     async ({ root, fixtures, native }) => {
       const { SceneData } = await import(root + '/web/src/SceneData.js')
       const { PickMesh } = await import(root + '/web/src/Picking.js')
+      const { modelTriangleFloats, modelVertexFloats } = await import(root + '/web/src/ModelVertex.js')
       const { createRenderer } = await import(root + '/web/src/Nova.js')
       const require = (v, m) => {
           if (!v) throw Error(m)
@@ -59,7 +60,7 @@ try {
         }
         results.push(hit)
       }
-      const data = { vertices: new Float32Array(4096 * 48) }
+      const data = { vertices: new Float32Array(4096 * modelTriangleFloats) }
       for (let i = 0; i < 4096; i++)
         for (let j = 0; j < 3; j++)
           data.vertices.set(
@@ -68,7 +69,7 @@ try {
               [i * 3 + 1, 0, 0],
               [i * 3, 1, 0],
             ][j],
-            i * 48 + j * 16,
+            i * modelTriangleFloats + j * modelVertexFloats,
           )
       const begin = performance.now(),
         mesh = new PickMesh(data)
