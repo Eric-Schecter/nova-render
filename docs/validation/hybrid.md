@@ -88,6 +88,12 @@ Angle 1 uses a directional light transformed from the reference's Z rotation of 
 
 At 640 × 360, the reference, validation baseline, direct sun alone, and sun with sky intensity 0.40 and DDGI gave mean display luma of 214.5/163.2/214.2/215.6 on the sunlit floor, 18.8/99.1/0.0/18.6 on the left wall, and 26.0/142.5/0.0/12.0 on the right column. These are 11 × 11 pixel patches on a 0–255 scale. At sky intensity 0.15 the right column measured 43.1 with DDGI disabled and 8.8 with it enabled. Increasing the sky alone does not match both sides of the arcade. The next comparison should isolate probe coverage and the local diffuse bounce. Captures are under `build/validation/sponza-reference`.
 
+### Sponza probe coverage
+
+At sky intensity 0.40 after 48 frames, the WebGPU comparison held the camera, direct light, AO and reflections fixed. Geometry picking located the left wall at approximately `(232, 15, 172)` and the right pillar at `(274, 40, -73)`. With GI disabled the left/right patches averaged display luma 43.3/92.9. Per-pixel bounce left these patches unchanged to one decimal place. The scene-wide DDGI grid gave 15.3/11.1. A 5 × 4 × 5 volume covering both points, from `(135, -42, -100)` to `(335, 108, 200)`, gave 8.6/27.6 versus the reference's 18.8/26.0. The sunlit floor stayed near 215.7. The right pillar is sensitive to the probe layout. The localized grid also darkens the left wall and changes the fill deeper in the hall, so it remains a comparison setting. The tested WebGPU fixed-camera frame medians were 89.7 ms for the scene-wide grid, 116.3 ms for the tighter grid and 123.1 ms for per-pixel bounce. These single-session timings include all passes and should not be used as isolated probe cost estimates.
+
+The native transport fixture accepts optional `probeBounds`, `probeGI`, `probeSkyLighting`, `diffuseBounce`, and `frames` to reproduce these comparisons. The screenshot triptych is `build/validation/sponza-reference/probe-comparison.png`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

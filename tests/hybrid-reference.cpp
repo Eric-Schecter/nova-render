@@ -202,10 +202,20 @@ int main(int argc, char** argv)
                     profile.halfResolutionReflections = options.value("halfResolutionReflections", false);
                     profile.reflectionDenoising = options.value("reflectionDenoising", false);
                     profile.reflectionSVGF = options.value("reflectionSVGF", false);
-                    profile.probeGI = profile.probeSkyLighting = profile.probeMultiBounce = true;
+                    profile.probeGI = options.value("probeGI", true);
+                    profile.probeSkyLighting = options.value("probeSkyLighting", true);
+                    profile.probeMultiBounce = true;
+                    profile.diffuseBounce = options.value("diffuseBounce", false);
+                    if (options.contains("probeBounds"))
+                    {
+                        const auto& bounds = options["probeBounds"];
+                        profile.probeBounds = HybridProbeBounds{
+                          bounds.at("minimum").get<std::array<float, 3>>(),
+                          bounds.at("maximum").get<std::array<float, 3>>()};
+                    }
                     profile.probeSharedRays = profile.probeOctahedral = true;
                     backend->SetHybrid(profile);
-                    for (int frame = 0; frame < 32; ++frame)
+                    for (int frame = 0; frame < options.value("frames", 32); ++frame)
                         gpuFrame();
                     captureGPU(name);
                     ++captures;
