@@ -94,6 +94,12 @@ At sky intensity 0.40 after 48 frames, the WebGPU comparison held the camera, di
 
 The native transport fixture accepts optional `probeBounds`, `probeGI`, `probeSkyLighting`, `diffuseBounce`, and `frames` to reproduce these comparisons. The screenshot triptych is `build/validation/sponza-reference/probe-comparison.png`.
 
+### Sponza penumbra and distance fill
+
+The first camera retains the local probe volume, sun direction, sunlight intensity, exposure, AO and reflection settings. With the coherent four-sample shadow pattern the visibility view shows large steps on the floor. Shadow SVGF alone changed the final image only slightly. Enabling per-pixel blue-noise rotation and radial jitter breaks up the bands. Use it with the existing shadow history and spatial filter. Both four and eight samples showed comparable final brightness in the measured patches. In the 48-frame Chrome sessions the synchronized medians were approximately 109 and 178 ms respectively, so the comparison setting uses four. The isolated shadow view displays raw visibility and does not include temporal or spatial filtering.
+
+Reducing substitute sky intensity from 0.40 to 0.22 at the same camera reduced the far-wall display luma from 53.8 to 32.1 (reference 14.2). The sunlit patch stayed at 215.7 (reference 214.5). The shaded floor sample dropped from 19.5 to 13.2 (reference 47.3), so the lower sky level addresses the far wall but also exposes the remaining uneven indirect fill. The comparison uses a scene-local setting. Screenshots and the raw penumbra crop are under `build/validation/sponza-reference`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

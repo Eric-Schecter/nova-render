@@ -194,6 +194,9 @@ int main(int argc, char** argv)
                     const auto& options = fixture["transport"];
                     HybridSettings profile;
                     profile.shadows = profile.shadowTemporalReconstruction = true;
+                    profile.shadowSVGF = options.value("shadowSVGF", false);
+                    profile.blueNoiseShadows = options.value("blueNoiseShadows", false);
+                    profile.shadowSamples = options.value("shadowSamples", profile.shadowSamples);
                     profile.ambientOcclusion = profile.temporalReconstruction = true;
                     profile.aoRadius = options.value("aoRadius", profile.aoRadius);
                     profile.aoStrength = options.value("aoStrength", profile.aoStrength);
