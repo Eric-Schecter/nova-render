@@ -191,11 +191,13 @@ int main(int argc, char** argv)
                 if (transport)
                 {
                     backend->SetRenderMode(RenderMode::Hybrid);
+                    const auto& options = fixture["transport"];
                     HybridSettings profile;
                     profile.shadows = profile.shadowTemporalReconstruction = true;
                     profile.ambientOcclusion = profile.temporalReconstruction = true;
-                    profile.aoRadius = fixture["transport"].value("aoRadius", profile.aoRadius);
-                    profile.aoStrength = fixture["transport"].value("aoStrength", profile.aoStrength);
+                    profile.aoRadius = options.value("aoRadius", profile.aoRadius);
+                    profile.aoStrength = options.value("aoStrength", profile.aoStrength);
+                    profile.halfResolutionAO = options.value("halfResolutionAO", false);
                     profile.reflections = true;
                     profile.probeGI = profile.probeSkyLighting = profile.probeMultiBounce = true;
                     profile.probeSharedRays = profile.probeOctahedral = true;
@@ -204,6 +206,31 @@ int main(int argc, char** argv)
                         gpuFrame();
                     captureGPU(name);
                     ++captures;
+                    if (options.value("motion", false))
+                    {
+                        auto timedFrames = [&](bool move) {
+                            std::array<double, 16> samples;
+                            for (size_t frame = 0; frame < samples.size(); ++frame)
+                            {
+                                if (move)
+                                {
+                                    auto moving = camera;
+                                    moving.position[0] += .045f * float(frame + 1);
+                                    backend->SetViewCamera(moving);
+                                }
+                                const auto start = std::chrono::steady_clock::now();
+                                gpuFrame();
+                                samples[frame] = std::chrono::duration<double, std::milli>(
+                                  std::chrono::steady_clock::now() - start).count();
+                            }
+                            std::sort(samples.begin(), samples.end());
+                            return (samples[7] + samples[8]) / 2;
+                        };
+                        const double still = timedFrames(false), moving = timedFrames(true);
+                        captureGPU(name + "-motion");
+                        ++captures;
+                        std::cout << name << ": still " << still << " ms, moving " << moving << " ms\n";
+                    }
                     continue;
                 }
                 if (bounceBaseline)

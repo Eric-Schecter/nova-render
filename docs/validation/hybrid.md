@@ -34,6 +34,14 @@ With the converted materials and sky intensity 1.0, the selected floor patch und
 
 For the reference comparison, set `aoRadius: 7` and `aoStrength: 1.2` while leaving the shared default values in place for other scenes. The native transport fixture accepts these settings, and the Web uses the same values through `setHybrid`. At the same camera, exposure, sky, directional shadow sampling and four AO samples, the selected shaded patch averaged (18, 37, 55) before and (8, 19, 30) after, against reference RGB (7, 16, 24). The illuminated floor changed by less than one 8-bit code value per channel. Wider AO produces more visible noise at this sample count than the reference's separately filtered AO. The Web comparison is under `build/validation/pica-shadow-fill`.
 
+## Pica Pica independent AO reconstruction
+
+The AO path traces four rays per sampled pixel. The optimized case uses one sampled pixel per 2×2 block, the independent motion/depth/normal/instance history, then a 3×3 bilateral filter and guided upsampling. The spatial result is used only for lighting; reprojection reads the unfiltered AO history. Both sides used AO radius 7, strength 1.2, and the same camera, exposure, sky, lights, reflections and shadow settings.
+
+On Apple M4, synchronized median still/moving frame times in milliseconds changed from 228.6/223.8 to 165.2/174.0 on Metal, 229.5/237.1 to 187.0/188.4 on Vulkan/MoltenVK, and 388.8/374.8 to 302.2/300.3 on Chrome WebGPU. Chrome's independent history without spatial filtering measured 295.5/300.1 ms. The runs were sequential, with 32 warm-up frames and 16 timed frames per segment. The moving camera translates 0.045 world units along X per frame.
+
+In the Web capture, the shadow-patch mean display luma was 17.60 before and 17.25 after. The mean absolute deviation from the four-neighbor luma average in the shadow interior was 2.05 before, 1.17 with independent history alone, and 1.11 with spatial filtering. At the final camera position, the console-region image error between the moving frame and the settled frame fell from 6.15 to 5.40/255. This includes sampling noise as well as temporal error. Captures are in `build/validation/pica-ao-filter` and `build/validation/pica-transport/{metal,vulkan}`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

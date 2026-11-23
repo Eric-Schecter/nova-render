@@ -301,8 +301,17 @@ namespace render::detail
                     guide->sources[6] = AAModelPosition;
                     guide->uniforms[2][3] = 2;
 
+                    // The raw trace texture is dead after reprojection. Reuse it
+                    // for display-only filtering, keeping the history unblurred.
+                    auto* spatial = add(30, AAHybridAO);
+                    spatial->sources[0] = currentAO;
+                    spatial->sources[1] = AAModelNormal;
+                    spatial->sources[4] = AARawMotion;
+                    spatial->sources[6] = AAModelPosition;
+                    spatial->uniforms[2][3] = 4;
+
                     auto* composite = add(30, AAAOCombinedPosition);
-                    composite->sources[0] = currentAO;
+                    composite->sources[0] = AAHybridAO;
                     composite->sources[1] = AAModelNormal;
                     composite->sources[2] = AAModelBase;
                     composite->sources[6] = AAModelPosition;

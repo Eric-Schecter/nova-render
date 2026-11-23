@@ -597,8 +597,15 @@ export async function createAntiAliasingView({
           guide.sources[4] = 18
           guide.sources[6] = 87
           guide.u[11] = 2
+          // Reuse the trace target after history resolve. Filter only the displayed AO.
+          const spatial = add(30, hybridAO)
+          spatial.sources[0] = currentAO
+          spatial.sources[1] = 86
+          spatial.sources[4] = 18
+          spatial.sources[6] = 87
+          spatial.u[11] = 4
           const composite = add(30, aoCombinedPosition)
-          composite.sources[0] = currentAO
+          composite.sources[0] = hybridAO
           composite.sources[1] = 86
           composite.sources[2] = 85
           composite.sources[6] = 87

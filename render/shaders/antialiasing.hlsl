@@ -298,12 +298,50 @@ bool reflectionVirtualHistory(int2 lowPixel, int2 extent, float4 depth, float en
     return true;
 }
 
+float4 hybridAOSpatial(int2 pixel, int2 last)
+{
+    float4 center = colorTex.Load(int3(pixel, 0));
+    if (center.a <= 0 || any(pixel < 1) || any(pixel > last))
+        return center;
+    int3 guide = int3(pixel * 2 - 1, 0);
+    float2 depth = areaTex.Load(guide).xy;
+    float3 normal = reflectionNormal(edgeTex.Load(guide).zw);
+    float instance = motionTex.Load(guide).w;
+    float sum = center.x * 4, mass = 4;
+    [unroll] for (int y = -1; y <= 1; ++y)
+        [unroll] for (int x = -1; x <= 1; ++x)
+        {
+            if (x == 0 && y == 0)
+                continue;
+            int2 tap = pixel + int2(x, y);
+            if (any(tap < 1) || any(tap > last))
+                continue;
+            float4 value = colorTex.Load(int3(tap, 0));
+            int3 neighbor = int3(tap * 2 - 1, 0);
+            float2 neighborDepth = areaTex.Load(neighbor).xy;
+            float dz = abs((depth.x - neighborDepth.x) + (depth.y - neighborDepth.y));
+            float alignment = dot(normal, reflectionNormal(edgeTex.Load(neighbor).zw));
+            if (value.a <= 0 || dz > .035 || alignment < .94
+                || abs(instance - motionTex.Load(neighbor).w) > .25)
+                continue;
+            // Preserve narrow contacts even on the same plane. Limit how far
+            // a tap can pull the estimate across a visibility discontinuity.
+            float weight = (x == 0 || y == 0 ? 2 : 1)
+                * exp2(-96 * dz - 32 * (1 - alignment) - 6 * abs(value.x - center.x));
+            sum += value.x * weight;
+            mass += weight;
+        }
+    return float4(sum / mass, center.yzw);
+}
+
 float4 hybridAOResolve(int2 pixel)
 {
     uint width, height;
     areaTex.GetDimensions(width, height);
     int2 extent = int2(width, height) - 2;
     int2 last = (extent + 1) / 2;
+    if (aa[2].w > 3.5)
+        return hybridAOSpatial(pixel, last);
     if (aa[2].w > 2.5)
     {
         float4 position = areaTex.Load(int3(pixel, 0));
