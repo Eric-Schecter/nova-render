@@ -112,6 +112,14 @@ int main(int argc, char** argv)
             instances[1].world[12] = 1;
             window.SetScene(assets, instances);
             window.DrawFrame();
+            render::ViewportGridSettings grid;
+            grid.enabled = true;
+            window.SetViewportGrid(grid);
+            window.DrawFrame();
+            if (!window.GetViewportGrid().enabled)
+                throw std::runtime_error("Viewport grid setting was not retained");
+            grid.enabled = false;
+            window.SetViewportGrid(grid);
             if (window.GetCapabilities().rayTracing)
             {
                 render::RayTracingSettings tracing;

@@ -2474,8 +2474,7 @@ void upsampleRasterShadows(inout SurfaceData s, int2 pixel, float logDepth, floa
     s.visibility2 = visibility2 / total;
     s.visibility3 = visibility3 / total;
 }
-float4 DeferredPSMain(SkyOut input)
-  : SV_Target
+float4 shadeDeferred(SkyOut input, bool gridVisible)
 {
     float3 backgroundDirection = environmentDirection(normalize(input.direction));
     float3 backgroundDX = ddx(backgroundDirection), backgroundDY = ddy(backgroundDirection);
@@ -2492,6 +2491,8 @@ float4 DeferredPSMain(SkyOut input)
                 backgroundTexture.SampleGrad(textureSampler, backgroundDirection, backgroundDX, backgroundDY).rgb
                 * skyParams.x),
               1);
+        if (gridVisible)
+            return float4(instances[uint(irradiance[3].w) - 1].normalMatrix.c0.yzw, 1);
         discard;
     }
     float4      normals = gNormals.Load(pixel), pos = gPosition.Load(pixel), emission = gEmission.Load(pixel);
@@ -2622,6 +2623,54 @@ float4 DeferredPSMain(SkyOut input)
         value = s.position / range * .5 + .5;
     return float4(diagnosticLinear(value), 1);
 }
+
+float gridCoverage(float2 planePosition, float spacing, float lineWidth)
+{
+    float2 cell = planePosition / spacing;
+    float2 footprint = max(fwidth(cell), 1e-7);
+    float2 distance = abs(frac(cell + .5) - .5) / footprint;
+    float2 lines = (1 - smoothstep(lineWidth * .5 - .5, lineWidth * .5 + .5, distance))
+                   * (1 - smoothstep(.15, .45, footprint));
+    return max(lines.x, lines.y);
+}
+float4 viewportGridOverlay(SkyOut input)
+{
+    if (irradiance[3].w < .5 || irradiance[8].w != 0
+        || (irradiance[1].w > .5 && (irradiance[5].w > .5 || loadInstance(uint(irradiance[3].w) - 1).world._m30 != 0)))
+        return 0;
+    uint header = uint(irradiance[3].w) - 1;
+    float4 grid = instances[header].normalMatrix.c1;
+    if (grid.x <= 0)
+        return 0;
+    float3 origin = cameraUp.w < 0 ? surfacePosition(input, 0) - cameraForward.xyz : eyeExposure.xyz;
+    float3 ray = cameraUp.w < 0 ? cameraForward.xyz : input.direction;
+    float depth = (grid.z - origin.y) / (abs(ray.y) > 1e-6 ? ray.y : 1e-6);
+    float3 planePosition = origin + ray * clamp(depth, 0, 1e6);
+    float4 minorColor = instances[header].normalMatrix.c2, majorColor = instances[header].normalMatrix.c3;
+    float distance = length(planePosition - origin);
+    float minor = gridCoverage(planePosition.xz, grid.x, grid.w) * minorColor.a
+                  * (1 - smoothstep(20, 80, distance / grid.x));
+    float major = gridCoverage(planePosition.xz, grid.y, grid.w) * majorColor.a
+                  * (1 - smoothstep(20, 80, distance / grid.y));
+    int3 pixel = int3(int2(input.position.xy), 0);
+    bool surface = gBase.Load(pixel).w > 0;
+    float2 sceneDepth = gPosition.Load(pixel).xy;
+    float4 clip = mul(viewProjection, float4(planePosition, 1));
+    if (depth <= 0 || abs(ray.y) <= 1e-6 || clip.w <= 0 || clip.z < 0 || clip.z > clip.w ||
+        (surface && depth > exp2(sceneDepth.x + sceneDepth.y) * 1.0001))
+        return 0;
+    if (max(minor, major) <= 0)
+        return 0;
+    return float4(minorColor.rgb * minor * (1 - major) + majorColor.rgb * major,
+                  minor * (1 - major) + major);
+}
+float4 DeferredPSMain(SkyOut input) : SV_Target
+{
+    float4 overlay = viewportGridOverlay(input);
+    float4 color = shadeDeferred(input, overlay.a > 0);
+    return float4(color.rgb * (1 - overlay.a) + overlay.rgb, color.a);
+}
+
 
 // TAA uses the previous camera and skin palette, not a screen-space history blend.
 [[vk::binding(15, 0)]] cbuffer PreviousScene : register(b15)

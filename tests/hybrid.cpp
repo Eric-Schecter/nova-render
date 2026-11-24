@@ -127,6 +127,17 @@ int main(int argc, char** argv)
         camera.pitch    = 25;
         camera.distance = 5.5f;
         backend->SetCamera(camera);
+        ViewportGridSettings grid;
+        grid.enabled = true;
+        grid.elevation = -.735f;
+        grid.minorSpacing = .25f;
+        grid.majorSpacing = 1;
+        const auto gridOff = capture("viewport-grid-off");
+        backend->SetViewportGrid(grid);
+        if (Difference(gridOff, capture("viewport-grid-on")) < .1)
+            throw std::runtime_error("Viewport grid did not change the scene");
+        grid.enabled = false;
+        backend->SetViewportGrid(grid);
         SceneLight sun;
         sun.id             = "sun";
         sun.direction      = {-1, 2, 1};

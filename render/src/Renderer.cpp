@@ -340,6 +340,14 @@ namespace render
     {
         return impl_->backend->GetFog();
     }
+    void Renderer::SetViewportGrid(const ViewportGridSettings& settings)
+    {
+        impl_->backend->SetViewportGrid(settings);
+    }
+    ViewportGridSettings Renderer::GetViewportGrid() const
+    {
+        return impl_->backend->GetViewportGrid();
+    }
     void Renderer::LoadEnvironment(const std::filesystem::path& path)
     {
         impl_->backend->LoadEnvironment(path.empty() ? nullptr : detail::LoadEnvironmentFile(path));

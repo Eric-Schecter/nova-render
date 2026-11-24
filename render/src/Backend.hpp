@@ -401,6 +401,17 @@ namespace render::detail
             rasterGlobals = uint32_t(rasterInstances.size());
             InstanceData globals{};
             globals.normal[0] = hybrid.halfResolutionShadows && hybrid.view == HybridView::Final ? 1.f : 0.f;
+            if (viewportGrid.enabled)
+            {
+                const auto background = ClearColorForTarget(true);
+                std::copy_n(background.begin(), 3, globals.normal + 1);
+                globals.normal[4] = viewportGrid.minorSpacing;
+                globals.normal[5] = viewportGrid.majorSpacing;
+                globals.normal[6] = viewportGrid.elevation;
+                globals.normal[7] = viewportGrid.lineWidth;
+                std::copy(viewportGrid.minorColor.begin(), viewportGrid.minorColor.end(), globals.normal + 8);
+                std::copy(viewportGrid.majorColor.begin(), viewportGrid.majorColor.end(), globals.normal + 12);
+            }
             std::copy(fogSettings.color.begin(), fogSettings.color.end(), globals.baseColor);
             globals.baseColor[3] = float(fogSettings.mode);
             globals.material[0]  = fogSettings.nearDistance;
@@ -509,6 +520,25 @@ namespace render::detail
             rasterAA.Reset();
         }
         FogSettings GetFog() const { return fogSettings; }
+        ViewportGridSettings viewportGrid;
+        void SetViewportGrid(const ViewportGridSettings& value)
+        {
+            const auto color = [](const auto& rgba) {
+                return std::all_of(rgba.begin(), rgba.end(), [](float c) { return std::isfinite(c) && c >= 0 && c <= 1; });
+            };
+            if (!std::isfinite(value.elevation) || !std::isfinite(value.minorSpacing)
+                || !std::isfinite(value.majorSpacing) || value.minorSpacing < .0001f
+                || value.majorSpacing < value.minorSpacing || !std::isfinite(value.lineWidth)
+                || value.lineWidth < .25f || value.lineWidth > 4 || !color(value.minorColor) || !color(value.majorColor))
+                throw std::invalid_argument("Invalid viewport grid settings");
+            if (value.enabled && (rasterSettings.method == AAMethod::MSAA || rasterSettings.split))
+                throw std::invalid_argument("Viewport grid does not support MSAA or AA split");
+            viewportGrid = value;
+            RebuildRasterInstances(false);
+            rasterAA.Reset();
+        }
+        ViewportGridSettings GetViewportGrid() const { return viewportGrid; }
+
         void ApplyRasterSettings(SceneUniforms& values) const { values.irradiance[3][3] = float(rasterGlobals + 1); }
         void ConfigureUI()
         {
@@ -645,6 +675,8 @@ namespace render::detail
         }
         void SetAntiAliasing(const AntiAliasingSettings& value)
         {
+            if (viewportGrid.enabled && (value.method == AAMethod::MSAA || value.split))
+                throw std::invalid_argument("Viewport grid does not support MSAA or AA split");
             if (
               mode == RenderMode::Hybrid
               && (value.method == AAMethod::MSAA || value.method == AAMethod::TAA || value.split))
@@ -804,7 +836,10 @@ namespace render::detail
         {
             if (clearColor != value)
                 rasterAA.Reset();
+            const bool refreshGrid = viewportGrid.enabled && clearColor != value;
             clearColor = value;
+            if (refreshGrid)
+                RebuildRasterInstances(false);
         }
         OrbitCamera GetCamera() const { return camera; }
         Camera      GetViewCamera() const { return viewCamera ? *viewCamera : CameraFromOrbit(camera); }
@@ -932,7 +967,7 @@ namespace render::detail
                 if (
                   rasterSettings.method == AAMethod::Off && !aaTriangle && !postSettings.enabled
                   && modelRaster.pipeline == RasterPipeline::Forward && !HasRasterTransparency(model.get())
-                  && !HasSceneOutlines())
+                  && !HasSceneOutlines() && !(viewportGrid.enabled && model))
                     return nullptr;
                 if (modelRaster.pipeline == RasterPipeline::Deferred && (!model || aaTriangle))
                     throw std::runtime_error("Deferred requires a model or scene");
@@ -973,6 +1008,9 @@ namespace render::detail
                     : 0.f;
                 rasterAA.current.irradiance[7][3] = modelRaster.debugRange;
                 rasterAA.current.irradiance[8][3] = float(modelRaster.view);
+                auto effectiveRaster = modelRaster;
+                if (viewportGrid.enabled && model && !aaTriangle)
+                    effectiveRaster.pipeline = RasterPipeline::Deferred;
                 const auto& image = rasterAA.Render(
                   width,
                   height,
@@ -980,7 +1018,7 @@ namespace render::detail
                   ClearColorForTarget(true),
                   aaTriangle,
                   postSettings,
-                  modelRaster,
+                  effectiveRaster,
                   HasRasterTransparency(model.get()),
                   mode == RenderMode::Hybrid,
                   mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,

@@ -428,6 +428,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       )
       probeEnabled = true
     }
+    let viewportGrid, gridBackground
     let outlines = null, outlinedIds = null, outlineMarks = new Map()
     function writeGlobals() {
       const record = new Float32Array(48)
@@ -460,6 +461,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         (hybrid?.blueNoiseShadows ? 2 : 0) |
         (hybrid?.blueNoiseReflections ? 4 : 0)
       record[16] = hybrid?.halfResolutionShadows && hybrid.view === 'final' ? 1 : 0
+      if (viewportGrid?.enabled) {
+        record.set(gridBackground.slice(0, 3).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4), 17)
+        record.set([viewportGrid.minorSpacing, viewportGrid.majorSpacing, viewportGrid.elevation, viewportGrid.lineWidth], 20)
+        record.set(viewportGrid.minorColor, 24)
+        record.set(viewportGrid.majorColor, 28)
+      }
+
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
       record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
@@ -1070,7 +1078,9 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         skyPipeline = nextPipeline
         environment = next
       },
-      setRasterSettings(fog, shadows, lights = null) {
+      setRasterSettings(fog, shadows, lights, grid, background) {
+        viewportGrid = grid
+        gridBackground = background
         if (rasterLights !== lights) {
           probes?.invalidate()
           rasterLights = lights

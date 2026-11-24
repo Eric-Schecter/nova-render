@@ -1,4 +1,5 @@
 #pragma once
+#include "ViewportGrid.hpp"
 #include "Animation.hpp"
 #include "AntiAliasing.hpp"
 #include "Atmosphere.hpp"
@@ -119,6 +120,8 @@ namespace render
         SceneShadowSettings     GetShadows() const;
         void                    SetFog(const FogSettings& settings);
         FogSettings             GetFog() const;
+        void SetViewportGrid(const ViewportGridSettings& settings);
+        ViewportGridSettings GetViewportGrid() const;
         void                    LoadEnvironment(const std::filesystem::path& path);
         void                    SetEnvironment(const EnvironmentSettings& settings);
         EnvironmentSettings     GetEnvironment() const;

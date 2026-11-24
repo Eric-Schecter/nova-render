@@ -451,6 +451,14 @@ namespace render
     {
         return impl_->renderer->GetFog();
     }
+    void Window::SetViewportGrid(const ViewportGridSettings& settings)
+    {
+        impl_->renderer->SetViewportGrid(settings);
+    }
+    ViewportGridSettings Window::GetViewportGrid() const
+    {
+        return impl_->renderer->GetViewportGrid();
+    }
     void Window::LoadEnvironment(const std::filesystem::path& path)
     {
         impl_->renderer->LoadEnvironment(path);

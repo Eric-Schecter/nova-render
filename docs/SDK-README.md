@@ -42,6 +42,20 @@ Use `SetViewCamera(Camera)` for complete pose/lens settings and `SetViewport(Vie
 
 See [camera and viewport](https://eric-schecter.github.io/nova-render/api/camera.html) for defaults, validation and examples.
 
+The editor viewport can draw a procedural XZ grid with depth occlusion. Load a model or scene and enable the grid on `render::Window` or `render::Renderer`.
+
+```cpp
+render::ViewportGridSettings grid;
+grid.enabled = true;
+grid.minorSpacing = 0.25f;
+grid.majorSpacing = 1.0f;
+window.SetViewportGrid(grid);
+```
+
+The Web equivalent is `renderer.setViewportGrid({ enabled: true, minorSpacing: 0.25, majorSpacing: 1 })`.
+The optional `elevation` sets the plane's world Y coordinate. `lineWidth` is measured in render pixels. `minorColor` and `majorColor` are linear RGBA. The grid is available in final raster and Hybrid model views, using Deferred with SMAA or other compatible AA settings. It fades subpixel lines and uses opaque/MASK scene depth. A separate ground mesh can still receive shadows. Keep editor snapping and grid visibility controls in the application.
+
+
 ## Scene picking
 
 ```cpp

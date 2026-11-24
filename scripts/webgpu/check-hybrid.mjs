@@ -132,6 +132,12 @@ try {
   await page.evaluate(() => r.setHybrid({ shadows: true }))
   const shadow = await capture('scene-shadow')
   if (diff(off, shadow) < 0.1) throw Error('Hybrid shadows missing')
+  await page.evaluate(() => r.setViewportGrid({ enabled: true, elevation: -0.735,
+    minorSpacing: 0.25, majorSpacing: 1 }))
+  if (diff(shadow, await capture('viewport-grid-on')) < 0.1)
+    throw Error('Viewport grid did not change the scene')
+  await page.evaluate(() => r.setViewportGrid({ enabled: false }))
+
   await page.evaluate(() => r.setHybrid({ halfResolutionShadows: true }))
   const compactShadow = await capture('shadow-compact')
   if (diff(shadow, compactShadow) > 0.8 || diff(off, compactShadow) < 0.1)

@@ -246,6 +246,8 @@ class Renderer {
       typeof next.textureFiltering !== 'boolean'
     )
       throw Error('Invalid AA settings')
+    if (this.#viewportGrid.enabled && (next.method === 'msaa' || next.split))
+      throw Error('Viewport grid does not support MSAA or AA split')
     if (this.#rasterSettings.pipeline === 'deferred' && next.method === 'msaa')
       throw Error('Deferred MSAA is not supported')
     if (this.#hasRasterTransparency() && (['msaa', 'taa'].includes(next.method) || next.split))
@@ -296,7 +298,7 @@ class Renderer {
             return owner.#useHalfShadows()
           },
           get raster() {
-            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass()
+            return owner.#useHalfShadows() || owner.#requiresDeferredMaterialPass() || owner.#hasViewportGrid()
               ? { ...owner.#rasterSettings, pipeline: 'deferred' }
               : owner.#rasterSettings
           },
@@ -412,6 +414,34 @@ class Renderer {
   #environmentURL
   #environmentSettings = defaultEnvironment()
   #fogSettings = copyFog()
+  #viewportGrid = {
+    enabled: false, elevation: 0, minorSpacing: 1, majorSpacing: 10, lineWidth: 1,
+    minorColor: [0.18, 0.18, 0.18, 0.32], majorColor: [0.24, 0.24, 0.24, 0.65],
+  }
+  setViewportGrid(value) {
+    this.#check()
+    const next = { ...this.#viewportGrid, ...value }
+    const color = (rgba) => Array.isArray(rgba) && rgba.length === 4 &&
+      rgba.every((c) => Number.isFinite(c) && c >= 0 && c <= 1)
+    if (typeof next.enabled !== 'boolean' ||
+        ![next.elevation, next.minorSpacing, next.majorSpacing, next.lineWidth].every(Number.isFinite) ||
+        next.minorSpacing < 0.0001 || next.majorSpacing < next.minorSpacing ||
+        next.lineWidth < 0.25 || next.lineWidth > 4 || !color(next.minorColor) || !color(next.majorColor))
+      throw Error('Invalid viewport grid settings')
+    if (next.enabled && (!canUseDeferred(this.#device.limits) || this.#aaSettings.method === 'msaa' || this.#aaSettings.split))
+      throw Error('Viewport grid requires deferred support and does not support MSAA or AA split')
+    this.#viewportGrid = { ...next, minorColor: [...next.minorColor], majorColor: [...next.majorColor] }
+    this.#resetAA()
+  }
+  getViewportGrid() {
+    this.#check()
+    const grid = this.#viewportGrid
+    return { ...grid, minorColor: [...grid.minorColor], majorColor: [...grid.majorColor] }
+  }
+  #hasViewportGrid() {
+    return this.#viewportGrid.enabled && !!this.#model
+  }
+
   #shadowSettings = copyShadows()
   #model
   #shaderDirectory
@@ -1343,7 +1373,8 @@ class Renderer {
   async #drawFrame() {
     this.#check()
     this.#refreshAnimationShadows()
-    this.#model?.setRasterSettings(this.#fogSettings, this.#shadowSettings, this.#lights)
+    this.#model?.setRasterSettings(this.#fogSettings, this.#shadowSettings, this.#lights,
+      this.#viewportGrid, this.#clear)
     if (!this.#pipeline && !this.#model) throw Error('Call setShader or loadModel first')
     const rect = this.#canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return 'skipped'
@@ -1391,6 +1422,7 @@ class Renderer {
           this.#rasterSettings.pipeline === 'deferred' ||
           this.#requiresDeferredMaterialPass() ||
           this.#hasSceneOutlines() ||
+          this.#hasViewportGrid() ||
           this.#useHalfShadows() ||
           this.#hasRasterTransparency())
       )
