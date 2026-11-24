@@ -83,7 +83,8 @@ const modelSpecularMapTarget = shadowAtrous + 1
 const modelFilmMapTarget = modelSpecularMapTarget + 1
 const hoverOutlineMask = modelFilmMapTarget + 1
 const selectedOutlineMask = hoverOutlineMask + 1
-const halfShadowRaw = selectedOutlineMask + 1
+const compactShadow = selectedOutlineMask + 1
+const halfShadowRaw = compactShadow + 4
 const lastTexture = halfShadowRaw + 3
 
 export async function createAntiAliasingView({
@@ -442,11 +443,20 @@ export async function createAntiAliasingView({
         if (denoiseReflections || temporalShadows || halfAO) add(-2, 18)
         add(-4, 85)
         if (external.hybrid || external.halfShadows) {
-          const shadow = add(-7, halfHybridShadows ? halfShadowRaw : 92)
-          shadow.sources.splice(0, 4, 85, 86, 87, 88)
-          shadow.sources[8] = modelClearcoatTarget
-          shadow.sources[10] = modelSpecularMapTarget
-          shadow.sources[11] = modelFilmMapTarget
+          const addShadows = (program, target) => {
+            const shadow = add(program, target)
+            shadow.sources.splice(0, 4, 85, 86, 87, 88)
+            shadow.sources[8] = modelClearcoatTarget
+            shadow.sources[10] = modelSpecularMapTarget
+            shadow.sources[11] = modelFilmMapTarget
+            return shadow
+          }
+          if (halfHybridShadows) {
+            const coarse = addShadows(-11, compactShadow)
+            coarse.u[4] *= 0.5
+            coarse.u[5] *= 0.5
+          }
+          addShadows(-7, halfHybridShadows ? halfShadowRaw : 92)
         }
         if (halfReflections) {
           const reflection = add(-8, hybridReflectionTarget)
@@ -533,6 +543,7 @@ export async function createAntiAliasingView({
             p.sources[0] = halfShadowRaw + i
             p.sources[1] = 86
             p.sources[2] = 85
+            p.sources[3] = compactShadow + i
             p.sources[6] = 87
             p.u[11] = 5
           }
@@ -785,7 +796,7 @@ export async function createAntiAliasingView({
         used.add(modelSpecularMapTarget)
         used.add(modelFilmMapTarget)
       }
-      if (p.program === 17 || p.program === -4 || p.program === -7) {
+      if (p.program === 17 || p.program === -4 || p.program === -7 || p.program === -11) {
         for (let a = 1; a < 4; a++) used.add(p.target + a)
       }
       if (p.program === 0 || p.program === 10 || p.program === 16) used.add(p.target + 1)
@@ -818,6 +829,11 @@ export async function createAntiAliasingView({
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
       if (i === hoverOutlineMask || i === selectedOutlineMask) [tw, th] = [w, h]
+      if (i >= compactShadow && i < halfShadowRaw) {
+        const scale = superSample ? 2 : 1
+        tw = Math.ceil((w * scale) / 2) + 2
+        th = Math.ceil((h * scale) / 2) + 2
+      }
       if ((i >= 85 && i < 96) || i === modelClearcoatTarget || i >= halfShadowRaw) {
         const scale = superSample ? 2 : 1
         tw = w * scale + 2
@@ -914,6 +930,7 @@ export async function createAntiAliasingView({
           (p.program <= 0 &&
             p.program !== -8 &&
             p.program !== -9 &&
+            p.program !== -11 &&
             !(p.program === -7 && external?.halfShadows)) ||
           p.program === 9 ||
           p.program === 10 ||
@@ -926,7 +943,7 @@ export async function createAntiAliasingView({
           length:
             p.program === -4
               ? 7
-              : p.program === 17 || p.program === -7
+              : p.program === 17 || p.program === -7 || p.program === -11
                 ? 4
                 : p.program === -6 || p.program === 0 || p.program === 10 || p.program === 16
                   ? 2
@@ -998,7 +1015,8 @@ export async function createAntiAliasingView({
               p.program === -6 ||
               p.program === -7 ||
               p.program === -8 ||
-              p.program === -9
+              p.program === -9 ||
+              p.program === -11
               ? p.sources.slice(0, 12).map((i) => textures[i])
               : null,
             p.outlineGroup || 0,

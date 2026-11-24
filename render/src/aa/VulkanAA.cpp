@@ -90,7 +90,7 @@ namespace render::detail
             VkDescriptorSetLayout            computeSetLayout{};
             VkPipeline                       pipelines[31]{}, sceneMS{}, shadowMS{}, hdrMS{}, ssrMS{};
             VkRenderPass scenePass{}, msPass{}, postPass{}, externalPass{}, externalMSPass{}, surfacePass{},
-              surfaceMSPass{}, externalLoadPass{}, oitPass{}, surfaceLoadPass{}, modelGBufferPass{};
+              surfaceMSPass{}, externalLoadPass{}, oitPass{}, surfaceLoadPass{}, compactShadowPass{}, modelGBufferPass{};
             VkSampler    linear{}, point{};
             Texture      textures[AAResourceCount], depth, depthMS, depthBaseline, depthShadow;
             Buffer       uniforms, readback;
@@ -729,6 +729,7 @@ namespace render::detail
                 oitPass          = MakePass(true, false, true, false, true, true);
                 externalMSPass   = MakePass(true, true, true);
                 surfaceLoadPass  = MakePass(true, false, false, true, true);
+                compactShadowPass = MakePass(false, false, false, true);
                 surfacePass      = MakePass(true, false, false, true);
                 modelGBufferPass = MakePass(true, false, false, false, false, false, true);
                 surfaceMSPass    = MakePass(true, true, false, true);
@@ -806,6 +807,7 @@ namespace render::detail
                       externalLoadPass,
                       oitPass,
                       surfaceLoadPass,
+                      compactShadowPass,
                       modelGBufferPass})
                     if (p)
                         api.vkDestroyRenderPass(device, p, nullptr);
@@ -898,7 +900,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if (((p.program <= 0 && p.program != -8 && p.program != -9) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                    if (((p.program <= 0 && p.program != -8 && p.program != -9 && p.program != -11) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                          || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         int k         = p.program == 9                                          ? 3
@@ -975,11 +977,11 @@ namespace render::detail
                         continue;
                     }
                     bool scene =
-                      ((p.program <= 0 && p.program != -8 && p.program != -9) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                      ((p.program <= 0 && p.program != -8 && p.program != -9 && p.program != -11) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                        || p.program == 22 || p.program == 23 || p.program == 27);
                     const bool nativeScene = p.program < 0;
                     const int                attachments = p.program == -4                                           ? 7
-                                                           : (p.program == 17 || p.program == 22 || p.program == -7) ? 4
+                                                           : (p.program == 17 || p.program == 22 || p.program == -7 || p.program == -11) ? 4
                                                            : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6)
                                                              ? 2
                                                              : 1;
@@ -1055,6 +1057,7 @@ namespace render::detail
                     VkRenderPass            renderPass = p.program == -4 ? modelGBufferPass
                                                          : (p.program == 17 || p.program == 22)
                                                            ? (p.multisampled ? surfaceMSPass : surfacePass)
+                                                         : p.program == -11 ? compactShadowPass
                                                          : p.program == -7 ? surfaceLoadPass
                                                          : p.program == -6 ? oitPass
                                                          : p.program == -5 ? externalLoadPass
@@ -1083,7 +1086,7 @@ namespace render::detail
                         clears[2].color = {{0, 0, 0, 1}};
                         clears[3].color = {{1000, 1000, 0, 1}};
                     }
-                    if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7)
+                    if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7 || p.program == -11)
                         for (int a = 0; a < attachments; ++a)
                             clears[a].color = {{0, 0, 0, 0}};
                     if (p.program == -6)
@@ -1112,7 +1115,7 @@ namespace render::detail
                         VkRect2D scissor{{0, 0}, {target.width, target.height}};
                         api.vkCmdSetViewport(command, 0, 1, &viewport);
                         api.vkCmdSetScissor(command, 0, 1, &scissor);
-                        if ((p.program == -5 || p.program == -6 || p.program == -7 || p.program == -8 || p.program == -9) && external.bindGBuffer)
+                        if ((p.program == -5 || p.program == -6 || p.program == -7 || p.program == -8 || p.program == -9 || p.program == -11) && external.bindGBuffer)
                         {
                             std::array<void*, 12> views{};
                             for (size_t i = 0; i < views.size(); i++)

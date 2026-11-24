@@ -1450,8 +1450,12 @@ struct HybridShadowTargets
 HybridShadowTargets HybridShadowPSMain(SkyOut input)
 {
     int3 pixel = int3(int2(input.position.xy), 0);
+#if defined(NOVA_COMPACT_SHADOWS)
+    {
+#else
     if (irradiance[1].z > .5)
     {
+#endif
         uint width, height;
         gBase.GetDimensions(width, height);
         int2 extent = int2(width, height) - 2;
@@ -1463,10 +1467,16 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
                           + ndc.y * cameraUp.w * cameraUp.xyz;
     }
     HybridShadowTargets output;
+#if !defined(NOVA_COMPACT_SHADOWS)
     bool hybridHalf = irradiance[1].w > .5 && irradiance[4].w > .5 && irradiance[3].w > .5 && irradiance[8].w == 0
                       && loadInstance(uint(irradiance[3].w) - 1).normalMatrix._m00 > .5;
-    if (hybridHalf && any((pixel.xy - 1) & 1) && gBase.Load(pixel).w > 0)
+    if (hybridHalf && gBase.Load(pixel).w > 0)
     {
+        if (all(((pixel.xy - 1) & 1) == 0))
+        {
+            output.slots0 = output.slots1 = output.slots2 = output.slots3 = -1;
+            return output;
+        }
         uint width, height;
         gBase.GetDimensions(width, height);
         int2 last = ((int2(width, height) - 1) / 2) * 2 - 1;
@@ -1488,6 +1498,7 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
             }
         // A thin receiver with no compatible coarse guide still gets all its rays.
     }
+#endif
     float        visibility[16];
     [unroll] for (uint j = 0; j < 16; j++) visibility[j] = 1;
     if (gBase.Load(pixel).w > 0 && (irradiance[4].w > .5 || irradiance[1].z > .5) && irradiance[3].w > .5)

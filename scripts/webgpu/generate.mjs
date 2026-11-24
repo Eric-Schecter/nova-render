@@ -158,6 +158,7 @@ for (const [name, vertexEntry, fragmentEntry] of [
   ['model-hybrid-ao', 'SkyVSMain', 'HybridAOPSMain'],
   ['model-hybrid-reflection', 'SkyVSMain', 'HybridReflectionPSMain'],
   ['model-hybrid-shadow', 'SkyVSMain', 'HybridShadowPSMain'],
+  ['model-hybrid-shadow-compact', 'SkyVSMain', 'HybridShadowPSMain'],
   ['sky-aa', 'SkyVSMain', 'SkyPSMain'],
   ['model-motion', 'MotionVSMain', 'MotionPSMain'],
   ['sky-motion', 'SkyVSMain', 'SkyMotionPSMain'],
@@ -167,10 +168,13 @@ for (const [name, vertexEntry, fragmentEntry] of [
   const source =
     name === 'model-deferred-half'
       ? '#define NOVA_HALF_REFLECTIONS 1\n' + rasterSource
-      : rasterSource
+      : name === 'model-hybrid-shadow-compact'
+        ? '#define NOVA_COMPACT_SHADOWS 1\n' + rasterSource
+        : rasterSource
   const shaderSource = [
     'model-hybrid-ao',
     'model-hybrid-shadow',
+    'model-hybrid-shadow-compact',
     'model-hybrid-reflection',
   ].includes(name)
     ? blueNoiseSource + source

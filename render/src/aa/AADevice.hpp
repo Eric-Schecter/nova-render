@@ -102,6 +102,10 @@ namespace render::detail
         AAModelFilmMap,
         AAHoverOutlineMask,
         AASelectedOutlineMask,
+        AACompactShadow0,
+        AACompactShadow1,
+        AACompactShadow2,
+        AACompactShadow3,
         AAHalfShadowRaw0,
         AAHalfShadowRaw1,
         AAHalfShadowRaw2,
@@ -138,7 +142,7 @@ namespace render::detail
     {
         if (id == AAHoverOutlineMask || id == AASelectedOutlineMask)
             return {w, h, 1};
-        if ((id >= AAHybridAO && id < AAAOCombinedPosition) || (id >= AAReflectionMomentsA && id <= AAReflectionAtrous))
+        if ((id >= AACompactShadow0 && id <= AACompactShadow3) || (id >= AAHybridAO && id < AAAOCombinedPosition) || (id >= AAReflectionMomentsA && id <= AAReflectionAtrous))
             return {(w * (ss ? 2u : 1u) + 1) / 2 + 2, (h * (ss ? 2u : 1u) + 1) / 2 + 2, 1};
         if (id >= AAShadowHistoryA)
             return {w * (ss ? 2u : 1u) + 2, h * (ss ? 2u : 1u) + 2, 1};
@@ -209,7 +213,7 @@ namespace render::detail
             used[p.target] = true;
             for (int source : p.sources)
                 used[source] = true;
-            if (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7)
+            if (p.program == 17 || p.program == 22 || p.program == -4 || p.program == -7 || p.program == -11)
             {
                 for (int i = 1; i < 4; i++)
                     used[p.target + i] = true;

@@ -169,6 +169,12 @@ int main(int argc, char** argv)
         auto sceneShadow = capture("scene-shadow");
         if (Difference(sceneOff, sceneShadow) < .1)
             throw std::runtime_error("Missing Hybrid shadows");
+        settings.halfResolutionShadows = true;
+        backend->SetHybrid(settings);
+        const auto compactShadow = capture("shadow-compact");
+        if (Difference(sceneShadow, compactShadow) > .8 || Difference(sceneOff, compactShadow) < .1)
+            throw std::runtime_error("Compact shadows lost five-light visibility");
+        settings.halfResolutionShadows = false;
         settings.blueNoiseShadows = true;
         backend->SetHybrid(settings);
         if (Difference(sceneShadow, capture("shadow-blue-hard")) > .01)

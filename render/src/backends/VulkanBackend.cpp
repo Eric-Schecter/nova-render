@@ -107,7 +107,7 @@ namespace render::detail
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
-          aaDeferred{}, aaOit{}, aaHybridShadow{}, aaHybridReflection{}, aaHybridAO{}, aaProbeReflection{}, aaDeferredHalf{};
+          aaDeferred{}, aaOit{}, aaHybridShadow{}, aaCompactShadow{}, aaHybridReflection{}, aaHybridAO{}, aaProbeReflection{}, aaDeferredHalf{};
         VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
@@ -132,7 +132,8 @@ namespace render::detail
                 stages[1].pName = "DeferredPSMain";
             if (std::string(name) == "model-oit")
                 stages[1].pName = "OITPSMain";
-            if (std::string(name) == "model-hybrid-shadow")
+            const bool compactShadow = std::string_view(name) == "model-hybrid-shadow-compact";
+            if (std::string_view(name) == "model-hybrid-shadow" || compactShadow)
                 stages[1].pName = "HybridShadowPSMain";
             const bool reflectionPass = std::string_view(name) == "model-hybrid-reflection"
                                      || std::string_view(name) == "model-probe-reflection";
@@ -154,7 +155,7 @@ namespace render::detail
             VkPipelineMultisampleStateCreateInfo sampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
             sampling.rasterizationSamples = samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
             VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-            depth.depthTestEnable  = !reflectionPass && !aoPass;
+            depth.depthTestEnable  = !reflectionPass && !aoPass && !compactShadow;
             depth.depthWriteEnable = !sky && std::string(name) != "model-oit";
             depth.depthCompareOp   = sky                                ? VK_COMPARE_OP_ALWAYS
                                      : std::string(name) == "model-oit" ? VK_COMPARE_OP_LESS_OR_EQUAL
@@ -174,7 +175,7 @@ namespace render::detail
                 }
             VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
             blend.attachmentCount                     = std::string(name) == "model-gbuffer"         ? 7
-                                                        : std::string(name) == "model-hybrid-shadow" ? 4
+                                                        : (std::string_view(name) == "model-hybrid-shadow" || compactShadow) ? 4
                                                         : std::string(name) == "model-oit"           ? 2
                                                                                                      : 1;
             blend.pAttachments    = color;
@@ -372,6 +373,7 @@ namespace render::detail
             }
             vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
         }
+        bool hybridGBufferBound = false;
         void CreateRasterAADevice() override
         {
             AAExternalScene external;
@@ -395,9 +397,12 @@ namespace render::detail
                     w.descriptorType      = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                     w.pImageInfo          = &images[i];
                 }
-                // The reflection pass shares the shadow pass inputs.
-                if (program != -8 && program != -9)
+                // Hybrid visibility passes share the same inputs. A descriptor set
+                // must be updated before its first use in this command buffer.
+                const bool shared = activeSet == hybridGBufferSet;
+                if (!shared || !hybridGBufferBound)
                     vkUpdateDescriptorSets(device, uint32_t(views.size()), writes, 0, nullptr);
+                hybridGBufferBound |= shared;
                 vkCmdBindDescriptorSets(
                   reinterpret_cast<VkCommandBuffer>(command),
                   VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -409,6 +414,7 @@ namespace render::detail
                   nullptr);
             };
             external.beforeScene = [this](void* command) {
+                hybridGBufferBound = false;
                 // Update the shared descriptors before any pass binds the model set.
                 if (!aaTriangle)
                     PrepareRasterAAInputs();
@@ -427,7 +433,7 @@ namespace render::detail
                     return;
                 }
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &modelSet, 0, nullptr);
-                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9 || pass.program == -11)
                 {
                     const bool probeReflection = pass.program == -8 && probeFrame && environment
                                                  && hybrid.probeSkyLighting
@@ -437,6 +443,7 @@ namespace render::detail
                     auto&      active = probeReflection      ? aaProbeReflection
                                         : pass.program == -9 ? aaHybridAO
                                    : pass.program == -8 ? aaHybridReflection
+                                        : pass.program == -11 ? aaCompactShadow
                                         : pass.program == -7 ? aaHybridShadow
                                         : probes && half     ? probeDeferredHalf
                                         : probes             ? probeDeferredPipeline
@@ -450,6 +457,7 @@ namespace render::detail
                           probeReflection      ? "model-probe-reflection"
                           : pass.program == -9 ? "model-hybrid-ao"
                           : pass.program == -8 ? "model-hybrid-reflection"
+                          : pass.program == -11 ? "model-hybrid-shadow-compact"
                           : pass.program == -7 ? "model-hybrid-shadow"
                           : probes && half     ? "model-probe-deferred-half"
                           : probes             ? "model-probe-deferred"
@@ -519,6 +527,7 @@ namespace render::detail
             release(aaDeferredHalf);
             release(probeDeferredHalf);
             release(aaHybridShadow);
+            release(aaCompactShadow);
             release(aaHybridReflection);
             release(aaHybridAO);
             release(aaProbeReflection);

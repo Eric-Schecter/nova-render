@@ -374,7 +374,7 @@ namespace render::detail
 
 #include "D3D12Model.inc"
         ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaHybridAO, aaDeferredHalf;
+          aaDeferred, aaOit, aaHybridShadow, aaCompactShadow, aaHybridReflection, aaHybridAO, aaDeferredHalf;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
         ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
@@ -395,7 +395,8 @@ namespace render::detail
             blend.BlendOp = blend.BlendOpAlpha     = D3D12_BLEND_OP_ADD;
             blend.LogicOp                          = D3D12_LOGIC_OP_NOOP;
             blend.RenderTargetWriteMask            = D3D12_COLOR_WRITE_ENABLE_ALL;
-            info.DepthStencilState.DepthEnable     = std::string_view(file) != "model-hybrid-reflection" && std::string_view(file) != "model-hybrid-ao";
+            info.DepthStencilState.DepthEnable     = std::string_view(file) != "model-hybrid-reflection" && std::string_view(file) != "model-hybrid-ao"
+                                                     && std::string_view(file) != "model-hybrid-shadow-compact";
             info.DepthStencilState.DepthWriteMask  = sky ? D3D12_DEPTH_WRITE_MASK_ZERO : D3D12_DEPTH_WRITE_MASK_ALL;
             info.DepthStencilState.DepthFunc       = sky ? D3D12_COMPARISON_FUNC_ALWAYS : D3D12_COMPARISON_FUNC_LESS;
             info.DepthStencilState.StencilReadMask = info.DepthStencilState.StencilWriteMask = 255;
@@ -406,7 +407,7 @@ namespace render::detail
             info.SampleMask                                                   = UINT_MAX;
             info.PrimitiveTopologyType                                        = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
             info.NumRenderTargets                                             = std::string(file) == "model-gbuffer" ? 7
-                                                                                : std::string(file) == "model-hybrid-shadow" ? 4
+                                                                                : (std::string_view(file) == "model-hybrid-shadow" || std::string_view(file) == "model-hybrid-shadow-compact") ? 4
                                                                                 : std::string(file) == "model-oit" ? 2
                                                                                                                    : 1;
             for (UINT i = 1; i < info.NumRenderTargets; i++)
@@ -504,18 +505,20 @@ namespace render::detail
                 cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9 || pass.program == -11)
                 {
                     const bool half = pass.program == -5 && pass.sources[9] != AADummy;
                     auto& active = pass.program == -9 ? aaHybridAO
                                    : pass.program == -8 ? aaHybridReflection
-                                   : pass.program == -7 ? aaHybridShadow
+                                   : pass.program == -11 ? aaCompactShadow
+                                        : pass.program == -7 ? aaHybridShadow
                                    : half               ? aaDeferredHalf
                                                         : aaDeferred;
                     if (!active)
                         active = AAPipeline(
                           pass.program == -9 ? "model-hybrid-ao"
                           : pass.program == -8 ? "model-hybrid-reflection"
+                          : pass.program == -11 ? "model-hybrid-shadow-compact"
                           : pass.program == -7 ? "model-hybrid-shadow"
                           : half               ? "model-deferred-half"
                                                : "model-deferred",

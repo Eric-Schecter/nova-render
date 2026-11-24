@@ -184,7 +184,7 @@ namespace render::detail
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
-                    if (((p.program <= 0 && p.program != -8 && p.program != -9) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
+                    if (((p.program <= 0 && p.program != -8 && p.program != -9 && p.program != -11) || p.program == 9 || p.program == 10 || p.program == 16 || p.program == 17
                          || p.program == 22 || p.program == 23 || p.program == 27))
                     {
                         const int k       = p.program == 9                                          ? 3
@@ -274,13 +274,13 @@ namespace render::detail
                         }
                         auto       d = [MTLRenderPassDescriptor renderPassDescriptor];
                         const bool scene =
-                                     ((p.program <= 0 && p.program != -8 && p.program != -9) || p.program == 9 || p.program == 10 || p.program == 16
+                                     ((p.program <= 0 && p.program != -8 && p.program != -9 && p.program != -11) || p.program == 9 || p.program == 10 || p.program == 16
                                       || p.program == 17 || p.program == 22 || p.program == 23 || p.program == 27),
                                    nativeScene = p.program < 0,
                                    baseline    = p.target == AABaseline || p.target == AARawBaseline;
                         const int attachments =
                           p.program == -4                                                             ? 7
-                          : (p.program == 17 || p.program == 22 || p.program == -7)                   ? 4
+                          : (p.program == 17 || p.program == 22 || p.program == -7 || p.program == -11)                   ? 4
                           : (p.program == 0 || p.program == 10 || p.program == 16 || p.program == -6) ? 2
                                                                                                       : 1;
                         for (int a = 0; a < attachments; a++)
@@ -305,7 +305,7 @@ namespace render::detail
                                 c.clearColor = MTLClearColorMake(0, 0, 0, 1);
                             if (p.program == 17 && a == 3)
                                 c.clearColor = MTLClearColorMake(1000, 1000, 0, 1);
-                            if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7)
+                            if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7 || p.program == -11)
                                 c.clearColor = MTLClearColorMake(0, 0, 0, 0);
                             if (p.program == -6)
                                 c.clearColor = a == 0 ? MTLClearColorMake(0, 0, 0, 0) : MTLClearColorMake(1, 1, 1, 1);
@@ -339,7 +339,7 @@ namespace render::detail
                             [e setCullMode:MTLCullModeNone];
                             [e setFrontFacingWinding:MTLWindingCounterClockwise];
                             [e setDepthStencilState:depthState];
-                            if ((p.program == -5 || p.program == -6 || p.program == -7 || p.program == -8 || p.program == -9) && external.bindGBuffer)
+                            if ((p.program == -5 || p.program == -6 || p.program == -7 || p.program == -8 || p.program == -9 || p.program == -11) && external.bindGBuffer)
                             {
                                 std::array<void*, 12> views{};
                                 for (size_t i = 0; i < views.size(); i++)

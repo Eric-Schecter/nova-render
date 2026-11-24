@@ -129,12 +129,22 @@ namespace render::detail
                 add(-4, AAModelBase);
                 if (hybrid)
                 {
-                    auto* shadow = add(-7, halfHybridShadows ? AAHalfShadowRaw0 : AAHybridShadow0);
-                    for (int i = 0; i < 4; i++)
-                        shadow->sources[i] = AAModelBase + i;
-                    shadow->sources[8] = AAModelClearcoat;
-                    shadow->sources[10] = AAModelSpecularMap;
-                    shadow->sources[11] = AAModelFilmMap;
+                    auto addShadows = [&](int program, int target) {
+                        auto* shadow = add(program, target);
+                        for (int i = 0; i < 4; ++i)
+                            shadow->sources[i] = AAModelBase + i;
+                        shadow->sources[8] = AAModelClearcoat;
+                        shadow->sources[10] = AAModelSpecularMap;
+                        shadow->sources[11] = AAModelFilmMap;
+                        return shadow;
+                    };
+                    if (halfHybridShadows)
+                    {
+                        auto* coarse = addShadows(-11, AACompactShadow0);
+                        coarse->uniforms[1][0] *= .5f;
+                        coarse->uniforms[1][1] *= .5f;
+                    }
+                    addShadows(-7, halfHybridShadows ? AAHalfShadowRaw0 : AAHybridShadow0);
                 }
                 if (halfReflections)
                 {
@@ -234,6 +244,7 @@ namespace render::detail
                         upsample->sources[0] = AAHalfShadowRaw0 + i;
                         upsample->sources[1] = AAModelNormal;
                         upsample->sources[2] = AAModelBase;
+                        upsample->sources[3] = AACompactShadow0 + i;
                         upsample->sources[6] = AAModelPosition;
                         upsample->uniforms[2][3] = 5;
                     }

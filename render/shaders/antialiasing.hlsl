@@ -339,6 +339,8 @@ float4 hybridShadowUpsample(int2 pixel)
     float4 current = colorTex.Load(int3(pixel, 0));
     if (current.x >= 0)
         return current;
+    if (all(((pixel - 1) & 1) == 0))
+        return historyTex.Load(int3((pixel + 1) / 2, 0));
     uint width, height;
     areaTex.GetDimensions(width, height);
     int2 last = ((int2(width, height) - 1) / 2) * 2 - 1;
@@ -360,7 +362,7 @@ float4 hybridShadowUpsample(int2 pixel)
                 continue;
             float2 spatial = lerp(1 - fraction, fraction, float2(x, y));
             float weight = (spatial.x * spatial.y + .02) * exp2(-120 * depthDelta) * agreement;
-            sum += colorTex.Load(tap) * weight;
+            sum += historyTex.Load(int3((tap.xy + 1) / 2, 0)) * weight;
             mass += weight;
         }
     return mass > 0 ? sum / mass : 1;

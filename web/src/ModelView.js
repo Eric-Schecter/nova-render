@@ -694,6 +694,26 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             true,
           )
         }
+        if (hybrid?.halfResolutionShadows && !aaPipelines.compactShadow) {
+          const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
+          const response = await fetch(dir + 'model-hybrid-shadow-compact.json')
+          if (!response.ok) throw Error('Missing compact Hybrid shadow shader')
+          aaPipelines.compactShadow = await pipelineFor(
+            await response.json(),
+            false,
+            1,
+            false,
+            true,
+            false,
+            false,
+            false,
+            true,
+            false,
+            false,
+            false,
+            true,
+          )
+        }
         currentScene = sceneUniforms(
           data,
           camera,
@@ -785,7 +805,13 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         uniforms.splice(60, 4, ...previous.subarray(16, 20))
       },
       drawAA(pass, motion, count, settings, program, gbuffers, outlineGroup) {
-        if (program === -5 || program === -7 || program === -8 || program === -9) {
+        if (
+          program === -5 ||
+          program === -7 ||
+          program === -8 ||
+          program === -9 ||
+          program === -11
+        ) {
           const half = hybrid?.reflections && hybrid.halfResolutionReflections
           const halfCombine = program === -5 && half
           pass.setBindGroup(0, bindGroup)
@@ -813,17 +839,19 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
                 ? probeReflection
                   ? probeReflectionPipeline
                   : aaPipelines.halfReflection
-                : program === -7
-                  ? currentScene[66]
-                    ? aaPipelines.halfShadow
-                    : aaPipelines.hybridShadow
-                  : probeEnabled
-                    ? half
-                      ? probeDeferredHalf
-                      : probeDeferred
-                    : half
-                      ? aaPipelines.deferredHalf
-                      : aaPipelines.deferred,
+                : program === -11
+                  ? aaPipelines.compactShadow
+                  : program === -7
+                    ? currentScene[66]
+                      ? aaPipelines.halfShadow
+                      : aaPipelines.hybridShadow
+                    : probeEnabled
+                      ? half
+                        ? probeDeferredHalf
+                        : probeDeferred
+                      : half
+                        ? aaPipelines.deferredHalf
+                        : aaPipelines.deferred,
           )
           pass.draw(3)
           return

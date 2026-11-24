@@ -281,7 +281,7 @@ namespace render::detail
         std::shared_ptr<const ModelData>       gpuModel;
         std::shared_ptr<const EnvironmentData> gpuEnvironment;
         id<MTLRenderPipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
-          aaDeferred, aaOit, aaHybridShadow, aaHybridReflection, aaHybridAO, aaProbeReflection, aaDeferredHalf;
+          aaDeferred, aaOit, aaHybridShadow, aaCompactShadow, aaHybridReflection, aaHybridAO, aaProbeReflection, aaDeferredHalf;
         id<MTLComputePipelineState> probeUpdatePipeline, probeSharedUpdatePipeline;
         id<MTLRenderPipelineState>  probeDeferredPipeline, probeDeferredHalf;
         id<MTLBuffer>               probeCurrent, probePrevious;
@@ -365,7 +365,7 @@ namespace render::detail
             desc.vertexFunction                  = [library newFunctionWithName:@"vertexMain"];
             desc.fragmentFunction                = [library newFunctionWithName:@"fragmentMain"];
             desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
-            if (std::string(file) == "model-gbuffer.metallib" || std::string(file) == "model-hybrid-shadow.metallib")
+            if (std::string(file) == "model-gbuffer.metallib" || (std::string_view(file) == "model-hybrid-shadow.metallib" || std::string_view(file) == "model-hybrid-shadow-compact.metallib"))
                 for (int i = 1; i < 4; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
             if (std::string(file) == "model-gbuffer.metallib")
@@ -385,7 +385,8 @@ namespace render::detail
             }
             if (std::string_view(file) != "model-hybrid-reflection.metallib"
                 && std::string_view(file) != "model-probe-reflection.metallib"
-                && std::string_view(file) != "model-hybrid-ao.metallib")
+                && std::string_view(file) != "model-hybrid-ao.metallib"
+                && std::string_view(file) != "model-hybrid-shadow-compact.metallib")
                 desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
             desc.sampleCount                = samples;
             auto pipeline                   = [device newRenderPipelineStateWithDescriptor:desc error:&error];
@@ -441,7 +442,7 @@ namespace render::detail
                 [e setFragmentTexture:environmentTexture atIndex:8];
                 [e setFragmentTexture:backgroundTexture atIndex:9];
                 [e setFragmentSamplerState:modelSampler atIndex:7];
-                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9)
+                if (pass.program == -5 || pass.program == -7 || pass.program == -8 || pass.program == -9 || pass.program == -11)
                 {
                     const bool probeReflection = pass.program == -8 && probeFrame && environment
                                                  && hybrid.probeSkyLighting
@@ -451,6 +452,7 @@ namespace render::detail
                     auto&      active = probeReflection      ? aaProbeReflection
                                         : pass.program == -9 ? aaHybridAO
                                    : pass.program == -8 ? aaHybridReflection
+                                        : pass.program == -11 ? aaCompactShadow
                                         : pass.program == -7 ? aaHybridShadow
                                         : probes && half     ? probeDeferredHalf
                                         : probes             ? probeDeferredPipeline
@@ -461,6 +463,7 @@ namespace render::detail
                           probeReflection      ? "model-probe-reflection.metallib"
                           : pass.program == -9 ? "model-hybrid-ao.metallib"
                           : pass.program == -8 ? "model-hybrid-reflection.metallib"
+                          : pass.program == -11 ? "model-hybrid-shadow-compact.metallib"
                           : pass.program == -7 ? "model-hybrid-shadow.metallib"
                           : probes && half     ? "model-probe-deferred-half.metallib"
                           : probes             ? "model-probe-deferred.metallib"
@@ -473,7 +476,7 @@ namespace render::detail
                         [e setFragmentBuffer:probeCurrent offset:0 atIndex:26];
                     }
                     [e setRenderPipelineState:active];
-                    [e setDepthStencilState:skyDepthState];
+                    [e setDepthStencilState:pass.program == -11 ? nil : skyDepthState];
                     [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                     return;
                 }
