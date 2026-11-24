@@ -14,7 +14,9 @@ int main(int argc, char** argv)
         window.SetRenderMode(options.mode);
         window.SetLighting(render::LightingMode::PBR);
         window.SetDirectionalLight(options.light);
-        window.SetShadows({.enabled = true});
+        render::SceneShadowSettings shadows;
+        shadows.enabled = true;
+        window.SetShadows(shadows);
         window.LoadEnvironment(options.environmentPath);
         window.SetEnvironment(render::EnvironmentSettings{});
         render::OrbitCamera camera;

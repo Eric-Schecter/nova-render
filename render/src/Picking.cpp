@@ -69,7 +69,7 @@ namespace render::detail
     }
     void PickMesh::BuildSAH()
     {
-        constexpr int binCount = 12;
+        static constexpr int binCount = 12;
         struct Box
         {
             PickVector low, high;

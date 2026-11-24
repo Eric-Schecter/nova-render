@@ -2496,7 +2496,7 @@ float4 shadeDeferred(SkyOut input, bool gridVisible)
         discard;
     }
     float4      normals = gNormals.Load(pixel), pos = gPosition.Load(pixel), emission = gEmission.Load(pixel);
-    SurfaceData s;
+    SurfaceData s = (SurfaceData)0;
     s.useVisibility = irradiance[1].w > .5 ? 1 : 0;
     s.visibility0 = s.visibility1 = s.visibility2 = s.visibility3 = 1;
     if (irradiance[1].w > .5)
