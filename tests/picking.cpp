@@ -112,7 +112,8 @@ int main(int argc, char** argv)
         require(rejected, "NaN accepted");
         // Large BVH plus triangle-exact rejection inside bounding boxes.
         auto data = std::make_shared<render::detail::ModelData>();
-        for (int i = 0; i < 4096; i++)
+        constexpr int triangleCount = 32768;
+        for (int i = 0; i < triangleCount; i++)
             for (auto p : std::array<std::array<float, 3>, 3>{
                    {{float(i * 3), 0, 0}, {float(i * 3 + 1), 0, 0}, {float(i * 3), 1, 0}}})
             {
@@ -122,15 +123,16 @@ int main(int argc, char** argv)
                 data->vertices.push_back(v);
             }
         const auto               begin = std::chrono::steady_clock::now();
-        render::detail::PickMesh mesh(data);
-        for (int i = 0; i < 4096; i += 17)
+        render::detail::PickMesh mesh(data, true);
+        for (int i = 0; i < triangleCount; i += 137)
         {
             const auto h = mesh.Pick({double(i * 3) + .2, .2, 5}, {0, 0, -1}, 100);
             require(h && h->triangle == uint32_t(i) && h->distance == 5, "BVH hit mismatch");
             require(!mesh.Pick({double(i * 3) + .9, .9, 5}, {0, 0, -1}, 100), "Picked AABB instead of triangle");
         }
         std::ofstream(argv[3]) << results.dump(2) << '\n';
-        std::cout << "PASS " << fixtures.size() << " shared ray/normal/filter cases and 4096-triangle BVH ("
+        std::cout << "PASS " << fixtures.size() << " shared ray/normal/filter cases and " << triangleCount
+                  << "-triangle scene BVH ("
                   << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count()
                   << " ms)\n";
     }

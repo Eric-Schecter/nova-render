@@ -193,7 +193,8 @@ int main(int argc, char** argv)
                     backend->SetRenderMode(RenderMode::Hybrid);
                     const auto& options = fixture["transport"];
                     HybridSettings profile;
-                    profile.shadows = profile.shadowTemporalReconstruction = true;
+                    profile.shadows = options.value("shadows", true);
+                    profile.shadowTemporalReconstruction = true;
                     profile.shadowSVGF = options.value("shadowSVGF", false);
                     profile.blueNoiseShadows = options.value("blueNoiseShadows", false);
                     profile.shadowSamples = options.value("shadowSamples", profile.shadowSamples);
@@ -201,7 +202,7 @@ int main(int argc, char** argv)
                     profile.aoRadius = options.value("aoRadius", profile.aoRadius);
                     profile.aoStrength = options.value("aoStrength", profile.aoStrength);
                     profile.halfResolutionAO = options.value("halfResolutionAO", false);
-                    profile.reflections = true;
+                    profile.reflections = options.value("reflections", true);
                     profile.halfResolutionReflections = options.value("halfResolutionReflections", false);
                     profile.reflectionDenoising = options.value("reflectionDenoising", false);
                     profile.reflectionSVGF = options.value("reflectionSVGF", false);

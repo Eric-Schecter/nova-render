@@ -63,7 +63,7 @@ namespace render::detail
                     data = prepare.Model();
                 }
                 auto picking = old != meshes.end() && old->second.data == data ? old->second.picking
-                                                                               : std::make_shared<PickMesh>(data);
+                                                                               : std::make_shared<PickMesh>(data, !data->animation);
                 next[id]     = {data, 0, 0, 0, 0, {}, std::move(picking)};
             }
             auto packed = std::make_shared<ModelData>(*EmptyModelData());

@@ -54,7 +54,7 @@ namespace render::detail
             return true;
         }
     } // namespace
-    PickMesh::PickMesh(std::shared_ptr<const ModelData> data)
+    PickMesh::PickMesh(std::shared_ptr<const ModelData> data, bool staticScene)
       : data_(std::move(data))
     {
         if (!data_ || data_->vertices.size() % 3 || data_->vertices.size() / 3 > std::numeric_limits<uint32_t>::max())
@@ -62,8 +62,133 @@ namespace render::detail
         for (uint32_t i = 0; i < data_->vertices.size() / 3; ++i)
             if (data_->vertices[size_t(i) * 3].uv1[2] == 0)
                 triangles_.push_back(i);
-        if (!triangles_.empty())
+        if (staticScene && triangles_.size() >= 32768)
+            BuildSAH();
+        else if (!triangles_.empty())
             Build(0, uint32_t(triangles_.size()));
+    }
+    void PickMesh::BuildSAH()
+    {
+        constexpr int binCount = 12;
+        struct Box
+        {
+            PickVector low, high;
+            Box()
+            {
+                low.fill(std::numeric_limits<double>::infinity());
+                high.fill(-std::numeric_limits<double>::infinity());
+            }
+            void Add(PickVector point)
+            {
+                for (int axis = 0; axis < 3; ++axis)
+                {
+                    low[axis] = std::min(low[axis], point[axis]);
+                    high[axis] = std::max(high[axis], point[axis]);
+                }
+            }
+            void Merge(const Box& box)
+            {
+                Add(box.low);
+                Add(box.high);
+            }
+            double Area() const
+            {
+                const auto size = sub(high, low);
+                return size[0] * size[1] + size[1] * size[2] + size[2] * size[0];
+            }
+        };
+        struct Primitive
+        {
+            Box        bounds;
+            PickVector center;
+        };
+        struct Bin
+        {
+            Box      bounds;
+            uint32_t count = 0;
+        };
+        std::vector<Primitive> primitives(data_->vertices.size() / 3);
+        for (uint32_t id : triangles_)
+        {
+            auto& primitive = primitives[id];
+            const auto a = point(data_->vertices[size_t(id) * 3]);
+            const auto b = point(data_->vertices[size_t(id) * 3 + 1]);
+            const auto c = point(data_->vertices[size_t(id) * 3 + 2]);
+            for (const auto vertex : {a, b, c})
+                primitive.bounds.Add(vertex);
+            for (int axis = 0; axis < 3; ++axis)
+                primitive.center[axis] = float((a[axis] + b[axis] + c[axis]) / 3);
+        }
+        auto build = [&](auto&& self, uint32_t first, uint32_t count, int depth) -> uint32_t {
+            auto begin = triangles_.begin() + first, end = begin + count;
+            Box bounds, centers;
+            for (auto it = begin; it != end; ++it)
+            {
+                bounds.Merge(primitives[*it].bounds);
+                centers.Add(primitives[*it].center);
+            }
+            const auto index = uint32_t(nodes_.size());
+            nodes_.push_back({bounds.low, bounds.high, first, count});
+            if (count <= 8)
+                return index;
+
+            int splitAxis = -1, splitBin = 0;
+            double best = std::numeric_limits<double>::infinity();
+            auto binFor = [&](uint32_t id, int axis) {
+                const double span = centers.high[axis] - centers.low[axis];
+                const double offset = primitives[id].center[axis] - centers.low[axis];
+                return std::min(binCount - 1, int(offset * (binCount / span)));
+            };
+            // A median fallback bounds depth and handles coincident centroids.
+            for (int axis = 0; axis < 3 && depth < 32; ++axis)
+            {
+                if (centers.low[axis] >= centers.high[axis])
+                    continue;
+                std::array<Bin, binCount> bins{};
+                for (auto it = begin; it != end; ++it)
+                {
+                    auto& bin = bins[binFor(*it, axis)];
+                    ++bin.count;
+                    bin.bounds.Merge(primitives[*it].bounds);
+                }
+                std::array<double, binCount - 1> prefix{};
+                Box left, right;
+                uint32_t leftCount = 0, rightCount = 0;
+                for (int i = 0; i < binCount - 1; ++i)
+                {
+                    if (bins[i].count)
+                        left.Merge(bins[i].bounds);
+                    leftCount += bins[i].count;
+                    prefix[i] = leftCount ? left.Area() * leftCount : std::numeric_limits<double>::infinity();
+                }
+                for (int i = binCount - 1; i > 0; --i)
+                {
+                    if (bins[i].count)
+                        right.Merge(bins[i].bounds);
+                    rightCount += bins[i].count;
+                    if (!rightCount)
+                        continue;
+                    const double cost = prefix[i - 1] + right.Area() * rightCount;
+                    if (cost < best)
+                    {
+                        best = cost;
+                        splitAxis = axis;
+                        splitBin = i - 1;
+                    }
+                }
+            }
+            const auto middle = splitAxis < 0 ? begin + count / 2 : std::stable_partition(begin, end, [&](uint32_t id) {
+                return binFor(id, splitAxis) <= splitBin;
+            });
+            const auto leftCount = uint32_t(middle - begin);
+            const auto left = self(self, first, leftCount, depth + 1);
+            const auto right = self(self, first + leftCount, count - leftCount, depth + 1);
+            nodes_[index].left = left;
+            nodes_[index].right = right;
+            nodes_[index].count = 0;
+            return index;
+        };
+        build(build, 0, uint32_t(triangles_.size()), 0);
     }
     uint32_t PickMesh::Build(uint32_t first, uint32_t count)
     {

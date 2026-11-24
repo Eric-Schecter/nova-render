@@ -16,7 +16,7 @@ Render static GLB assets together with independent world transforms. Instances o
 
 Each asset has a unique nonempty string `id`, a C++ filesystem `path` or JavaScript string `url`, and an optional `sourceSpace` boolean (default `false`). Only assets referenced by instances are loaded. Asset IDs and instance IDs have separate namespaces.
 
-Web scene assets accept `bvh: 'sah'` to use a binned surface-area heuristic for their picking and Hybrid ray BVH. Web uses the binned heuristic by default for static assets with at least 32,768 triangle records. Smaller and animated assets default to median splits. Pass `bvh: 'median'` to select a median split explicitly. Changing the strategy rebuilds the hierarchy and retains the asset's material edits.
+Native and Web scene assets use a binned surface-area heuristic (SAH) for picking and Hybrid rays by default for static assets with at least 32,768 triangles. Smaller and animated assets default to median splits. Web exposes `bvh: 'sah'` and `bvh: 'median'` to override the choice. Changing the Web strategy rebuilds the hierarchy and retains the asset's material edits.
 
 - `sourceSpace: false`: center the model, scaling its longest axis to length 2. This matches the legacy single-model API.
 - `sourceSpace: true`: preserve the glTF scene's authored origin, dimensions and node transforms. glTF length units are meters; Nova does not invent or correct the author's scale.
