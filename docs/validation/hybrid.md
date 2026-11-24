@@ -120,6 +120,12 @@ Angle 1 uses the same camera, exposure, sun, probe bounds and sky intensity 0.45
 
 At blend 0.55 the shaded floor moves from RGB (43, 47, 45) to (54, 46, 35), close to reference (57, 46, 36). Its display luma moves from 45.7 to 46.8 (reference 47.3). Sunlit floor luma stays at 217.6, and the far-wall sample moves from 14.9 to 15.2 (reference 14.2). The near right pillar remains slightly bright at 31.0 versus 26.0. Metal, Vulkan and Chrome WebGPU rendered the 640 × 360 comparison. The reference/baseline/warm triptych is `build/validation/sponza-reference/warm55-comparison.png`.
 
+### Sponza cool sky on upper masonry
+
+The two upper-wall samples sit at Y ≈ 254 and 205, above the local DDGI volume ending at Y = 151. Restoring the cooler source cubemap alone did not change these pixels at displayed precision. The scene-local comparison adjusts only the diffuse SH term. At the +X wall normal, it blends 85% toward 0.87 times the original sky's diffuse RGB while keeping the +Y irradiance fixed. For the resulting RGB delta D, add D / 0.282095 to SH coefficient 0 and subtract D / 0.488603 from coefficient 1. The lighting and background cubemaps retain the previous warm-fill setup.
+
+The upper-wall patch changes from RGB (62, 53, 37) to (51, 49, 41), against reference (48, 45, 39). The shaded floor changes from (54, 46, 35) to (54, 46, 39), against reference (57, 46, 36). Its display luma stays near the reference at 47.1 versus 47.3. The second upper-wall patch still has excess brightness, at 42.2 versus 19.5. The adjusted asset is a first-camera comparison and does not change renderer defaults. The triptych is `build/validation/sponza-reference/sky-wall-comparison.png`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
