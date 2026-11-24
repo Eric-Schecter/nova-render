@@ -144,7 +144,8 @@ namespace render::detail
                         coarse->uniforms[1][0] *= .5f;
                         coarse->uniforms[1][1] *= .5f;
                     }
-                    addShadows(-7, halfHybridShadows ? AAHalfShadowRaw0 : AAHybridShadow0);
+                    addShadows(-7, halfHybridShadows ? AAHalfShadowRaw0 : AAHybridShadow0)->sparseShadow =
+                      halfHybridShadows && hybridSettings.sparseShadowFallback;
                 }
                 if (halfReflections)
                 {

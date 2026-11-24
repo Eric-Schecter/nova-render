@@ -120,6 +120,7 @@ namespace render::detail
         AAPass() { sources.fill(AADummy); }
         AAUniforms uniforms{};
         bool       multisampled = false;
+        bool       sparseShadow = false;
         unsigned   outlineGroup = 0;
     };
 
@@ -132,6 +133,7 @@ namespace render::detail
         std::function<void(void*)>                                   beforeScene;
         std::function<void(const AAPass&, void*, void*)>             draw;
         std::function<void(void*, const std::array<void*, 12>&, int)> bindGBuffer;
+        std::function<bool(void*, uint32_t, uint32_t, const std::array<void*, 7>&)> sparseShadows;
     };
     struct AASpec
     {

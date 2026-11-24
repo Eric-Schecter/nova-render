@@ -20,7 +20,7 @@ namespace render::detail
             VkImageView    view{};
             VkImageLayout  layout = VK_IMAGE_LAYOUT_UNDEFINED;
             uint32_t       width = 0, height = 0;
-            bool           depth = false;
+            bool           depth = false, storage = false;
         };
         struct Buffer
         {
@@ -138,10 +138,11 @@ namespace render::detail
                 t = {};
             }
             Texture MakeTexture(
-              uint32_t w, uint32_t h, VkFormat format, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT)
+              uint32_t w, uint32_t h, VkFormat format, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT, bool storage = false)
             {
                 Texture t;
                 t.width  = w;
+                t.storage = storage;
                 t.height = h;
                 t.depth  = format == VK_FORMAT_D32_SFLOAT;
                 VkImageCreateInfo d{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -154,7 +155,7 @@ namespace render::detail
                 d.usage                     = t.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
                                                       : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
                                       | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-                if (format == VK_FORMAT_R32G32B32A32_SFLOAT)
+                if (format == VK_FORMAT_R32G32B32A32_SFLOAT || storage)
                     d.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
                 Check(api.vkCreateImage(device, &d, nullptr, &t.image));
                 VkMemoryRequirements m;
@@ -871,6 +872,8 @@ namespace render::detail
             void Ensure(const std::vector<AAPass>& passes)
             {
                 const auto used = AAUsed(passes);
+                const bool sparse = external.sparseShadows && std::any_of(
+                  passes.begin(), passes.end(), [](const AAPass& p) { return p.sparseShadow; });
                 for (int i = 0; i < AAResourceCount; i++)
                     if (i != AAArea && i != AASearch && i != AASsrEnvironment && i != AAProbeData)
                     {
@@ -887,7 +890,9 @@ namespace render::detail
                           bool(external.draw),
                           uint32_t(passes.front().uniforms[8][1]),
                           passes.front().uniforms[6][3] > .5f);
-                        if (textures[i].width != spec.width || textures[i].height != spec.height)
+                        const bool storage = sparse && i >= AAHalfShadowRaw0;
+                        if (textures[i].width != spec.width || textures[i].height != spec.height ||
+                            textures[i].storage != storage)
                         {
                             Destroy(textures[i]);
                             textures[i] = MakeTexture(
@@ -895,7 +900,8 @@ namespace render::detail
                               spec.height,
                               (i == AAPipelineTiles || i == AAPipelineLists) ? VK_FORMAT_R32G32B32A32_SFLOAT
                                                                              : VK_FORMAT_R16G16B16A16_SFLOAT,
-                              spec.samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT);
+                              spec.samples == 4 ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT,
+                              storage);
                         }
                     }
                 bool needed[4]{};
@@ -971,6 +977,25 @@ namespace render::detail
                 for (size_t index = 0; index < passes.size(); index++)
                 {
                     const auto& p = passes[index];
+                    if (p.sparseShadow && external.sparseShadows)
+                    {
+                        std::array<void*, 7> views{};
+                        for (int i = 0; i < 3; ++i)
+                        {
+                            auto& guide = textures[p.sources[i]];
+                            Transition(guide, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                            views[i] = reinterpret_cast<void*>(guide.view);
+                        }
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            auto& fallback = textures[p.target + i];
+                            Transition(fallback, VK_IMAGE_LAYOUT_GENERAL);
+                            views[3 + i] = reinterpret_cast<void*>(fallback.view);
+                        }
+                        auto& target = textures[p.target];
+                        if (external.sparseShadows(reinterpret_cast<void*>(command), target.width, target.height, views))
+                            continue;
+                    }
                     if (p.program == 25 || p.program == 26)
                     {
                         Dispatch(p, index);

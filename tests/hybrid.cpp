@@ -174,6 +174,14 @@ int main(int argc, char** argv)
         const auto compactShadow = capture("shadow-compact");
         if (Difference(sceneShadow, compactShadow) > .8 || Difference(sceneOff, compactShadow) < .1)
             throw std::runtime_error("Compact shadows lost five-light visibility");
+        if (backend->GetHybridCapabilities().sparseShadowFallback)
+        {
+            settings.sparseShadowFallback = true;
+            backend->SetHybrid(settings);
+            if (Difference(compactShadow, capture("shadow-sparse")) > .02)
+                throw std::runtime_error("Sparse fallback changed five-light visibility");
+            settings.sparseShadowFallback = false;
+        }
         settings.halfResolutionShadows = false;
         settings.blueNoiseShadows = true;
         backend->SetHybrid(settings);

@@ -18,12 +18,12 @@ namespace render::detail
             id<MTLDepthStencilState>    depthState;
             uint32_t                    width = 0, height = 0;
             bool                        super = false;
-            id<MTLTexture>              Texture(uint32_t w, uint32_t h, MTLPixelFormat format, NSUInteger samples = 1)
+            id<MTLTexture>              Texture(uint32_t w, uint32_t h, MTLPixelFormat format, NSUInteger samples = 1, bool storage = false)
             {
                 auto d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:w height:h mipmapped:NO];
                 d.storageMode = MTLStorageModePrivate;
                 d.usage       = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-                if (format == MTLPixelFormatRGBA32Float)
+                if (format == MTLPixelFormatRGBA32Float || storage)
                     d.usage |= MTLTextureUsageShaderWrite;
                 if (samples > 1)
                 {
@@ -158,6 +158,8 @@ namespace render::detail
             void Ensure(const std::vector<AAPass>& passes)
             {
                 const auto used = AAUsed(passes);
+                const bool sparse = external.sparseShadows && std::any_of(
+                  passes.begin(), passes.end(), [](const AAPass& p) { return p.sparseShadow; });
                 for (int i = 0; i < AAResourceCount; i++)
                     if (i != AAArea && i != AASearch && i != AASsrEnvironment && i != AAProbeData)
                     {
@@ -174,13 +176,17 @@ namespace render::detail
                           bool(external.draw),
                           uint32_t(passes.front().uniforms[8][1]),
                           passes.front().uniforms[6][3] > .5f);
-                        if (!textures[i] || textures[i].width != spec.width || textures[i].height != spec.height)
+                        const bool storage = sparse && i >= AAHalfShadowRaw0;
+                        const bool changeStorage = i >= AAHalfShadowRaw0 &&
+                          bool(textures[i].usage & MTLTextureUsageShaderWrite) != storage;
+                        if (!textures[i] || textures[i].width != spec.width || textures[i].height != spec.height ||
+                            changeStorage)
                             textures[i] = Texture(
                               spec.width,
                               spec.height,
                               (i == AAPipelineTiles || i == AAPipelineLists) ? MTLPixelFormatRGBA32Float
                                                                              : MTLPixelFormatRGBA16Float,
-                              spec.samples);
+                              spec.samples, storage);
                     }
                 bool needed[4]{};
                 for (const auto& p : passes)
@@ -271,6 +277,18 @@ namespace render::detail
                               threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
                             [e endEncoding];
                             continue;
+                        }
+                        if (p.sparseShadow && external.sparseShadows)
+                        {
+                            std::array<void*, 7> views{};
+                            for (int i = 0; i < 3; ++i)
+                                views[i] = (__bridge void*)textures[p.sources[i]];
+                            for (int i = 0; i < 4; ++i)
+                                views[3 + i] = (__bridge void*)textures[p.target + i];
+                            const auto target = textures[p.target];
+                            if (external.sparseShadows((__bridge void*)command, uint32_t(target.width),
+                                                       uint32_t(target.height), views))
+                                continue;
                         }
                         auto       d = [MTLRenderPassDescriptor renderPassDescriptor];
                         const bool scene =

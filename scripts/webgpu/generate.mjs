@@ -194,6 +194,17 @@ for (const [name, vertexEntry, fragmentEntry] of [
   }
 }
 
+for (const [name, computeEntry, define] of [
+  ['classify', 'HybridShadowClassifyCS', '#define NOVA_SHADOW_CLASSIFY 1\n'],
+  ['trace', 'HybridShadowTraceCS', ''],
+]) {
+  const shader = await compile(
+    '#define NOVA_SPARSE_SHADOWS 1\n' + define + blueNoiseSource + rasterSource,
+    { compute: true, computeEntry, optimizeCompute: true },
+  )
+  await writeFile('docs/public/generated/model-shadow-' + name + '.json', JSON.stringify(shader))
+}
+
 for (const [suffix, prefix] of [['', ''], ['-no-sheen', disableSheen]]) {
   const source = prefix + rasterSource
   const probeSource = '#define NOVA_HYBRID_PROBES 1\n' + source

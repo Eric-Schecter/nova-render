@@ -103,6 +103,7 @@ class Renderer {
     this.#check()
     const caps = hybridCapabilities(!!this.#model?.skinned)
     caps.halfResolutionReflections = caps.supported && canUseHalfReflections(this.#device.limits)
+    caps.sparseShadowFallback = caps.supported && canUseDeferred(this.#device.limits)
     return canUseDeferred(this.#device.limits)
       ? caps
       : {
@@ -365,6 +366,8 @@ class Renderer {
               pass.draw(3)
             }
           },
+          sparseShadows: (encoder, guides, fallback) =>
+            this.#model.dispatchSparseShadows(encoder, guides, fallback),
           writeReflectionReprojection: (uniforms) =>
             this.#model?.writeReflectionReprojection(uniforms),
           finish: () => this.#model?.finishAA(),

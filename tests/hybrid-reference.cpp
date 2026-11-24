@@ -197,6 +197,9 @@ int main(int argc, char** argv)
                     profile.shadowTemporalReconstruction = true;
                     profile.shadowSVGF = options.value("shadowSVGF", false);
                     profile.halfResolutionShadows = options.value("halfResolutionShadows", false);
+                    profile.sparseShadowFallback = options.value("sparseShadowFallback", false);
+                    if (profile.sparseShadowFallback && !backend->GetHybridCapabilities().sparseShadowFallback)
+                        throw std::runtime_error("Sparse shadow fallback unavailable on this device");
                     profile.blueNoiseShadows = options.value("blueNoiseShadows", false);
                     profile.shadowSamples = options.value("shadowSamples", profile.shadowSamples);
                     profile.ambientOcclusion = profile.temporalReconstruction = true;

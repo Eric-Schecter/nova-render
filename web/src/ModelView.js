@@ -123,6 +123,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       )
     let lastScene, lastPalette, currentScene, aaPipelines
     let rayProvider, pathData
+    let shadowClassify, shadowTrace, shadowWork
     const layout = device.createBindGroupLayout({
       entries: [
         {
@@ -714,6 +715,22 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
             true,
           )
         }
+        if (hybrid?.sparseShadowFallback && hybrid.halfResolutionShadows && !shadowTrace) {
+          const dir = shaderURL.slice(0, shaderURL.lastIndexOf('/') + 1)
+          const pipeline = async (name, entryPoint) => {
+            const response = await fetch(dir + 'model-shadow-' + name + '.json')
+            if (!response.ok) throw Error('Missing sparse shadow ' + name + ' shader')
+            const { compute } = await response.json()
+            return device.createComputePipelineAsync({
+              layout: 'auto',
+              compute: { module: device.createShaderModule({ code: compute }), entryPoint },
+            })
+          }
+          ;[shadowClassify, shadowTrace] = await Promise.all([
+            pipeline('classify', 'HybridShadowClassifyCS'),
+            pipeline('trace', 'HybridShadowTraceCS'),
+          ])
+        }
         currentScene = sceneUniforms(
           data,
           camera,
@@ -796,6 +813,49 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         if (data.skinInputs?.byteLength) device.queue.writeBuffer(joints, 0, data.jointMatrices)
         const palette = data.jointMatrices || new Float32Array(16)
         device.queue.writeBuffer(previousPalette, 0, frames && lastPalette ? lastPalette : palette)
+      },
+      dispatchSparseShadows(encoder, guides, fallback) {
+        const { width, height } = guides[0]
+        const size = 4 * (4 + width * height)
+        if (!shadowWork || shadowWork.size !== size) {
+          shadowWork?.destroy()
+          shadowWork = device.createBuffer({
+            size,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
+          })
+        }
+        const guideEntries = guides.map((texture, i) => ({
+          binding: 17 + i,
+          resource: texture.createView(),
+        }))
+        const workEntries = [
+          { binding: 20, resource: { buffer: shadowWork } },
+          ...fallback.map((texture, i) => ({ binding: 21 + i, resource: texture.createView() })),
+        ]
+        const bind = (pass, pipeline, index, entries) =>
+          pass.setBindGroup(
+            index,
+            device.createBindGroup({ layout: pipeline.getBindGroupLayout(index), entries }),
+          )
+        encoder.clearBuffer(shadowWork, 0, 16)
+        const classify = encoder.beginComputePass()
+        classify.setPipeline(shadowClassify)
+        bind(classify, shadowClassify, 1, guideEntries)
+        bind(classify, shadowClassify, 2, workEntries)
+        classify.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8))
+        classify.end()
+        const trace = encoder.beginComputePass()
+        trace.setPipeline(shadowTrace)
+        bind(trace, shadowTrace, 0, [
+          { binding: 0, resource: { buffer: uniform } },
+          { binding: 2, resource: textures[0].createView() },
+          { binding: 7, resource: sampler },
+          { binding: 14, resource: { buffer: instanceBuffer } },
+        ])
+        bind(trace, shadowTrace, 1, guideEntries)
+        bind(trace, shadowTrace, 2, workEntries)
+        trace.dispatchWorkgroupsIndirect(shadowWork, 0)
+        trace.end()
       },
       writeReflectionReprojection(uniforms) {
         const previous = lastScene || currentScene
@@ -1108,6 +1168,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         disposed = true
         pathView?.dispose()
         probes?.dispose()
+        shadowWork?.destroy()
         for (const image of data.images) image.bitmap?.close()
         depth?.destroy()
         cube?.destroy()

@@ -58,6 +58,7 @@ namespace render
         bool                             probeOctahedral = false;
         bool                             probeSharedRays              = false;
         bool                             halfResolutionShadows       = false;
+        bool                             sparseShadowFallback        = false;
     };
     struct HybridCapabilities
     {
@@ -68,5 +69,6 @@ namespace render
         bool        probeGI         = true;
         bool        gpuPresentation = true, alphaMask = true, alphaBlend = true;
         std::string execution = "fragment-bvh", reason;
+        bool        sparseShadowFallback = false;
     };
 } // namespace render

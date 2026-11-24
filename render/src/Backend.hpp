@@ -42,6 +42,7 @@ namespace render::detail
                   "Raster transparency supports Off/FXAA/SMAA/SSAA without AA split; choose a compatible AA method first");
         }
         HybridSettings     hybrid;
+        virtual bool SupportsSparseShadowFallback() const { return false; }
         HybridCapabilities GetHybridCapabilities() const
         {
             HybridCapabilities c;
@@ -51,6 +52,7 @@ namespace render::detail
                 c.supported = false;
                 c.reason    = "Hybrid currently requires static geometry";
             }
+            c.sparseShadowFallback = c.supported && SupportsSparseShadowFallback();
             return c;
         }
         struct ProbeConfig

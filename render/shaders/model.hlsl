@@ -1447,58 +1447,36 @@ struct HybridShadowTargets
     float4 slots2 : SV_Target2;
     float4 slots3 : SV_Target3;
 };
-HybridShadowTargets HybridShadowPSMain(SkyOut input)
+bool hasCoarseShadowGuide(int3 pixel, uint width, uint height)
 {
-    int3 pixel = int3(int2(input.position.xy), 0);
-#if defined(NOVA_COMPACT_SHADOWS)
-    {
-#else
-    if (irradiance[1].z > .5)
-    {
-#endif
-        uint width, height;
-        gBase.GetDimensions(width, height);
-        int2 extent = int2(width, height) - 2;
-        int2 full = (pixel.xy - 1) * 2;
-        pixel.xy = min(full, extent - 1) + 1;
-        input.uv = (float2(pixel.xy) - .5) / float2(extent);
-        float2 ndc = input.uv * float2(2, -2) + float2(-1, 1);
-        input.direction = cameraForward.xyz + ndc.x * cameraRight.w * cameraRight.xyz
-                          + ndc.y * cameraUp.w * cameraUp.xyz;
-    }
-    HybridShadowTargets output;
-#if !defined(NOVA_COMPACT_SHADOWS)
-    bool hybridHalf = irradiance[1].w > .5 && irradiance[4].w > .5 && irradiance[3].w > .5 && irradiance[8].w == 0
-                      && loadInstance(uint(irradiance[3].w) - 1).normalMatrix._m00 > .5;
-    if (hybridHalf && gBase.Load(pixel).w > 0)
-    {
-        if (all(((pixel.xy - 1) & 1) == 0))
+    int2 last = ((int2(width, height) - 1) / 2) * 2 - 1;
+    int2 first = ((pixel.xy - 1) / 2) * 2 + 1;
+    float4 receiver = gPosition.Load(pixel);
+    float3 normal = octDecode(gNormals.Load(pixel).zw);
+    [unroll] for (int y = 0; y < 2; ++y)
+        [unroll] for (int x = 0; x < 2; ++x)
         {
-            output.slots0 = output.slots1 = output.slots2 = output.slots3 = -1;
-            return output;
+            int3 tap = int3(min(first + int2(x, y) * 2, last), 0);
+            float4 guide = gPosition.Load(tap);
+            float depthDelta = abs((receiver.x - guide.x) + (receiver.y - guide.y));
+            if (gBase.Load(tap).w > 0 && depthDelta < .018 && abs(receiver.w - guide.w) < .5
+                && dot(normal, octDecode(gNormals.Load(tap).zw)) > .94)
+                return true;
         }
-        uint width, height;
-        gBase.GetDimensions(width, height);
-        int2 last = ((int2(width, height) - 1) / 2) * 2 - 1;
-        int2 first = ((pixel.xy - 1) / 2) * 2 + 1;
-        float4 receiver = gPosition.Load(pixel);
-        float3 normal = octDecode(gNormals.Load(pixel).zw);
-        [unroll] for (int y = 0; y < 2; ++y)
-            [unroll] for (int x = 0; x < 2; ++x)
-            {
-                int3 tap = int3(min(first + int2(x, y) * 2, last), 0);
-                float4 guide = gPosition.Load(tap);
-                float depthDelta = abs((receiver.x - guide.x) + (receiver.y - guide.y));
-                if (gBase.Load(tap).w > 0 && depthDelta < .018 && abs(receiver.w - guide.w) < .5
-                    && dot(normal, octDecode(gNormals.Load(tap).zw)) > .94)
-                {
-                    output.slots0 = output.slots1 = output.slots2 = output.slots3 = -1;
-                    return output;
-                }
-            }
-        // A thin receiver with no compatible coarse guide still gets all its rays.
-    }
-#endif
+    return false;
+}
+SkyOut shadowPixelRay(int3 pixel, int2 extent)
+{
+    SkyOut input = (SkyOut)0;
+    input.uv = (float2(pixel.xy) - .5) / float2(extent);
+    float2 ndc = input.uv * float2(2, -2) + float2(-1, 1);
+    input.direction = cameraForward.xyz + ndc.x * cameraRight.w * cameraRight.xyz
+                      + ndc.y * cameraUp.w * cameraUp.xyz;
+    return input;
+}
+HybridShadowTargets traceHybridShadow(SkyOut input, int3 pixel)
+{
+    HybridShadowTargets output;
     float        visibility[16];
     [unroll] for (uint j = 0; j < 16; j++) visibility[j] = 1;
     if (gBase.Load(pixel).w > 0 && (irradiance[4].w > .5 || irradiance[1].z > .5) && irradiance[3].w > .5)
@@ -1552,6 +1530,92 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
     output.slots3 = float4(visibility[12], visibility[13], visibility[14], visibility[15]);
     return output;
 }
+HybridShadowTargets HybridShadowPSMain(SkyOut input)
+{
+    int3 pixel = int3(int2(input.position.xy), 0);
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    int2 extent = int2(width, height) - 2;
+#if defined(NOVA_COMPACT_SHADOWS)
+    {
+#else
+    if (irradiance[1].z > .5)
+    {
+#endif
+        pixel.xy = min((pixel.xy - 1) * 2, extent - 1) + 1;
+        input = shadowPixelRay(pixel, extent);
+    }
+#if !defined(NOVA_COMPACT_SHADOWS)
+    bool hybridHalf = irradiance[1].w > .5 && irradiance[4].w > .5 && irradiance[3].w > .5 && irradiance[8].w == 0
+                      && loadInstance(uint(irradiance[3].w) - 1).normalMatrix._m00 > .5;
+    if (hybridHalf && gBase.Load(pixel).w > 0
+        && (all(((pixel.xy - 1) & 1) == 0) || hasCoarseShadowGuide(pixel, width, height)))
+    {
+        HybridShadowTargets output;
+        output.slots0 = output.slots1 = output.slots2 = output.slots3 = -1;
+        return output;
+    }
+#endif
+    return traceHybridShadow(input, pixel);
+}
+
+#if defined(NOVA_SPARSE_SHADOWS)
+#if defined(NOVA_SHADOW_CLASSIFY)
+[[vk::binding(20, 2)]] RWStructuredBuffer<uint> shadowWork : register(u0, space2);
+#else
+[[vk::binding(20, 2)]] StructuredBuffer<uint> shadowWork : register(t0, space2);
+#endif
+[[vk::binding(21, 2)]] [[vk::image_format("rgba16f")]] [[vk::ext_decorate(25)]] RWTexture2D<float4> shadowFallback0 : register(u1, space2);
+[[vk::binding(22, 2)]] [[vk::image_format("rgba16f")]] [[vk::ext_decorate(25)]] RWTexture2D<float4> shadowFallback1 : register(u2, space2);
+[[vk::binding(23, 2)]] [[vk::image_format("rgba16f")]] [[vk::ext_decorate(25)]] RWTexture2D<float4> shadowFallback2 : register(u3, space2);
+[[vk::binding(24, 2)]] [[vk::image_format("rgba16f")]] [[vk::ext_decorate(25)]] RWTexture2D<float4> shadowFallback3 : register(u4, space2);
+void storeShadowFallback(int2 pixel, HybridShadowTargets value)
+{
+    shadowFallback0[pixel] = value.slots0;
+    shadowFallback1[pixel] = value.slots1;
+    shadowFallback2[pixel] = value.slots2;
+    shadowFallback3[pixel] = value.slots3;
+}
+#if defined(NOVA_SHADOW_CLASSIFY)
+[numthreads(8, 8, 1)]
+void HybridShadowClassifyCS(uint3 id : SV_DispatchThreadID)
+{
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    if (id.x >= width || id.y >= height)
+        return;
+    int3 pixel = int3(id.xy, 0);
+    bool surface = all(id.xy > 0) && id.x < width - 1 && id.y < height - 1 && gBase.Load(pixel).w > 0;
+    HybridShadowTargets initial;
+    initial.slots0 = initial.slots1 = initial.slots2 = initial.slots3 = surface ? -1 : 1;
+    storeShadowFallback(pixel.xy, initial);
+    if (!surface || all(((pixel.xy - 1) & 1) == 0) || hasCoarseShadowGuide(pixel, width, height))
+        return;
+    uint index, ignored;
+    InterlockedAdd(shadowWork[3], 1, index);
+    shadowWork[4 + index] = id.y * width + id.x;
+    // Keep the indirect X dimension within the portable 65,535 group limit.
+    InterlockedMax(shadowWork[0], min(index / 64 + 1, 1024), ignored);
+    InterlockedMax(shadowWork[1], index / (64 * 1024) + 1, ignored);
+    if (index == 0)
+        shadowWork[2] = 1;
+}
+#else
+[numthreads(64, 1, 1)]
+void HybridShadowTraceCS(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x + id.y * (64 * 1024);
+    if (index >= shadowWork[3])
+        return;
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    uint address = shadowWork[4 + index];
+    int3 pixel = int3(address % width, address / width, 0);
+    storeShadowFallback(pixel.xy, traceHybridShadow(shadowPixelRay(pixel, int2(width, height) - 2), pixel));
+}
+#endif
+#endif
+
 float3 diagnosticLinear(float3 c)
 {
     c = saturate(c);

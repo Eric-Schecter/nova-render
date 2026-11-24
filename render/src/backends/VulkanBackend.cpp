@@ -373,6 +373,117 @@ namespace render::detail
             }
             vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
         }
+        bool SupportsSparseShadowFallback() const override { return shadowWorkLimit != 0; }
+        VkDeviceSize shadowWorkLimit = 0;
+        VkDeviceSize shadowWorkBytes = 0;
+        ModelBuffer shadowWork;
+        VkDescriptorSetLayout shadowGuideLayout{}, shadowOutputLayout{};
+        VkDescriptorPool shadowPool{};
+        VkDescriptorSet shadowSets[2]{};
+        VkPipelineLayout shadowLayout{};
+        VkPipeline shadowClassify{}, shadowTrace{};
+        bool EncodeSparseShadows(VkCommandBuffer command, uint32_t width, uint32_t height,
+                                 const std::array<void*, 7>& views)
+        {
+            const VkDeviceSize bytes = sizeof(uint32_t) * (4 + VkDeviceSize(width) * height);
+            if (bytes > shadowWorkLimit)
+                return false;
+            if (!shadowLayout)
+            {
+                VkDescriptorSetLayoutBinding guides[3]{}, outputs[5]{};
+                for (uint32_t i = 0; i < 3; ++i)
+                    guides[i] = {17 + i, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT};
+                for (uint32_t i = 0; i < 5; ++i)
+                    outputs[i] = {20 + i, i ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                  1, VK_SHADER_STAGE_COMPUTE_BIT};
+                VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+                setInfo.bindingCount = 3;
+                setInfo.pBindings = guides;
+                check(vkCreateDescriptorSetLayout(device, &setInfo, nullptr, &shadowGuideLayout), "Create shadow guides");
+                setInfo.bindingCount = 5;
+                setInfo.pBindings = outputs;
+                check(vkCreateDescriptorSetLayout(device, &setInfo, nullptr, &shadowOutputLayout), "Create shadow outputs");
+                VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 3},
+                                               {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4},
+                                               {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
+                VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+                poolInfo.maxSets = 2;
+                poolInfo.poolSizeCount = 3;
+                poolInfo.pPoolSizes = sizes;
+                check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &shadowPool), "Create sparse shadow descriptor pool");
+                VkDescriptorSetLayout layouts[] = {modelSetLayout, shadowGuideLayout, shadowOutputLayout};
+                VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                alloc.descriptorPool = shadowPool;
+                alloc.descriptorSetCount = 2;
+                alloc.pSetLayouts = layouts + 1;
+                check(vkAllocateDescriptorSets(device, &alloc, shadowSets), "Allocate sparse shadow descriptors");
+                VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+                layoutInfo.setLayoutCount = 3;
+                layoutInfo.pSetLayouts = layouts;
+                check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &shadowLayout), "Create sparse shadow layout");
+                auto create = [&](const char* file, const char* entry, VkPipeline& pipeline) {
+                    const auto module = shader(file);
+                    VkComputePipelineCreateInfo info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+                    info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+                    info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+                    info.stage.module = module;
+                    info.stage.pName = entry;
+                    info.layout = shadowLayout;
+                    const auto status = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
+                    vkDestroyShaderModule(device, module, nullptr);
+                    check(status, "Create sparse shadow pipeline");
+                };
+                create("model-shadow-classify.comp.spv", "HybridShadowClassifyCS", shadowClassify);
+                create("model-shadow-trace.comp.spv", "HybridShadowTraceCS", shadowTrace);
+            }
+            if (shadowWorkBytes != bytes)
+            {
+                destroyModelBuffer(shadowWork);
+                modelBuffer(shadowWork, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                               VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+                shadowWorkBytes = bytes;
+            }
+            VkDescriptorImageInfo images[7]{};
+            VkWriteDescriptorSet writes[8]{};
+            for (uint32_t i = 0; i < 7; ++i)
+            {
+                const bool output = i >= 3;
+                images[i].imageView = reinterpret_cast<VkImageView>(views[i]);
+                images[i].imageLayout = output ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                auto& write = writes[i];
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = shadowSets[output ? 1 : 0];
+                write.dstBinding = 17 + i + (output ? 1 : 0);
+                write.descriptorCount = 1;
+                write.descriptorType = output ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                write.pImageInfo = &images[i];
+            }
+            VkDescriptorBufferInfo work{shadowWork.buffer, 0, bytes};
+            writes[7] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, shadowSets[1], 20, 0, 1,
+                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &work, nullptr};
+            vkUpdateDescriptorSets(device, 8, writes, 0, nullptr);
+            auto barrier = [&](VkPipelineStageFlags from, VkPipelineStageFlags to,
+                               VkAccessFlags source, VkAccessFlags destination) {
+                VkMemoryBarrier memory{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+                memory.srcAccessMask = source;
+                memory.dstAccessMask = destination;
+                vkCmdPipelineBarrier(command, from, to, 0, 1, &memory, 0, nullptr, 0, nullptr);
+            };
+            vkCmdFillBuffer(command, shadowWork.buffer, 0, 16, 0);
+            barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            const VkDescriptorSet sets[] = {modelSet, shadowSets[0], shadowSets[1]};
+            vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, shadowLayout, 0, 3, sets, 0, nullptr);
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, shadowClassify);
+            vkCmdDispatch(command, (width + 7) / 8, (height + 7) / 8, 1);
+            barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                    VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, shadowTrace);
+            vkCmdDispatchIndirect(command, shadowWork.buffer, 0);
+            return true;
+        }
         bool hybridGBufferBound = false;
         void CreateRasterAADevice() override
         {
@@ -381,6 +492,11 @@ namespace render::detail
             external.physical    = reinterpret_cast<void*>(physical);
             external.device      = reinterpret_cast<void*>(device);
             external.queueFamily = queueFamily;
+            if (shadowWorkLimit)
+                external.sparseShadows = [this](void* command, uint32_t width, uint32_t height,
+                                                const std::array<void*, 7>& views) {
+                    return EncodeSparseShadows(reinterpret_cast<VkCommandBuffer>(command), width, height, views);
+                };
             external.bindGBuffer = [this](void* command, const std::array<void*, 12>& views, int program) {
                 auto activeSet = program == -5 ? gBufferSet : program == -6 ? oitColorSet : hybridGBufferSet;
                 VkDescriptorImageInfo images[12]{};
@@ -528,6 +644,17 @@ namespace render::detail
             release(probeDeferredHalf);
             release(aaHybridShadow);
             release(aaCompactShadow);
+            release(shadowClassify);
+            release(shadowTrace);
+            if (shadowLayout) vkDestroyPipelineLayout(device, shadowLayout, nullptr);
+            if (shadowPool) vkDestroyDescriptorPool(device, shadowPool, nullptr);
+            if (shadowGuideLayout) vkDestroyDescriptorSetLayout(device, shadowGuideLayout, nullptr);
+            if (shadowOutputLayout) vkDestroyDescriptorSetLayout(device, shadowOutputLayout, nullptr);
+            shadowLayout = VK_NULL_HANDLE;
+            shadowPool = VK_NULL_HANDLE;
+            shadowGuideLayout = shadowOutputLayout = VK_NULL_HANDLE;
+            destroyModelBuffer(shadowWork);
+            shadowWorkBytes = 0;
             release(aaHybridReflection);
             release(aaHybridAO);
             release(aaProbeReflection);
@@ -654,6 +781,14 @@ namespace render::detail
             if (!supported.independentBlend)
                 throw std::runtime_error("Vulkan requires independentBlend for material transparency");
             features.independentBlend = VK_TRUE;
+            VkFormatProperties shadowFormat{};
+            vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_R16G16B16A16_SFLOAT, &shadowFormat);
+            if (supported.shaderStorageImageExtendedFormats &&
+                (shadowFormat.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
+            {
+                features.shaderStorageImageExtendedFormats = VK_TRUE;
+                shadowWorkLimit = properties.limits.maxStorageBufferRange;
+            }
             VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
             info.pEnabledFeatures        = &features;
             info.queueCreateInfoCount    = 1;

@@ -347,6 +347,64 @@ namespace render::detail
                     threadsPerThreadgroup:MTLSizeMake(UsesSharedProbeRays() ? 96 : 32, 1, 1)];
             [encoder endEncoding];
         }
+        bool SupportsSparseShadowFallback() const override { return true; }
+        id<MTLComputePipelineState> shadowClassify, shadowTrace;
+        id<MTLBuffer> shadowWork;
+        bool EncodeSparseShadows(id<MTLCommandBuffer> command, uint32_t width, uint32_t height,
+                                 const std::array<void*, 7>& views)
+        {
+            const size_t bytes = sizeof(uint32_t) * (4 + size_t(width) * height);
+            if (bytes > device.maxBufferLength)
+                return false;
+            auto pipeline = [&](const char* file) {
+                const auto data = LoadShader(settings.shaderDirectory, file);
+                auto blob = dispatch_data_create(data.data(), data.size(),
+                                                 dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0),
+                                                 DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+                NSError* error = nil;
+                auto library = [device newLibraryWithData:blob error:&error];
+                if (!library)
+                    throw metalError("Load sparse shadow shader", error);
+                auto result = [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"computeMain"]
+                                                                    error:&error];
+                if (!result)
+                    throw metalError("Create sparse shadow pipeline", error);
+                return result;
+            };
+            if (!shadowClassify)
+                shadowClassify = pipeline("model-shadow-classify.metallib");
+            if (!shadowTrace)
+                shadowTrace = pipeline("model-shadow-trace.metallib");
+            if (!shadowWork || shadowWork.length != bytes)
+                shadowWork = [device newBufferWithLength:bytes options:MTLResourceStorageModePrivate];
+            if (!shadowWork)
+                return false;
+            auto clear = [command blitCommandEncoder];
+            [clear fillBuffer:shadowWork range:NSMakeRange(0, 16) value:0];
+            [clear endEncoding];
+            auto bind = [&](id<MTLComputeCommandEncoder> encoder) {
+                [encoder setBuffer:shadowWork offset:0 atIndex:20];
+                for (NSUInteger i = 0; i < 7; ++i)
+                    [encoder setTexture:(__bridge id<MTLTexture>)views[i] atIndex:17 + i + (i >= 3 ? 1 : 0)];
+            };
+            auto classify = [command computeCommandEncoder];
+            [classify setComputePipelineState:shadowClassify];
+            bind(classify);
+            [classify dispatchThreadgroups:MTLSizeMake((width + 7) / 8, (height + 7) / 8, 1)
+                     threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+            [classify endEncoding];
+            auto trace = [command computeCommandEncoder];
+            [trace setComputePipelineState:shadowTrace];
+            bind(trace);
+            [trace setBytes:&rasterAA.current length:sizeof(SceneUniforms) atIndex:0];
+            [trace setBuffer:sceneInstanceBuffer offset:0 atIndex:14];
+            [trace setTexture:modelTextures[0] atIndex:2];
+            [trace setSamplerState:modelSampler atIndex:7];
+            [trace dispatchThreadgroupsWithIndirectBuffer:shadowWork indirectBufferOffset:0
+                                    threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+            [trace endEncoding];
+            return true;
+        }
         id<MTLDepthStencilState>   oitDepthState;
         id<MTLBuffer>              aaPreviousPalette;
         id<MTLRenderPipelineState> AAPipeline(const char* file, uint32_t samples)
@@ -408,6 +466,10 @@ namespace render::detail
                     [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:(i < 8 ? 17 + i : 31 + i - 8)];
             };
             external.beforeScene = [this](void* command) { EncodeProbeUpdate((__bridge id<MTLCommandBuffer>)command); };
+            external.sparseShadows = [this](void* command, uint32_t width, uint32_t height,
+                                            const std::array<void*, 7>& views) {
+                return EncodeSparseShadows((__bridge id<MTLCommandBuffer>)command, width, height, views);
+            };
             external.draw        = [this](const AAPass& pass, void* encoder, void*) {
                 id<MTLRenderCommandEncoder> e      = (__bridge id<MTLRenderCommandEncoder>)encoder;
                 const int                   sample = pass.multisampled ? 1 : 0;

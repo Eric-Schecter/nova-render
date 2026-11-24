@@ -164,6 +164,16 @@ The 16-frame image sequences agreed in the planter contact contrast and the mean
 
 The Chrome compute prototype compacted 6,769–6,898 receivers per moving frame, or 2.94–2.99% of the active view, with a median list-build GPU time of about 0.028 ms. When the list also generated indirect dispatch arguments, building it took 0.274 ms and tracing its receivers took 2.277 ms (GPU medians). Indirect tracing reused the shared HLSL visibility code. The last frame matched the raster fallback for 6,835 of 6,836 tested receivers. One differed by one of four samples. The prototype uses the existing raster fallback result to identify receivers, so these measurements exclude classification and do not represent a replacement pass or end-to-end savings. Metal, MoltenVK and Chrome Hybrid regression tests passed with the BVH trial. The indirect trace remains a Chrome-only experiment.
 
+### Sponza angle-2 integrated sparse shadow fallback
+
+`sparseShadowFallback` uses the same G-buffer guide test and shared HLSL visibility tracing as raster fallback. A compute pass initializes the fallback visibility textures and appends incompatible receivers to the GPU buffer. The buffer also holds the workgroup counts used by the indirect dispatch. The guided resolve and existing temporal reconstruction, SVGF and deferred lighting then consume the result without a CPU readback.
+
+In a separate Chrome GPU timestamp profile, classification, indirect tracing, upsampling, shadow filtering and deferred lighting measured medians of 0.117, 1.484, 0.128, 1.257 and 2.202 ms. The median per-frame sum was 5.22 ms, including deferred lighting and excluding the shared coarse trace. The raster profile measured 13.6 ms for fallback alone and 30.16 ms for the corresponding pass sum. Timing for unchanged passes varied across these instrumented runs. Playback performance is measured independently with batch submissions and no timestamp instrumentation.
+
+On Apple M4 at 640 × 360, both modes used the same 16-frame camera path and four samples per traced receiver. Synchronized moving-frame medians in raster/sparse/sparse/raster order gave paired comparisons of 99.2 → 84.3 and 70.8 → 89.7 ms on Metal, 112.4 → 103.3 and 90.4 → 104.6 ms on Vulkan (MoltenVK), and 130.7 → 123.7 and 145.2 → 124.3 ms in Chrome WebGPU. The sparse mode remains opt-in. All three backends passed the five-light Hybrid regression.
+
+Separate 16-frame image sequences matched in each backend's planter contact contrast (about 78/255) and in floor penumbra adjacent-frame luminance change (about 0.335–0.336/255, including camera motion). The frame and crop sheets are `build/validation/sponza-reference/sparse-shadow-moving-comparison.png` and `sparse-shadow-detail-comparison.png`.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.

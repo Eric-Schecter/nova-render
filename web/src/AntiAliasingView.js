@@ -161,7 +161,7 @@ export async function createAntiAliasingView({
   const check = () => {
     if (disposed || lost) throw Error(lost || 'AA view disposed')
   }
-  const texture = (w, h, format = 'rgba16float', sampleCount = 1) =>
+  const texture = (w, h, format = 'rgba16float', sampleCount = 1, storage = false) =>
     device.createTexture({
       size: [w, h],
       format,
@@ -169,6 +169,7 @@ export async function createAntiAliasingView({
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
         GPUTextureUsage.TEXTURE_BINDING |
+        (storage ? GPUTextureUsage.STORAGE_BINDING : 0) |
         (sampleCount === 1 ? GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST : 0),
     })
   let uniform,
@@ -456,7 +457,13 @@ export async function createAntiAliasingView({
             coarse.u[4] *= 0.5
             coarse.u[5] *= 0.5
           }
-          addShadows(-7, halfHybridShadows ? halfShadowRaw : 92)
+          const fallback = addShadows(-7, halfHybridShadows ? halfShadowRaw : 92)
+          const scale = superSample ? 2 : 1
+          fallback.sparseShadow =
+            halfHybridShadows &&
+            external.hybrid.sparseShadowFallback &&
+            4 * (4 + (width * scale + 2) * (height * scale + 2)) <=
+              Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize)
         }
         if (halfReflections) {
           const reflection = add(-8, hybridReflectionTarget)
@@ -787,6 +794,7 @@ export async function createAntiAliasingView({
     const captureRevision = [...probeRevision],
       capturing = passes.filter((p) => p.program === 21).map((p) => p.target - 73)
     const used = new Set([DUMMY])
+    const sparse = passes.some((pass) => pass.sparseShadow)
     for (const p of passes) {
       used.add(p.target)
       p.sources.forEach((i) => used.add(i))
@@ -863,7 +871,13 @@ export async function createAntiAliasingView({
         tw = Math.ceil((w * scale) / 2) + 2
         th = Math.ceil((h * scale) / 2) + 2
       }
-      if (textures[i] && (textures[i].width !== tw || textures[i].height !== th)) {
+      const storage = sparse && i >= halfShadowRaw
+      if (
+        textures[i] &&
+        (textures[i].width !== tw ||
+          textures[i].height !== th ||
+          Boolean(textures[i].usage & GPUTextureUsage.STORAGE_BINDING) !== storage)
+      ) {
         textures[i].destroy()
         textures[i] = undefined
       }
@@ -873,6 +887,7 @@ export async function createAntiAliasingView({
           th,
           'rgba16float',
           [MC, MM, 19, 20, 46, 47, 48, 49].includes(i) ? 4 : 1,
+          storage,
         )
     }
     // With temporal OIT, only the opaque raw target is retained by the graph.
@@ -924,6 +939,14 @@ export async function createAntiAliasingView({
         p.end()
       }
     function render(p, index, present = false) {
+      if (p.sparseShadow) {
+        external.sparseShadows(
+          encoder,
+          p.sources.slice(0, 3).map((i) => textures[i]),
+          Array.from({ length: 4 }, (_, i) => textures[p.target + i]),
+        )
+        return
+      }
       if (p.hitReprojection) external.writeReflectionReprojection(p.u)
       device.queue.writeBuffer(uniform, index * 256, new Float32Array(p.u))
       const scene =
