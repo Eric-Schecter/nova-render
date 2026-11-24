@@ -156,6 +156,14 @@ On Apple M4, two pairs of synchronized moving-frame medians, taken in old/new/ne
 
 Across separate 16-frame sequences, contact contrast (about 78.0/255) and the adjacent-frame floor penumbra luminance change (about 0.336/255, including camera motion) matched within each backend at the reported precision. The moving endpoint RGB error between the two modes was below 0.00008/255 on all three backends. Full-frame and crop comparisons are under `build/validation/sponza-reference` as `compact-shadow-moving-comparison.png` and `compact-shadow-detail-comparison.png`.
 
+### Sponza angle-2 shadow traversal and fallback list experiment
+
+The trial used the compact shadow profile above, including the same 16 moving frames and four blue-noise samples per traced pixel. A shader variant selected box entry and exit bounds from the ray sign, moved the parallel-axis check off the common path, and accessed the packed BVH bounds and children directly. Moving medians (baseline → variant, two pairs) were 55.7 → 56.5 and 52.9 → 57.3 ms on Metal, 54.9 → 58.4 and 59.4 → 67.2 ms on Vulkan (MoltenVK), and 88.6 → 90.6 and 89.2 → 87.5 ms in Chrome WebGPU. The variant was discarded. The fastest baseline run was 52.9 ms, about 18.9 FPS.
+
+The 16-frame image sequences agreed in the planter contact contrast and the mean adjacent-frame luminance change in the floor penumbra on all three backends. The candidate before/after screenshots are `build/validation/sponza-reference/shadow-bvh-moving-comparison.png` and `shadow-bvh-detail-comparison.png`.
+
+The Chrome compute prototype compacted 6,769–6,898 receivers per moving frame, or 2.94–2.99% of the active view, with a median list-build GPU time of about 0.028 ms. When the list also generated indirect dispatch arguments, building it took 0.274 ms and tracing its receivers took 2.277 ms (GPU medians). Indirect tracing reused the shared HLSL visibility code. The last frame matched the raster fallback for 6,835 of 6,836 tested receivers. One differed by one of four samples. The prototype uses the existing raster fallback result to identify receivers, so these measurements exclude classification and do not represent a replacement pass or end-to-end savings. Metal, MoltenVK and Chrome Hybrid regression tests passed with the BVH trial. The indirect trace remains a Chrome-only experiment.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
