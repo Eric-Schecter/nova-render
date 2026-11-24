@@ -126,6 +126,12 @@ The two upper-wall samples sit at Y ≈ 254 and 205, above the local DDGI volume
 
 The upper-wall patch changes from RGB (62, 53, 37) to (51, 49, 41), against reference (48, 45, 39). The shaded floor changes from (54, 46, 35) to (54, 46, 39), against reference (57, 46, 36). Its display luma stays near the reference at 47.1 versus 47.3. The second upper-wall patch still has excess brightness, at 42.2 versus 19.5. The adjusted asset is a first-camera comparison and does not change renderer defaults. The triptych is `build/validation/sponza-reference/sky-wall-comparison.png`.
 
+### Sponza remaining-camera retest
+
+Render pinned angles 2, 3 and 4 at 640 × 360 after 48 frames with the same angle-1 settings: vertical85 environment, intensity 0.45, directional disk radius 0.08, four blue-noise shadow samples and probe bounds `(-500, 1, -100)` to `(395, 151, 200)`. Only the camera changes. Metal and Vulkan captures match exactly. WebGPU mean absolute RGB differences from Metal for angles 2–4 are 0.287, 0.953 and 0.790 on the 0–255 scale.
+
+The upper view in angle 2 has a shaded far arch. Angle 3 has a cool end wall and a predominantly dark arch. Angle 4 shows broad cool light on the upper arcade and columns without a similarly isolated bright arch. The local package and captured public reference contain only one published Sponza image, corresponding to angle 1, so these observations assess recurrence within Nova rather than reference pixel parity for angles 2–4. The contact sheet is `build/validation/sponza-reference/retest-contact-sheet.png`, with the angle-1 reference comparison followed by the three new camera rows in Metal/Vulkan/WebGPU order.
+
 ## GPU presentation foundation
 
 Native AA/deferred devices expose their owned output texture to the model presenter. Metal, Vulkan and DX12 adapters can sample that texture directly; no automatic image readback/upload is required on this path. An explicit private capture operation remains available for verification. Queue completion is still synchronized; this stage does not claim asynchronous frames in flight or shared hardware ray-query acceleration structures.
