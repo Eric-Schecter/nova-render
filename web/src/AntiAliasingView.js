@@ -172,16 +172,64 @@ export async function createAntiAliasingView({
         (storage ? GPUTextureUsage.STORAGE_BINDING : 0) |
         (sampleCount === 1 ? GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST : 0),
     })
-  let uniform,
-    layout,
-    pipelines = [],
-    sceneMS,
-    shadowMS,
-    hdrMS,
-    ssrMS,
-    displayPipeline,
-    linear,
-    point
+  let uniform, layout, pipelineLayout, linear, point
+  const pipelines = new Map()
+  const shaderModules = new Map()
+  async function pipeline(program, count, targetFormat) {
+    const key = `${program}/${count}/${targetFormat}`
+    if (!pipelines.has(key)) {
+      const build = async () => {
+        if (!shaderModules.has(program)) {
+          const load = async () => {
+            const response = await fetch(shaderDirectory + `aa-${program}.json`)
+            if (!response.ok) throw Error('Missing AA HLSL shader ' + program)
+            const data = await response.json()
+            return {
+              vertex: device.createShaderModule({ code: data.vert }),
+              fragment: device.createShaderModule({ code: data.frag }),
+            }
+          }
+          shaderModules.set(
+            program,
+            load().catch((error) => {
+              shaderModules.delete(program)
+              throw error
+            }),
+          )
+        }
+        const { vertex, fragment } = await shaderModules.get(program)
+        const targetCount = program === 17 ? 4 : [0, 10, 16].includes(program) ? 2 : 1
+        return device.createRenderPipelineAsync({
+          layout: pipelineLayout,
+          vertex: { module: vertex, entryPoint: 'VSMain' },
+          fragment: {
+            module: fragment,
+            entryPoint: 'PSMain',
+            targets: Array.from({ length: targetCount }, () => ({ format: targetFormat })),
+          },
+          primitive: { topology: 'triangle-list', cullMode: 'none' },
+          multisample: { count },
+          ...([0, 9, 10, 16, 17].includes(program)
+            ? {
+                depthStencil: {
+                  format: 'depth32float',
+                  depthWriteEnabled: true,
+                  depthCompare: 'less',
+                },
+              }
+            : {}),
+        })
+      }
+      pipelines.set(
+        key,
+        build().catch((error) => {
+          pipelines.delete(key)
+          throw error
+        }),
+      )
+    }
+    return pipelines.get(key)
+  }
   try {
     uniform = device.createBuffer({
       size: 256 * 96,
@@ -201,50 +249,7 @@ export async function createAntiAliasingView({
             : { sampler: { type: i === 9 ? 'filtering' : 'non-filtering' } }),
       })),
     })
-    const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] })
-    async function pipeline(program, count = 1, targetFormat = 'rgba16float') {
-      const response = await fetch(shaderDirectory + `aa-${program}.json`)
-      if (!response.ok) throw Error('Missing AA HLSL shader ' + program)
-      const data = await response.json()
-      return device.createRenderPipelineAsync({
-        layout: pipelineLayout,
-        vertex: { module: device.createShaderModule({ code: data.vert }), entryPoint: 'VSMain' },
-        fragment: {
-          module: device.createShaderModule({ code: data.frag }),
-          entryPoint: 'PSMain',
-          targets: Array.from(
-            {
-              length:
-                program === 17 ? 4 : program === 0 || program === 10 || program === 16 ? 2 : 1,
-            },
-            () => ({
-              format: targetFormat,
-            }),
-          ),
-        },
-        primitive: { topology: 'triangle-list', cullMode: 'none' },
-        multisample: { count },
-        ...([0, 9, 10, 16, 17].includes(program)
-          ? {
-              depthStencil: {
-                format: 'depth32float',
-                depthWriteEnabled: true,
-                depthCompare: 'less',
-              },
-            }
-          : {}),
-      })
-    }
-    for (let i = 0; i < 22; i++) pipelines.push(await pipeline(i))
-    if (external) {
-      pipelines[29] = await pipeline(29)
-      pipelines[30] = await pipeline(30)
-    }
-    sceneMS = await pipeline(0, 4)
-    if (shadowScene) shadowMS = await pipeline(10, 4)
-    if (hdrScene) hdrMS = await pipeline(16, 4)
-    if (reflectionScene) ssrMS = await pipeline(17, 4)
-    displayPipeline = await pipeline(8, 1, format)
+    pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] })
     linear = device.createSampler({
       minFilter: 'linear',
       magFilter: 'linear',
@@ -252,10 +257,18 @@ export async function createAntiAliasingView({
       addressModeV: 'clamp-to-edge',
     })
     point = device.createSampler({ minFilter: 'nearest', magFilter: 'nearest' })
+  } catch (error) {
+    uniform?.destroy()
+    textures.forEach((t) => t?.destroy())
+    if (!borrowedDevice) device.destroy()
+    throw error
+  }
+  async function loadSmaaTables() {
     for (const [i, name, w, h] of [
       [AREA, 'area', 160, 560],
       [SEARCH, 'search', 64, 16],
     ]) {
+      if (textures[i]) continue
       const r = await fetch(shaderDirectory + 'smaa-' + name + '.bin')
       if (!r.ok) throw Error('Missing SMAA table')
       const data = new Uint8Array(await r.arrayBuffer())
@@ -268,11 +281,6 @@ export async function createAntiAliasingView({
         { width: w, height: h },
       )
     }
-  } catch (error) {
-    uniform?.destroy()
-    textures.forEach((t) => t?.destroy())
-    if (!borrowedDevice) device.destroy()
-    throw error
   }
   function uploadReflectionEnvironment(data, slot = 64) {
     const next = device.createTexture({
@@ -921,7 +929,17 @@ export async function createAntiAliasingView({
       depthShadow?.destroy()
       depthShadow = undefined
     }
-    if (external) await external.prepare(w, h, settings, frames)
+    const [displayPipeline] = await Promise.all([
+      pipeline(passes.at(-1).program, 1, format),
+      ...passes
+        .filter((pass) => pass.program >= 0)
+        .map(async (pass) => {
+          pass.pipeline = await pipeline(pass.program, pass.ms ? 4 : 1, 'rgba16float')
+        }),
+      used.has(AREA) ? loadSmaaTables() : undefined,
+      external?.prepare(w, h, settings, frames, passes),
+    ])
+    check()
     const encoder = device.createCommandEncoder()
     device.pushErrorScope('validation')
     for (const i of [HA, HB, PM, DUMMY])
@@ -1047,19 +1065,7 @@ export async function createAntiAliasingView({
         pass.end()
         return
       }
-      pass.setPipeline(
-        present
-          ? displayPipeline
-          : p.ms
-            ? p.program === 17
-              ? ssrMS
-              : p.program === 16
-                ? hdrMS
-                : p.program === 10
-                  ? shadowMS
-                  : sceneMS
-            : pipelines[p.program],
-      )
+      pass.setPipeline(present ? displayPipeline : p.pipeline)
       const group = device.createBindGroup({
         layout,
         entries: Array.from({ length: 19 }, (_, i) => ({

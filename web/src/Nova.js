@@ -315,7 +315,7 @@ class Renderer {
             this.#clear.map((v, i) =>
               i === 3 || !this.#model ? v : v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
             ),
-          prepare: async (w, h, settings, frames) => {
+          prepare: async (w, h, settings, frames, passes) => {
             if (this.#model)
               this.#model.setHybrid(this.#renderMode === 'hybrid' ? this.#hybrid : null)
             if (this.#model)
@@ -335,9 +335,13 @@ class Renderer {
                 this.#postSettings,
                 scene.raster,
                 scene.halfShadows,
+                passes,
               )
-            else if (!this.#triangleAA[settings.method === 'msaa' ? 4 : 1]) {
-              const count = settings.method === 'msaa' ? 4 : 1,
+            else if (
+              passes.some((pass) => pass.program === -1) &&
+              !this.#triangleAA[passes.some((pass) => pass.ms) ? 4 : 1]
+            ) {
+              const count = passes.some((pass) => pass.ms) ? 4 : 1,
                 shader = this.#triangleShader
               this.#triangleAA[count] = await this.#device.createRenderPipelineAsync({
                 layout: 'auto',
