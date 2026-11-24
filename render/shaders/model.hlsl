@@ -1463,6 +1463,31 @@ HybridShadowTargets HybridShadowPSMain(SkyOut input)
                           + ndc.y * cameraUp.w * cameraUp.xyz;
     }
     HybridShadowTargets output;
+    bool hybridHalf = irradiance[1].w > .5 && irradiance[4].w > .5 && irradiance[3].w > .5 && irradiance[8].w == 0
+                      && loadInstance(uint(irradiance[3].w) - 1).normalMatrix._m00 > .5;
+    if (hybridHalf && any((pixel.xy - 1) & 1) && gBase.Load(pixel).w > 0)
+    {
+        uint width, height;
+        gBase.GetDimensions(width, height);
+        int2 last = ((int2(width, height) - 1) / 2) * 2 - 1;
+        int2 first = ((pixel.xy - 1) / 2) * 2 + 1;
+        float4 receiver = gPosition.Load(pixel);
+        float3 normal = octDecode(gNormals.Load(pixel).zw);
+        [unroll] for (int y = 0; y < 2; ++y)
+            [unroll] for (int x = 0; x < 2; ++x)
+            {
+                int3 tap = int3(min(first + int2(x, y) * 2, last), 0);
+                float4 guide = gPosition.Load(tap);
+                float depthDelta = abs((receiver.x - guide.x) + (receiver.y - guide.y));
+                if (gBase.Load(tap).w > 0 && depthDelta < .018 && abs(receiver.w - guide.w) < .5
+                    && dot(normal, octDecode(gNormals.Load(tap).zw)) > .94)
+                {
+                    output.slots0 = output.slots1 = output.slots2 = output.slots3 = -1;
+                    return output;
+                }
+            }
+        // A thin receiver with no compatible coarse guide still gets all its rays.
+    }
     float        visibility[16];
     [unroll] for (uint j = 0; j < 16; j++) visibility[j] = 1;
     if (gBase.Load(pixel).w > 0 && (irradiance[4].w > .5 || irradiance[1].z > .5) && irradiance[3].w > .5)

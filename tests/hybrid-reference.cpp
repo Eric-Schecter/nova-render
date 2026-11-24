@@ -196,6 +196,7 @@ int main(int argc, char** argv)
                     profile.shadows = options.value("shadows", true);
                     profile.shadowTemporalReconstruction = true;
                     profile.shadowSVGF = options.value("shadowSVGF", false);
+                    profile.halfResolutionShadows = options.value("halfResolutionShadows", false);
                     profile.blueNoiseShadows = options.value("blueNoiseShadows", false);
                     profile.shadowSamples = options.value("shadowSamples", profile.shadowSamples);
                     profile.ambientOcclusion = profile.temporalReconstruction = true;
@@ -225,6 +226,7 @@ int main(int argc, char** argv)
                     ++captures;
                     if (options.value("motion", false))
                     {
+                        const bool captureMotionFrames = options.value("captureMotionFrames", false);
                         auto timedFrames = [&](bool move) {
                             std::array<double, 16> samples;
                             for (size_t frame = 0; frame < samples.size(); ++frame)
@@ -239,6 +241,11 @@ int main(int argc, char** argv)
                                 gpuFrame();
                                 samples[frame] = std::chrono::duration<double, std::milli>(
                                   std::chrono::steady_clock::now() - start).count();
+                                if (move && captureMotionFrames)
+                                {
+                                    captureGPU(name + "-frame-" + std::to_string(frame + 1));
+                                    ++captures;
+                                }
                             }
                             std::sort(samples.begin(), samples.end());
                             return (samples[7] + samples[8]) / 2;

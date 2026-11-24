@@ -102,6 +102,10 @@ namespace render::detail
         AAModelFilmMap,
         AAHoverOutlineMask,
         AASelectedOutlineMask,
+        AAHalfShadowRaw0,
+        AAHalfShadowRaw1,
+        AAHalfShadowRaw2,
+        AAHalfShadowRaw3,
         AAResourceCount
     };
     using AAUniforms = std::array<std::array<float, 4>, 16>;

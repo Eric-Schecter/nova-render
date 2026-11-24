@@ -83,6 +83,8 @@ const modelSpecularMapTarget = shadowAtrous + 1
 const modelFilmMapTarget = modelSpecularMapTarget + 1
 const hoverOutlineMask = modelFilmMapTarget + 1
 const selectedOutlineMask = hoverOutlineMask + 1
+const halfShadowRaw = selectedOutlineMask + 1
+const lastTexture = halfShadowRaw + 3
 
 export async function createAntiAliasingView({
   canvas,
@@ -297,7 +299,7 @@ export async function createAntiAliasingView({
     height = h
     superSample = ss
     reset()
-    for (let i = 0; i <= selectedOutlineMask; i++)
+    for (let i = 0; i <= lastTexture; i++)
       if (i !== AREA && i !== SEARCH && i !== 38 && i !== 39 && i !== 64 && !(i >= 73 && i <= 77)) {
         textures[i]?.destroy()
         textures[i] = undefined
@@ -322,6 +324,8 @@ export async function createAntiAliasingView({
       !!external?.hybrid?.ambientOcclusion && external.hybrid.halfResolutionAO && !debug
     const denoiseReflections = halfReflections && external.hybrid.reflectionDenoising
     const shadowGroups = Math.ceil((external?.shadowLightCount ?? 0) / 4)
+    const halfHybridShadows =
+      !debug && external?.hybrid?.shadows && external.hybrid.halfResolutionShadows
     const temporalShadows =
       shadowGroups > 0 &&
       !!external?.hybrid?.shadows &&
@@ -438,7 +442,7 @@ export async function createAntiAliasingView({
         if (denoiseReflections || temporalShadows || halfAO) add(-2, 18)
         add(-4, 85)
         if (external.hybrid || external.halfShadows) {
-          const shadow = add(-7, 92)
+          const shadow = add(-7, halfHybridShadows ? halfShadowRaw : 92)
           shadow.sources.splice(0, 4, 85, 86, 87, 88)
           shadow.sources[8] = modelClearcoatTarget
           shadow.sources[10] = modelSpecularMapTarget
@@ -523,6 +527,15 @@ export async function createAntiAliasingView({
             guide.u[8] = 1
           }
         }
+        if (halfHybridShadows)
+          for (let i = 0; i < Math.max(1, shadowGroups); ++i) {
+            const p = add(30, 92 + i)
+            p.sources[0] = halfShadowRaw + i
+            p.sources[1] = 86
+            p.sources[2] = 85
+            p.sources[6] = 87
+            p.u[11] = 5
+          }
         let resolvedShadows = 92
         if (temporalShadows) {
           const previousShadows = frames % 2 ? shadowHistoryA : shadowHistoryB
@@ -784,7 +797,7 @@ export async function createAntiAliasingView({
         if (!external) used.add(MM)
       }
     }
-    for (let i = 0; i <= selectedOutlineMask; i++) {
+    for (let i = 0; i <= lastTexture; i++) {
       if (i === AREA || i === SEARCH || i === 64 || i === 77) continue
       if (!used.has(i)) {
         textures[i]?.destroy()
@@ -805,7 +818,7 @@ export async function createAntiAliasingView({
       if (i >= 23) [tw, th] = postResourceSize(i, w, h)
       if ((i >= 42 && i < 64) || i >= 65) [tw, th] = reflectionResourceSize(i, w, h, superSample)
       if (i === hoverOutlineMask || i === selectedOutlineMask) [tw, th] = [w, h]
-      if ((i >= 85 && i < 96) || i === modelClearcoatTarget) {
+      if ((i >= 85 && i < 96) || i === modelClearcoatTarget || i >= halfShadowRaw) {
         const scale = superSample ? 2 : 1
         tw = w * scale + 2
         th = h * scale + 2

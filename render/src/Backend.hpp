@@ -398,6 +398,7 @@ namespace render::detail
                 }
             rasterGlobals = uint32_t(rasterInstances.size());
             InstanceData globals{};
+            globals.normal[0] = hybrid.halfResolutionShadows && hybrid.view == HybridView::Final ? 1.f : 0.f;
             std::copy(fogSettings.color.begin(), fogSettings.color.end(), globals.baseColor);
             globals.baseColor[3] = float(fogSettings.mode);
             globals.material[0]  = fogSettings.nearDistance;
@@ -1082,6 +1083,7 @@ namespace render::detail
               || previousHybrid.temporalReconstruction != hybrid.temporalReconstruction
               || previousHybrid.shadowTemporalReconstruction != hybrid.shadowTemporalReconstruction
               || previousHybrid.shadowSVGF != hybrid.shadowSVGF
+              || previousHybrid.halfResolutionShadows != hybrid.halfResolutionShadows
               || previousHybrid.historyWeight != hybrid.historyWeight)
             {
                 RebuildRasterInstances(

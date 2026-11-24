@@ -334,12 +334,46 @@ float4 hybridAOSpatial(int2 pixel, int2 last)
     return float4(sum / mass, center.yzw);
 }
 
+float4 hybridShadowUpsample(int2 pixel)
+{
+    float4 current = colorTex.Load(int3(pixel, 0));
+    if (current.x >= 0)
+        return current;
+    uint width, height;
+    areaTex.GetDimensions(width, height);
+    int2 last = ((int2(width, height) - 1) / 2) * 2 - 1;
+    int2 first = ((pixel - 1) / 2) * 2 + 1;
+    float2 fraction = float2((pixel - 1) & 1) * .5;
+    float4 receiver = areaTex.Load(int3(pixel, 0));
+    float3 normal = reflectionNormal(edgeTex.Load(int3(pixel, 0)).zw);
+    float4 sum = 0;
+    float mass = 0;
+    [unroll] for (int y = 0; y < 2; ++y)
+        [unroll] for (int x = 0; x < 2; ++x)
+        {
+            int3 tap = int3(min(first + int2(x, y) * 2, last), 0);
+            float4 guide = areaTex.Load(tap);
+            float depthDelta = abs((receiver.x - guide.x) + (receiver.y - guide.y));
+            float agreement = dot(normal, reflectionNormal(edgeTex.Load(tap).zw));
+            if (weightTex.Load(tap).w <= 0 || depthDelta >= .018 || abs(receiver.w - guide.w) >= .5
+                || agreement <= .94)
+                continue;
+            float2 spatial = lerp(1 - fraction, fraction, float2(x, y));
+            float weight = (spatial.x * spatial.y + .02) * exp2(-120 * depthDelta) * agreement;
+            sum += colorTex.Load(tap) * weight;
+            mass += weight;
+        }
+    return mass > 0 ? sum / mass : 1;
+}
+
 float4 hybridAOResolve(int2 pixel)
 {
     uint width, height;
     areaTex.GetDimensions(width, height);
     int2 extent = int2(width, height) - 2;
     int2 last = (extent + 1) / 2;
+    if (aa[2].w > 4.5)
+        return hybridShadowUpsample(pixel);
     if (aa[2].w > 3.5)
         return hybridAOSpatial(pixel, last);
     if (aa[2].w > 2.5)

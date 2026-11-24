@@ -120,6 +120,8 @@ namespace render::detail
             const bool temporalShadows    = shadowGroups > 0 && deferred && hybrid && hybridSettings.shadows
                                          && hybridSettings.shadowTemporalReconstruction && !hybridDebug
                                          && modelSettings.view == GBufferView::Final;
+            const bool halfHybridShadows = hybrid && hybridSettings.shadows && hybridSettings.halfResolutionShadows
+                                         && !hybridDebug && modelSettings.view == GBufferView::Final;
             if (deferred)
             {
                 if (denoiseReflections || temporalShadows || halfAO)
@@ -127,7 +129,7 @@ namespace render::detail
                 add(-4, AAModelBase);
                 if (hybrid)
                 {
-                    auto* shadow = add(-7, AAHybridShadow0);
+                    auto* shadow = add(-7, halfHybridShadows ? AAHalfShadowRaw0 : AAHybridShadow0);
                     for (int i = 0; i < 4; i++)
                         shadow->sources[i] = AAModelBase + i;
                     shadow->sources[8] = AAModelClearcoat;
@@ -225,6 +227,16 @@ namespace render::detail
                         guide->uniforms[2][0] = 1;
                     }
                 }
+                if (halfHybridShadows)
+                    for (int i = 0; i < std::max(1, shadowGroups); ++i)
+                    {
+                        auto* upsample = add(30, AAHybridShadow0 + i);
+                        upsample->sources[0] = AAHalfShadowRaw0 + i;
+                        upsample->sources[1] = AAModelNormal;
+                        upsample->sources[2] = AAModelBase;
+                        upsample->sources[6] = AAModelPosition;
+                        upsample->uniforms[2][3] = 5;
+                    }
                 int resolvedShadows = AAHybridShadow0;
                 if (temporalShadows)
                 {
