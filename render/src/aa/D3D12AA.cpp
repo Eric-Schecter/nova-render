@@ -580,7 +580,7 @@ namespace render::detail
                                                                 ? 2
                                                                 : 1;
                     auto&                       target      = textures[p.target];
-                    D3D12_CPU_DESCRIPTOR_HANDLE targets[5];
+                    D3D12_CPU_DESCRIPTOR_HANDLE targets[D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT];
                     for (int a = 0; a < attachments; a++)
                     {
                         const int n = p.multisampled ? (p.program == 17 ? AASsrMulti0
@@ -593,29 +593,32 @@ namespace render::detail
                                                                   : p.target + a;
                         Transition(textures[n], D3D12_RESOURCE_STATE_RENDER_TARGET);
                         targets[a]         = RTV(n);
-                        float colors[5][4] = {{0, 0, 0, 0}, {0, 0, 1, 1}};
-                        std::copy(p.uniforms[7].begin(), p.uniforms[7].end(), colors[0]);
+                        float colors[4]{};
+                        if (a == 0)
+                            std::copy(p.uniforms[7].begin(), p.uniforms[7].end(), colors);
+                        else if (a == 1)
+                            colors[2] = colors[3] = 1;
                         if (p.program == -2 || p.program == -3)
                         {
-                            colors[0][0] = colors[0][1] = 0;
-                            colors[0][2] = colors[0][3] = 1;
+                            colors[0] = colors[1] = 0;
+                            colors[2] = colors[3] = 1;
                         }
                         if (p.program == 17 && a == 2)
                         {
-                            colors[a][0] = colors[a][1] = colors[a][2] = 0;
-                            colors[a][3]                               = 1;
+                            colors[0] = colors[1] = colors[2] = 0;
+                            colors[3]                         = 1;
                         }
                         if (p.program == 17 && a == 3)
                         {
-                            colors[a][0] = colors[a][1] = 1000;
-                            colors[a][2]                = 0;
-                            colors[a][3]                = 1;
+                            colors[0] = colors[1] = 1000;
+                            colors[2]             = 0;
+                            colors[3]             = 1;
                         }
                         if ((p.program >= 22 && p.program != 23) || p.program == -4 || p.program == -7 || p.program == -11)
-                            std::fill(std::begin(colors[a]), std::end(colors[a]), 0.f);
+                            std::fill(std::begin(colors), std::end(colors), 0.f);
                         if (p.program == -6)
-                            std::fill(std::begin(colors[a]), std::end(colors[a]), a == 0 ? 0.f : 1.f);
-                        commands->ClearRenderTargetView(targets[a], colors[a], 0, nullptr);
+                            std::fill(std::begin(colors), std::end(colors), a == 0 ? 0.f : 1.f);
+                        commands->ClearRenderTargetView(targets[a], colors, 0, nullptr);
                     }
                     auto dsv = DSV(
                       p.program == 9                                          ? 3

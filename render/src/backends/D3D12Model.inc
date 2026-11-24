@@ -290,6 +290,7 @@ void UploadModel()
     info.PS                                 = {frag.data(), frag.size()};
     info.RasterizerState.FillMode           = D3D12_FILL_MODE_SOLID;
     info.RasterizerState.CullMode           = D3D12_CULL_MODE_NONE;
+    info.RasterizerState.FrontCounterClockwise = TRUE;
     info.RasterizerState.DepthClipEnable    = TRUE;
     auto& blend                             = info.BlendState.RenderTarget[0];
     blend.SrcBlend                          = D3D12_BLEND_ONE;

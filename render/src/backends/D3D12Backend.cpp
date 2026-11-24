@@ -387,6 +387,7 @@ namespace render::detail
             info.PS                                = {frag.data(), frag.size()};
             info.RasterizerState.FillMode          = D3D12_FILL_MODE_SOLID;
             info.RasterizerState.CullMode          = D3D12_CULL_MODE_NONE;
+            info.RasterizerState.FrontCounterClockwise = TRUE;
             info.RasterizerState.DepthClipEnable   = TRUE;
             info.RasterizerState.MultisampleEnable = samples > 1;
             auto& blend                            = info.BlendState.RenderTarget[0];
