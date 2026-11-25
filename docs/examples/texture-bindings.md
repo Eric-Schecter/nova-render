@@ -99,3 +99,12 @@ Vulkan stores eight texture indices per material in a storage buffer. Identical 
 NOVA_VULKAN_BINDING_TRACE=1 build/sdl-only/nova_material_test vulkan assets build/validation/vulkan-shared-textures --shared-textures
 NOVA_VULKAN_BINDING_TRACE=1 build/sdl-only/nova_material_test vulkan assets build/validation/vulkan-texture-overflow --texture-table-overflow
 ```
+
+### Bistro geometry stress test
+
+The Vulkan material benchmark also accepts a local GLB with `--model PATH`. It picks a textured slot by vertex count and captures before and after changing its base color map. The [Bistro glTF](https://github.com/zeux/niagara_bistro) `Props_Interior` subtree was tested using original geometry and generated 64 × 64 test textures. This isolates descriptor capacity and update behavior.
+
+- The 31-material version used 72 indexed descriptors. Its four transmissive materials required a full material update.
+- The 27-material opaque version also used 72 indexed descriptors. It uploaded one texture per edit. On Apple M4/MoltenVK at 1280 × 960, one run measured 198.84 ms from replacement to output with the atlas and 17.40 ms with indexed updates. Static frame medians were 16.08 ms and 16.99 ms respectively.
+
+The timings describe this subset and test texture workload. The full scene with its original textures remains a separate capacity and memory benchmark.

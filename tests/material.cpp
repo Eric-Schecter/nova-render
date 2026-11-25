@@ -19,18 +19,21 @@ int main(int argc, char** argv)
     render::detail::PresentationWindow window;
     try
     {
+        const bool external = argc == 6 && std::string_view(argv[4]) == "--model";
         const bool helmet = argc == 5 && std::string_view(argv[4]) == "--helmet";
+        const bool assetBenchmark = helmet || external;
         const bool overflow = argc == 5 && std::string_view(argv[4]) == "--texture-table-overflow";
         const bool shared = overflow || (argc == 5 && std::string_view(argv[4]) == "--shared-textures");
-        Require(argc == 3 || argc == 4 || helmet || shared, "Expected API, assets, optional output and benchmark option");
+        Require(argc == 3 || argc == 4 || assetBenchmark || shared, "Expected API, assets, optional output and benchmark option");
         std::string           api    = TestAPI(argv[1]);
-        std::filesystem::path path   = std::filesystem::path(argv[2]) / (helmet ? "DamagedHelmet/DamagedHelmet.glb" : "MaterialSample/Dual.glb");
+        std::filesystem::path path = external ? std::filesystem::path(argv[5])
+          : std::filesystem::path(argv[2]) / (helmet ? "DamagedHelmet/DamagedHelmet.glb" : "MaterialSample/Dual.glb");
         auto                  source = detail::LoadGLB(path);
-        Require(helmet || source->materials.size() == 2, "Missing slots");
+        Require(assetBenchmark || source->materials.size() == 2, "Missing slots");
         Require(
-          helmet || (source->vertices[0].position[3] == 1 && source->vertices[36].position[3] == 2), "Incorrect slot assignment");
+          assetBenchmark || (source->vertices[0].position[3] == 1 && source->vertices[36].position[3] == 2), "Incorrect slot assignment");
         Require(InitTestWindowHost(), "Window host initialization");
-        window = OpenTestWindow(api, helmet ? 640 : 320, helmet ? 480 : 240, "Material validation");
+        window = OpenTestWindow(api, assetBenchmark ? 640 : 320, assetBenchmark ? 480 : 240, "Material validation");
         Require(bool(window), "Window failed");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
@@ -124,16 +127,17 @@ int main(int argc, char** argv)
             std::filesystem::create_directories(output);
             backend->SetAntiAliasing({AAMethod::FXAA});
             backend->SetLighting(LightingMode::PBR);
-            if (helmet)
+            if (assetBenchmark)
             {
                 backend->LoadEnvironment(detail::LoadEnvironmentFile(std::filesystem::path(argv[2]) / "Environment/studio_small_09.nenv"));
                 OrbitCamera orbit;
                 orbit.yaw = 25;
-                orbit.pitch = 10;
-                orbit.distance = 3;
+                orbit.pitch = external ? 30 : 10;
+                orbit.distance = external ? 3.8f : 3.f;
                 backend->SetCamera(orbit);
             }
             auto slots = backend->GetMaterials("");
+            Require(!slots.empty(), "Benchmark model has no materials");
             auto texture = [](bool alternate) {
                 Image image{256, 256, std::vector<unsigned char>(256 * 256 * 4)};
                 for (uint32_t y = 0; y < image.height; ++y)
@@ -148,13 +152,26 @@ int main(int argc, char** argv)
                     }
                 return image;
             };
-            if (!helmet)
+            size_t slot = 0;
+            if (external)
             {
-                slots[0].baseColor = {1, 1, 1, 1};
-                slots[0].baseColorTexture = texture(false);
+                std::vector<size_t> counts(slots.size());
+                for (const auto& vertex : source->vertices)
+                {
+                    const auto index = size_t(vertex.position[3] - 1);
+                    if (index < slots.size() && slots[index].baseColorTexture)
+                        ++counts[index];
+                }
+                slot = size_t(std::max_element(counts.begin(), counts.end()) - counts.begin());
+                std::cout << "Benchmark material " << slot << ": " << slots[slot].name << '\n';
             }
-            Require(bool(slots[0].baseColorTexture), "Benchmark model has no base color texture");
-            backend->SetMaterial(0, slots[0], "");
+            if (!assetBenchmark)
+            {
+                slots[slot].baseColor = {1, 1, 1, 1};
+                slots[slot].baseColorTexture = texture(false);
+            }
+            Require(bool(slots[slot].baseColorTexture), "Benchmark model has no base color texture");
+            backend->SetMaterial(uint32_t(slot), slots[slot], "");
             for (int i = 0; i < 8; ++i)
                 draw();
             auto save = [&](const char* name) {
@@ -176,8 +193,8 @@ int main(int argc, char** argv)
                 draw();
                 frames.push_back(ms(start));
             }
-            auto replacement = slots[0];
-            if (helmet)
+            auto replacement = slots[slot];
+            if (assetBenchmark)
                 for (size_t i = 0; i < replacement.baseColorTexture->pixels.size(); i += 4)
                     std::swap(replacement.baseColorTexture->pixels[i], replacement.baseColorTexture->pixels[i + 2]);
             else
@@ -185,7 +202,7 @@ int main(int argc, char** argv)
             for (int i = 0; i < 11; ++i)
             {
                 auto start = Clock::now();
-                backend->SetMaterial(0, i % 2 ? slots[0] : replacement, "");
+                backend->SetMaterial(uint32_t(slot), i % 2 ? slots[slot] : replacement, "");
                 updates.push_back(ms(start));
                 draw();
                 visibleUpdates.push_back(ms(start));
