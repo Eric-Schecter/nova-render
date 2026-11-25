@@ -90,7 +90,7 @@ namespace render::detail
     static_assert(sizeof(SceneUniforms) == 384, "HLSL scene uniform layout must match");
     inline constexpr size_t indexedMaterialSlotLimit = 16;
     bool                             CanIndexMaterialTextures(const ModelData& data, size_t maxSlots = indexedMaterialSlotLimit);
-    bool                             CanUpdateIndexedMaterialTextures(const ModelData& data, size_t maxSlots = indexedMaterialSlotLimit);
+    bool                             CanUpdateIndexedMaterialTextures(const ModelData& data, size_t maxSlots = indexedMaterialSlotLimit, bool indexedTransmission = false);
     std::array<const Image*, 8>       MaterialTextureSources(const Material& material);
     void                             PackMaterials(ModelData& data);
     void                             ValidateMaterial(const Material& material);

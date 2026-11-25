@@ -108,7 +108,7 @@ namespace render::detail
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
           aaDeferred{}, aaOit{}, aaHybridShadow{}, aaCompactShadow{}, aaHybridReflection{}, aaHybridAO{}, aaProbeReflection{}, aaDeferredHalf{};
-        VkPipeline aaBindlessModel[2]{}, aaBindlessGBuffer{};
+        VkPipeline aaBindlessModel[2]{}, aaBindlessGBuffer{}, aaBindlessOit{};
         VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass,
                               const char* fragmentOverride = nullptr)
         {
@@ -601,8 +601,8 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    const bool indexed = usesBindless() && !oit && !motion;
-                    auto& pipeline = indexed ? (gbuffer ? aaBindlessGBuffer : aaBindlessModel[sample])
+                    const bool indexed = usesBindless() && !motion;
+                    auto& pipeline = indexed ? (oit ? aaBindlessOit : gbuffer ? aaBindlessGBuffer : aaBindlessModel[sample])
                                              : oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
                         pipeline = AAPipeline(
@@ -613,7 +613,8 @@ namespace render::detail
                           false,
                           sample ? 4 : 1,
                           renderPass,
-                          indexed ? (gbuffer ? "model-bindless-gbuffer.frag.spv" : "model-bindless-forward.frag.spv")
+                          indexed ? (oit ? "model-bindless-oit.frag.spv"
+                                         : gbuffer ? "model-bindless-gbuffer.frag.spv" : "model-bindless-forward.frag.spv")
                                   : nullptr);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                     if (indexed)
@@ -647,6 +648,7 @@ namespace render::detail
             release(aaOit);
             release(aaGBuffer);
             release(aaBindlessGBuffer);
+            release(aaBindlessOit);
             for (auto& pipeline : aaBindlessModel)
                 release(pipeline);
             release(aaDeferred);
@@ -823,7 +825,7 @@ namespace render::detail
             if (bindlessSupported && !config.shaderDirectory.empty())
             {
                 for (const auto* name : {"model-bindless-forward.frag.spv", "model-bindless-present.frag.spv",
-                                         "model-bindless-gbuffer.frag.spv"})
+                                         "model-bindless-gbuffer.frag.spv", "model-bindless-oit.frag.spv"})
                 {
                     std::error_code error;
                     bindlessSupported &= std::filesystem::is_regular_file(config.shaderDirectory / name, error);

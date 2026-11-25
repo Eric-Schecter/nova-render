@@ -76,9 +76,9 @@ namespace render::detail
                        || m.alphaMode == AlphaMode::Blend || m.transmissionTexture || m.thicknessTexture;
             });
     }
-    bool CanUpdateIndexedMaterialTextures(const ModelData& data, size_t maxSlots)
+    bool CanUpdateIndexedMaterialTextures(const ModelData& data, size_t maxSlots, bool indexedTransmission)
     {
-        return CanIndexMaterialTextures(data, maxSlots) && !HasRasterTransparency(&data)
+        return CanIndexMaterialTextures(data, maxSlots) && (indexedTransmission || !HasRasterTransparency(&data))
             && std::all_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
                 return m.alphaMode == AlphaMode::Opaque;
             });

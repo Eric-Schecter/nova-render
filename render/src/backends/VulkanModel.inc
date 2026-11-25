@@ -402,10 +402,10 @@ void createBindlessModelDescriptors()
 }
 void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
 {
-    // Opaque indexed raster draws only read the atlas in passes that do not
-    // consume its texels. Masked visibility and packed textures need a fresh atlas.
+    // Indexed raster and OIT consume the same table. Masked visibility and
+    // packed material extensions still sample the atlas.
     if (!usesBindless() || data->materials.size() != uploadedBindlessMaterials->materials.size()
-        || !CanUpdateIndexedMaterialTextures(*data, materialSlotLimit))
+        || !CanUpdateIndexedMaterialTextures(*data, materialSlotLimit, true))
     {
         LoadModel(std::move(data));
         return;
