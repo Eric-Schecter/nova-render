@@ -1167,6 +1167,14 @@ namespace render::detail
                 surfaceLost = false;
             }
 #endif
+            if (!usesBindless() && (materialAtlasStale || pendingBindlessMaterials))
+            {
+                // Hybrid and other atlas consumers need the latest CPU-packed atlas.
+                WaitIdle();
+                DestroyRasterAA();
+                destroySwapchain();
+                destroyModel();
+            }
             if (model && !modelReady)
             {
                 try
@@ -1180,6 +1188,7 @@ namespace render::detail
                     throw;
                 }
             }
+            uploadChangedBindlessTextures();
             if (resized || !swapchain)
             {
                 check(vkDeviceWaitIdle(device), "Wait before resize");

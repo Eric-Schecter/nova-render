@@ -19,6 +19,8 @@ std::vector<ModelTexture> bindlessTextures;
 VkSampler bindlessSampler = VK_NULL_HANDLE;
 VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE;
 VkDescriptorSet bindlessSet = VK_NULL_HANDLE;
+std::shared_ptr<const ModelData> uploadedBindlessMaterials, pendingBindlessMaterials;
+bool materialAtlasStale = false;
 bool usesBindless() const { return bindlessSet && mode == RenderMode::Raster; }
 ModelTexture                modelDepth, environmentCube, backgroundCube, pathDisplay;
 uint32_t                    pathWidth = 0, pathHeight = 0;
@@ -272,16 +274,19 @@ void uploadMaterialTexture(ModelTexture& dst, const Image& image, size_t i)
     destroyModelBuffer(modelStaging);
 }
 
-void createBindlessModelDescriptors()
+bool canBindMaterials(const ModelData& data) const
 {
-    if (!bindlessSupported)
-        return;
-    if (model->materials.empty() || model->materials.size() > BindlessImageCount / modelTextures.size()
-        || std::any_of(model->materials.begin(), model->materials.end(), [](const Material& m) {
+    return !data.materials.empty() && data.materials.size() <= BindlessImageCount / modelTextures.size()
+        && std::none_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
             return m.specularTexture || m.specularColorTexture || m.sheenColorTexture || m.sheenRoughnessTexture
                    || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture
                    || m.alphaMode == AlphaMode::Blend || m.transmissionTexture || m.thicknessTexture;
-        }))
+        });
+}
+
+void createBindlessModelDescriptors()
+{
+    if (!bindlessSupported || !canBindMaterials(*model))
         return;
     VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BindlessImageCount, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -316,7 +321,9 @@ void createBindlessModelDescriptors()
             images[index].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }
     }
-    std::fill(images.begin() + index, images.end(), images.front());
+    // The unused entries refer to an atlas image with the lifetime of this set.
+    const VkDescriptorImageInfo unused{VK_NULL_HANDLE, modelTextures[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    std::fill(images.begin() + index, images.end(), unused);
     VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     alloc.descriptorPool = modelPool;
     alloc.descriptorSetCount = 1;
@@ -330,6 +337,77 @@ void createBindlessModelDescriptors()
        VK_DESCRIPTOR_TYPE_SAMPLER, &samplerInfo}};
     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
 }
+void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
+{
+    // Opaque indexed raster draws only read the atlas in passes that do not
+    // consume its texels. Masked visibility and packed textures need a fresh atlas.
+    if (!usesBindless() || data->materials.size() != uploadedBindlessMaterials->materials.size()
+        || !canBindMaterials(*data) || HasRasterTransparency(data.get())
+        || std::any_of(data->materials.begin(), data->materials.end(), [](const Material& material) {
+            return material.alphaMode != AlphaMode::Opaque;
+        }))
+    {
+        LoadModel(std::move(data));
+        return;
+    }
+    Backend::LoadModel(data);
+    pendingBindlessMaterials = std::move(data);
+}
+
+void uploadChangedBindlessTextures()
+{
+    if (!pendingBindlessMaterials)
+        return;
+    struct Replacement
+    {
+        uint32_t index;
+        size_t map;
+        const Image* image;
+        ModelTexture texture;
+    };
+    std::vector<Replacement> changes;
+    for (size_t slot = 0; slot < pendingBindlessMaterials->materials.size(); ++slot)
+    {
+        const auto before = MaterialTextureSources(uploadedBindlessMaterials->materials[slot]);
+        const auto after = MaterialTextureSources(pendingBindlessMaterials->materials[slot]);
+        for (size_t map = 0; map < after.size(); ++map)
+            if (before[map]->width != after[map]->width || before[map]->height != after[map]->height
+                || before[map]->pixels != after[map]->pixels)
+                changes.push_back({uint32_t(slot * after.size() + map), map, after[map], {}});
+    }
+
+    if (!changes.empty())
+    {
+        WaitIdle();
+        try
+        {
+            for (auto& change : changes)
+                uploadMaterialTexture(change.texture, *change.image, change.map);
+        }
+        catch (...)
+        {
+            for (auto& change : changes)
+                destroyModelTexture(change.texture);
+            destroyModelBuffer(modelStaging);
+            throw;
+        }
+        for (auto& change : changes)
+        {
+            const VkDescriptorImageInfo image{VK_NULL_HANDLE, change.texture.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            const VkWriteDescriptorSet write{
+              VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 0, change.index, 1,
+              VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, &image};
+            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+            destroyModelTexture(bindlessTextures[change.index]);
+            bindlessTextures[change.index] = change.texture;
+        }
+        materialAtlasStale = true;
+    }
+    uploadedBindlessMaterials = std::move(pendingBindlessMaterials);
+    if (std::getenv("NOVA_VULKAN_BINDING_TRACE"))
+        std::cout << "Vulkan bindless texture uploads: " << changes.size() << '\n';
+}
+
 void uploadModel()
 {
     WaitIdle();
@@ -487,6 +565,8 @@ void uploadModel()
     }
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     createBindlessModelDescriptors();
+    if (bindlessSet)
+        uploadedBindlessMaterials = model;
     if (std::getenv("NOVA_VULKAN_BINDING_TRACE"))
         std::cout << "Vulkan model bindings: " << (usesBindless() ? "bindless" : "atlas") << '\n';
     modelReady = true;
@@ -531,6 +611,9 @@ void destroyModel()
     for (auto& t : bindlessTextures)
         destroyModelTexture(t);
     bindlessTextures.clear();
+    uploadedBindlessMaterials.reset();
+    pendingBindlessMaterials.reset();
+    materialAtlasStale = false;
     if (modelSetLayout)
     {
         vkDestroyDescriptorSetLayout(device, modelSetLayout, nullptr);

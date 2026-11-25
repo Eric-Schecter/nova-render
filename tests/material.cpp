@@ -226,6 +226,23 @@ int main(int argc, char** argv)
         backend->SetMaterial(0, slots[0], "");
         draw();
         Require(count(0, true) > 500 && count(2, false) > 500, "Runtime image upload failed");
+        if (api == "vulkan")
+        {
+            auto greenMap = slots[0];
+            greenMap.baseColorTexture = Image{1, 1, {0, 255, 0, 255}};
+            auto blueMap = greenMap;
+            blueMap.baseColorTexture = Image{1, 1, {0, 0, 255, 255}};
+            backend->SetMaterial(0, blueMap, "");
+            backend->SetMaterial(0, greenMap, "");
+            draw();
+            Require(count(1, true) > 500 && count(2, false) > 500, "Coalesced texture updates lost the latest edit");
+            backend->SetRenderMode(RenderMode::Hybrid);
+            backend->EnableGPUFramePresentation(false);
+            draw();
+            Require(count(1, true) > 500 && count(2, false) > 500, "Hybrid read a stale material atlas");
+            backend->SetRenderMode(RenderMode::Raster);
+            backend->SetRasterSettings({});
+        }
         slots[0].baseColorTexture.reset();
         backend->SetMaterial(0, slots[0], "");
         draw();

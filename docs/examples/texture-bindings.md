@@ -38,7 +38,7 @@ vulkaninfo | grep -E 'deviceName|driverInfo|shaderSampledImageArrayNonUniformInd
 ctest --test-dir build/sdl-only -R '^(material-vulkan|scene-render-vulkan)$' --output-on-failure
 ```
 
-Vulkan's native model raster pipeline can select independent material textures via descriptor indexing. On a compatible Vulkan 1.2 device, forward and G-buffer shading use the indexed path for models with up to 16 compatible materials. Alpha blending, transmission, and materials with extra textures packed into shared channels use the atlas. Hybrid and ray tracing use their existing texture paths. The indexed path preserves independent texture sizes and mip chains. Nova also prepares the atlas so features and passes that require it can still run. Material edits currently rebuild model resources.
+Vulkan's native model raster pipeline can select independent material textures via descriptor indexing. On a compatible Vulkan 1.2 device, forward and G-buffer shading use the indexed path for models with up to 16 compatible materials. Alpha blending, transmission, and materials with extra textures packed into shared channels use the atlas. Hybrid and ray tracing use their existing texture paths. The indexed path preserves independent texture sizes and mip chains. Nova also prepares the atlas so features and passes that require it can still run. Opaque Bindless raster edits replace only changed texture descriptors and keep the model buffers, pipelines, and swapchain. The atlas is refreshed before switching to an atlas-dependent render mode. Masked or packed materials use the full update so visibility and material passes read consistent maps.
 
 Run the A/B with the same Release build and the same material fixture:
 
@@ -55,3 +55,13 @@ The same 640 × 480 camera and FXAA settings produced both captures. Across thre
 - Bindless — frame 8.33 ms, `SetMaterial` 1.89 ms, first rendered frame after replacement 160.53 ms.
 
 There was no clear steady-state frame-time gain. The replacement frame arrived about 9 ms earlier with Bindless in this fixture, while the CPU material call took slightly longer. Image PSNR between strategies was 41.20 dB before replacement and 41.13 dB after replacement. Texture addressing and mip selection differ, and both paths rendered the replacement in the intended material slot.
+
+### Vulkan texture replacement
+
+On the same M4 and fixture, three interleaved runs measured the following medians from `SetMaterial` through the next rendered frame:
+
+- Atlas — 170.32 ms.
+- Bindless with full model rebuild — 161.53 ms.
+- Bindless with per-texture updates — 8.62 ms.
+
+The optimized runs uploaded one texture per edit and kept the original swapchain. Readbacks from both Bindless versions were pixel-identical before and after the replacement. The timings include presentation and readback. The CPU still prepares the fallback material data during `SetMaterial`.

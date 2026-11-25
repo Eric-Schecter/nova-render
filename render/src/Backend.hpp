@@ -219,7 +219,7 @@ namespace render::detail
                 auto next = scene;
                 next.SetMaterial(id, slot, value);
                 ValidateMaterialState(next.model.get());
-                LoadModel(next.model);
+                UpdateMaterialModel(next.model);
                 scene = std::move(next);
             }
             else
@@ -231,7 +231,7 @@ namespace render::detail
                 PackMaterials(*next);
                 ValidateMaterialState(next.get());
                 auto state = animation.state;
-                LoadModel(next);
+                UpdateMaterialModel(next);
                 if (model->animation)
                     SetAnimationState(state);
             }
@@ -239,6 +239,7 @@ namespace render::detail
             pathSession.Reset();
             rasterAA.Reset();
         }
+        virtual void UpdateMaterialModel(std::shared_ptr<const ModelData> data) { LoadModel(std::move(data)); }
         bool                    lightCollectionActive = false;
         std::vector<SceneLight> lights;
         LightingCapabilities    GetLightingCapabilities() const
