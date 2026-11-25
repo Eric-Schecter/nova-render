@@ -6,7 +6,7 @@ import DeviceCapabilities from '../.vitepress/theme/DeviceCapabilities.vue'
 
 <ClientOnly><DeviceCapabilities /></ClientOnly>
 
-The browser reports the WebGPU adapter features and limits that are visible to this page. Adapter identifiers can be omitted by the browser.
+The browser reports adapter and WGSL features, then compares the adapter's limits with those of a fresh default device. A default device can expose lower limits until an application requests higher ones. Adapter identifiers can be omitted by the browser. For GPU memory, use the desktop report.
 
 Build and run the native example from a configured desktop build directory with examples enabled.
 

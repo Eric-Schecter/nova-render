@@ -12,16 +12,63 @@ async function query() {
       report.value = 'WebGPU adapter unavailable.'
       return
     }
-    const lines = ['Adapter']
-    for (const name of ['vendor', 'architecture', 'device', 'description', 'isFallbackAdapter'])
-      if (adapter.info?.[name] !== undefined && adapter.info[name] !== '')
-        lines.push(`${name} = ${adapter.info[name]}`)
-    lines.push('', 'Features', ...[...adapter.features].sort(), '', 'Limits')
-    const keys = Object.getOwnPropertyNames(Object.getPrototypeOf(adapter.limits))
-      .filter((key) => typeof adapter.limits[key] === 'number')
+    const limits = adapter.limits
+    const keys = Object.getOwnPropertyNames(Object.getPrototypeOf(limits))
+      .filter((key) => typeof limits[key] === 'number')
       .sort()
-    for (const key of keys) lines.push(`${key} = ${adapter.limits[key]}`)
-    report.value = lines.join('\n')
+    const infoKeys = [
+      'vendor',
+      'architecture',
+      'device',
+      'description',
+      'isFallbackAdapter',
+      'subgroupMinSize',
+      'subgroupMaxSize',
+    ]
+    const info = infoKeys
+      .filter((key) => adapter.info?.[key] !== undefined && adapter.info[key] !== '')
+      .map((key) => `${key} = ${adapter.info[key]}`)
+    const adapterFeatures = [...adapter.features].sort()
+    const language = [...(navigator.gpu.wgslLanguageFeatures ?? [])].sort()
+    let device
+    try {
+      device = await adapter.requestDevice()
+      const lines = [
+        'Adapter',
+        ...info,
+        '',
+        `Adapter features (${adapterFeatures.length})`,
+        ...adapterFeatures,
+        '',
+        `WGSL language features (${language.length})`,
+        ...language,
+        '',
+        'Limits (adapter / default device)',
+        ...keys.map((key) => `${key} = ${limits[key]} / ${device.limits[key] ?? 'Unavailable'}`),
+        '',
+        'Default device features',
+        ...[...device.features].sort(),
+      ]
+      report.value = lines.join('\n')
+    } catch (error) {
+      report.value = [
+        'Adapter',
+        ...info,
+        '',
+        `Adapter features (${adapterFeatures.length})`,
+        ...adapterFeatures,
+        '',
+        `WGSL language features (${language.length})`,
+        ...language,
+        '',
+        'Adapter limits',
+        ...keys.map((key) => `${key} = ${limits[key]}`),
+        '',
+        `Default device unavailable: ${error.message}`,
+      ].join('\n')
+    } finally {
+      device?.destroy()
+    }
   } catch (error) {
     report.value = error.message
   } finally {
@@ -34,6 +81,10 @@ async function query() {
   <button type="button" :disabled="busy" @click="query">
     {{ busy ? 'Querying…' : 'Query WebGPU adapter' }}
   </button>
+  <p>
+    WebGPU does not expose total VRAM, current VRAM usage, or the GPU memory budget. Buffer limits
+    describe permitted resource sizes, and desktop adapter reports can show memory information.
+  </p>
   <pre v-if="report" aria-live="polite">{{ report }}</pre>
 </template>
 
