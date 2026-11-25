@@ -4,6 +4,7 @@
 #include "Picking.hpp"
 #include "render/Scene.hpp"
 #include <map>
+#include <set>
 #include <tuple>
 namespace render::detail
 {
@@ -72,6 +73,7 @@ namespace render::detail
         };
         using AssetKey = std::tuple<std::string, std::filesystem::path, std::optional<uint32_t>, std::shared_ptr<const SceneGeometry>>;
         std::vector<AssetKey> key;
+        std::set<std::string> shadowAssets;
         std::map<std::string, Mesh>                                meshes;
     };
 } // namespace render::detail

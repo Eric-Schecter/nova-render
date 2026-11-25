@@ -112,6 +112,7 @@ export class SceneData {
   }
   meshes = new Map()
   key = ''
+  shadowKey = ''
   model = null
   async update(assets, input) {
     const next = this.fork()
@@ -151,7 +152,7 @@ export class SceneData {
       variants.set(a.id, a.materialVariant)
     }
     const ids = new Set(),
-      referenced = new Set()
+      referenced = new Set(), casters = new Set()
     for (const i of input) {
       if (
         !i ||
@@ -169,12 +170,14 @@ export class SceneData {
         throw Error('Invalid scene instance')
       ids.add(i.id)
       referenced.add(i.assetId)
+      if (i.castShadow !== false) casters.add(i.assetId)
     }
     const key = JSON.stringify(
       [...referenced].sort().map((id) => [id, paths.get(id), strategies.get(id), variants.get(id)]),
     )
-    if (!this.model || key !== this.key
-      || [...referenced].some((id) => this.meshes.get(id)?.geometry !== geometries.get(id))) {
+    const rebuild = !this.model || key !== this.key
+      || [...referenced].some((id) => this.meshes.get(id)?.geometry !== geometries.get(id))
+    if (rebuild) {
       const next = new Map()
       for (const id of [...referenced].sort()) {
         const previous = this.meshes.get(id), geometry = geometries.get(id)
@@ -235,8 +238,18 @@ export class SceneData {
         offset += m.data.vertices.length
       }
       packMaterials(packed)
+      this.model = packed
+      this.meshes = next
+      this.key = key
+    }
+    const shadowKey = JSON.stringify([...casters].sort())
+    if (rebuild || shadowKey !== this.shadowKey) {
+      const next = new Map()
       let shadowCount = 0
-      for (const m of next.values()) {
+      for (const [id, mesh] of this.meshes) {
+        const m = { ...mesh, shadowFirst: 0, shadowNodes: 0, shadowData: null }
+        next.set(id, m)
+        if (!casters.has(id)) continue
         m.shadowFirst = shadowCount / 48
         m.shadowData = m.picking.shadowRecords()
         m.shadowNodes = m.picking.nodes.length
@@ -245,14 +258,14 @@ export class SceneData {
       }
       this.shadowRecords = new Float32Array(shadowCount)
       for (const m of next.values()) {
+        if (!m.shadowData) continue
         this.shadowRecords.set(m.shadowData, m.shadowFirst * 48)
-        const offset = packed.vertices[m.first * modelVertexFloats + 3] - m.data.vertices[3]
+        const offset = this.model.vertices[m.first * modelVertexFloats + 3] - m.data.vertices[3]
         for (let row = m.shadowNodes; row < m.shadowData.length / 48; row++)
           this.shadowRecords[(m.shadowFirst + row) * 48 + 43] += offset
       }
-      this.model = packed
       this.meshes = next
-      this.key = key
+      this.shadowKey = shadowKey
     }
     const spaces = new Map(assets.map((a) => [a.id, !!a.sourceSpace]))
     const effective = input.map((i) => {

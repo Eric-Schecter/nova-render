@@ -80,6 +80,16 @@ int main(int argc, char** argv)
         for (const auto& v : scene.RayModel()->vertices)
             noCast |= v.uv[2] < 0;
         Require(noCast, "Ray caster flag lost");
+        const auto shadowCount = scene.shadowRecords.size();
+        instances[0].castShadow = false;
+        scene.Update(assets, instances);
+        Require(scene.model == model, "Removing the last asset caster repacked geometry");
+        Require(!scene.shadowRecords.empty() && scene.shadowRecords.size() < shadowCount, "Unused shadow BVH retained");
+        const auto hit = scene.Pick({{4, .5f, 2}, {0, 0, -1}, {"two"}});
+        Require(hit && hit->id == "two", "Noncaster is no longer pickable");
+        instances[0].castShadow = true;
+        scene.Update(assets, instances);
+        Require(scene.model == model && scene.shadowRecords.size() == shadowCount, "Caster BVH was not restored");
         auto reject = [&](const std::vector<render::SceneAsset>& a, const std::vector<render::SceneInstance>& i) {
             const auto old      = scene.model;
             bool       rejected = false;

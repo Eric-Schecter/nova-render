@@ -81,7 +81,7 @@ namespace render::detail
             geometries.emplace(a.id, a.geometry);
         }
         std::set<std::string> ids;
-        std::set<std::string> referenced;
+        std::set<std::string> referenced, casters;
         for (const auto& i : input)
         {
             if (i.id.empty() || !ids.insert(i.id).second || !paths.count(i.assetId))
@@ -94,11 +94,14 @@ namespace render::detail
               || std::abs(i.world[15] - 1) > 1e-6)
                 throw std::invalid_argument("Instance matrix must be affine");
             referenced.insert(i.assetId);
+            if (i.castShadow)
+                casters.insert(i.assetId);
         }
         std::vector<AssetKey> nextKey;
         for (const auto& id : referenced)
             nextKey.emplace_back(id, paths.at(id), variants.at(id), geometries.at(id));
-        if (!model || nextKey != key)
+        const bool rebuild = !model || nextKey != key;
+        if (rebuild)
         {
             std::map<std::string, Mesh> next;
             for (const auto& entry : nextKey)
@@ -158,9 +161,19 @@ namespace render::detail
                     }
             }
             PackMaterials(*packed);
+            model  = std::move(packed);
+            meshes = std::move(next);
+            key    = std::move(nextKey);
+        }
+        if (rebuild || casters != shadowAssets)
+        {
             std::vector<InstanceData> shadow;
-            for (auto& [id, m] : next)
+            for (auto& [id, m] : meshes)
             {
+                m.shadowFirst = 0;
+                m.shadowNodes = 0;
+                if (!casters.count(id))
+                    continue;
                 m.shadowFirst    = uint32_t(shadow.size());
                 m.shadowNodes    = m.picking->ShadowNodeCount();
                 size_t shadowRow = 0;
@@ -172,14 +185,12 @@ namespace render::detail
                     InstanceData record;
                     std::memcpy(&record, row.data(), 192);
                     if (shadowRow++ >= m.shadowNodes)
-                        record.emissive[3] += packed->vertices[m.first].position[3] - m.data->vertices[0].position[3];
+                        record.emissive[3] += model->vertices[m.first].position[3] - m.data->vertices[0].position[3];
                     shadow.push_back(record);
                 }
             }
             shadowRecords = std::move(shadow);
-            model         = std::move(packed);
-            meshes        = std::move(next);
-            key           = std::move(nextKey);
+            shadowAssets  = std::move(casters);
         }
         std::map<std::string, bool> spaces;
         for (const auto& a : assets)
