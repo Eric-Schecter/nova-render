@@ -1,6 +1,8 @@
 #include "Backend.hpp"
 #include "TestDevice.hpp"
 #include "TestWindowHost.hpp"
+#include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <stb_image_write.h>
@@ -17,7 +19,7 @@ int main(int argc, char** argv)
     render::detail::PresentationWindow window;
     try
     {
-        Require(argc == 3, "Expected API and asset directory");
+        Require(argc == 3 || argc == 4, "Expected API, asset directory and optional benchmark output");
         std::string           api    = TestAPI(argv[1]);
         std::filesystem::path path   = std::filesystem::path(argv[2]) / "MaterialSample/Dual.glb";
         auto                  source = detail::LoadGLB(path);
@@ -60,6 +62,74 @@ int main(int argc, char** argv)
             backend->WaitIdle();
             Require(!backend->ValidationErrorCount(), "GPU errors");
         };
+        if (argc == 4)
+        {
+            using Clock = std::chrono::steady_clock;
+            const std::filesystem::path output = argv[3];
+            std::filesystem::create_directories(output);
+            backend->SetAntiAliasing({AAMethod::FXAA});
+            backend->SetLighting(LightingMode::PBR);
+            auto slots = backend->GetMaterials("");
+            auto texture = [](bool alternate) {
+                Image image{256, 256, std::vector<unsigned char>(256 * 256 * 4)};
+                for (uint32_t y = 0; y < image.height; ++y)
+                    for (uint32_t x = 0; x < image.width; ++x)
+                    {
+                        auto* pixel = &image.pixels[(size_t(y) * image.width + x) * 4];
+                        const bool check = ((x / 16 + y / 16) % 2) != 0;
+                        pixel[0] = alternate ? 32 : (check ? 230 : 125);
+                        pixel[1] = alternate ? (check ? 230 : 135) : 45;
+                        pixel[2] = check ? 64 : 32;
+                        pixel[3] = 255;
+                    }
+                return image;
+            };
+            slots[0].baseColor = {1, 1, 1, 1};
+            slots[0].baseColorTexture = texture(false);
+            backend->SetMaterial(0, slots[0], "");
+            for (int i = 0; i < 8; ++i)
+                draw();
+            auto save = [&](const char* name) {
+                const auto& frame = backend->GetRasterAAImage();
+                Require(!frame.pixels.empty(), "Benchmark readback was empty");
+                const auto file = output / name;
+                Require(stbi_write_png(file.string().c_str(), frame.width, frame.height, 4,
+                                       frame.pixels.data(), frame.width * 4) != 0, "Capture failed");
+            };
+            save("before.png");
+            const auto before = backend->GetRasterAAImage().pixels;
+            auto ms = [](auto start) {
+                return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+            };
+            std::vector<double> frames, updates, visibleUpdates;
+            for (int i = 0; i < 31; ++i)
+            {
+                const auto start = Clock::now();
+                draw();
+                frames.push_back(ms(start));
+            }
+            auto replacement = slots[0];
+            replacement.baseColorTexture = texture(true);
+            for (int i = 0; i < 11; ++i)
+            {
+                auto start = Clock::now();
+                backend->SetMaterial(0, i % 2 ? slots[0] : replacement, "");
+                updates.push_back(ms(start));
+                draw();
+                visibleUpdates.push_back(ms(start));
+            }
+            Require(backend->GetRasterAAImage().pixels != before, "Replacement did not change the image");
+            save("after.png");
+            auto median = [](auto values) {
+                std::sort(values.begin(), values.end());
+                return values[values.size() / 2];
+            };
+            std::cout << "Frame: " << median(frames) << " ms; SetMaterial: " << median(updates)
+                      << " ms; replacement through rendered frame: " << median(visibleUpdates) << " ms\n";
+            backend.reset();
+            CloseTestWindow(window);
+            return 0;
+        }
         auto count = [&](int channel, bool left) {
             const auto& im = backend->GetRasterAAImage();
             size_t      n  = 0;

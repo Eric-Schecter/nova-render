@@ -88,6 +88,7 @@ namespace render::detail
     };
     static_assert(sizeof(ModelVertex) == 80, "HLSL vertex storage layout must match");
     static_assert(sizeof(SceneUniforms) == 384, "HLSL scene uniform layout must match");
+    std::array<const Image*, 8>       MaterialTextureSources(const Material& material);
     void                             PackMaterials(ModelData& data);
     void                             ValidateMaterial(const Material& material);
     std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path& path, std::optional<uint32_t> variant = {});

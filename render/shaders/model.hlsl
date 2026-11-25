@@ -752,8 +752,22 @@ float3 applyCoatNormal(float3 n, float3 map, float scale, float3 dp1, float3 dp2
     float3 perturbed = (t * map.x + b * map.y) * (scale * rsqrt(max(basis, 1e-20))) + n * map.z;
     return (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
 }
+#ifdef NOVA_VULKAN_BINDLESS
+[[vk::binding(0, 3)]] Texture2D<float4> modelImages[128];
+[[vk::binding(1, 3)]] SamplerState modelImageSampler;
+#endif
 SurfaceData sampleSurface(VertexOut input)
 {
+#ifdef NOVA_VULKAN_BINDLESS
+    const bool usesInstances = lightDirection.w > .5 && lightDirection.w < 1.5;
+    const uint firstMaterial = usesInstances ? uint(loadInstance(uint(irradiance[3].w) - 1).emissive.x) : 0;
+    uint textureSlot = (input.instanceIndex - firstMaterial) * 8;
+#define MODEL_MAP(map, index) modelImages[NonUniformResourceIndex(textureSlot + index)]
+#define MODEL_SAMPLER modelImageSampler
+#else
+#define MODEL_MAP(map, index) map
+#define MODEL_SAMPLER textureSampler
+#endif
     float  alphaInfo  = .125;
     float4 specular   = 1, specularMap = 1;
     float4 sheen = 0, sheenMap = 1;
@@ -767,6 +781,9 @@ SurfaceData sampleSurface(VertexOut input)
     if (lightDirection.w > .5)
     {
         InstanceData instance = loadInstance(input.instanceIndex);
+#ifdef NOVA_VULKAN_BINDLESS
+        instance.uv = float4(1, 1, 0, 0);
+#endif
         baseUV                = wrapBaseUV(uv, instance.emissive.w) * instance.uv.xy + instance.uv.zw;
         uv                    = frac(uv) * instance.uv.xy + instance.uv.zw;
         aoUV                  = instance.world._m21 > .5 ? frac(input.uv1) * instance.uv.xy + instance.uv.zw : uv;
@@ -778,9 +795,9 @@ SurfaceData sampleSurface(VertexOut input)
         uint specularMaps = uint(instance.world._m22);
         float2 uv1 = frac(input.uv1) * instance.uv.xy + instance.uv.zw;
         if (specularMaps & 1u)
-            specularMap.a = normalTexture.SampleLevel(textureSampler, specularMaps & 4u ? uv1 : uv, 0).a;
+            specularMap.a = MODEL_MAP(normalTexture, 1).SampleLevel(MODEL_SAMPLER, specularMaps & 4u ? uv1 : uv, 0).a;
         if (specularMaps & 2u)
-            specularMap.rgb = occlusionTexture.SampleLevel(textureSampler, specularMaps & 8u ? uv1 : uv, 0).gba;
+            specularMap.rgb = MODEL_MAP(occlusionTexture, 3).SampleLevel(MODEL_SAMPLER, specularMaps & 8u ? uv1 : uv, 0).gba;
         anisotropy = materialAnisotropy(instance, uv, uv1);
         if (instance.normalMatrix[0][3] > 0)
             filmMap = sampleFilmMaps(instance, uv, uv1);
@@ -790,7 +807,7 @@ SurfaceData sampleSurface(VertexOut input)
         clearcoat             = materialClearcoat(instance);
         materialRecord        = instance;
     }
-    float4 baseSample = baseTexture.Sample(textureSampler, baseUV) * input.color;
+    float4 baseSample = MODEL_MAP(baseTexture, 0).Sample(MODEL_SAMPLER, baseUV) * input.color;
     float3 base       = baseSample.rgb * baseFactor.rgb;
     float3 n          = normalize(input.normal);
     float3 dp1 = ddx(input.worldPosition), dp2 = ddy(input.worldPosition);
@@ -812,15 +829,15 @@ SurfaceData sampleSurface(VertexOut input)
     {
         float2 atlasNormalUV = frac(coatUV.normal) * materialRecord.uv.xy + materialRecord.uv.zw;
         if (coatUV.mask & 1u)
-            clearcoat.x *= coatStrengthTexture.SampleGrad(textureSampler,
+            clearcoat.x *= MODEL_MAP(coatStrengthTexture, 5).SampleGrad(MODEL_SAMPLER,
                 frac(coatUV.strength) * materialRecord.uv.xy + materialRecord.uv.zw,
                 strengthDX * materialRecord.uv.xy, strengthDY * materialRecord.uv.xy).r;
         if (coatUV.mask & 2u)
-            clearcoat.y *= coatRoughnessTexture.SampleGrad(textureSampler,
+            clearcoat.y *= MODEL_MAP(coatRoughnessTexture, 6).SampleGrad(MODEL_SAMPLER,
                 frac(coatUV.roughness) * materialRecord.uv.xy + materialRecord.uv.zw,
                 roughDX * materialRecord.uv.xy, roughDY * materialRecord.uv.xy).g;
         if (coatUV.mask & 4u)
-            coatNormal = applyCoatNormal(n, coatNormalTexture.SampleGrad(textureSampler, atlasNormalUV,
+            coatNormal = applyCoatNormal(n, MODEL_MAP(coatNormalTexture, 7).SampleGrad(MODEL_SAMPLER, atlasNormalUV,
                 coatDX * materialRecord.uv.xy, coatDY * materialRecord.uv.xy).xyz * 2 - 1,
                 coatUV.scale, dp1, dp2, coatDX, coatDY);
     }
@@ -830,18 +847,18 @@ SurfaceData sampleSurface(VertexOut input)
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
     float3 t = p2perp * duv1.x + p1perp * duv2.x, b = p2perp * duv1.y + p1perp * duv2.y;
     float  scale   = rsqrt(max(max(dot(t, t), dot(b, b)), 0.00001));
-    float3 sampled = normalTexture.Sample(textureSampler, normalAtlasUV).xyz * 2 - 1;
+    float3 sampled = MODEL_MAP(normalTexture, 1).Sample(MODEL_SAMPLER, normalAtlasUV).xyz * 2 - 1;
     sampled.xy *= matFactor.z;
     n                    = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
     bool independentMR = (uint(materialRecord.normalMatrix[3][2]) & 2u) != 0;
     float2 mrUV = independentMR ? frac(independentTextureUV(materialRecord, input.uv, 2u)) *
       materialRecord.uv.xy + materialRecord.uv.zw : uv;
-    float4 mr = materialTexture.Sample(textureSampler, mrUV);
+    float4 mr = MODEL_MAP(materialTexture, 2).Sample(MODEL_SAMPLER, mrUV);
     bool useMirrorRoughness = irradiance[1].w > .5 && irradiance[3].w > .5
                                && loadInstance(uint(irradiance[3].w) - 1).world._m13 > .5;
     float metallic = saturate(mr.b * matFactor.x);
     float roughness = clamp(mr.g * matFactor.y, useMirrorRoughness ? .02 : .06, 1);
-    float       ao = lerp(1, occlusionTexture.Sample(textureSampler, aoUV).r, matFactor.w);
+    float       ao = lerp(1, MODEL_MAP(occlusionTexture, 3).Sample(MODEL_SAMPLER, aoUV).r, matFactor.w);
     SurfaceData result;
     result.useVisibility = 0;
     result.specular = specular * specularMap;
@@ -859,7 +876,7 @@ SurfaceData sampleSurface(VertexOut input)
     result.volume = float4(materialRecord.world._m03, materialRecord.world._m13,
                           materialRecord.world._m23, materialRecord.world._m33 * input.dielectric.z);
     if (independentMR && (materialFlags & 1536u))
-        mr.ra = materialTexture.SampleLevel(textureSampler, uv, 0).ra;
+        mr.ra = MODEL_MAP(materialTexture, 2).SampleLevel(MODEL_SAMPLER, uv, 0).ra;
     if ((materialFlags & 512u) != 0)
         result.dielectric.x *= mr.a;
     if ((materialFlags & 1024u) != 0)
@@ -874,7 +891,9 @@ SurfaceData sampleSurface(VertexOut input)
     result.roughness                                                                  = roughness;
     result.ao                                                                         = ao;
     float2 emissionUV = (uint(alphaInfo) & 16u) ? frac(input.uv1) * materialRecord.uv.xy + materialRecord.uv.zw : uv;
-    result.emissive = emissiveTexture.Sample(textureSampler, emissionUV).rgb * emissionFactor.rgb;
+    result.emissive = MODEL_MAP(emissiveTexture, 4).Sample(MODEL_SAMPLER, emissionUV).rgb * emissionFactor.rgb;
+#undef MODEL_MAP
+#undef MODEL_SAMPLER
     return result;
 }
 float hybridVisibility(SurfaceData s, uint index)

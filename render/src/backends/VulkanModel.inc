@@ -12,6 +12,14 @@ struct ModelTexture
 ModelBuffer                 modelVertices, modelUniform, modelStaging, modelSkin, modelJoints, sceneInstanceBuffer;
 size_t                      sceneInstanceBytes = 0;
 std::array<ModelTexture, 8> modelTextures;
+static constexpr uint32_t BindlessImageCount = 128;
+bool bindlessSupported = false;
+uint32_t instanceApiVersion = VK_API_VERSION_1_0;
+std::vector<ModelTexture> bindlessTextures;
+VkSampler bindlessSampler = VK_NULL_HANDLE;
+VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE;
+VkDescriptorSet bindlessSet = VK_NULL_HANDLE;
+bool usesBindless() const { return bindlessSet && mode == RenderMode::Raster; }
 ModelTexture                modelDepth, environmentCube, backgroundCube, pathDisplay;
 uint32_t                    pathWidth = 0, pathHeight = 0;
 VkSampler                   modelSampler   = VK_NULL_HANDLE;
@@ -188,6 +196,140 @@ void uploadEnvironmentCube(ModelTexture& cube, const std::vector<EnvironmentMip>
     check(vkQueueWaitIdle(queue), "Wait environment upload");
     destroyModelBuffer(modelStaging);
 }
+void uploadMaterialTexture(ModelTexture& dst, const Image& image, size_t i)
+{
+    const auto                     mips = MaterialMipmaps(image, i);
+    const auto&                    src  = mips[0];
+    std::vector<unsigned char>     pixels;
+    std::vector<VkBufferImageCopy> copies;
+    for (uint32_t level = 0; level < mips.size(); level++)
+    {
+        VkBufferImageCopy c{};
+        c.bufferOffset     = pixels.size();
+        c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+        c.imageExtent      = {mips[level].width, mips[level].height, 1};
+        copies.push_back(c);
+        pixels.insert(pixels.end(), mips[level].pixels.begin(), mips[level].pixels.end());
+    }
+    modelBuffer(modelStaging, pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, pixels.data());
+    modelImage(
+      dst,
+      src.width,
+      src.height,
+      (i == 0 || i == 4) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      VK_IMAGE_ASPECT_COLOR_BIT,
+      uint32_t(mips.size()));
+    check(vkResetCommandBuffer(cmd, 0), "Reset upload command");
+    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    check(vkBeginCommandBuffer(cmd, &begin), "Begin upload");
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image                                             = dst.image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, uint32_t(mips.size()), 0, 1};
+    barrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(
+      cmd,
+      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+      VK_PIPELINE_STAGE_TRANSFER_BIT,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &barrier);
+    vkCmdCopyBufferToImage(
+      cmd,
+      modelStaging.buffer,
+      dst.image,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      uint32_t(copies.size()),
+      copies.data());
+    barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(
+      cmd,
+      VK_PIPELINE_STAGE_TRANSFER_BIT,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &barrier);
+    check(vkEndCommandBuffer(cmd), "End upload");
+    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers    = &cmd;
+    check(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE), "Submit texture upload");
+    check(vkQueueWaitIdle(queue), "Wait texture upload");
+    destroyModelBuffer(modelStaging);
+}
+
+void createBindlessModelDescriptors()
+{
+    if (!bindlessSupported)
+        return;
+    if (model->materials.empty() || model->materials.size() > BindlessImageCount / modelTextures.size()
+        || std::any_of(model->materials.begin(), model->materials.end(), [](const Material& m) {
+            return m.specularTexture || m.specularColorTexture || m.sheenColorTexture || m.sheenRoughnessTexture
+                   || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture
+                   || m.alphaMode == AlphaMode::Blend || m.transmissionTexture || m.thicknessTexture;
+        }))
+        return;
+    VkDescriptorSetLayoutBinding bindings[] = {
+      {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BindlessImageCount, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+      {1, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+    VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    layoutInfo.bindingCount = 2;
+    layoutInfo.pBindings = bindings;
+    check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "Create indexed material layout");
+    VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
+    sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler.maxLod = 32;
+    VkPhysicalDeviceFeatures features{};
+    vkGetPhysicalDeviceFeatures(physical, &features);
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    sampler.anisotropyEnable = features.samplerAnisotropy;
+    sampler.maxAnisotropy = std::min(8.f, properties.limits.maxSamplerAnisotropy);
+    check(vkCreateSampler(device, &sampler, nullptr, &bindlessSampler), "Create indexed material sampler");
+
+    std::array<VkDescriptorImageInfo, BindlessImageCount> images{};
+    bindlessTextures.resize(model->materials.size() * modelTextures.size());
+    size_t index = 0;
+    for (const auto& material : model->materials)
+    {
+        const auto sources = MaterialTextureSources(material);
+        for (size_t map = 0; map < sources.size(); ++map, ++index)
+        {
+            uploadMaterialTexture(bindlessTextures[index], *sources[map], map);
+            images[index].imageView = bindlessTextures[index].view;
+            images[index].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+    }
+    std::fill(images.begin() + index, images.end(), images.front());
+    VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    alloc.descriptorPool = modelPool;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &bindlessLayout;
+    check(vkAllocateDescriptorSets(device, &alloc, &bindlessSet), "Allocate indexed material descriptors");
+    VkDescriptorImageInfo samplerInfo{bindlessSampler};
+    VkWriteDescriptorSet writes[] = {
+      {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 0, 0, BindlessImageCount,
+       VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, images.data()},
+      {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 1, 0, 1,
+       VK_DESCRIPTOR_TYPE_SAMPLER, &samplerInfo}};
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+}
 void uploadModel()
 {
     WaitIdle();
@@ -211,81 +353,7 @@ void uploadModel()
     validateSceneStorage(sceneInstanceBytes);
     modelBuffer(sceneInstanceBuffer, sceneInstanceBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     for (size_t i = 0; i < modelTextures.size(); ++i)
-    {
-        const auto                     mips = MaterialMipmaps(model->images[i], i);
-        const auto&                    src  = mips[0];
-        auto&                          dst  = modelTextures[i];
-        std::vector<unsigned char>     pixels;
-        std::vector<VkBufferImageCopy> copies;
-        for (uint32_t level = 0; level < mips.size(); level++)
-        {
-            VkBufferImageCopy c{};
-            c.bufferOffset     = pixels.size();
-            c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
-            c.imageExtent      = {mips[level].width, mips[level].height, 1};
-            copies.push_back(c);
-            pixels.insert(pixels.end(), mips[level].pixels.begin(), mips[level].pixels.end());
-        }
-        modelBuffer(modelStaging, pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, pixels.data());
-        modelImage(
-          dst,
-          src.width,
-          src.height,
-          (i == 0 || i == 4) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
-          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-          VK_IMAGE_ASPECT_COLOR_BIT,
-          uint32_t(mips.size()));
-        check(vkResetCommandBuffer(cmd, 0), "Reset upload command");
-        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        check(vkBeginCommandBuffer(cmd, &begin), "Begin upload");
-        VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-        barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image                                             = dst.image;
-        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, uint32_t(mips.size()), 0, 1};
-        barrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
-        vkCmdPipelineBarrier(
-          cmd,
-          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-          VK_PIPELINE_STAGE_TRANSFER_BIT,
-          0,
-          0,
-          nullptr,
-          0,
-          nullptr,
-          1,
-          &barrier);
-        vkCmdCopyBufferToImage(
-          cmd,
-          modelStaging.buffer,
-          dst.image,
-          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          uint32_t(copies.size()),
-          copies.data());
-        barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(
-          cmd,
-          VK_PIPELINE_STAGE_TRANSFER_BIT,
-          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-          0,
-          0,
-          nullptr,
-          0,
-          nullptr,
-          1,
-          &barrier);
-        check(vkEndCommandBuffer(cmd), "End upload");
-        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        submit.commandBufferCount = 1;
-        submit.pCommandBuffers    = &cmd;
-        check(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE), "Submit texture upload");
-        check(vkQueueWaitIdle(queue), "Wait texture upload");
-        destroyModelBuffer(modelStaging);
-    }
+        uploadMaterialTexture(modelTextures[i], model->images[i], i);
     const auto& env = environment ? *environment : FallbackEnvironment();
     uploadEnvironmentCube(environmentCube, env.mips);
     uploadEnvironmentCube(backgroundCube, BackgroundMips(env));
@@ -351,10 +419,10 @@ void uploadModel()
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 58},
-      {VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 58 + (bindlessSupported ? BindlessImageCount : 0)},
+      {VK_DESCRIPTOR_TYPE_SAMPLER, bindlessSupported ? 3u : 2u}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    poolInfo.maxSets       = 7;
+    poolInfo.maxSets       = bindlessSupported ? 8 : 7;
     poolInfo.poolSizeCount = 4;
     poolInfo.pPoolSizes    = sizes;
     check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &modelPool), "Create model descriptor pool");
@@ -418,6 +486,9 @@ void uploadModel()
           nullptr};
     }
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    createBindlessModelDescriptors();
+    if (std::getenv("NOVA_VULKAN_BINDING_TRACE"))
+        std::cout << "Vulkan model bindings: " << (usesBindless() ? "bindless" : "atlas") << '\n';
     modelReady = true;
 }
 void LoadModel(std::shared_ptr<const ModelData> data) override
@@ -450,6 +521,16 @@ void destroyModel()
         vkDestroyDescriptorPool(device, modelPool, nullptr);
     }
     modelPool = VK_NULL_HANDLE;
+    bindlessSet = VK_NULL_HANDLE;
+    if (bindlessLayout)
+        vkDestroyDescriptorSetLayout(device, bindlessLayout, nullptr);
+    bindlessLayout = VK_NULL_HANDLE;
+    if (bindlessSampler)
+        vkDestroySampler(device, bindlessSampler, nullptr);
+    bindlessSampler = VK_NULL_HANDLE;
+    for (auto& t : bindlessTextures)
+        destroyModelTexture(t);
+    bindlessTextures.clear();
     if (modelSetLayout)
     {
         vkDestroyDescriptorSetLayout(device, modelSetLayout, nullptr);

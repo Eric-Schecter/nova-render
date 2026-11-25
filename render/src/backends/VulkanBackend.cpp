@@ -108,10 +108,12 @@ namespace render::detail
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
           aaDeferred{}, aaOit{}, aaHybridShadow{}, aaCompactShadow{}, aaHybridReflection{}, aaHybridAO{}, aaProbeReflection{}, aaDeferredHalf{};
-        VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass)
+        VkPipeline aaBindlessModel[2]{}, aaBindlessGBuffer{};
+        VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass,
+                              const char* fragmentOverride = nullptr)
         {
             const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
-                       fragment = shader((std::string(name) + ".frag.spv").c_str());
+                       fragment = shader(fragmentOverride ? fragmentOverride : (std::string(name) + ".frag.spv").c_str());
             VkPipelineShaderStageCreateInfo stages[2]{};
             for (int i = 0; i < 2; i++)
             {
@@ -599,7 +601,9 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    auto& pipeline = oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
+                    const bool indexed = usesBindless() && !oit && !motion;
+                    auto& pipeline = indexed ? (gbuffer ? aaBindlessGBuffer : aaBindlessModel[sample])
+                                             : oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
                         pipeline = AAPipeline(
                           oit       ? "model-oit"
@@ -608,8 +612,12 @@ namespace render::detail
                                     : "model",
                           false,
                           sample ? 4 : 1,
-                          renderPass);
+                          renderPass,
+                          indexed ? (gbuffer ? "model-bindless-gbuffer.frag.spv" : "model-bindless-forward.frag.spv")
+                                  : nullptr);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                    if (indexed)
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 3, 1, &bindlessSet, 0, nullptr);
                     if (scene.active)
                     {
                         DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
@@ -638,6 +646,9 @@ namespace render::detail
                 release(pipeline);
             release(aaOit);
             release(aaGBuffer);
+            release(aaBindlessGBuffer);
+            for (auto& pipeline : aaBindlessModel)
+                release(pipeline);
             release(aaDeferred);
             release(probeDeferredPipeline);
             release(aaDeferredHalf);
@@ -713,7 +724,11 @@ namespace render::detail
             debugInfo.pUserData       = &validationErrors;
             VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
             app.pApplicationName         = "Nova Render";
-            app.apiVersion               = VK_API_VERSION_1_0;
+            uint32_t loaderVersion = VK_API_VERSION_1_0;
+            if (vkEnumerateInstanceVersion)
+                check(vkEnumerateInstanceVersion(&loaderVersion), "Query Vulkan loader version");
+            instanceApiVersion = std::min(loaderVersion, uint32_t(VK_API_VERSION_1_2));
+            app.apiVersion = instanceApiVersion;
             info.pApplicationInfo        = &app;
             info.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
             info.ppEnabledExtensionNames = extensions.data();
@@ -790,6 +805,34 @@ namespace render::detail
                 shadowWorkLimit = properties.limits.maxStorageBufferRange;
             }
             VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+            VkPhysicalDeviceDescriptorIndexingFeatures indexing{
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+            if (instanceApiVersion >= VK_API_VERSION_1_2 && properties.apiVersion >= VK_API_VERSION_1_2
+                && properties.limits.maxPerStageDescriptorSampledImages >= BindlessImageCount + 23
+                && properties.limits.maxDescriptorSetSampledImages >= BindlessImageCount + 23
+                && properties.limits.maxPerStageResources >= BindlessImageCount + 32
+                && properties.limits.maxBoundDescriptorSets >= 4 && !std::getenv("NOVA_VULKAN_FORCE_ATLAS"))
+            {
+                VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+                query.pNext = &indexing;
+                vkGetPhysicalDeviceFeatures2(physical, &query);
+                bindlessSupported = indexing.shaderSampledImageArrayNonUniformIndexing;
+            }
+            if (bindlessSupported && !config.shaderDirectory.empty())
+            {
+                for (const auto* name : {"model-bindless-forward.frag.spv", "model-bindless-present.frag.spv",
+                                         "model-bindless-gbuffer.frag.spv"})
+                {
+                    std::error_code error;
+                    bindlessSupported &= std::filesystem::is_regular_file(config.shaderDirectory / name, error);
+                }
+            }
+            if (bindlessSupported)
+            {
+                indexing = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+                indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+                info.pNext = &indexing;
+            }
             info.pEnabledFeatures        = &features;
             info.queueCreateInfoCount    = 1;
             info.pQueueCreateInfos       = &queueInfo;
@@ -992,10 +1035,10 @@ namespace render::detail
             rp.pDependencies   = &dep;
             check(vkCreateRenderPass(device, &rp, nullptr, &renderPass), "Create render pass");
             VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-            VkDescriptorSetLayout      modelLayouts[] = {modelSetLayout, gBufferSetLayout, probeSetLayout};
+            VkDescriptorSetLayout      modelLayouts[] = {modelSetLayout, gBufferSetLayout, probeSetLayout, bindlessLayout};
             if (model)
             {
-                pl.setLayoutCount = 3;
+                pl.setLayoutCount = bindlessLayout ? 4 : 3;
                 pl.pSetLayouts    = modelLayouts;
             }
             check(vkCreatePipelineLayout(device, &pl, nullptr, &layout), "Create pipeline layout");
@@ -1003,7 +1046,8 @@ namespace render::detail
             try
             {
                 vert = shader(model ? "model.vert.spv" : "triangle.vert.spv");
-                frag = shader(model ? "model.frag.spv" : "triangle.frag.spv");
+                frag = shader(model ? (bindlessSet ? "model-bindless-present.frag.spv" : "model.frag.spv")
+                                    : "triangle.frag.spv");
                 VkPipelineShaderStageCreateInfo stages[2]{};
                 for (auto& stage : stages)
                 {
@@ -1289,6 +1333,8 @@ namespace render::detail
                 vkCmdDraw(cmd, 3, 1, 0, 0);
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             }
+            if (!path && bindlessSet)
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 3, 1, &bindlessSet, 0, nullptr);
             if (!path && scene.active)
             {
                 for (const auto& draw : scene.draws)

@@ -54,19 +54,19 @@ namespace render::detail
             const auto y = uint32_t(std::round(v * (image->height - 1)));
             return image->pixels[(size_t(y) * image->width + x) * 4 + channel];
         }
-        std::array<const Image*, 8> maps(const Material& m)
-        {
-            return {
-              m.baseColorTexture ? &*m.baseColorTexture : &defaults[0],
-              m.normalTexture ? &*m.normalTexture : &defaults[1],
-              m.metallicRoughnessTexture ? &*m.metallicRoughnessTexture : &defaults[2],
-              m.occlusionTexture ? &*m.occlusionTexture : &defaults[3],
-              m.emissiveTexture ? &*m.emissiveTexture : &defaults[4],
-              m.clearcoatTexture ? &*m.clearcoatTexture : &defaults[5],
-              m.clearcoatRoughnessTexture ? &*m.clearcoatRoughnessTexture : &defaults[6],
-              m.clearcoatNormalTexture ? &*m.clearcoatNormalTexture : &defaults[7]};
-        }
     } // namespace
+    std::array<const Image*, 8> MaterialTextureSources(const Material& m)
+    {
+        return {
+          m.baseColorTexture ? &*m.baseColorTexture : &defaults[0],
+          m.normalTexture ? &*m.normalTexture : &defaults[1],
+          m.metallicRoughnessTexture ? &*m.metallicRoughnessTexture : &defaults[2],
+          m.occlusionTexture ? &*m.occlusionTexture : &defaults[3],
+          m.emissiveTexture ? &*m.emissiveTexture : &defaults[4],
+          m.clearcoatTexture ? &*m.clearcoatTexture : &defaults[5],
+          m.clearcoatRoughnessTexture ? &*m.clearcoatRoughnessTexture : &defaults[6],
+          m.clearcoatNormalTexture ? &*m.clearcoatNormalTexture : &defaults[7]};
+    }
     void ValidateMaterial(const Material& m)
     {
         auto range = [](float x, float max) {
@@ -137,7 +137,7 @@ namespace render::detail
             if (*image && (!(*image)->width || !(*image)->height || (*image)->width > 8192 || (*image)->height > 8192
                 || (*image)->pixels.size() != size_t((*image)->width) * (*image)->height * 4))
                 throw std::invalid_argument("Volume maps require 1..8192 RGBA8 pixels");
-        for (const auto* image : maps(m))
+        for (const auto* image : MaterialTextureSources(m))
             if (
               !image->width || !image->height || image->width > 8192 || image->height > 8192
               || image->pixels.size() != size_t(image->width) * image->height * 4)
@@ -156,7 +156,7 @@ namespace render::detail
             ValidateMaterial(m);
             auxiliaryMaps |= bool(m.clearcoatTexture || m.clearcoatRoughnessTexture || m.clearcoatNormalTexture
               || m.sheenColorTexture || m.sheenRoughnessTexture || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture);
-            for (auto* im : maps(m))
+            for (auto* im : MaterialTextureSources(m))
                 tile = std::max({tile, im->width, im->height});
             for (const auto* map : {&m.transmissionTexture, &m.thicknessTexture, &m.specularTexture, &m.specularColorTexture, &m.sheenColorTexture, &m.sheenRoughnessTexture, &m.iridescenceTexture, &m.iridescenceThicknessTexture, &m.anisotropyTexture})
                 if (*map)
@@ -201,7 +201,7 @@ namespace render::detail
         }
         else
         {
-            auto images = maps(first);
+            auto images = MaterialTextureSources(first);
             for (size_t k = 0; k < data.images.size(); k++)
                 data.images[k] = *images[k];
         }
@@ -263,7 +263,7 @@ namespace render::detail
                 record[45]  = float(tile - 1) / h;
                 record[46]  = (x + 2.5f) / w;
                 record[47]  = (y + 2.5f) / h;
-                auto images = maps(m);
+                auto images = MaterialTextureSources(m);
                 for (size_t k = 0; k < data.images.size(); k++)
                 {
                     if (k >= 5 && !auxiliaryMaps)

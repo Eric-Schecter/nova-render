@@ -31,9 +31,27 @@ This workload uses a deterministic visibility predicate and non-overlapping obje
 
 On Apple M4 with MoltenVK 1.4.0, `vulkaninfo` reports sampled-image nonuniform indexing, runtime descriptor arrays, partially bound descriptors, and sampled-image update-after-bind. It reports 256 sampled images per stage for regular descriptors, and 1,000,000 for update-after-bind descriptors. These are reported limits. A Vulkan pipeline still needs to enable the features it uses and validate its descriptor layout and allocation on the selected device.
 
-Nova currently uses the atlas for Vulkan model rendering. The `material-vulkan` and `scene-render-vulkan` regressions passed on this device, including runtime material and texture updates. These results establish the atlas baseline. Vulkan Bindless image parity and frame or update timing have yet to be measured.
+The `material-vulkan` and `scene-render-vulkan` regressions establish the atlas baseline on this device, including runtime material and texture updates.
 
 ```sh
 vulkaninfo | grep -E 'deviceName|driverInfo|shaderSampledImageArrayNonUniformIndexing|runtimeDescriptorArray|descriptorBindingPartiallyBound|descriptorBindingSampledImageUpdateAfterBind|maxPerStageDescriptor.*SampledImages'
 ctest --test-dir build/sdl-only -R '^(material-vulkan|scene-render-vulkan)$' --output-on-failure
 ```
+
+Vulkan's native model raster pipeline can select independent material textures via descriptor indexing. On a compatible Vulkan 1.2 device, forward and G-buffer shading use the indexed path for models with up to 16 compatible materials. Alpha blending, transmission, and materials with extra textures packed into shared channels use the atlas. Hybrid and ray tracing use their existing texture paths. The indexed path preserves independent texture sizes and mip chains. Nova also prepares the atlas so features and passes that require it can still run. Material edits currently rebuild model resources.
+
+Run the A/B with the same Release build and the same material fixture:
+
+```sh
+NOVA_VULKAN_BINDING_TRACE=1 build/sdl-only/nova_material_test vulkan assets build/validation/vulkan-bindless/bindless
+NOVA_VULKAN_BINDING_TRACE=1 NOVA_VULKAN_FORCE_ATLAS=1 build/sdl-only/nova_material_test vulkan assets build/validation/vulkan-bindless/atlas
+```
+
+The test captures both sides before and after replacement. Frame time includes draw, readback, presentation and wait. The replacement measurement starts at `SetMaterial` and ends once the new frame has rendered.
+
+The same 640 × 480 camera and FXAA settings produced both captures. Across three paired runs, the medians were:
+
+- Atlas — frame 8.29 ms, `SetMaterial` 1.74 ms, first rendered frame after replacement 169.34 ms.
+- Bindless — frame 8.33 ms, `SetMaterial` 1.89 ms, first rendered frame after replacement 160.53 ms.
+
+There was no clear steady-state frame-time gain. The replacement frame arrived about 9 ms earlier with Bindless in this fixture, while the CPU material call took slightly longer. Image PSNR between strategies was 41.20 dB before replacement and 41.13 dB after replacement. Texture addressing and mip selection differ, and both paths rendered the replacement in the intended material slot.

@@ -184,5 +184,25 @@ if(APPLE)
     list(APPEND SHADER_OUTPUTS "${output}")
 endif()
 endforeach()
+if(NOVA_ENABLE_VULKAN)
+    foreach(kind forward present gbuffer)
+        set(bindless_opts)
+        set(bindless_entry PSMain)
+        if(kind STREQUAL "present")
+            set(bindless_opts -DNOVA_VULKAN_PRESENT=1)
+        elseif(kind STREQUAL "gbuffer")
+            set(bindless_entry GBufferPSMain)
+        endif()
+        set(output "${SHADER_OUTPUT_DIR}/model-bindless-${kind}.frag.spv")
+        add_custom_command(OUTPUT "${output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2
+                -DNOVA_VULKAN_BINDLESS=1 ${bindless_opts} -T ps_6_0 -E ${bindless_entry} -Fo "${output}"
+                "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
+            DEPENDS "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl" ${_nova_shader_extra_deps}
+                "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${output}")
+    endforeach()
+endif()
 add_custom_target(triangle_shaders DEPENDS ${SHADER_OUTPUTS})
 message(STATUS "Shader DXC: ${NOVA_DXC_EXECUTABLE}")
