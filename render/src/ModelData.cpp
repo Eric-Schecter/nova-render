@@ -5,7 +5,6 @@
 #include "Color.hpp"
 #include <glm/gtc/quaternion.hpp>
 #define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <algorithm>
 #include <cmath>
@@ -19,10 +18,13 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#ifdef NOVA_HAS_GLTF
 #include <tiny_gltf.h>
+#endif
 
 namespace render::detail
 {
+#ifdef NOVA_HAS_GLTF
     namespace
     {
         const unsigned char* bufferElement(
@@ -1136,6 +1138,12 @@ namespace render::detail
         std::cout << "Model: " << path.filename().string() << "; triangles: " << result->vertices.size() / 3 << '\n';
         return result;
     }
+#else
+    std::shared_ptr<const ModelData> LoadGLB(const std::filesystem::path&, std::optional<uint32_t>)
+    {
+        throw std::logic_error("File loading requires NOVA_ENABLE_GLTF. Submit scene geometry from memory instead.");
+    }
+#endif
     void ValidateCamera(const OrbitCamera& c)
     {
         for (float v : c.target)

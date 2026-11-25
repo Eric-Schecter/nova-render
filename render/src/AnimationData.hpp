@@ -3,7 +3,9 @@
 #include "render/Animation.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#ifdef NOVA_HAS_GLTF
 #include <tiny_gltf.h>
+#endif
 namespace render::detail
 {
     std::shared_ptr<const ModelData> PoseAnimationGeometry(
@@ -50,6 +52,7 @@ namespace render::detail
         glm::vec3                                center{0};
         float                                    scale = 1;
     };
+#ifdef NOVA_HAS_GLTF
     std::shared_ptr<AnimationData> ReadAnimationData(const tinygltf::Model&);
     void                           AppendSkinVertex(
                                 AnimationData&,
@@ -61,6 +64,7 @@ namespace render::detail
                                 const glm::mat4&,
                                 const glm::vec3&,
                                 const glm::vec3&);
+#endif
     std::vector<JointMatrix> EvaluateAnimation(const AnimationData&, const AnimationState&);
     AnimationState           ValidateAnimationState(const std::vector<AnimationClip>&, const AnimationState&);
     AnimationState           AdvanceAnimation(const std::vector<AnimationClip>&, AnimationState, float);

@@ -1,3 +1,4 @@
+import { buildSceneGeometry } from './SceneGeometry.js'
 import { modelVertexFloats, modelTriangleFloats, shadowBVHByteLimit } from './ModelVertex.js'
 import { packMaterials, validateMaterial } from './MaterialData.js'
 import { createAnimationPlayer, evaluateAnimation, poseAnimationGeometry } from './AnimationData.js'
@@ -130,21 +131,22 @@ export class SceneData {
     )
     const paths = new Map()
     const strategies = new Map()
-    const variants = new Map()
+    const variants = new Map(), geometries = new Map()
     for (const a of assets) {
       if (
         !a ||
         typeof a.id !== 'string' ||
         !a.id ||
         paths.has(a.id) ||
-        typeof a.url !== 'string' ||
-        !a.url ||
+        (a.geometry === undefined ? typeof a.url !== 'string' || !a.url
+          : a.url !== undefined || !a.geometry || typeof a.geometry !== 'object' || a.materialVariant !== undefined) ||
         (a.sourceSpace !== undefined && typeof a.sourceSpace !== 'boolean') ||
         (a.materialVariant !== undefined && (!Number.isInteger(a.materialVariant) || a.materialVariant < 0)) ||
         (a.bvh !== undefined && a.bvh !== 'sah' && a.bvh !== 'median')
       )
         throw Error('Invalid scene asset ID, URL, sourceSpace or BVH strategy')
       paths.set(a.id, a.url)
+      geometries.set(a.id, a.geometry)
       strategies.set(a.id, a.bvh)
       variants.set(a.id, a.materialVariant)
     }
@@ -171,14 +173,15 @@ export class SceneData {
     const key = JSON.stringify(
       [...referenced].sort().map((id) => [id, paths.get(id), strategies.get(id), variants.get(id)]),
     )
-    if (!this.model || key !== this.key) {
+    if (!this.model || key !== this.key
+      || [...referenced].some((id) => this.meshes.get(id)?.geometry !== geometries.get(id))) {
       const next = new Map()
       for (const id of [...referenced].sort()) {
-        const previous = this.meshes.get(id)
+        const previous = this.meshes.get(id), geometry = geometries.get(id)
         const data =
-          previous?.url === paths.get(id) && previous.materialVariant === variants.get(id)
+          previous && previous.url === paths.get(id) && previous.materialVariant === variants.get(id) && previous.geometry === geometry
             ? previous.data
-            : await loadGLB(paths.get(id), { pack: false, materialVariant: variants.get(id) })
+            : geometry ? buildSceneGeometry(geometry) : await loadGLB(paths.get(id), { pack: false, materialVariant: variants.get(id) })
         if (data.animation && !data.skinInputs) createAnimationPlayer(data)
         // Larger static meshes amortize SAH construction and benefit from
         // tighter bounds across the AO, shadow and reflection passes.
@@ -191,6 +194,7 @@ export class SceneData {
           data,
           strategy,
           url: paths.get(id),
+          geometry,
           materialVariant: variants.get(id),
           picking:
             previous?.data === data && previous.strategy === strategy

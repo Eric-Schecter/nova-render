@@ -13,14 +13,19 @@
       "host": true,
       "platform": "osx"
     },
-    "tinygltf",
+    "stb",
     "glm",
     "sdl3"
   ],
   "default-features": [
+    "gltf",
     "vulkan"
   ],
   "features": {
+    "gltf": {
+      "description": "Built-in glTF loader",
+      "dependencies": ["tinygltf"]
+    },
     "vulkan": {
       "description": "Vulkan backend",
       "dependencies": [

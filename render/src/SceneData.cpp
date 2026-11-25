@@ -9,6 +9,56 @@
 #include <stdexcept>
 namespace render::detail
 {
+    namespace
+    {
+        std::shared_ptr<const ModelData> BuildGeometry(const SceneGeometry& geometry)
+        {
+            const auto& vertices = geometry.vertices;
+            if (vertices.empty() || vertices.size() % 3 || vertices.size() > 10'000'000
+                || (!geometry.triangleMaterials.empty() && geometry.triangleMaterials.size() != vertices.size() / 3)
+                || geometry.materials.size() > materialSlotLimit)
+                throw std::invalid_argument("Invalid scene triangle geometry");
+
+            auto model = std::make_shared<ModelData>(*EmptyModelData());
+            model->materials = geometry.materials;
+            if (model->materials.empty())
+                model->materials.emplace_back();
+            model->vertices.reserve(vertices.size());
+            auto min = glm::vec3(std::numeric_limits<float>::infinity());
+            auto max = -min;
+            for (size_t i = 0; i < vertices.size(); ++i)
+            {
+                const auto& v = vertices[i];
+                const auto position = glm::make_vec3(v.position.data());
+                const auto normal = glm::make_vec3(v.normal.data());
+                const auto length = std::hypot(normal.x, normal.y, normal.z);
+                const auto slot = geometry.triangleMaterials.empty() ? 0u : geometry.triangleMaterials[i / 3];
+                if (!std::all_of(v.position.begin(), v.position.end(), [](float x) { return std::isfinite(x); })
+                    || !std::all_of(v.uv.begin(), v.uv.end(), [](float x) { return std::isfinite(x); })
+                    || !std::isfinite(length) || length <= 0 || slot >= model->materials.size())
+                    throw std::invalid_argument("Invalid scene vertex or material slot");
+                const auto n = normal / length;
+                min = glm::min(min, position);
+                max = glm::max(max, position);
+                model->vertices.push_back({{position.x, position.y, position.z, float(slot + 1)},
+                                           {n.x, n.y, n.z, 0}, {v.uv[0], v.uv[1], 0, 1.5f},
+                                           {v.uv[0], v.uv[1]}});
+            }
+            const auto extent = max - min;
+            const auto size = std::max({extent.x, extent.y, extent.z});
+            if (!std::isfinite(size) || size <= 0)
+                throw std::invalid_argument("Invalid scene geometry bounds");
+            for (int k = 0; k < 3; ++k)
+            {
+                model->sourceMinimum[k] = min[k];
+                model->sourceMaximum[k] = max[k];
+            }
+            for (auto& v : model->vertices)
+                for (int k = 0; k < 3; ++k)
+                    v.position[k] = ((v.position[k] - min[k]) / size - extent[k] / size * .5f) * 2.f;
+            return model;
+        }
+    }
     void SceneData::Update(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input)
     {
         auto next = *this;
@@ -21,10 +71,15 @@ namespace render::detail
             players.clear();
         std::map<std::string, std::filesystem::path> paths;
         std::map<std::string, std::optional<uint32_t>> variants;
+        std::map<std::string, std::shared_ptr<const SceneGeometry>> geometries;
         for (const auto& a : assets)
-            if (a.id.empty() || a.path.empty() || !paths.emplace(a.id, a.path).second)
-                throw std::invalid_argument("Scene assets require unique nonempty IDs and paths");
-        for (const auto& a : assets) variants.emplace(a.id, a.materialVariant);
+        {
+            if (a.id.empty() || (!a.path.empty() == bool(a.geometry)) || (a.geometry && a.materialVariant)
+                || !paths.emplace(a.id, a.path).second)
+                throw std::invalid_argument("Scene assets require unique IDs and either a path or geometry");
+            variants.emplace(a.id, a.materialVariant);
+            geometries.emplace(a.id, a.geometry);
+        }
         std::set<std::string> ids;
         std::set<std::string> referenced;
         for (const auto& i : input)
@@ -42,20 +97,20 @@ namespace render::detail
         }
         std::vector<AssetKey> nextKey;
         for (const auto& id : referenced)
-            nextKey.emplace_back(id, paths.at(id), variants.at(id));
+            nextKey.emplace_back(id, paths.at(id), variants.at(id), geometries.at(id));
         if (!model || nextKey != key)
         {
             std::map<std::string, Mesh> next;
             for (const auto& entry : nextKey)
             {
-                const auto& [id, path, variant] = entry;
+                const auto& [id, path, variant, geometry] = entry;
                 std::shared_ptr<const ModelData> data;
                 auto                             old  = meshes.find(id);
                 auto                             prev = std::find(key.begin(), key.end(), entry);
                 if (old != meshes.end() && prev != key.end())
                     data = old->second.data;
                 else
-                    data = LoadGLB(path, variant);
+                    data = geometry ? BuildGeometry(*geometry) : LoadGLB(path, variant);
                 if (data->animation && data->skinInputs.empty())
                 {
                     AnimationPlayer prepare;

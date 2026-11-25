@@ -74,3 +74,33 @@ Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `Set
 The SDK includes formal scene, camera, picking, material, GPU shadow and atmosphere APIs. Native/Web packages carry their source commit. Use `scripts/packaging/pair.mjs` to create a SHA-256 manifest; mixing revisions or dirty builds is rejected. See the online [installation guide](https://eric-schecter.github.io/nova-render/guide/package.html) for release downloads.
 
 SDK 0.8.0: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations.
+
+## Geometry from memory
+
+The core archive (`nova-render-sdk-core-…`) is built with
+`-DNOVA_ENABLE_GLTF=OFF -DNOVA_BUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF`. It omits
+TinyGLTF and its JSON dependency. The compatibility archive enables glTF file
+loading. CMake consumers can check `Nova_GLTF_FILE_LOADING`.
+
+Both builds accept geometry through `SetScene`:
+
+```cpp
+auto mesh = std::make_shared<render::SceneGeometry>();
+mesh->vertices = {
+    {{0, 0, 0}, {0, 0, 1}},
+    {{1, 0, 0}, {0, 0, 1}},
+    {{0, 1, 0}, {0, 0, 1}},
+};
+render::SceneAsset asset;
+asset.id = "triangle";
+asset.sourceSpace = true;
+asset.geometry = mesh;
+render::SceneInstance left{"left", asset.id}, right{"right", asset.id};
+right.world[12] = 2;
+window.SetScene({asset}, {left, right});
+```
+
+An asset accepts either a file path or an immutable geometry object. Memory
+geometry uses a non-indexed triangle list with optional material definitions
+and zero-based `triangleMaterials`. Supply a new geometry object to replace
+the mesh. Instances with the same asset ID reuse the same geometry.

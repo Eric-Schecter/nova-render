@@ -4,8 +4,10 @@ import { mkdirSync, rmSync, cpSync, readdirSync, readFileSync, writeFileSync } f
 import { resolve, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+const core = process.argv.includes('--core')
+const name = core ? 'render-web-core' : 'render-web'
 const root = fileURLToPath(new URL('../../', import.meta.url)),
-  stage = join(root, 'build/web-package'),
+  stage = join(root, 'build/' + name + '-package'),
   out = join(root, 'build/packages')
 execFileSync(process.execPath, [join(root, 'scripts/webgpu/generate.mjs')], {
   cwd: root,
@@ -15,6 +17,13 @@ rmSync(stage, { recursive: true, force: true })
 mkdirSync(join(stage, 'assets'), { recursive: true })
 mkdirSync(out, { recursive: true })
 cpSync(join(root, 'web/src'), join(stage, 'src'), { recursive: true })
+if (core) {
+  writeFileSync(join(stage, 'src/GLTFLoader.js'), `export async function loadGLB() {
+  throw Error('File loading requires @nova/render-web. Submit scene geometry from memory instead.')
+}
+`)
+}
+
 cpSync(join(root, 'packages/web/bin'), join(stage, 'bin'), { recursive: true })
 cpSync(join(root, 'packages/web/README.md'), join(stage, 'README.md'))
 const version = readFileSync(join(root, 'CMakeLists.txt'), 'utf8').match(
@@ -59,7 +68,7 @@ writeFileSync(
   join(stage, 'package.json'),
   JSON.stringify(
     {
-      name: '@nova/render-web',
+      name: '@nova/' + name,
       version,
       private: true,
       type: 'module',
@@ -82,7 +91,7 @@ runNpm(
   ['pack', '--ignore-scripts', '--cache', join(root, 'build/npm-cache'), '--pack-destination', out],
   { cwd: stage, stdio: 'inherit' },
 )
-const file = join(out, `nova-render-web-${version}.tgz`)
+const file = join(out, `nova-${name}-${version}.tgz`)
 writeFileSync(
   file + '.sha256',
   createHash('sha256').update(readFileSync(file)).digest('hex') +

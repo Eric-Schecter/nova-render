@@ -1,5 +1,7 @@
 #pragma once
+#include "render/Material.hpp"
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -29,6 +31,20 @@ namespace render
         std::array<float, 3> position{}, normal{}; // World point and unit geometric normal (world winding).
     };
 
+    struct SceneVertex
+    {
+        std::array<float, 3> position{}, normal{0, 1, 0};
+        std::array<float, 2> uv{};
+    };
+
+    struct SceneGeometry
+    {
+        // Non-indexed triangle list. One optional zero-based material slot per triangle.
+        std::vector<SceneVertex> vertices;
+        std::vector<Material> materials;
+        std::vector<uint32_t> triangleMaterials;
+    };
+
     struct SceneAsset
     {
         std::string           id;
@@ -37,6 +53,8 @@ namespace render
         // true: retain glTF scene units, origin and authored node transforms.
         bool sourceSpace = false;
         std::optional<uint32_t> materialVariant;
+        // Supply geometry or a path. Publish a new immutable object to replace geometry.
+        std::shared_ptr<const SceneGeometry> geometry;
     };
 
     struct SceneInstance

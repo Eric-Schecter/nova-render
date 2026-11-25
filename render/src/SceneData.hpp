@@ -70,7 +70,7 @@ namespace render::detail
             std::array<float, 4>             uv;
             std::shared_ptr<const PickMesh>  picking;
         };
-        using AssetKey = std::tuple<std::string, std::filesystem::path, std::optional<uint32_t>>;
+        using AssetKey = std::tuple<std::string, std::filesystem::path, std::optional<uint32_t>, std::shared_ptr<const SceneGeometry>>;
         std::vector<AssetKey> key;
         std::map<std::string, Mesh>                                meshes;
     };

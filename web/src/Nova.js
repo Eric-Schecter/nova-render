@@ -413,6 +413,7 @@ class Renderer {
   #directionalLight = defaultDirectionalLight()
   #environment
   #sceneData = new SceneData()
+  #sceneGeometry = new WeakMap()
   #sceneModel
   #modelURL
   #environmentURL
@@ -512,9 +513,15 @@ class Renderer {
     this.#sceneOutlines = next
     this.#resetAA()
   }
-  /** Replace static raster instances. Assets: {id,url,sourceSpace?}; instances: {id,assetId,world?}. */
+  /** Replace static raster instances. Assets: {id,url or geometry,sourceSpace?}; instances: {id,assetId,world?}. */
   setScene(assets, instances) {
-    assets = structuredClone(assets)
+    assets = assets.map((asset) => {
+      if (!asset?.geometry || typeof asset.geometry !== 'object') return structuredClone(asset)
+      const { geometry, ...fields } = asset
+      if (!this.#sceneGeometry.has(geometry))
+        this.#sceneGeometry.set(geometry, structuredClone(geometry))
+      return { ...structuredClone(fields), geometry: this.#sceneGeometry.get(geometry) }
+    })
     instances = structuredClone(instances)
     return this.#enqueue(async () => {
       this.#check()

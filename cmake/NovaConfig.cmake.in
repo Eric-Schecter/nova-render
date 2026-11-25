@@ -10,6 +10,7 @@ if(NOT _nova_consumer_system STREQUAL "@nova_sdk_system@")
     return()
 endif()
 set(Nova_WINDOW_HOST_CONTROLS TRUE)
+set(Nova_GLTF_FILE_LOADING @NOVA_ENABLE_GLTF@)
 # Search bundled dependencies first, while allowing conventional external packages.
 find_dependency(SDL3 CONFIG HINTS "${PACKAGE_PREFIX_DIR}/share/sdl3")
 if(@NOVA_SDK_NEEDS_VOLK@)

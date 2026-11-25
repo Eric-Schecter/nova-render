@@ -62,3 +62,34 @@ Optional `includeIds` / `excludeIds` filter instance IDs; exclusions win. Hits c
 Materials: read `GetMaterials()` / `getMaterials()`, edit a slot, then call `SetMaterial(slot, material)` / `await setMaterial(slot, material)`. Pass the scene asset ID as the final argument to edit all its instances. Texture maps accept RGBA8 images; `LoadMaterialImage(path)` / `await loadMaterialImage(url)` decodes an image. See the materials API documentation for ranges and atlas limits.
 
 SDK 0.8.0: `alphaMode`, `alphaCutoff`, `doubleSided` and RGBA alpha are imported and editable. Query material capabilities before choosing ray tracing or BLEND AA combinations.
+
+## Geometry from memory
+
+Build the loader-free package with `npm run pack:web -- --core`. It installs as
+`@nova/render-web-core` and omits the GLB parser. For projects that load GLB files
+by URL, the compatibility package is `@nova/render-web`. Both packages expose
+the same scene API for in-memory triangles:
+
+```js
+const geometry = {
+  vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0]].map((position) => ({
+    position,
+    normal: [0, 0, 1],
+  })),
+}
+const world = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+const right = [...world]
+right[12] = 2
+await renderer.setScene(
+  [{ id: 'triangle', geometry, sourceSpace: true }],
+  [
+    { id: 'left', assetId: 'triangle', world },
+    { id: 'right', assetId: 'triangle', world: right },
+  ],
+)
+```
+
+Instances with the same asset ID share geometry. Keep geometry objects
+immutable and pass a new object when you replace a mesh. A geometry object
+can include `materials` and zero-based `triangleMaterials` for a non-indexed
+triangle list.

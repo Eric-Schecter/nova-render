@@ -12,6 +12,7 @@ namespace render::detail
 {
     namespace
     {
+#ifdef NOVA_HAS_GLTF
         glm::vec4 Read(const tinygltf::Model& m, int index, size_t row, int components, bool integer = false)
         {
             const auto& a    = m.accessors.at(index);
@@ -59,6 +60,7 @@ namespace render::detail
             }
             return result;
         }
+#endif
         glm::quat Quaternion(glm::vec4 v)
         {
             if (glm::length(v) < 1e-8f)
@@ -66,6 +68,7 @@ namespace render::detail
             return glm::normalize(glm::quat(v.w, v.x, v.y, v.z));
         }
     } // namespace
+#ifdef NOVA_HAS_GLTF
     std::shared_ptr<AnimationData> ReadAnimationData(const tinygltf::Model& m)
     {
         if (m.skins.empty() && m.animations.empty())
@@ -249,6 +252,7 @@ namespace render::detail
         }
         out.vertices.push_back(v);
     }
+#endif
     void AnimationPlayer::Load(std::shared_ptr<const ModelData> data)
     {
         source = std::move(data);

@@ -1,5 +1,8 @@
 # Local artifacts only. CPack never uploads or publishes a package.
 set(CPACK_PACKAGE_NAME nova-render-sdk)
+if(NOT NOVA_ENABLE_GLTF)
+    string(APPEND CPACK_PACKAGE_NAME "-core")
+endif()
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_GENERATOR "TGZ;ZIP")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
