@@ -9,13 +9,13 @@ int main(int argc, char** argv)
 {
     try
     {
-        if (argc < 2 || argc > 3)
-            throw std::invalid_argument("Usage: nova_bistro <prepared Bistro directory> [metal|vulkan|dx12]");
+        if (argc < 2 || argc > 4)
+            throw std::invalid_argument("Usage: nova_bistro <prepared Bistro directory> [metal|vulkan|dx12] [environment.nenv]");
         render::WindowConfig config;
         config.width  = 960;
         config.height = 540;
         config.title  = "Nova Bistro instancing";
-        if (argc == 3)
+        if (argc >= 3)
         {
             const std::string_view api = argv[2];
             if (api == "metal")
@@ -32,6 +32,16 @@ int main(int argc, char** argv)
         std::ifstream manifest(directory / "instances.txt");
         if (!manifest)
             throw std::runtime_error("Cannot open Bistro instances.txt");
+        const bool lit = argc == 4;
+        std::set<std::string> casters;
+        if (lit)
+        {
+            std::ifstream input(directory / "casters.txt");
+            if (!input)
+                throw std::runtime_error("Missing Bistro casters.txt. Rerun prepare-bistro-scene.mjs.");
+            for (std::string id; input >> id;)
+                casters.insert(id);
+        }
         std::set<std::string> ids;
         std::vector<render::SceneAsset> assets;
         std::vector<render::SceneInstance> instances;
@@ -47,7 +57,7 @@ int main(int argc, char** argv)
                     throw std::runtime_error("Incomplete Bistro transform for " + instance);
                 value = static_cast<float>(parsed);
             }
-            row.castShadow = false;
+            row.castShadow = casters.count(asset) != 0;
             instances.push_back(row);
         }
         if (instances.empty())
@@ -62,7 +72,14 @@ int main(int argc, char** argv)
         camera.nearPlane   = .1f;
         camera.farPlane    = 1000;
         window.SetViewCamera(camera);
-        window.SetLighting(render::LightingMode::Unlit);
+        window.SetLighting(lit ? render::LightingMode::PBR : render::LightingMode::Unlit);
+        if (lit)
+        {
+            window.LoadEnvironment(argv[3]);
+            window.SetEnvironment({0, .65f, 1, false});
+            window.SetDirectionalLight({{-1, 1.8f, 1.3f}, {1, .95f, .85f}, 3});
+            window.SetShadows({true, 1, 2, .015f});
+        }
         window.SetScene(assets, instances);
         std::cout << "Bistro scene: " << assets.size() << " assets, " << instances.size() << " instances\n";
         while (window.PollEvents())

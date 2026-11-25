@@ -108,3 +108,19 @@ The Vulkan material benchmark also accepts a local GLB with `--model PATH`. It p
 - The 27-material opaque version also used 72 indexed descriptors. It uploaded one texture per edit. On Apple M4/MoltenVK at 1280 × 960, one run measured 198.84 ms from replacement to output with the atlas and 17.40 ms with indexed updates. Static frame medians were 16.08 ms and 16.99 ms respectively.
 
 The timings describe this subset and test texture workload. The full scene with its original textures remains a separate capacity and memory benchmark.
+
+### Full Bistro lighting check
+
+Prepare the full static Bistro GLB with embedded textures, then run the native
+example at Bistro's authored camera:
+
+```sh
+node scripts/reference/prepare-bistro-scene.mjs /path/to/Bistro.glb build/bistro
+cmake --build build --target nova_bistro
+build/nova_bistro build/bistro metal assets/Environment/kloppenheim_06.nenv
+```
+
+Use `vulkan` in place of `metal` to run the Vulkan backend. Omit the final
+environment argument for the unlit baseline. The lit view uses PBR, HDRI fill
+and directional light. The generated `casters.txt` selects opaque structural
+surfaces such as brick, concrete and awnings for shadows.

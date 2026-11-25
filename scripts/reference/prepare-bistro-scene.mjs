@@ -154,14 +154,30 @@ function buildAsset(meshes) {
 }
 
 await mkdir(output, { recursive: true })
-const rows = []
+const rows = [],
+  casters = []
+let casterVertices = 0
+// Use opaque structural surfaces for the first lighting pass.
+const structural = /concrete|plaster|brick|roofing|awning_fabric|_fabric$|_beams$/i
 for (const [id, group] of groups) {
   const filename = id + '.glb'
   await writeFile(join(output, filename), buildAsset(group.meshes))
+  const material = input.materials[group.meshes[0].primitive.material]
+  if (
+    material &&
+    (material.alphaMode ?? 'OPAQUE') === 'OPAQUE' &&
+    !material.extensions?.KHR_materials_transmission &&
+    structural.test(material.name ?? '')
+  ) {
+    casters.push(id)
+    for (const { primitive } of group.meshes)
+      casterVertices += input.accessors[primitive.indices ?? primitive.attributes.POSITION].count
+  }
   for (const [i, world] of group.instances.entries())
     rows.push([id, filename, id + '-' + i, ...world].join(' '))
 }
 await writeFile(join(output, 'instances.txt'), rows.join('\n') + '\n')
+await writeFile(join(output, 'casters.txt'), casters.join('\n') + '\n')
 console.log(
   JSON.stringify({
     sourceMeshes: references.size,
@@ -169,5 +185,7 @@ console.log(
     draws: rows.length,
     uniqueVertices,
     expandedVertices,
+    shadowAssets: casters.length,
+    casterVertices,
   }),
 )
