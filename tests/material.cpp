@@ -20,7 +20,9 @@ int main(int argc, char** argv)
     try
     {
         const bool helmet = argc == 5 && std::string_view(argv[4]) == "--helmet";
-        Require(argc == 3 || argc == 4 || helmet, "Expected API, assets, optional output and --helmet");
+        const bool overflow = argc == 5 && std::string_view(argv[4]) == "--texture-table-overflow";
+        const bool shared = overflow || (argc == 5 && std::string_view(argv[4]) == "--shared-textures");
+        Require(argc == 3 || argc == 4 || helmet || shared, "Expected API, assets, optional output and benchmark option");
         std::string           api    = TestAPI(argv[1]);
         std::filesystem::path path   = std::filesystem::path(argv[2]) / (helmet ? "DamagedHelmet/DamagedHelmet.glb" : "MaterialSample/Dual.glb");
         auto                  source = detail::LoadGLB(path);
@@ -63,6 +65,58 @@ int main(int argc, char** argv)
             backend->WaitIdle();
             Require(!backend->ValidationErrorCount(), "GPU errors");
         };
+        if (shared)
+        {
+            auto model = std::make_shared<detail::ModelData>(*source);
+            Material original;
+            original.baseColorTexture = Image{1, 1, {230, 20, 20, 255}};
+            const uint32_t slots = overflow ? 126 : 17;
+            model->materials.assign(slots, original);
+            if (overflow)
+                for (uint32_t slot = 0; slot + 1 < slots; ++slot)
+                    model->materials[slot].baseColorTexture->pixels[2] = static_cast<unsigned char>(20 + slot);
+            for (auto& vertex : model->vertices)
+                if (vertex.position[3] == 2)
+                    vertex.position[3] = float(slots);
+            detail::PackMaterials(*model);
+            backend->LoadModel(model);
+            backend->SetAntiAliasing({AAMethod::FXAA});
+            draw();
+            const auto before = backend->GetRasterAAImage();
+            auto changed = original;
+            changed.baseColorTexture = Image{1, 1, {20, 230, 20, 255}};
+            backend->SetMaterial(slots - 1, changed, "");
+            draw();
+            const auto after = backend->GetRasterAAImage();
+            size_t changedRight = 0, originalLeft = 0;
+            for (uint32_t y = 0; y < before.height; ++y)
+                for (uint32_t x = 0; x < before.width; ++x)
+                {
+                    const auto offset = (size_t(y) * before.width + x) * 4;
+                    const auto* oldPixel = before.pixels.data() + offset;
+                    const auto* newPixel = after.pixels.data() + offset;
+                    if (x < before.width / 2 && oldPixel[0] > 120 && oldPixel[0] > 2 * oldPixel[1])
+                    {
+                        if (!overflow)
+                            Require(std::equal(oldPixel, oldPixel + 4, newPixel), "Shared source changed on the left");
+                        else if (newPixel[0] <= 120 || newPixel[0] <= 2 * newPixel[1])
+                            continue;
+                        ++originalLeft;
+                    }
+                    if (x >= before.width / 2 && oldPixel[0] > 120 && newPixel[1] > 120 && newPixel[1] > 2 * newPixel[0])
+                        ++changedRight;
+                }
+            Require(originalLeft > 500 && changedRight > 500, "Missing original or replaced texture");
+            const std::filesystem::path output = argv[3];
+            std::filesystem::create_directories(output);
+            for (const auto& [name, image] : {std::pair{"before.png", &before}, std::pair{"after.png", &after}})
+                Require(stbi_write_png((output / name).string().c_str(), image->width, image->height, 4,
+                                       image->pixels.data(), image->width * 4) != 0, "Capture failed");
+            backend.reset();
+            CloseTestWindow(window);
+            QuitTestWindowHost();
+            return 0;
+        }
         if (argc >= 4)
         {
             using Clock = std::chrono::steady_clock;

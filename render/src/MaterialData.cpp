@@ -67,18 +67,18 @@ namespace render::detail
           m.clearcoatRoughnessTexture ? &*m.clearcoatRoughnessTexture : &defaults[6],
           m.clearcoatNormalTexture ? &*m.clearcoatNormalTexture : &defaults[7]};
     }
-    bool CanIndexMaterialTextures(const ModelData& data)
+    bool CanIndexMaterialTextures(const ModelData& data, size_t maxSlots)
     {
-        return !data.materials.empty() && data.materials.size() <= indexedMaterialSlotLimit
+        return !data.materials.empty() && data.materials.size() <= maxSlots
             && std::none_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
                 return m.specularTexture || m.specularColorTexture || m.sheenColorTexture || m.sheenRoughnessTexture
                        || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture
                        || m.alphaMode == AlphaMode::Blend || m.transmissionTexture || m.thicknessTexture;
             });
     }
-    bool CanUpdateIndexedMaterialTextures(const ModelData& data)
+    bool CanUpdateIndexedMaterialTextures(const ModelData& data, size_t maxSlots)
     {
-        return CanIndexMaterialTextures(data) && !HasRasterTransparency(&data)
+        return CanIndexMaterialTextures(data, maxSlots) && !HasRasterTransparency(&data)
             && std::all_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
                 return m.alphaMode == AlphaMode::Opaque;
             });

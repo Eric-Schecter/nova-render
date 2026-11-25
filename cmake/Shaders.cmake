@@ -197,7 +197,7 @@ if(NOVA_ENABLE_VULKAN)
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2
-                -DNOVA_INDEXED_MATERIALS=1 ${bindless_opts} -T ps_6_0 -E ${bindless_entry} -Fo "${output}"
+                -DNOVA_INDEXED_MATERIALS=1 -DNOVA_VULKAN_MATERIAL_TABLE=1 ${bindless_opts} -T ps_6_0 -E ${bindless_entry} -Fo "${output}"
                 "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
             DEPENDS "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl" ${_nova_shader_extra_deps}
                 "${NOVA_DXC_EXECUTABLE}" VERBATIM)

@@ -765,13 +765,20 @@ SamplerState modelImageSampler : register(s0, space3);
 #endif
 #endif
 #endif
+#ifdef NOVA_VULKAN_MATERIAL_TABLE
+[[vk::binding(2, 3)]] StructuredBuffer<uint> materialTextureIndices;
+#endif
 SurfaceData sampleSurface(VertexOut input)
 {
 #ifdef NOVA_INDEXED_MATERIALS
     const bool usesInstances = lightDirection.w > .5 && lightDirection.w < 1.5;
     const uint firstMaterial = usesInstances ? uint(loadInstance(uint(irradiance[3].w) - 1).emissive.x) : 0;
     uint textureSlot = (input.instanceIndex - firstMaterial) * 8;
+#ifdef NOVA_VULKAN_MATERIAL_TABLE
+#define MODEL_MAP(map, index) modelImages[NonUniformResourceIndex(materialTextureIndices[textureSlot + index])]
+#else
 #define MODEL_MAP(map, index) modelImages[NonUniformResourceIndex(textureSlot + index)]
+#endif
 #define MODEL_SAMPLER modelImageSampler
 #else
 #define MODEL_MAP(map, index) map

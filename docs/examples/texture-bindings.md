@@ -38,7 +38,7 @@ vulkaninfo | grep -E 'deviceName|driverInfo|shaderSampledImageArrayNonUniformInd
 ctest --test-dir build/sdl-only -R '^(material-vulkan|scene-render-vulkan)$' --output-on-failure
 ```
 
-Vulkan's native model raster pipeline can select independent material textures via descriptor indexing. On a compatible Vulkan 1.2 device, forward and G-buffer shading use the indexed path for models with up to 16 compatible materials. Alpha blending, transmission, and materials with extra textures packed into shared channels use the atlas. Hybrid and ray tracing use their existing texture paths. The indexed path preserves independent texture sizes and mip chains. Nova also prepares the atlas so features and passes that require it can still run. Opaque Bindless raster edits replace only changed texture descriptors and keep the model buffers, pipelines, and swapchain. The atlas is refreshed before switching to an atlas-dependent render mode. Masked or packed materials use the full update so visibility and material passes read consistent maps.
+Vulkan's native model raster pipeline can select independent material textures via descriptor indexing. On a compatible Vulkan 1.2 device, forward and G-buffer shading use the indexed path when compatible materials fit into 128 distinct texture descriptors after deduplication. Material slots still obey the 512-slot model limit. Metal and DX12 retain their fixed 16-slot indexed layout. Alpha blending, transmission, and materials with extra textures packed into shared channels use the atlas. Hybrid and ray tracing use their existing texture paths. The indexed path preserves independent texture sizes and mip chains. Nova also prepares the atlas so features and passes that require it can still run. Opaque Bindless raster edits replace only changed texture descriptors and keep the model buffers, pipelines, and swapchain. The atlas is refreshed before switching to an atlas-dependent render mode. Masked or packed materials use the full update so visibility and material passes read consistent maps.
 
 Run the A/B with the same Release build and the same material fixture:
 
@@ -89,3 +89,13 @@ On an RTX 4060 Laptop GPU, three interleaved runs of the same 320 × 240 FXAA fi
 - Indexed textures with incremental updates — 21.03 ms.
 
 The indexed versions matched pixel-for-pixel. Static frames were 6.76, 6.43, and 6.66 ms respectively. Set `NOVA_DX12_FORCE_ATLAS=1` or `NOVA_DX12_REBUILD_MATERIALS=1` for the controls and `NOVA_DX12_BINDING_TRACE=1` to log texture upload counts.
+
+
+### Vulkan shared texture table
+
+Vulkan stores eight texture indices per material in a storage buffer. Identical image bytes, dimensions, and color-space semantics share a descriptor. Updating one material preserves the other references. The atlas takes over if the deduplicated table exceeds the 128-entry capacity.
+
+```sh
+NOVA_VULKAN_BINDING_TRACE=1 build/sdl-only/nova_material_test vulkan assets build/validation/vulkan-shared-textures --shared-textures
+NOVA_VULKAN_BINDING_TRACE=1 build/sdl-only/nova_material_test vulkan assets build/validation/vulkan-texture-overflow --texture-table-overflow
+```

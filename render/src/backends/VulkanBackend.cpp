@@ -810,7 +810,9 @@ namespace render::detail
             if (instanceApiVersion >= VK_API_VERSION_1_2 && properties.apiVersion >= VK_API_VERSION_1_2
                 && properties.limits.maxPerStageDescriptorSampledImages >= BindlessImageCount + 23
                 && properties.limits.maxDescriptorSetSampledImages >= BindlessImageCount + 23
-                && properties.limits.maxPerStageResources >= BindlessImageCount + 32
+                && properties.limits.maxPerStageResources >= BindlessImageCount + 33
+                && properties.limits.maxPerStageDescriptorStorageBuffers >= 3
+                && properties.limits.maxDescriptorSetStorageBuffers >= 8
                 && properties.limits.maxBoundDescriptorSets >= 4 && !std::getenv("NOVA_VULKAN_FORCE_ATLAS"))
             {
                 VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
@@ -1167,7 +1169,8 @@ namespace render::detail
                 surfaceLost = false;
             }
 #endif
-            if (!usesBindless() && (materialAtlasStale || pendingBindlessMaterials))
+            if ((!usesBindless() && (materialAtlasStale || pendingBindlessMaterials))
+                || (usesBindless() && !uploadChangedBindlessTextures()))
             {
                 // Hybrid and other atlas consumers need the latest CPU-packed atlas.
                 WaitIdle();
@@ -1188,7 +1191,6 @@ namespace render::detail
                     throw;
                 }
             }
-            uploadChangedBindlessTextures();
             if (resized || !swapchain)
             {
                 check(vkDeviceWaitIdle(device), "Wait before resize");

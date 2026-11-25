@@ -15,7 +15,27 @@ std::array<ModelTexture, 8> modelTextures;
 static constexpr uint32_t BindlessImageCount = 128;
 bool bindlessSupported = false;
 uint32_t instanceApiVersion = VK_API_VERSION_1_0;
-std::vector<ModelTexture> bindlessTextures;
+std::array<ModelTexture, BindlessImageCount> bindlessTextures{};
+struct BindlessSource
+{
+    const Image* image = nullptr;
+    size_t map = 0;
+
+    bool operator==(const BindlessSource& other) const
+    {
+        const auto srgb = [](size_t slot) { return slot == 0 || slot == 4; };
+        return image && other.image && srgb(map) == srgb(other.map)
+            && (image == other.image || (image->width == other.image->width && image->height == other.image->height
+                                        && image->pixels == other.image->pixels));
+    }
+};
+struct BindlessPlan
+{
+    std::array<BindlessSource, BindlessImageCount> sources{};
+    std::vector<uint32_t> indices;
+};
+BindlessPlan bindlessPlan;
+ModelBuffer bindlessIndices;
 VkSampler bindlessSampler = VK_NULL_HANDLE;
 VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE;
 VkDescriptorSet bindlessSet = VK_NULL_HANDLE;
@@ -274,15 +294,65 @@ void uploadMaterialTexture(ModelTexture& dst, const Image& image, size_t i)
     destroyModelBuffer(modelStaging);
 }
 
+std::optional<BindlessPlan> planBindlessTextures(const ModelData& data) const
+{
+    std::vector<BindlessSource> unique;
+    BindlessPlan plan;
+    for (const auto& material : data.materials)
+    {
+        const auto maps = MaterialTextureSources(material);
+        for (size_t map = 0; map < maps.size(); ++map)
+        {
+            const BindlessSource source{maps[map], map};
+            const auto found = std::find(unique.begin(), unique.end(), source);
+            plan.indices.push_back(uint32_t(found - unique.begin()));
+            if (found == unique.end())
+            {
+                if (unique.size() == BindlessImageCount)
+                    return {};
+                unique.push_back(source);
+            }
+        }
+    }
+
+    std::array<uint32_t, BindlessImageCount> slots{};
+    slots.fill(BindlessImageCount);
+    for (size_t i = 0; i < unique.size(); ++i)
+    {
+        const auto existing = std::find(bindlessPlan.sources.begin(), bindlessPlan.sources.end(), unique[i]);
+        if (existing != bindlessPlan.sources.end())
+        {
+            slots[i] = uint32_t(existing - bindlessPlan.sources.begin());
+            plan.sources[slots[i]] = unique[i];
+        }
+    }
+    uint32_t free = 0;
+    for (size_t i = 0; i < unique.size(); ++i)
+        if (slots[i] == BindlessImageCount)
+        {
+            while (plan.sources[free].image)
+                ++free;
+            slots[i] = free;
+            plan.sources[free] = unique[i];
+        }
+    for (auto& index : plan.indices)
+        index = slots[index];
+    return plan;
+}
+
 void createBindlessModelDescriptors()
 {
-    if (!bindlessSupported || !CanIndexMaterialTextures(*model))
+    if (!bindlessSupported || !CanIndexMaterialTextures(*model, materialSlotLimit))
+        return;
+    auto plan = planBindlessTextures(*model);
+    if (!plan)
         return;
     VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BindlessImageCount, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-      {1, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+      {1, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+      {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
     VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layoutInfo.bindingCount = 2;
+    layoutInfo.bindingCount = 3;
     layoutInfo.pBindings = bindings;
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "Create indexed material layout");
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -299,40 +369,43 @@ void createBindlessModelDescriptors()
     check(vkCreateSampler(device, &sampler, nullptr, &bindlessSampler), "Create indexed material sampler");
 
     std::array<VkDescriptorImageInfo, BindlessImageCount> images{};
-    bindlessTextures.resize(model->materials.size() * modelTextures.size());
-    size_t index = 0;
-    for (const auto& material : model->materials)
+    for (size_t i = 0; i < plan->sources.size(); ++i)
     {
-        const auto sources = MaterialTextureSources(material);
-        for (size_t map = 0; map < sources.size(); ++map, ++index)
-        {
-            uploadMaterialTexture(bindlessTextures[index], *sources[map], map);
-            images[index].imageView = bindlessTextures[index].view;
-            images[index].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        }
+        const auto source = plan->sources[i];
+        if (source.image)
+            uploadMaterialTexture(bindlessTextures[i], *source.image, source.map);
+        images[i] = {VK_NULL_HANDLE, source.image ? bindlessTextures[i].view : modelTextures[0].view,
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     }
-    // The unused entries refer to an atlas image with the lifetime of this set.
-    const VkDescriptorImageInfo unused{VK_NULL_HANDLE, modelTextures[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    std::fill(images.begin() + index, images.end(), unused);
+    modelBuffer(bindlessIndices, plan->indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                plan->indices.data());
+    bindlessPlan = std::move(*plan);
     VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     alloc.descriptorPool = modelPool;
     alloc.descriptorSetCount = 1;
     alloc.pSetLayouts = &bindlessLayout;
     check(vkAllocateDescriptorSets(device, &alloc, &bindlessSet), "Allocate indexed material descriptors");
     VkDescriptorImageInfo samplerInfo{bindlessSampler};
+    const VkDescriptorBufferInfo indexInfo{bindlessIndices.buffer, 0, VK_WHOLE_SIZE};
     VkWriteDescriptorSet writes[] = {
       {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 0, 0, BindlessImageCount,
        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, images.data()},
       {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 1, 0, 1,
-       VK_DESCRIPTOR_TYPE_SAMPLER, &samplerInfo}};
-    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+       VK_DESCRIPTOR_TYPE_SAMPLER, &samplerInfo},
+      {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 2, 0, 1,
+       VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &indexInfo}};
+    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+    if (std::getenv("NOVA_VULKAN_BINDING_TRACE"))
+        std::cout << "Vulkan bindless materials: " << model->materials.size() << ", descriptors: "
+                  << std::count_if(bindlessPlan.sources.begin(), bindlessPlan.sources.end(),
+                                   [](const auto& source) { return source.image != nullptr; }) << '\n';
 }
 void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
 {
     // Opaque indexed raster draws only read the atlas in passes that do not
     // consume its texels. Masked visibility and packed textures need a fresh atlas.
     if (!usesBindless() || data->materials.size() != uploadedBindlessMaterials->materials.size()
-        || !CanUpdateIndexedMaterialTextures(*data))
+        || !CanUpdateIndexedMaterialTextures(*data, materialSlotLimit))
     {
         LoadModel(std::move(data));
         return;
@@ -341,35 +414,51 @@ void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
     pendingBindlessMaterials = std::move(data);
 }
 
-void uploadChangedBindlessTextures()
+bool uploadChangedBindlessTextures()
 {
     if (!pendingBindlessMaterials)
-        return;
-    struct Replacement
+        return true;
+    auto next = planBindlessTextures(*pendingBindlessMaterials);
+    if (!next)
+        return false;
+
+    struct Change
     {
-        uint32_t index;
-        size_t map;
-        const Image* image;
+        uint32_t slot;
         ModelTexture texture;
     };
-    std::vector<Replacement> changes;
-    for (size_t slot = 0; slot < pendingBindlessMaterials->materials.size(); ++slot)
+    std::vector<Change> changes;
+    for (uint32_t slot = 0; slot < BindlessImageCount; ++slot)
     {
-        const auto before = MaterialTextureSources(uploadedBindlessMaterials->materials[slot]);
-        const auto after = MaterialTextureSources(pendingBindlessMaterials->materials[slot]);
-        for (size_t map = 0; map < after.size(); ++map)
-            if (before[map]->width != after[map]->width || before[map]->height != after[map]->height
-                || before[map]->pixels != after[map]->pixels)
-                changes.push_back({uint32_t(slot * after.size() + map), map, after[map], {}});
+        const auto before = bindlessPlan.sources[slot];
+        const auto after = next->sources[slot];
+        if ((before.image || after.image) && !(before == after))
+            changes.push_back({slot, {}});
     }
-
-    if (!changes.empty())
+    const bool updateIndices = next->indices != bindlessPlan.indices;
+    size_t uploads = 0;
+    if (!changes.empty() || updateIndices)
     {
         WaitIdle();
         try
         {
             for (auto& change : changes)
-                uploadMaterialTexture(change.texture, *change.image, change.map);
+            {
+                const auto source = next->sources[change.slot];
+                if (source.image)
+                {
+                    uploadMaterialTexture(change.texture, *source.image, source.map);
+                    ++uploads;
+                }
+            }
+            if (updateIndices)
+            {
+                const size_t bytes = next->indices.size() * sizeof(uint32_t);
+                void* mapped = nullptr;
+                check(vkMapMemory(device, bindlessIndices.memory, 0, bytes, 0, &mapped), "Map material texture indices");
+                std::memcpy(mapped, next->indices.data(), bytes);
+                vkUnmapMemory(device, bindlessIndices.memory);
+            }
         }
         catch (...)
         {
@@ -380,19 +469,22 @@ void uploadChangedBindlessTextures()
         }
         for (auto& change : changes)
         {
-            const VkDescriptorImageInfo image{VK_NULL_HANDLE, change.texture.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            const VkDescriptorImageInfo image{VK_NULL_HANDLE, change.texture.view ? change.texture.view : modelTextures[0].view,
+                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
             const VkWriteDescriptorSet write{
-              VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 0, change.index, 1,
+              VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, bindlessSet, 0, change.slot, 1,
               VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, &image};
             vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
-            destroyModelTexture(bindlessTextures[change.index]);
-            bindlessTextures[change.index] = change.texture;
+            destroyModelTexture(bindlessTextures[change.slot]);
+            bindlessTextures[change.slot] = change.texture;
         }
         materialAtlasStale = true;
     }
+    bindlessPlan = std::move(*next);
     uploadedBindlessMaterials = std::move(pendingBindlessMaterials);
     if (std::getenv("NOVA_VULKAN_BINDING_TRACE"))
-        std::cout << "Vulkan bindless texture uploads: " << changes.size() << '\n';
+        std::cout << "Vulkan bindless texture uploads: " << uploads << '\n';
+    return true;
 }
 
 void uploadModel()
@@ -483,7 +575,7 @@ void uploadModel()
     check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &probeSetLayout), "Create probe descriptor layout");
     VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
-      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, bindlessSupported ? 15u : 14u},
       {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 58 + (bindlessSupported ? BindlessImageCount : 0)},
       {VK_DESCRIPTOR_TYPE_SAMPLER, bindlessSupported ? 3u : 2u}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -597,7 +689,8 @@ void destroyModel()
     bindlessSampler = VK_NULL_HANDLE;
     for (auto& t : bindlessTextures)
         destroyModelTexture(t);
-    bindlessTextures.clear();
+    bindlessPlan = {};
+    destroyModelBuffer(bindlessIndices);
     uploadedBindlessMaterials.reset();
     pendingBindlessMaterials.reset();
     materialAtlasStale = false;
