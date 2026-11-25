@@ -752,13 +752,17 @@ float3 applyCoatNormal(float3 n, float3 map, float scale, float3 dp1, float3 dp2
     float3 perturbed = (t * map.x + b * map.y) * (scale * rsqrt(max(basis, 1e-20))) + n * map.z;
     return (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
 }
-#ifdef NOVA_VULKAN_BINDLESS
+#ifdef NOVA_INDEXED_MATERIALS
 [[vk::binding(0, 3)]] Texture2D<float4> modelImages[128];
+#ifdef NOVA_METAL_INDEXED_MATERIALS
+[[vk::binding(128, 3)]] SamplerState modelImageSampler;
+#else
 [[vk::binding(1, 3)]] SamplerState modelImageSampler;
+#endif
 #endif
 SurfaceData sampleSurface(VertexOut input)
 {
-#ifdef NOVA_VULKAN_BINDLESS
+#ifdef NOVA_INDEXED_MATERIALS
     const bool usesInstances = lightDirection.w > .5 && lightDirection.w < 1.5;
     const uint firstMaterial = usesInstances ? uint(loadInstance(uint(irradiance[3].w) - 1).emissive.x) : 0;
     uint textureSlot = (input.instanceIndex - firstMaterial) * 8;
@@ -781,7 +785,7 @@ SurfaceData sampleSurface(VertexOut input)
     if (lightDirection.w > .5)
     {
         InstanceData instance = loadInstance(input.instanceIndex);
-#ifdef NOVA_VULKAN_BINDLESS
+#ifdef NOVA_INDEXED_MATERIALS
         instance.uv = float4(1, 1, 0, 0);
 #endif
         baseUV                = wrapBaseUV(uv, instance.emissive.w) * instance.uv.xy + instance.uv.zw;

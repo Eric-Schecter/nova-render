@@ -226,7 +226,7 @@ int main(int argc, char** argv)
         backend->SetMaterial(0, slots[0], "");
         draw();
         Require(count(0, true) > 500 && count(2, false) > 500, "Runtime image upload failed");
-        if (api == "vulkan")
+        if (api == "vulkan" || api == "metal")
         {
             auto greenMap = slots[0];
             greenMap.baseColorTexture = Image{1, 1, {0, 255, 0, 255}};

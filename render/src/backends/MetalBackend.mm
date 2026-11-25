@@ -7,6 +7,7 @@
 #include <SDL3/SDL_error.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -47,6 +48,16 @@ namespace render::detail
                 device   = MTLCreateSystemDefaultDevice();
                 if (!device)
                     throw std::runtime_error("No Metal device available");
+#if TARGET_OS_OSX
+                supportsIndexedMaterials = device.argumentBuffersSupport == MTLArgumentBuffersTier2
+                    && !std::getenv("NOVA_METAL_FORCE_ATLAS");
+                if (supportsIndexedMaterials && !settings.shaderDirectory.empty())
+                    for (const auto* name : {"model-indexed.metallib", "model-gbuffer-indexed.metallib"})
+                    {
+                        std::error_code error;
+                        supportsIndexedMaterials &= std::filesystem::is_regular_file(settings.shaderDirectory / name, error);
+                    }
+#endif
                 queue = [device newCommandQueue];
                 if (!queue)
                     throw std::runtime_error("Create Metal queue failed");
@@ -105,8 +116,11 @@ namespace render::detail
                     resized             = false;
                     std::cout << "Metal drawable: " << width << 'x' << height << '\n';
                 }
-                if (model && (gpuModel != model || gpuEnvironment != environment))
+                if (model && (gpuEnvironment != environment || (gpuModel != model && !pendingIndexedMaterials)
+                              || (mode != RenderMode::Raster && (materialAtlasStale || pendingIndexedMaterials))))
                     UploadModel();
+                else if (pendingIndexedMaterials)
+                    UploadChangedIndexedTextures();
                 if (model && (!depth || depth.width != width || depth.height != height))
                 {
                     MTLTextureDescriptor* desc =
@@ -226,7 +240,9 @@ namespace render::detail
                         [encoder setDepthStencilState:skyDepthState];
                         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                     }
-                    [encoder setRenderPipelineState:modelPipeline];
+                    [encoder setRenderPipelineState:UsesIndexedMaterials() ? indexedModelPipeline : modelPipeline];
+                    if (!path && UsesIndexedMaterials())
+                        BindIndexedTextures(encoder);
                     [encoder setDepthStencilState:depthState];
                     if (!path && scene.active)
                     {
@@ -423,10 +439,12 @@ namespace render::detail
             desc.vertexFunction                  = [library newFunctionWithName:@"vertexMain"];
             desc.fragmentFunction                = [library newFunctionWithName:@"fragmentMain"];
             desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
-            if (std::string(file) == "model-gbuffer.metallib" || (std::string_view(file) == "model-hybrid-shadow.metallib" || std::string_view(file) == "model-hybrid-shadow-compact.metallib"))
+            const bool gbuffer = std::string_view(file) == "model-gbuffer.metallib"
+                              || std::string_view(file) == "model-gbuffer-indexed.metallib";
+            if (gbuffer || (std::string_view(file) == "model-hybrid-shadow.metallib" || std::string_view(file) == "model-hybrid-shadow-compact.metallib"))
                 for (int i = 1; i < 4; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
-            if (std::string(file) == "model-gbuffer.metallib")
+            if (gbuffer)
                 for (int i = 4; i < 7; i++)
                     desc.colorAttachments[i].pixelFormat = MTLPixelFormatRGBA16Float;
             if (std::string(file) == "model-oit.metallib")
@@ -570,6 +588,13 @@ namespace render::detail
                             aaOit = AAPipeline("model-oit.metallib", 1);
                         [e setRenderPipelineState:aaOit];
                     }
+                    else if (gbuffer && UsesIndexedMaterials())
+                    {
+                        if (!aaIndexedGBuffer)
+                            aaIndexedGBuffer = AAPipeline("model-gbuffer-indexed.metallib", 1);
+                        [e setRenderPipelineState:aaIndexedGBuffer];
+                        BindIndexedTextures(e);
+                    }
                     else if (gbuffer)
                     {
                         if (!aaGBuffer)
@@ -581,6 +606,13 @@ namespace render::detail
                         if (!aaMotion)
                             aaMotion = AAPipeline("model-motion.metallib", 1);
                         [e setRenderPipelineState:aaMotion];
+                    }
+                    else if (UsesIndexedMaterials())
+                    {
+                        if (!aaIndexedModel[sample])
+                            aaIndexedModel[sample] = AAPipeline("model-indexed.metallib", sample ? 4 : 1);
+                        [e setRenderPipelineState:aaIndexedModel[sample]];
+                        BindIndexedTextures(e);
                     }
                     else
                     {
@@ -634,6 +666,146 @@ namespace render::detail
                              withBytes:image.pixels.data()
                            bytesPerRow:image.width * 4];
         }
+        bool supportsIndexedMaterials = false, pendingIndexedMaterials = false, materialAtlasStale = false;
+        std::vector<id<MTLTexture>> indexedTextures;
+        id<MTLArgumentEncoder> indexedEncoder;
+        id<MTLBuffer> indexedArguments;
+        id<MTLSamplerState> indexedSampler;
+        id<MTLRenderPipelineState> indexedModelPipeline, aaIndexedModel[2], aaIndexedGBuffer;
+
+        bool UsesIndexedMaterials() const { return indexedArguments && mode == RenderMode::Raster; }
+
+        void LoadModel(std::shared_ptr<const ModelData> data) override
+        {
+            pendingIndexedMaterials = false;
+            Backend::LoadModel(std::move(data));
+        }
+
+        void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
+        {
+            if (!UsesIndexedMaterials() || (gpuModel != model && !pendingIndexedMaterials)
+                || data->materials.size() != gpuModel->materials.size() || !CanUpdateIndexedMaterialTextures(*data)
+                || std::getenv("NOVA_METAL_REBUILD_MATERIALS"))
+            {
+                LoadModel(std::move(data));
+                return;
+            }
+            Backend::LoadModel(std::move(data));
+            pendingIndexedMaterials = true;
+        }
+
+        id<MTLTexture> UploadMaterialTexture(const Image& source, size_t i)
+        {
+            const auto  levels  = MaterialMipmaps(source, i);
+            const auto& image   = levels[0];
+            auto        texture = [MTLTextureDescriptor
+              texture2DDescriptorWithPixelFormat:(i == 0 || i == 4) ? MTLPixelFormatRGBA8Unorm_sRGB
+                                                                           : MTLPixelFormatRGBA8Unorm
+                                           width:image.width
+                                          height:image.height
+                                       mipmapped:levels.size() > 1];
+            texture.usage       = MTLTextureUsageShaderRead;
+            texture.storageMode = MTLStorageModeShared;
+            auto result         = [device newTextureWithDescriptor:texture];
+            if (!result)
+                throw std::runtime_error("Create material mip texture failed");
+            for (size_t level = 0; level < levels.size(); level++)
+            {
+                const auto& mip = levels[level];
+                [result replaceRegion:MTLRegionMake2D(0, 0, mip.width, mip.height)
+                                    mipmapLevel:level
+                                      withBytes:mip.pixels.data()
+                                    bytesPerRow:mip.width * 4];
+            }
+            return result;
+        }
+
+        void PrepareIndexedMaterials(MTLRenderPipelineDescriptor* desc)
+        {
+            indexedArguments = nil;
+            indexedEncoder = nil;
+            indexedSampler = nil;
+            indexedModelPipeline = nil;
+            indexedTextures.clear();
+            if (!supportsIndexedMaterials || !CanIndexMaterialTextures(*model))
+                return;
+            const auto bytes = LoadShader(settings.shaderDirectory, "model-indexed.metallib");
+            NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+            auto blob = dispatch_data_create(data.bytes, data.length, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                (void)data;
+            });
+            NSError* error = nil;
+            auto library = [device newLibraryWithData:blob error:&error];
+            if (!library)
+                throw metalError("Load indexed material shader", error);
+            auto fragment = [library newFunctionWithName:@"fragmentMain"];
+            indexedEncoder = [fragment newArgumentEncoderWithBufferIndex:3];
+            indexedArguments = [device newBufferWithLength:indexedEncoder.encodedLength options:MTLResourceStorageModeShared];
+            desc.fragmentFunction = fragment;
+            indexedModelPipeline = [device newRenderPipelineStateWithDescriptor:desc error:&error];
+            if (!indexedEncoder || !indexedArguments || !indexedModelPipeline)
+                throw metalError("Create indexed material pipeline", error);
+
+            MTLSamplerDescriptor* sampler = [MTLSamplerDescriptor new];
+            sampler.minFilter = sampler.magFilter = MTLSamplerMinMagFilterLinear;
+            sampler.mipFilter = MTLSamplerMipFilterLinear;
+            sampler.maxAnisotropy = 8;
+            sampler.lodMaxClamp = 32;
+            sampler.sAddressMode = sampler.tAddressMode = MTLSamplerAddressModeClampToEdge;
+            sampler.supportArgumentBuffers = YES;
+            indexedSampler = [device newSamplerStateWithDescriptor:sampler];
+            if (!indexedSampler)
+                throw std::runtime_error("Create indexed material sampler failed");
+
+            [indexedEncoder setArgumentBuffer:indexedArguments offset:0];
+            for (const auto& material : model->materials)
+            {
+                const auto maps = MaterialTextureSources(material);
+                for (size_t map = 0; map < maps.size(); ++map)
+                {
+                    auto texture = UploadMaterialTexture(*maps[map], map);
+                    [indexedEncoder setTexture:texture atIndex:indexedTextures.size()];
+                    indexedTextures.push_back(texture);
+                }
+            }
+            constexpr size_t slots = indexedMaterialSlotLimit * 8;
+            for (size_t i = indexedTextures.size(); i < slots; ++i)
+                [indexedEncoder setTexture:modelTextures[0] atIndex:i];
+            [indexedEncoder setSamplerState:indexedSampler atIndex:slots];
+        }
+
+        void BindIndexedTextures(id<MTLRenderCommandEncoder> encoder)
+        {
+            [encoder setFragmentBuffer:indexedArguments offset:0 atIndex:3];
+            for (auto texture : indexedTextures)
+                [encoder useResource:texture usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
+            [encoder useResource:modelTextures[0] usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
+        }
+
+        void UploadChangedIndexedTextures()
+        {
+            std::vector<std::pair<size_t, id<MTLTexture>>> changes;
+            for (size_t slot = 0; slot < model->materials.size(); ++slot)
+            {
+                const auto before = MaterialTextureSources(gpuModel->materials[slot]);
+                const auto after = MaterialTextureSources(model->materials[slot]);
+                for (size_t map = 0; map < after.size(); ++map)
+                    if (before[map]->width != after[map]->width || before[map]->height != after[map]->height
+                        || before[map]->pixels != after[map]->pixels)
+                        changes.emplace_back(slot * after.size() + map, UploadMaterialTexture(*after[map], map));
+            }
+            for (const auto& [index, texture] : changes)
+            {
+                [indexedEncoder setTexture:texture atIndex:index];
+                indexedTextures[index] = texture;
+            }
+            materialAtlasStale |= !changes.empty();
+            gpuModel = model;
+            pendingIndexedMaterials = false;
+            if (std::getenv("NOVA_METAL_BINDING_TRACE"))
+                std::cout << "Metal indexed texture uploads: " << changes.size() << '\n';
+        }
+
         void UploadModel()
         {
             const auto      shader = LoadShader(settings.shaderDirectory, "model.metallib");
@@ -678,29 +850,8 @@ namespace render::detail
                   model->jointMatrices.data(),
                   model->jointMatrices.size() * sizeof(JointMatrix));
             for (size_t i = 0; i < modelTextures.size(); ++i)
-            {
-                const auto  levels  = MaterialMipmaps(model->images[i], i);
-                const auto& image   = levels[0];
-                auto        texture = [MTLTextureDescriptor
-                  texture2DDescriptorWithPixelFormat:(i == 0 || i == 4) ? MTLPixelFormatRGBA8Unorm_sRGB
-                                                                               : MTLPixelFormatRGBA8Unorm
-                                               width:image.width
-                                              height:image.height
-                                           mipmapped:levels.size() > 1];
-                texture.usage       = MTLTextureUsageShaderRead;
-                texture.storageMode = MTLStorageModeShared;
-                modelTextures[i]    = [device newTextureWithDescriptor:texture];
-                if (!modelTextures[i])
-                    throw std::runtime_error("Create material mip texture failed");
-                for (size_t level = 0; level < levels.size(); level++)
-                {
-                    const auto& mip = levels[level];
-                    [modelTextures[i] replaceRegion:MTLRegionMake2D(0, 0, mip.width, mip.height)
-                                        mipmapLevel:level
-                                          withBytes:mip.pixels.data()
-                                        bytesPerRow:mip.width * 4];
-                }
-            }
+                modelTextures[i] = UploadMaterialTexture(model->images[i], i);
+            PrepareIndexedMaterials(desc);
             const auto& environmentData = environment ? *environment : FallbackEnvironment();
             auto        uploadCube      = [&](const std::vector<EnvironmentMip>& mips) -> id<MTLTexture> {
                 MTLTextureDescriptor* cube =
@@ -767,6 +918,9 @@ namespace render::detail
                 throw std::runtime_error("Create model sampler/depth state failed");
             gpuModel       = model;
             gpuEnvironment = environment;
+            pendingIndexedMaterials = materialAtlasStale = false;
+            if (std::getenv("NOVA_METAL_BINDING_TRACE"))
+                std::cout << "Metal model bindings: " << (UsesIndexedMaterials() ? "bindless" : "atlas") << '\n';
         }
         id<MTLDevice>              device;
         id<MTLCommandQueue>        queue;

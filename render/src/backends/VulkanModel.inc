@@ -274,19 +274,9 @@ void uploadMaterialTexture(ModelTexture& dst, const Image& image, size_t i)
     destroyModelBuffer(modelStaging);
 }
 
-bool canBindMaterials(const ModelData& data) const
-{
-    return !data.materials.empty() && data.materials.size() <= BindlessImageCount / modelTextures.size()
-        && std::none_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
-            return m.specularTexture || m.specularColorTexture || m.sheenColorTexture || m.sheenRoughnessTexture
-                   || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture
-                   || m.alphaMode == AlphaMode::Blend || m.transmissionTexture || m.thicknessTexture;
-        });
-}
-
 void createBindlessModelDescriptors()
 {
-    if (!bindlessSupported || !canBindMaterials(*model))
+    if (!bindlessSupported || !CanIndexMaterialTextures(*model))
         return;
     VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BindlessImageCount, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -342,10 +332,7 @@ void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
     // Opaque indexed raster draws only read the atlas in passes that do not
     // consume its texels. Masked visibility and packed textures need a fresh atlas.
     if (!usesBindless() || data->materials.size() != uploadedBindlessMaterials->materials.size()
-        || !canBindMaterials(*data) || HasRasterTransparency(data.get())
-        || std::any_of(data->materials.begin(), data->materials.end(), [](const Material& material) {
-            return material.alphaMode != AlphaMode::Opaque;
-        }))
+        || !CanUpdateIndexedMaterialTextures(*data))
     {
         LoadModel(std::move(data));
         return;

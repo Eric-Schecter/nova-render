@@ -65,3 +65,15 @@ On the same M4 and fixture, three interleaved runs measured the following median
 - Bindless with per-texture updates — 8.62 ms.
 
 The optimized runs uploaded one texture per edit and kept the original swapchain. Readbacks from both Bindless versions were pixel-identical before and after the replacement. The timings include presentation and readback. The CPU still prepares the fallback material data during `SetMaterial`.
+
+### Metal model textures
+
+On macOS devices with Tier 2 argument buffers, forward and G-buffer raster shading can index independently uploaded material textures. Compatible opaque edits update only the changed entries. The atlas path covers models outside the indexed material limits, and is refreshed before an atlas-dependent mode uses it. The public material API is shared across both paths.
+
+The same 640 × 480 FXAA fixture on Apple M4 produced these medians over three interleaved runs:
+
+- Atlas — frame 8.38 ms, replacement through rendered frame 9.75 ms.
+- Argument buffer with full rebuild — frame 8.36 ms, replacement through rendered frame 11.53 ms.
+- Argument buffer with incremental updates — frame 8.42 ms, replacement through rendered frame 8.22 ms.
+
+Full-rebuild and incremental Argument Buffer captures were pixel-identical. The incremental trace recorded one texture update per edit. To reproduce the comparison, run the material benchmark with the `metal` API and a separate output directory for each mode. Set `NOVA_METAL_FORCE_ATLAS=1` or `NOVA_METAL_REBUILD_MATERIALS=1` for the controls and `NOVA_METAL_BINDING_TRACE=1` to log texture upload counts.

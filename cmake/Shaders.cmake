@@ -197,10 +197,38 @@ if(NOVA_ENABLE_VULKAN)
         add_custom_command(OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
             COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2
-                -DNOVA_VULKAN_BINDLESS=1 ${bindless_opts} -T ps_6_0 -E ${bindless_entry} -Fo "${output}"
+                -DNOVA_INDEXED_MATERIALS=1 ${bindless_opts} -T ps_6_0 -E ${bindless_entry} -Fo "${output}"
                 "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
             DEPENDS "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl" ${_nova_shader_extra_deps}
                 "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${output}")
+    endforeach()
+endif()
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    foreach(kind model model-gbuffer)
+        set(entry PSMain)
+        if(kind STREQUAL "model-gbuffer")
+            set(entry GBufferPSMain)
+        endif()
+        set(base "${SHADER_OUTPUT_DIR}/${kind}-indexed.frag")
+        set(output "${SHADER_OUTPUT_DIR}/${kind}-indexed.metallib")
+        add_custom_command(OUTPUT "${base}.air"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2
+                -DNOVA_INDEXED_MATERIALS=1 -DNOVA_METAL_INDEXED_MATERIALS=1
+                -T ps_6_0 -E ${entry} -Fo "${base}.spv" "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
+            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${base}.spv" --msl --msl-version 20100
+                --msl-decoration-binding --msl-argument-buffers --msl-argument-buffer-tier 1
+                --msl-discrete-descriptor-set 0 --msl-discrete-descriptor-set 1 --msl-discrete-descriptor-set 2
+                --rename-entry-point ${entry} fragmentMain frag --output "${base}.metal"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal "-std=${NOVA_METAL_STD}"
+                -c "${base}.metal" -o "${base}.air"
+            DEPENDS "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl" ${_nova_shader_extra_deps}
+                "${NOVA_DXC_EXECUTABLE}" "${NOVA_SPIRV_CROSS_EXECUTABLE}" VERBATIM)
+        add_custom_command(OUTPUT "${output}"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metallib
+                "${SHADER_OUTPUT_DIR}/${kind}.vert.air" "${base}.air" -o "${output}"
+            DEPENDS "${SHADER_OUTPUT_DIR}/${kind}.vert.air" "${base}.air" VERBATIM)
         list(APPEND SHADER_OUTPUTS "${output}")
     endforeach()
 endif()

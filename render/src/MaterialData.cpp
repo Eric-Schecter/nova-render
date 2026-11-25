@@ -67,6 +67,22 @@ namespace render::detail
           m.clearcoatRoughnessTexture ? &*m.clearcoatRoughnessTexture : &defaults[6],
           m.clearcoatNormalTexture ? &*m.clearcoatNormalTexture : &defaults[7]};
     }
+    bool CanIndexMaterialTextures(const ModelData& data)
+    {
+        return !data.materials.empty() && data.materials.size() <= indexedMaterialSlotLimit
+            && std::none_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
+                return m.specularTexture || m.specularColorTexture || m.sheenColorTexture || m.sheenRoughnessTexture
+                       || m.iridescenceTexture || m.iridescenceThicknessTexture || m.anisotropyTexture
+                       || m.alphaMode == AlphaMode::Blend || m.transmissionTexture || m.thicknessTexture;
+            });
+    }
+    bool CanUpdateIndexedMaterialTextures(const ModelData& data)
+    {
+        return CanIndexMaterialTextures(data) && !HasRasterTransparency(&data)
+            && std::all_of(data.materials.begin(), data.materials.end(), [](const Material& m) {
+                return m.alphaMode == AlphaMode::Opaque;
+            });
+    }
     void ValidateMaterial(const Material& m)
     {
         auto range = [](float x, float max) {
