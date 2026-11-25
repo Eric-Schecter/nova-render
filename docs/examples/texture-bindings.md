@@ -26,3 +26,14 @@ On an Apple M4, one run measured 0.093 ms CPU and 0.189 ms GPU per draw batch wi
 Use **Compare indirect drawing** to keep the same texture atlas and draw only 768 out of 1,024 objects. The direct path builds and uploads a visible list on the CPU, then issues one instanced draw. The indirect path compacts visible IDs and writes the instance count in a compute pass, then issues one indirect draw. The benchmark verifies pixel parity. The GPU timestamp spans compute through render for the indirect path. CPU time includes visibility evaluation and upload submission on the direct path. Small timings can fall below the browser clock resolution.
 
 This workload uses a deterministic visibility predicate and non-overlapping objects. A scene-wide GPU-driven renderer would also need bounds, camera tests and per-mesh draw batches.
+
+## Vulkan on macOS
+
+On Apple M4 with MoltenVK 1.4.0, `vulkaninfo` reports sampled-image nonuniform indexing, runtime descriptor arrays, partially bound descriptors, and sampled-image update-after-bind. It reports 256 sampled images per stage for regular descriptors, and 1,000,000 for update-after-bind descriptors. These are reported limits. A Vulkan pipeline still needs to enable the features it uses and validate its descriptor layout and allocation on the selected device.
+
+Nova currently uses the atlas for Vulkan model rendering. The `material-vulkan` and `scene-render-vulkan` regressions passed on this device, including runtime material and texture updates. These results establish the atlas baseline. Vulkan Bindless image parity and frame or update timing have yet to be measured.
+
+```sh
+vulkaninfo | grep -E 'deviceName|driverInfo|shaderSampledImageArrayNonUniformIndexing|runtimeDescriptorArray|descriptorBindingPartiallyBound|descriptorBindingSampledImageUpdateAfterBind|maxPerStageDescriptor.*SampledImages'
+ctest --test-dir build/sdl-only -R '^(material-vulkan|scene-render-vulkan)$' --output-on-failure
+```
