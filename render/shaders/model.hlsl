@@ -753,11 +753,16 @@ float3 applyCoatNormal(float3 n, float3 map, float scale, float3 dp1, float3 dp2
     return (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
 }
 #ifdef NOVA_INDEXED_MATERIALS
+#ifdef NOVA_D3D12
+Texture2D<float4> modelImages[128] : register(t0, space3);
+SamplerState modelImageSampler : register(s0, space3);
+#else
 [[vk::binding(0, 3)]] Texture2D<float4> modelImages[128];
 #ifdef NOVA_METAL_INDEXED_MATERIALS
 [[vk::binding(128, 3)]] SamplerState modelImageSampler;
 #else
 [[vk::binding(1, 3)]] SamplerState modelImageSampler;
+#endif
 #endif
 #endif
 SurfaceData sampleSurface(VertexOut input)

@@ -232,5 +232,21 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
         list(APPEND SHADER_OUTPUTS "${output}")
     endforeach()
 endif()
+if(WIN32)
+    foreach(kind model model-gbuffer)
+        set(entry PSMain)
+        if(kind STREQUAL "model-gbuffer")
+            set(entry GBufferPSMain)
+        endif()
+        set(output "${SHADER_OUTPUT_DIR}/${kind}-indexed.frag.dxil")
+        add_custom_command(OUTPUT "${output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12=1 -DNOVA_INDEXED_MATERIALS=1
+                -T ps_6_0 -E ${entry} -Fo "${output}" "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
+            DEPENDS "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl" ${_nova_shader_extra_deps}
+                "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+        list(APPEND SHADER_OUTPUTS "${output}")
+    endforeach()
+endif()
 add_custom_target(triangle_shaders DEPENDS ${SHADER_OUTPUTS})
 message(STATUS "Shader DXC: ${NOVA_DXC_EXECUTABLE}")

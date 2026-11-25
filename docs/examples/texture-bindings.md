@@ -77,3 +77,15 @@ The same 640 × 480 FXAA fixture on Apple M4 produced these medians over three i
 - Argument buffer with incremental updates — frame 8.42 ms, replacement through rendered frame 8.22 ms.
 
 Full-rebuild and incremental Argument Buffer captures were pixel-identical. The incremental trace recorded one texture update per edit. To reproduce the comparison, run the material benchmark with the `metal` API and a separate output directory for each mode. Set `NOVA_METAL_FORCE_ATLAS=1` or `NOVA_METAL_REBUILD_MATERIALS=1` for the controls and `NOVA_METAL_BINDING_TRACE=1` to log texture upload counts.
+
+### DX12 model textures
+
+DX12 uses a shader-visible SRV table on adapters with Resource Binding Tier 2 or higher. The same material eligibility and atlas fallback rules apply. Supported edits upload only changed maps and replace their table entries after the upload fence.
+
+On an RTX 4060 Laptop GPU, three interleaved runs of the same 320 × 240 FXAA fixture measured these medians from `SetMaterial` to the rendered replacement:
+
+- Atlas — 60.61 ms.
+- Indexed textures with full rebuild — 84.19 ms.
+- Indexed textures with incremental updates — 21.03 ms.
+
+The indexed versions matched pixel-for-pixel. Static frames were 6.76, 6.43, and 6.66 ms respectively. Set `NOVA_DX12_FORCE_ATLAS=1` or `NOVA_DX12_REBUILD_MATERIALS=1` for the controls and `NOVA_DX12_BINDING_TRACE=1` to log texture upload counts.

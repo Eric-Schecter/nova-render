@@ -6,6 +6,7 @@
 #endif
 #include <algorithm>
 #include <climits>
+#include <cstdlib>
 #include <cstring>
 #include <d3d12.h>
 #ifdef NOVA_HAS_UI
@@ -110,6 +111,15 @@ namespace render::detail
                   "DXC shaders require Shader Model 6.0 / DXIL; selected adapter does not support it. "
                   "Use --api dx12 --warp for CPU validation or a DXIL-capable GPU.");
             std::cout << "Shader Model 6.0 / DXIL: supported\n";
+            D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
+            indexedMaterialsSupported = SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options)))
+                && options.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_2 && !std::getenv("NOVA_DX12_FORCE_ATLAS");
+            if (indexedMaterialsSupported && !config.shaderDirectory.empty())
+                for (const auto* name : {"model-indexed.frag.dxil", "model-gbuffer-indexed.frag.dxil"})
+                {
+                    std::error_code error;
+                    indexedMaterialsSupported &= std::filesystem::is_regular_file(config.shaderDirectory / name, error);
+                }
             if (config.enableValidation)
                 device.As(&infoQueue);
             D3D12_COMMAND_QUEUE_DESC queueDesc{};
@@ -150,8 +160,11 @@ namespace render::detail
             if (!earlyViewport.width || !earlyViewport.height)
                 return FrameResult::Skipped;
             WaitIdle();
-            if (model && (gpuModel != model || gpuEnvironment != environment))
+            if (model && (gpuEnvironment != environment || (gpuModel != model && !pendingIndexedMaterials)
+                          || (mode != RenderMode::Raster && (materialAtlasStale || pendingIndexedMaterials))))
                 UploadModel();
+            else if (pendingIndexedMaterials)
+                UploadChangedIndexedTextures();
             if (!swapchain || resized)
                 Recreate();
             if (model && !modelDepth)
@@ -302,6 +315,8 @@ namespace render::detail
                 commands->DrawInstanced(3, 1, 0, 0);
                 commands->SetPipelineState(modelPipeline.Get());
             }
+            if (!path && !indexedTextures.empty())
+                BindIndexedTextures(commands.Get());
             if (!path && scene.active)
             {
                 for (const auto& draw : scene.draws)
@@ -377,10 +392,12 @@ namespace render::detail
           aaDeferred, aaOit, aaHybridShadow, aaCompactShadow, aaHybridReflection, aaHybridAO, aaDeferredHalf;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
         size_t                      aaPreviousPaletteBytes = 0;
-        ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false)
+        ComPtr<ID3D12PipelineState> aaIndexedModel[2], aaIndexedGBuffer;
+        ComPtr<ID3D12PipelineState> AAPipeline(const char* file, bool sky, uint32_t samples, bool triangle = false,
+                                               const char* fragmentOverride = nullptr)
         {
             auto vert = LoadShader(settings.shaderDirectory, (std::string(file) + ".vert.dxil").c_str()),
-                 frag = LoadShader(settings.shaderDirectory, (std::string(file) + ".frag.dxil").c_str());
+                 frag = LoadShader(settings.shaderDirectory, fragmentOverride ? fragmentOverride : (std::string(file) + ".frag.dxil").c_str());
             D3D12_GRAPHICS_PIPELINE_STATE_DESC info{};
             info.pRootSignature                    = triangle ? root.Get() : modelRoot.Get();
             info.VS                                = {vert.data(), vert.size()};
@@ -552,7 +569,9 @@ namespace render::detail
                 }
                 if (!model->vertices.empty())
                 {
-                    auto& pipeline = oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
+                    const bool indexed = UsesIndexedMaterials() && !oit && !motion;
+                    auto& pipeline = indexed ? (gbuffer ? aaIndexedGBuffer : aaIndexedModel[sample])
+                                             : oit ? aaOit : gbuffer ? aaGBuffer : motion ? aaMotion : aaModel[sample];
                     if (!pipeline)
                         pipeline = AAPipeline(
                           oit       ? "model-oit"
@@ -560,8 +579,12 @@ namespace render::detail
                           : motion  ? "model-motion"
                                     : "model",
                           false,
-                          sample ? 4 : 1);
+                          sample ? 4 : 1,
+                          false,
+                          indexed ? (gbuffer ? "model-gbuffer-indexed.frag.dxil" : "model-indexed.frag.dxil") : nullptr);
                     cmd->SetPipelineState(pipeline.Get());
+                    if (indexed)
+                        BindIndexedTextures(cmd);
                     if (scene.active)
                     {
                         DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
