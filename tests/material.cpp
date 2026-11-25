@@ -19,15 +19,16 @@ int main(int argc, char** argv)
     render::detail::PresentationWindow window;
     try
     {
-        Require(argc == 3 || argc == 4, "Expected API, asset directory and optional benchmark output");
+        const bool helmet = argc == 5 && std::string_view(argv[4]) == "--helmet";
+        Require(argc == 3 || argc == 4 || helmet, "Expected API, assets, optional output and --helmet");
         std::string           api    = TestAPI(argv[1]);
-        std::filesystem::path path   = std::filesystem::path(argv[2]) / "MaterialSample/Dual.glb";
+        std::filesystem::path path   = std::filesystem::path(argv[2]) / (helmet ? "DamagedHelmet/DamagedHelmet.glb" : "MaterialSample/Dual.glb");
         auto                  source = detail::LoadGLB(path);
-        Require(source->materials.size() == 2, "Missing slots");
+        Require(helmet || source->materials.size() == 2, "Missing slots");
         Require(
-          source->vertices[0].position[3] == 1 && source->vertices[36].position[3] == 2, "Incorrect slot assignment");
+          helmet || (source->vertices[0].position[3] == 1 && source->vertices[36].position[3] == 2), "Incorrect slot assignment");
         Require(InitTestWindowHost(), "Window host initialization");
-        window = OpenTestWindow(api, 320, 240, "Material validation");
+        window = OpenTestWindow(api, helmet ? 640 : 320, helmet ? 480 : 240, "Material validation");
         Require(bool(window), "Window failed");
         RendererConfig config;
         config.api     = api == "metal" ? GraphicsAPI::Metal : api == "dx12" ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
@@ -62,13 +63,22 @@ int main(int argc, char** argv)
             backend->WaitIdle();
             Require(!backend->ValidationErrorCount(), "GPU errors");
         };
-        if (argc == 4)
+        if (argc >= 4)
         {
             using Clock = std::chrono::steady_clock;
             const std::filesystem::path output = argv[3];
             std::filesystem::create_directories(output);
             backend->SetAntiAliasing({AAMethod::FXAA});
             backend->SetLighting(LightingMode::PBR);
+            if (helmet)
+            {
+                backend->LoadEnvironment(detail::LoadEnvironmentFile(std::filesystem::path(argv[2]) / "Environment/studio_small_09.nenv"));
+                OrbitCamera orbit;
+                orbit.yaw = 25;
+                orbit.pitch = 10;
+                orbit.distance = 3;
+                backend->SetCamera(orbit);
+            }
             auto slots = backend->GetMaterials("");
             auto texture = [](bool alternate) {
                 Image image{256, 256, std::vector<unsigned char>(256 * 256 * 4)};
@@ -84,8 +94,12 @@ int main(int argc, char** argv)
                     }
                 return image;
             };
-            slots[0].baseColor = {1, 1, 1, 1};
-            slots[0].baseColorTexture = texture(false);
+            if (!helmet)
+            {
+                slots[0].baseColor = {1, 1, 1, 1};
+                slots[0].baseColorTexture = texture(false);
+            }
+            Require(bool(slots[0].baseColorTexture), "Benchmark model has no base color texture");
             backend->SetMaterial(0, slots[0], "");
             for (int i = 0; i < 8; ++i)
                 draw();
@@ -109,7 +123,11 @@ int main(int argc, char** argv)
                 frames.push_back(ms(start));
             }
             auto replacement = slots[0];
-            replacement.baseColorTexture = texture(true);
+            if (helmet)
+                for (size_t i = 0; i < replacement.baseColorTexture->pixels.size(); i += 4)
+                    std::swap(replacement.baseColorTexture->pixels[i], replacement.baseColorTexture->pixels[i + 2]);
+            else
+                replacement.baseColorTexture = texture(true);
             for (int i = 0; i < 11; ++i)
             {
                 auto start = Clock::now();
