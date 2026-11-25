@@ -50,6 +50,7 @@ export default defineConfig({
           { text: '19 · Hybrid rendering', link: '/examples/hybrid' },
           { text: '20 · CarConcept showroom', link: '/examples/car-showroom' },
           { text: '21 · Texture binding benchmark', link: '/examples/texture-bindings' },
+          { text: '22 · Device capabilities', link: '/examples/capabilities' },
         ],
       },
       {
