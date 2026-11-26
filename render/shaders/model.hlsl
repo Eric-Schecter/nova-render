@@ -869,14 +869,18 @@ SurfaceData sampleSurface(VertexOut input)
                 coatUV.scale, dp1, dp2, coatDX, coatDY);
     }
     float2 normalUV = independentTextureUV(materialRecord, input.uv, 1u);
-    float2 normalAtlasUV = lightDirection.w > .5 ? frac(normalUV) * materialRecord.uv.xy + materialRecord.uv.zw : normalUV;
+    float2 normalUVScale = lightDirection.w > .5 ? materialRecord.uv.xy : 1;
+    float2 normalAtlasUV = lightDirection.w > .5 ? frac(normalUV) * normalUVScale + materialRecord.uv.zw : normalUV;
     float2 duv1 = ddx(normalUV), duv2 = ddy(normalUV);
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
     float3 t = p2perp * duv1.x + p1perp * duv2.x, b = p2perp * duv1.y + p1perp * duv2.y;
-    float  scale   = rsqrt(max(max(dot(t, t), dot(b, b)), 0.00001));
-    float3 sampled = MODEL_MAP(normalTexture, 1).Sample(MODEL_SAMPLER, normalAtlasUV).xyz * 2 - 1;
-    sampled.xy *= matFactor.z;
-    n                    = normalize(t * scale * sampled.x + b * scale * sampled.y + n * sampled.z);
+    // Use gradients before wrapping to avoid selecting a coarse mip at tile seams.
+    float3 sampled = MODEL_MAP(normalTexture, 1).SampleGrad(MODEL_SAMPLER, normalAtlasUV,
+        duv1 * normalUVScale, duv2 * normalUVScale).xyz * 2 - 1;
+    float basis = max(dot(t, t), dot(b, b));
+    // Screen derivatives shrink as resolution increases, but normal strength must stay constant.
+    float3 perturbed = (t * sampled.x + b * sampled.y) * (matFactor.z * rsqrt(max(basis, 1e-20))) + n * sampled.z;
+    n = (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
     bool independentMR = (uint(materialRecord.normalMatrix[3][2]) & 2u) != 0;
     float2 mrUV = independentMR ? frac(independentTextureUV(materialRecord, input.uv, 2u)) *
       materialRecord.uv.xy + materialRecord.uv.zw : uv;
