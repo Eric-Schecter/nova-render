@@ -48,7 +48,7 @@ def make_stage(path):
         "environment": {"rotation": -133.84, "intensity": .770914, "showBackground": False, "backgroundIntensity": 1},
         "light": {
             "id": "watch-key", "type": "directional", "color": [1, 1, 1],
-            "direction": [-.3296544, .8968639, .2948951], "intensity": 20,
+            "direction": [-.3296544, .8968639, .2948951], "intensity": 16,
             "castShadow": True, "shadowSoftness": 12,
         },
         "shadows": {"enabled": True, "samples": 16, "bias": .002},
