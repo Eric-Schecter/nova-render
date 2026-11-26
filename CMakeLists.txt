@@ -80,6 +80,48 @@ if(NOVA_ENABLE_VULKAN)
     add_custom_target(nova_instance_cull_shader DEPENDS "${cull_shader}" "${indexed_cull_shader}" "${indexed_model_shader}")
     add_dependencies(triangle_shaders nova_instance_cull_shader)
 endif()
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(metal_cull "${SHADER_OUTPUT_DIR}/instance-cull.metallib")
+    add_custom_command(OUTPUT "${metal_cull}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+        COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 -DNOVA_METAL_INSTANCE_CULL=1 -T cs_6_0 -E CullInstances
+            -Fo "${SHADER_OUTPUT_DIR}/instance-cull.metal.spv" "${PROJECT_SOURCE_DIR}/render/shaders/instance-cull.hlsl"
+        COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${SHADER_OUTPUT_DIR}/instance-cull.metal.spv"
+            --msl --msl-version 20300 --msl-decoration-binding --rename-entry-point CullInstances computeMain comp
+            --output "${SHADER_OUTPUT_DIR}/instance-cull.metal"
+        COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.3
+            -c "${SHADER_OUTPUT_DIR}/instance-cull.metal" -o "${SHADER_OUTPUT_DIR}/instance-cull.air"
+        COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.3
+            -c "${PROJECT_SOURCE_DIR}/render/shaders/encode-instance-commands.metal" -o "${SHADER_OUTPUT_DIR}/encode-instance-commands.air"
+        COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metallib "${SHADER_OUTPUT_DIR}/instance-cull.air"
+            "${SHADER_OUTPUT_DIR}/encode-instance-commands.air" -o "${metal_cull}"
+        DEPENDS render/shaders/instance-cull.hlsl render/shaders/encode-instance-commands.metal
+            "${NOVA_DXC_EXECUTABLE}" "${NOVA_SPIRV_CROSS_EXECUTABLE}" VERBATIM)
+    list(APPEND SHADER_OUTPUTS "${metal_cull}")
+    set(metal_icb_models)
+    foreach(kind model model-indexed)
+        set(base "${SHADER_OUTPUT_DIR}/${kind}-icb")
+        set(fragment_defines)
+        if(kind STREQUAL "model-indexed")
+            set(fragment_defines -DNOVA_INDEXED_MATERIALS=1 -DNOVA_METAL_INDEXED_MATERIALS=1)
+        endif()
+        add_custom_command(OUTPUT "${base}.metallib"
+            COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.2 ${fragment_defines}
+                -T ps_6_0 -E PSMain -Fo "${base}.spv" "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
+            COMMAND "${NOVA_SPIRV_CROSS_EXECUTABLE}" "${base}.spv" --msl --msl-version 20300
+                --msl-decoration-binding --msl-argument-buffers --msl-argument-buffer-tier 1
+                --rename-entry-point PSMain fragmentMain frag --output "${base}.metal"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metal -std=macos-metal2.3 -c "${base}.metal" -o "${base}.air"
+            COMMAND "${NOVA_XCRUN_EXECUTABLE}" -sdk macosx metallib "${base}.air" -o "${base}.metallib"
+            DEPENDS "${NOVA_DXC_EXECUTABLE}" "${NOVA_SPIRV_CROSS_EXECUTABLE}" render/shaders/model.hlsl
+                render/shaders/material-sheen.hlsli render/shaders/material-iridescence.hlsli
+                render/shaders/material-anisotropy.hlsli VERBATIM)
+        list(APPEND metal_icb_models "${base}.metallib")
+    endforeach()
+    list(APPEND SHADER_OUTPUTS ${metal_icb_models})
+    add_custom_target(nova_metal_cull_shader DEPENDS "${metal_cull}" ${metal_icb_models})
+    add_dependencies(triangle_shaders nova_metal_cull_shader)
+endif()
 set(embedded_shader_cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedShaders.cpp")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_command(OUTPUT "${embedded_shader_cpp}"
@@ -781,7 +823,7 @@ if(NOVA_BUILD_EXAMPLES)
     endif()
 endif()
 if(BUILD_TESTING)
-    if(NOVA_ENABLE_VULKAN AND NOVA_ENABLE_GLTF)
+    if((NOVA_ENABLE_VULKAN OR APPLE) AND NOVA_ENABLE_GLTF)
         add_executable(nova_indirect_draw_benchmark tests/indirect_draw.cpp)
         target_compile_definitions(nova_indirect_draw_benchmark PRIVATE $<TARGET_PROPERTY:nova_render,COMPILE_DEFINITIONS>)
         target_include_directories(nova_indirect_draw_benchmark PRIVATE render/src "${NOVA_STB_INCLUDE_DIR}" "${NOVA_GLM_INCLUDE_DIR}")

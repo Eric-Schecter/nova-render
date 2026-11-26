@@ -1,14 +1,3 @@
-struct CullBounds
-{
-    std::array<float, 4> center{}, extent{};
-};
-struct CullParameters
-{
-    float    planes[6][4]{};
-    uint32_t instanceCount, unused, dispatchWidth, pad;
-};
-static_assert(sizeof(CullBounds) == 32 && sizeof(CullParameters) == 112);
-
 bool                               instanceCullSupported = false, instanceCullActive = false;
 bool                               instanceCullIndexed       = false;
 VkDeviceSize                       instanceCullStorageLimit  = 0;
@@ -123,30 +112,7 @@ void prepareInstanceCull()
         std::fill_n(batches.begin() + first, draw.instanceCount, i);
         draw.firstInstance += base;
         draw.instanceCount = 0;
-        if (!draw.vertexCount)
-            continue;
-        const auto*          vertices = model->vertices.data() + draw.firstVertex;
-        std::array<float, 3> minimum{}, maximum{};
-        std::copy_n(vertices->position, 3, minimum.begin());
-        maximum        = minimum;
-        bool triangles = true;
-        for (uint32_t v = 0; v < draw.vertexCount; ++v)
-        {
-            triangles &= vertices[v].uv1[2] <= .5f;
-            for (uint32_t axis = 0; axis < 3; ++axis)
-            {
-                minimum[axis] = std::min(minimum[axis], vertices[v].position[axis]);
-                maximum[axis] = std::max(maximum[axis], vertices[v].position[axis]);
-            }
-        }
-        auto& box = boxes[i];
-        for (uint32_t axis = 0; axis < 3; ++axis)
-        {
-            box.center[axis] = (maximum[axis] + minimum[axis]) * .5f;
-            box.extent[axis] = (maximum[axis] - minimum[axis]) * .5f;
-        }
-        // Lines and points expand in clip space. Keep those batches conservative.
-        box.extent[3] = triangles ? 1.f : 0.f;
+        boxes[i] = InstanceCullBounds(*model, draw.firstVertex, draw.vertexCount);
     }
     instanceCullModel.reset();
     auto replace = [&](ModelBuffer& buffer, VkDeviceSize size, VkBufferUsageFlags usage, const void* data) {
@@ -214,18 +180,7 @@ void encodeInstanceCull(VkCommandBuffer command, const SceneUniforms& uniforms, 
     }
     vkUpdateDescriptorSets(device, bindingCount, writes, 0, nullptr);
 
-    CullParameters params{};
-    for (uint32_t axis = 0; axis < 4; ++axis)
-    {
-        // Extract clip-space inequalities from the columns of world-to-clip.
-        const float* column    = uniforms.viewProjection + axis * 4;
-        params.planes[0][axis] = column[3] + column[0];
-        params.planes[1][axis] = column[3] - column[0];
-        params.planes[2][axis] = column[3] + column[1];
-        params.planes[3][axis] = column[3] - column[1];
-        params.planes[4][axis] = column[2];
-        params.planes[5][axis] = column[3] - column[2];
-    }
+    auto params = InstanceCullPlanes(uniforms);
     params.instanceCount   = uint32_t(scene.instances.size());
     const uint32_t groups  = (params.instanceCount + 63) / 64;
     const uint32_t columns = std::min(groups, instanceCullDispatchLimit);

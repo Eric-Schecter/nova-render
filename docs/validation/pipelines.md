@@ -148,3 +148,39 @@ shows one instance-buffer access in that vertex entry point. In the
 90%-visible workload, the default record-copy path's drawing interval
 fell to about 10.40 ms in both repeats. All six captures matched before
 and after in both modes. Record copy remains the default cull output.
+
+## Metal indirect commands and GPU culling
+
+On supported Apple Silicon Macs, `NOVA_METAL_INDIRECT=1` enables cached,
+CPU-encoded indirect command buffers for forward scenes. With
+`NOVA_METAL_GPU_CULL=1`, the shared HLSL frustum kernel compacts visible
+instance records and updates draw counts. A small Metal kernel translates
+those draw ranges into ICB commands. The ICB model shaders use argument
+buffers for both atlas and indexed materials. Forward scenes with AA Off
+or FXAA are covered. Other passes use the existing draw path.
+[Apple documentation on GPU encoding](https://developer.apple.com/documentation/metal/encoding-indirect-command-buffers-on-the-gpu)
+
+Run the same heavy geometry and camera path used by the Vulkan benchmark:
+
+```sh
+cmake --build build --target nova_indirect_draw_benchmark
+export NOVA_METAL_DRAW_TRACE=1 NOVA_METAL_DRAW_METRICS=1 NOVA_METAL_BENCH_OFFSCREEN=1
+build/nova_indirect_draw_benchmark build/validation/metal-icb/direct --heavy --metal
+NOVA_METAL_INDIRECT=1 build/nova_indirect_draw_benchmark build/validation/metal-icb/indirect --heavy --metal
+NOVA_METAL_GPU_CULL=1 build/nova_indirect_draw_benchmark build/validation/metal-icb/culled --heavy --metal
+```
+
+The benchmark records CPU encoding and commit time separately. It uses
+Metal stage-boundary timestamps for the frustum dispatch, ICB encoding
+and render pass. GPU timestamps are converted using paired CPU and GPU
+samples. The render interval includes vertex and fragment work. The
+offscreen flag removes display synchronization from the timing run.
+[Apple Metal timestamp conversion](https://developer.apple.com/documentation/metal/converting-gpu-timestamps-into-cpu-time)
+
+On Apple M4 at 1,472 triangles per instance and 50% visibility, the
+reverse-order run measured 11.47 ms direct, 11.45 ms with a CPU-encoded
+ICB and 6.32 ms with a GPU-culled ICB. The GPU frustum and ICB encoding
+dispatches took about 0.011 and 0.004 ms respectively. The culled path
+submitted 2,048 of 4,096 instances. All six stress captures matched across
+modes. The 125-instance SimpleInstancing fixture also matched at 12
+frustum-edge views while using indexed materials.

@@ -21,7 +21,11 @@ struct CullParameters
     float4 planes[6];
     uint instanceCount, unused, dispatchWidth, pad;
 };
+#ifdef NOVA_METAL_INSTANCE_CULL
+[[vk::binding(4, 0)]] ConstantBuffer<CullParameters> params : register(b0);
+#else
 [[vk::push_constant]] CullParameters params;
+#endif
 #ifdef NOVA_VISIBLE_INSTANCE_INDICES
 [[vk::binding(0, 0)]] StructuredBuffer<InstanceRecord> instances : register(t2);
 [[vk::binding(4, 0)]] RWStructuredBuffer<uint> visibleInstances : register(u2);

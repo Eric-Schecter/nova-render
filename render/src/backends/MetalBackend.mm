@@ -1,4 +1,5 @@
 #include "../Backend.hpp"
+#include "../InstanceCull.hpp"
 #include "../ShaderData.hpp"
 #ifdef NOVA_HAS_UI
 #include <imgui_impl_metal.h>
@@ -7,6 +8,7 @@
 #include <SDL3/SDL_error.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -58,6 +60,7 @@ namespace render::detail
                         supportsIndexedMaterials &= std::filesystem::is_regular_file(settings.shaderDirectory / name, error);
                     }
 #endif
+                InitializeIndirect();
                 queue = [device newCommandQueue];
                 if (!queue)
                     throw std::runtime_error("Create Metal queue failed");
@@ -71,6 +74,9 @@ namespace render::detail
                 layer.pixelFormat     = MTLPixelFormatBGRA8Unorm_sRGB;
                 layer.framebufferOnly = YES;
                 layer.opaque          = YES;
+#if TARGET_OS_OSX
+                benchmarkOffscreen = std::getenv("NOVA_METAL_BENCH_OFFSCREEN") != nullptr;
+#endif
                 const auto      bytes    = LoadShader(config.shaderDirectory, "triangle.metallib");
                 NSData*         data     = [NSData dataWithBytes:bytes.data() length:bytes.size()];
                 dispatch_data_t shaderData =
@@ -134,14 +140,31 @@ namespace render::detail
                     if (!depth)
                         throw std::runtime_error("Create model depth texture failed");
                 }
-                id<CAMetalDrawable> drawable = [layer nextDrawable];
-                if (!drawable)
-                    return FrameResult::Skipped;
+                id<CAMetalDrawable> drawable = nil;
+                if (benchmarkOffscreen)
+                {
+                    if (!benchmarkTarget || benchmarkTarget.width != width || benchmarkTarget.height != height)
+                    {
+                        auto desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:layer.pixelFormat
+                                                                                     width:width height:height mipmapped:NO];
+                        desc.storageMode = MTLStorageModePrivate;
+                        desc.usage = MTLTextureUsageRenderTarget;
+                        benchmarkTarget = [device newTextureWithDescriptor:desc];
+                        if (!benchmarkTarget)
+                            throw std::runtime_error("Create offscreen Metal benchmark target failed");
+                    }
+                }
+                else
+                {
+                    drawable = [layer nextDrawable];
+                    if (!drawable)
+                        return FrameResult::Skipped;
+                }
                 id<MTLCommandBuffer> command = [queue commandBuffer];
                 if (!command)
                     throw std::runtime_error("Create Metal command buffer failed");
                 MTLRenderPassDescriptor* pass        = [MTLRenderPassDescriptor renderPassDescriptor];
-                pass.colorAttachments[0].texture     = drawable.texture;
+                pass.colorAttachments[0].texture     = drawable ? drawable.texture : benchmarkTarget;
                 pass.colorAttachments[0].loadAction  = MTLLoadActionClear;
                 pass.colorAttachments[0].storeAction = MTLStoreActionStore;
                 pass.colorAttachments[0].clearColor  = MTLClearColorMake(0.025, 0.035, 0.055, 1.0);
@@ -174,10 +197,15 @@ namespace render::detail
                       model->jointMatrices.size() * sizeof(JointMatrix));
                 const auto clear                    = ClearColorForTarget(true);
                 pass.colorAttachments[0].clearColor = MTLClearColorMake(clear[0], clear[1], clear[2], clear[3]);
-                size_t instanceBytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
+                PrepareIndirect();
+                const size_t compactCount = frameCulled ? scene.instances.size() : 0;
+                const size_t instanceBytes =
+                  std::max(size_t(192), (RasterInstances().size() + compactCount) * sizeof(InstanceData));
                 if (!sceneInstanceBuffer || sceneInstanceBuffer.length < instanceBytes)
                     sceneInstanceBuffer = [device newBufferWithLength:instanceBytes
                                                               options:MTLResourceStorageModeShared];
+                if (!sceneInstanceBuffer)
+                    throw std::runtime_error("Allocate Metal scene instance buffer failed");
                 if (!RasterInstances().empty())
                     std::memcpy(
                       sceneInstanceBuffer.contents,
@@ -191,6 +219,22 @@ namespace render::detail
                 const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
                 if (path && !gpuFrame)
                     UploadPathImage(*path);
+                SceneUniforms uniforms{};
+                if (model)
+                {
+                    uniforms = MakeSceneUniforms(
+                      *model, GetViewCamera(), float(sceneWidth) / sceneHeight,
+                      lighting, directionalLight, environment.get(), environmentSettings);
+                    uniforms.skyParams[2] = gpuFrame ? 2.f : path ? 1.f : 0.f;
+                    uniforms.lightDirection[3] = MaterialMode();
+                    ApplyRasterSettings(uniforms);
+                }
+                const bool measure = drawCounters && !path && scene.active;
+                const auto recordStart = measure ? DrawClock::now() : DrawClock::time_point{};
+                if (measure)
+                    PrepareDrawSamples(pass);
+                if (!path)
+                    EncodeInstanceCull(command, uniforms, measure);
                 id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
                 if (!encoder)
                     throw std::runtime_error("Create Metal render encoder failed");
@@ -207,17 +251,6 @@ namespace render::detail
                 [encoder setCullMode:MTLCullModeNone];
                 if (model)
                 {
-                    auto uniforms = MakeSceneUniforms(
-                      *model,
-                      GetViewCamera(),
-                      float(sceneWidth) / sceneHeight,
-                      lighting,
-                      directionalLight,
-                      environment.get(),
-                      environmentSettings);
-                    uniforms.skyParams[2]      = gpuFrame ? 2.f : path ? 1.0f : 0.0f;
-                    uniforms.lightDirection[3] = MaterialMode();
-                    ApplyRasterSettings(uniforms);
                     [encoder setVertexBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setFragmentBuffer:sceneInstanceBuffer offset:0 atIndex:14];
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
@@ -246,13 +279,9 @@ namespace render::detail
                     [encoder setDepthStencilState:depthState];
                     if (!path && scene.active)
                     {
-                        for (const auto& draw : scene.draws)
-                            if (draw.instanceCount)
-                                [encoder drawPrimitives:MTLPrimitiveTypeTriangle
-                                            vertexStart:draw.firstVertex
-                                            vertexCount:draw.vertexCount
-                                          instanceCount:draw.instanceCount
-                                           baseInstance:draw.firstInstance];
+                        if (frameIndirect)
+                            BindIndirectModel(encoder, uniforms, false);
+                        DrawScene(encoder, AAPass{});
                     }
                     else if (!path && !model->vertices.empty())
                         [encoder drawPrimitives:MTLPrimitiveTypeTriangle
@@ -266,8 +295,17 @@ namespace render::detail
                     ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), command, encoder);
 #endif
                 [encoder endEncoding];
-                [command presentDrawable:drawable];
+                if (drawable)
+                    [command presentDrawable:drawable];
+                const auto submitStart = measure ? DrawClock::now() : DrawClock::time_point{};
                 [command commit];
+                if (measure)
+                {
+                    const auto submitted = DrawClock::now();
+                    recordMs = std::chrono::duration<double, std::milli>(submitStart - recordStart).count();
+                    submitMs = std::chrono::duration<double, std::milli>(submitted - submitStart).count();
+                }
+                drawMetricsPending = measure;
                 lastCommand = command;
                 return FrameResult::Rendered;
             }
@@ -284,11 +322,13 @@ namespace render::detail
                 lastCommand    = nil;
                 throw metalError("Execute Metal command buffer", error);
             }
+            ReportDrawSamples();
             lastCommand = nil;
         }
         uint32_t ValidationErrorCount() const override { return errors; }
 
       private:
+#include "MetalInstanceCull.inc"
 #ifdef NOVA_HAS_UI
         bool uiRenderer = false;
 #endif
@@ -483,7 +523,11 @@ namespace render::detail
                 for (size_t i = 0; i < views.size(); i++)
                     [e setFragmentTexture:(__bridge id<MTLTexture>)views[i] atIndex:(i < 8 ? 17 + i : 31 + i - 8)];
             };
-            external.beforeScene = [this](void* command) { EncodeProbeUpdate((__bridge id<MTLCommandBuffer>)command); };
+            external.beforeScene = [this](void* command) {
+                const auto buffer = (__bridge id<MTLCommandBuffer>)command;
+                EncodeInstanceCull(buffer, rasterAA.current);
+                EncodeProbeUpdate(buffer);
+            };
             external.sparseShadows = [this](void* command, uint32_t width, uint32_t height,
                                             const std::array<void*, 7>& views) {
                 return EncodeSparseShadows((__bridge id<MTLCommandBuffer>)command, width, height, views);
@@ -623,13 +667,9 @@ namespace render::detail
                     [e setDepthStencilState:oit ? oitDepthState : depthState];
                     if (scene.active)
                     {
-                        DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
-                            [e drawPrimitives:MTLPrimitiveTypeTriangle
-                                  vertexStart:draw.firstVertex
-                                  vertexCount:draw.vertexCount
-                                instanceCount:count
-                                 baseInstance:first];
-                        });
+                        if (frameIndirect && !pass.outlineGroup)
+                            BindIndirectModel(e, current, true);
+                        DrawScene(e, pass);
                     }
                     else
                         [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:model->vertices.size()];
@@ -907,6 +947,7 @@ namespace render::detail
             sampler.mipFilter                    = MTLSamplerMipFilterLinear;
             sampler.maxAnisotropy                = 8;
             sampler.lodMaxClamp                  = 32;
+            sampler.supportArgumentBuffers       = metalIndirect;
             sampler.sAddressMode                 = MTLSamplerAddressModeRepeat;
             sampler.tAddressMode                 = MTLSamplerAddressModeRepeat;
             modelSampler                         = [device newSamplerStateWithDescriptor:sampler];
@@ -924,6 +965,8 @@ namespace render::detail
         }
         id<MTLDevice>              device;
         id<MTLCommandQueue>        queue;
+        bool                       benchmarkOffscreen = false;
+        id<MTLTexture>             benchmarkTarget;
         id<MTLRenderPipelineState> pipeline;
         id<MTLCommandBuffer>       lastCommand;
         SDL_MetalView              metalView = nullptr;

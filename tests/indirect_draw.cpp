@@ -53,17 +53,38 @@ int main(int argc, char** argv)
     render::detail::PresentationWindow surface;
     try
     {
-        const bool heavy = argc == 3 && std::string_view(argv[2]) == "--heavy";
-        if (argc != 2 && !heavy)
-            throw std::invalid_argument("Usage: nova_indirect_draw_benchmark <output directory> [--heavy]");
+        bool             heavy = false;
+        std::string_view api   = "vulkan";
+        if (argc < 2)
+            throw std::invalid_argument("Usage: nova_indirect_draw_benchmark <output directory> [--heavy] [--metal]");
+        for (int i = 2; i < argc; ++i)
+        {
+            const std::string_view option = argv[i];
+            if (option == "--heavy")
+                heavy = true;
+            else if (option == "--metal")
+                api = "metal";
+            else
+                throw std::invalid_argument("Unknown indirect draw benchmark option");
+        }
         if (!InitTestWindowHost())
             throw std::runtime_error("SDL video initialization failed");
-        surface = OpenTestWindow("vulkan", 640, 360, "Nova indirect draw benchmark");
+        surface = OpenTestWindow(api, 640, 360, "Nova indirect draw benchmark");
         render::RendererConfig config;
-        config.api              = render::GraphicsAPI::Vulkan;
+        config.api              = api == "metal" ? render::GraphicsAPI::Metal : render::GraphicsAPI::Vulkan;
         config.enableValidation = !std::getenv("NOVA_VULKAN_BENCH_NO_VALIDATION");
-        auto backend            = render::detail::CreateVulkanBackend(surface, config);
-        int  width, height;
+        std::unique_ptr<render::detail::Backend> backend;
+#ifdef __APPLE__
+        if (config.api == render::GraphicsAPI::Metal)
+            backend = render::detail::CreateMetalBackend(surface, config);
+#endif
+#ifdef NOVA_HAS_VULKAN
+        if (config.api == render::GraphicsAPI::Vulkan)
+            backend = render::detail::CreateVulkanBackend(surface, config);
+#endif
+        if (!backend)
+            throw std::runtime_error("Requested graphics backend is unavailable");
+        int width, height;
         TestPixelSize(surface, &width, &height);
         backend->Resize(width, height);
         backend->SetAntiAliasing({render::AAMethod::Off});
@@ -171,7 +192,7 @@ int main(int argc, char** argv)
                       << " ms, p95 " << times[times.size() * 95 / 100 - 1] << " ms" << std::endl;
         }
         if (backend->ValidationErrorCount())
-            throw std::runtime_error("Vulkan validation failed");
+            throw std::runtime_error("Graphics validation failed");
         backend.reset();
         CloseTestWindow(surface);
         QuitTestWindowHost();
