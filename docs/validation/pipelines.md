@@ -76,3 +76,26 @@ in the two runs. At 90% visibility the reduction was about 8–9%. The
 CPU record-and-submit is wall time and can include driver wait. Read it
 alongside GPU timestamps and synchronized frame time. The final images
 matched across modes in every case.
+
+### CPU submission and driver-wait breakdown on macOS
+
+`NOVA_VULKAN_DRAW_METRICS=1` also reports wall time for command recording,
+`vkQueueSubmit`, presentation, frame-fence wait, image acquisition and
+the benchmark's final device-idle wait. On macOS, it records the calling
+thread's CPU time inside recording, submission and presentation. Subtract
+thread CPU time from wall time on each sample to estimate time the calling
+thread spent off CPU. This estimate can include scheduling delays or work
+on another thread. It does not identify an internal driver call stack.
+
+For the 1,472-triangle, 50%-visible workload on Apple M4, the two runs with
+culling recorded about 0.007–0.012 ms of commands. Queue submission took
+0.78–1.20 ms of wall time and only 0.10–0.14 ms of calling-thread CPU
+time. Fence and image acquisition times stayed below 0.02 ms in these
+runs.
+
+Setting `MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0` for the benchmark process
+reduced the same queue calls to about 0.002 ms. The device-idle wait rose
+from about 7.5–7.6 ms to 8.7–8.8 ms. The synchronized frame median stayed
+around 8.8–9.0 ms across both settings. Keep the driver default for
+normal runs. Asynchronous submission is useful here as a diagnostic for
+where the calling thread waits.

@@ -10,6 +10,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#ifdef __APPLE__
+#include <time.h>
+#endif
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -70,7 +73,10 @@ namespace render::detail
         FrameResult DrawFrame() override { return draw(); }
         void WaitIdle() override
         {
+            const auto start = drawMetricsPending ? DrawClock::now() : DrawClock::time_point{};
             check(vkDeviceWaitIdle(device), "Wait idle");
+            if (drawMetricsPending)
+                drawTimes.idle = elapsedMs(start);
             reportDrawMetrics();
         }
         uint32_t    ValidationErrorCount() const override { return validationErrors; }
@@ -168,7 +174,23 @@ namespace render::detail
         VkQueryPool drawQueries{};
         uint32_t drawTimestampBits = 0;
         float drawTimestampPeriod = 0;
-        double drawSubmitMs = 0;
+        struct DrawTimes
+        {
+            double fence = 0, acquire = 0, record = 0, submit = 0, present = 0, idle = 0;
+            double recordThread = 0, submitThread = 0, presentThread = 0;
+        } drawTimes;
+        static double elapsedMs(DrawClock::time_point start)
+        {
+            return std::chrono::duration<double, std::milli>(DrawClock::now() - start).count();
+        }
+        static uint64_t threadCpuNs()
+        {
+#ifdef __APPLE__
+            return clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID);
+#else
+            return 0;
+#endif
+        }
         bool drawMetricsPending = false;
 
         void initDrawMetrics()
@@ -203,7 +225,12 @@ namespace render::detail
                     submitted += commands[i].instanceCount;
                 vkUnmapMemory(device, cullCommands.memory);
             }
-            std::cout << "Vulkan draw metrics: cpu_ms=" << drawSubmitMs
+            std::cout << "Vulkan draw metrics: cpu_ms=" << drawTimes.record + drawTimes.submit
+                      << " record_ms=" << drawTimes.record << " record_thread_ms=" << drawTimes.recordThread
+                      << " submit_ms=" << drawTimes.submit << " submit_thread_ms=" << drawTimes.submitThread
+                      << " present_ms=" << drawTimes.present << " present_thread_ms=" << drawTimes.presentThread
+                      << " fence_ms=" << drawTimes.fence << " acquire_ms=" << drawTimes.acquire
+                      << " idle_ms=" << drawTimes.idle
                       << " gpu_ms=" << double(elapsed) * drawTimestampPeriod / 1e6
                       << " submitted=" << submitted << '\n';
         }
@@ -1335,7 +1362,10 @@ namespace render::detail
                 destroySwapchain();
                 createSwapchain();
             }
+            const auto fenceStart = drawQueries ? DrawClock::now() : DrawClock::time_point{};
             check(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "Wait frame");
+            if (drawQueries)
+                drawTimes.fence = elapsedMs(fenceStart);
 #ifdef NOVA_HAS_UI
             if (panelEnabled)
             {
@@ -1442,6 +1472,8 @@ namespace render::detail
                 std::memcpy(mapped, &uniform, sizeof(uniform));
                 vkUnmapMemory(device, modelUniform.memory);
             }
+            const bool measure = drawQueries && !path && scene.active;
+            const auto acquireStart = measure ? DrawClock::now() : DrawClock::time_point{};
             uint32_t image  = 0;
             auto     result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &image);
 #ifdef __ANDROID__
@@ -1459,8 +1491,10 @@ namespace render::detail
             if (result != VK_SUBOPTIMAL_KHR)
                 check(result, "Acquire image");
             const bool suboptimal = result == VK_SUBOPTIMAL_KHR;
-            const bool measure = drawQueries && !path && scene.active;
+            if (measure)
+                drawTimes.acquire = elapsedMs(acquireStart);
             const auto recordStart = measure ? DrawClock::now() : DrawClock::time_point{};
+            const auto recordThreadStart = measure ? threadCpuNs() : 0;
             check(vkResetCommandBuffer(cmd, 0), "Reset commands");
             VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
             check(vkBeginCommandBuffer(cmd, &begin), "Begin commands");
@@ -1513,6 +1547,11 @@ namespace render::detail
             if (measure)
                 vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, drawQueries, 1);
             check(vkEndCommandBuffer(cmd), "End commands");
+            if (measure)
+            {
+                drawTimes.record = elapsedMs(recordStart);
+                drawTimes.recordThread = double(threadCpuNs() - recordThreadStart) / 1e6;
+            }
             VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
             VkSubmitInfo         submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
             submit.waitSemaphoreCount   = 1;
@@ -1523,17 +1562,29 @@ namespace render::detail
             submit.signalSemaphoreCount = 1;
             submit.pSignalSemaphores    = &finished[image];
             check(vkResetFences(device, 1, &fence), "Reset fence");
+            const auto submitStart = measure ? DrawClock::now() : DrawClock::time_point{};
+            const auto submitThreadStart = measure ? threadCpuNs() : 0;
             check(vkQueueSubmit(queue, 1, &submit, fence), "Submit");
             drawMetricsPending = measure;
             if (measure)
-                drawSubmitMs = std::chrono::duration<double, std::milli>(DrawClock::now() - recordStart).count();
+            {
+                drawTimes.submit = elapsedMs(submitStart);
+                drawTimes.submitThread = double(threadCpuNs() - submitThreadStart) / 1e6;
+            }
             VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
             present.waitSemaphoreCount = 1;
             present.pWaitSemaphores    = &finished[image];
             present.swapchainCount     = 1;
             present.pSwapchains        = &swapchain;
             present.pImageIndices      = &image;
-            result                     = vkQueuePresentKHR(queue, &present);
+            const auto presentStart = measure ? DrawClock::now() : DrawClock::time_point{};
+            const auto presentThreadStart = measure ? threadCpuNs() : 0;
+            result = vkQueuePresentKHR(queue, &present);
+            if (measure)
+            {
+                drawTimes.present = elapsedMs(presentStart);
+                drawTimes.presentThread = double(threadCpuNs() - presentThreadStart) / 1e6;
+            }
 #ifdef __ANDROID__
             if (result == VK_ERROR_SURFACE_LOST_KHR)
             {
