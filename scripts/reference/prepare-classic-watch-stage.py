@@ -44,6 +44,7 @@ def make_floor(path):
 
 def make_stage(path):
     stage = {
+        "antiAliasing": {"method": "ssaa"},
         "clearColor": [.308, .311, .322, 1],
         "environment": {"rotation": -133.84, "intensity": .770914, "showBackground": False, "backgroundIntensity": 1},
         "light": {

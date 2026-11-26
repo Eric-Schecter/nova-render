@@ -104,8 +104,11 @@ def convert(original_path, baseline_path, leather_path, output):
             # WebGi uses a material-wide factor. glTF multiplies it by blue.
             pixels[2::3] = bytes([255]) * (len(pixels) // 3)
             index = append_texture(doc, binary, f"{name} anisotropy direction", size, pixels)
+            # The legacy dial factor exceeds glTF's range. A lower strength
+            # retains the brushed direction without the harsh radial lobes.
+            strength = .45 if name == "clockface" else min(1, max(0, old["anisotropyFactor"]))
             materials[name].setdefault("extensions", {})["KHR_materials_anisotropy"] = {
-                "anisotropyStrength": min(1, max(0, old["anisotropyFactor"])),
+                "anisotropyStrength": strength,
                 "anisotropyTexture": {"index": index},
             }
 
