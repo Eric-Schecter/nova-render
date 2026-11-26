@@ -1531,3 +1531,4 @@ export {
   rasterPipelines,
   pipelineDebugViews,
 } from './PipelineComparisonView.js'
+export { makeProductShowcaseSettings, productShowcaseAntiAliasing } from './ProductShowcase.js'

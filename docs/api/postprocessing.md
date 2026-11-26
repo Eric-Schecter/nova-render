@@ -37,6 +37,30 @@ RGBA16F pipeline: MSAA/SSAA resolve → HDR TAA if selected → auto exposure an
 
 Enabled model rendering skips its old material tone mapper to avoid double processing. Camera exposure remains a scene multiplier; `exposureEV` is post exposure. Disabling the chain restores the previous rendering path.
 
+## Product showcase preset
+
+Use the optional preset for a fixed-exposure product view with ACES Filmic, soft bloom, and 16 raster shadow samples. Set the light, environment, and exposure to suit the scene. Hybrid uses its own shadow settings.
+
+```cpp
+#include <render/ProductShowcase.hpp>
+
+auto settings = render::MakeProductShowcaseSettings();
+window.SetPostProcessing(settings.postProcessing);
+window.SetShadows(settings.shadows);
+window.SetAntiAliasing(settings.antiAliasing);
+```
+
+```js
+import { makeProductShowcaseSettings } from '@nova/render-web'
+
+const { postProcessing, shadows, antiAliasing } = makeProductShowcaseSettings()
+renderer.setPostProcessing(postProcessing)
+renderer.setShadows(shadows)
+renderer.setAntiAliasing(antiAliasing)
+```
+
+On interaction state changes, apply only `ProductShowcaseAntiAliasing(interacting)` in C++ or `productShowcaseAntiAliasing(interacting)` on web. Both use FXAA during interaction and 2×2 SSAA at rest. The application supplies the interaction state and can select FXAA when the device cannot afford the extra samples.
+
 ## HDR laboratory
 
 ```cpp
