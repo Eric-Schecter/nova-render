@@ -18,9 +18,12 @@ def make_floor(path):
         "nodes": [{"mesh": 0}],
         "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 2, "material": 0}]}],
         "extensionsUsed": ["KHR_materials_specular"],
-        "materials": [{"extensions": {"KHR_materials_specular": {"specularFactor": .04}},
+        # Keep a small floor-only radiance offset below the filmic black threshold.
+        # It exposes partial visibility without lifting the fully occluded contact.
+        "materials": [{"emissiveFactor": [.052, .053, .056],
+                       "extensions": {"KHR_materials_specular": {"specularFactor": .04}},
                        "pbrMetallicRoughness": {
-            "baseColorFactor": [.010, .010, .011, 1], "roughnessFactor": .48, "metallicFactor": 0,
+            "baseColorFactor": [.0032, .0032, .0036, 1], "roughnessFactor": .48, "metallicFactor": 0,
         }}],
         "buffers": [{"byteLength": len(data)}],
         "bufferViews": [{"buffer": 0, "byteOffset": offset, "byteLength": length}
@@ -46,9 +49,9 @@ def make_stage(path):
         "light": {
             "id": "watch-key", "type": "directional", "color": [1, 1, 1],
             "direction": [-.3296544, .8968639, .2948951], "intensity": 20,
-            "castShadow": True, "shadowSoftness": 1.072116,
+            "castShadow": True, "shadowSoftness": 12,
         },
-        "shadows": {"enabled": True, "samples": 8, "bias": .002},
+        "shadows": {"enabled": True, "samples": 16, "bias": .002},
         "post": {
             "enabled": True, "toneMapping": "aces-filmic", "exposureEV": 0,
             "contrast": 1.1, "bloom": True, "bloomThreshold": 1.82,
