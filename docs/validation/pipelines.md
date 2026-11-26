@@ -21,3 +21,23 @@ node scripts/webgpu/check-pipelines-page.mjs
 ```
 
 Raw native PPM images, WebGPU results and page screenshots are generated beneath `build/validation/pipelines/`. Build outputs are ignored by Git. Depth reduction and compact light lists now execute as Compute Shaders, with 64 threads per workgroup. The tests also verify that the generated culling artifacts contain compute entry points instead of fragment entry points. These checks establish image correctness; CPU-inclusive frame timings are not pure GPU benchmarks.
+
+## Vulkan multi-draw indirect
+
+Vulkan submits scene batches with multi-draw indirect when the device supports
+`multiDrawIndirect` and `drawIndirectFirstInstance`. The indirect argument buffer is
+reused while batch ranges stay the same. Outline masks retain per-instance
+draws for selected IDs.
+
+With a Vulkan and glTF-enabled test build, run the same geometry and camera path in both modes:
+
+```sh
+cmake --build build --target nova_indirect_draw_benchmark
+NOVA_VULKAN_DRAW_TRACE=1 NOVA_VULKAN_FORCE_DIRECT=1 build/nova_indirect_draw_benchmark build/validation/indirect-draw/direct
+NOVA_VULKAN_DRAW_TRACE=1 build/nova_indirect_draw_benchmark build/validation/indirect-draw/indirect
+```
+
+The benchmark uses in-memory geometry, 16 or 256 batches and 10,000, 50,000
+or 125,000 instances. It records synchronized frame times after warm-up and
+writes the last frame for pixel comparison. The two modes submit the same
+instance ranges, with shadows disabled.

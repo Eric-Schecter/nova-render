@@ -104,6 +104,58 @@ namespace render::detail
         VkFence                    fence       = VK_NULL_HANDLE;
 
 #include "VulkanModel.inc"
+        ModelBuffer                        indirectDrawBuffer;
+        std::vector<VkDrawIndirectCommand> indirectDraws;
+        uint32_t                           indirectBatchLimit = 0;
+
+        void prepareIndirectDraws()
+        {
+            if (!indirectBatchLimit || !scene.active || scene.draws.size() < 2)
+                return;
+            const auto matches = [](const SceneDraw& draw, const VkDrawIndirectCommand& command) {
+                return draw.vertexCount == command.vertexCount && draw.instanceCount == command.instanceCount
+                    && draw.firstVertex == command.firstVertex && draw.firstInstance == command.firstInstance;
+            };
+            if (std::equal(scene.draws.begin(), scene.draws.end(), indirectDraws.begin(), indirectDraws.end(), matches))
+                return;
+            std::vector<VkDrawIndirectCommand> commands;
+            commands.reserve(scene.draws.size());
+            for (const auto& draw : scene.draws)
+                commands.push_back({draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance});
+            ModelBuffer next;
+            try
+            {
+                modelBuffer(next, commands.size() * sizeof(VkDrawIndirectCommand),
+                            VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, commands.data());
+            }
+            catch (...)
+            {
+                destroyModelBuffer(next);
+                throw;
+            }
+            destroyModelBuffer(indirectDrawBuffer);
+            indirectDrawBuffer = next;
+            indirectDraws = std::move(commands);
+        }
+
+        void drawScene(VkCommandBuffer command, const AAPass& pass)
+        {
+            if (mode == RenderMode::Raster && indirectBatchLimit && scene.draws.size() >= 2 && !pass.outlineGroup)
+            {
+                for (size_t first = 0; first < indirectDraws.size();)
+                {
+                    const auto count = uint32_t(std::min<size_t>(indirectBatchLimit, indirectDraws.size() - first));
+                    vkCmdDrawIndirect(command, indirectDrawBuffer.buffer, first * sizeof(VkDrawIndirectCommand),
+                                      count, sizeof(VkDrawIndirectCommand));
+                    first += count;
+                }
+                return;
+            }
+            DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
+                vkCmdDraw(command, draw.vertexCount, count, draw.firstVertex, first);
+            });
+        }
+
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
         size_t      aaPreviousPaletteBytes = 0;
         VkPipeline  aaModel[2]{}, aaSky[2]{}, aaTrianglePipeline[2]{}, aaMotion{}, aaSkyMotion{}, aaGBuffer{},
@@ -621,9 +673,7 @@ namespace render::detail
                         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 3, 1, &bindlessSet, 0, nullptr);
                     if (scene.active)
                     {
-                        DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
-                            vkCmdDraw(cmd, draw.vertexCount, count, draw.firstVertex, first);
-                        });
+                        drawScene(cmd, pass);
                     }
                     else
                         vkCmdDraw(cmd, uint32_t(model->vertices.size()), 1, 0, 0);
@@ -795,6 +845,15 @@ namespace render::detail
             VkPhysicalDeviceFeatures supported{}, features{};
             vkGetPhysicalDeviceFeatures(physical, &supported);
             features.samplerAnisotropy = supported.samplerAnisotropy;
+            if (supported.multiDrawIndirect && supported.drawIndirectFirstInstance
+                && properties.limits.maxDrawIndirectCount >= 2 && !std::getenv("NOVA_VULKAN_FORCE_DIRECT"))
+            {
+                features.multiDrawIndirect = VK_TRUE;
+                features.drawIndirectFirstInstance = VK_TRUE;
+                indirectBatchLimit = properties.limits.maxDrawIndirectCount;
+            }
+            if (std::getenv("NOVA_VULKAN_DRAW_TRACE"))
+                std::cout << "Vulkan draw mode: " << (indirectBatchLimit ? "multi-draw indirect" : "direct") << '\n';
             if (!supported.independentBlend)
                 throw std::runtime_error("Vulkan requires independentBlend for material transparency");
             features.independentBlend = VK_TRUE;
@@ -1276,6 +1335,8 @@ namespace render::detail
             const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
             if (!sceneWidth || !sceneHeight)
                 return FrameResult::Skipped;
+            if (mode == RenderMode::Raster)
+                prepareIndirectDraws();
             const auto* path     = DrawPathFrame(sceneWidth, sceneHeight);
             const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
             if (gpuFrame)
@@ -1350,9 +1411,7 @@ namespace render::detail
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 3, 1, &bindlessSet, 0, nullptr);
             if (!path && scene.active)
             {
-                for (const auto& draw : scene.draws)
-                    if (draw.instanceCount)
-                        vkCmdDraw(cmd, draw.vertexCount, draw.instanceCount, draw.firstVertex, draw.firstInstance);
+                drawScene(cmd, AAPass{});
             }
             else if (!path && (!model || !model->vertices.empty()))
                 vkCmdDraw(cmd, model ? static_cast<uint32_t>(model->vertices.size()) : 3, 1, 0, 0);
@@ -1439,6 +1498,7 @@ namespace render::detail
                 DestroyRasterAA();
                 destroySwapchain();
                 destroyModel();
+                destroyModelBuffer(indirectDrawBuffer);
                 if (fence)
                     vkDestroyFence(device, fence, nullptr);
                 if (acquired)
