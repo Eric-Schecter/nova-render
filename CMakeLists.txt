@@ -80,6 +80,15 @@ if(NOVA_ENABLE_VULKAN)
     add_custom_target(nova_instance_cull_shader DEPENDS "${cull_shader}" "${indexed_cull_shader}" "${indexed_model_shader}")
     add_dependencies(triangle_shaders nova_instance_cull_shader)
 endif()
+if(WIN32)
+    set(dx12_cull_shader "${SHADER_OUTPUT_DIR}/instance-cull.comp.dxil")
+    add_custom_command(OUTPUT "${dx12_cull_shader}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+        COMMAND "${NOVA_DXC_EXECUTABLE}" -DNOVA_D3D12_INSTANCE_CULL=1 -T cs_6_0 -E CullInstances
+            -Fo "${dx12_cull_shader}" "${PROJECT_SOURCE_DIR}/render/shaders/instance-cull.hlsl"
+        DEPENDS render/shaders/instance-cull.hlsl "${NOVA_DXC_EXECUTABLE}" VERBATIM)
+    list(APPEND SHADER_OUTPUTS "${dx12_cull_shader}")
+endif()
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(metal_cull "${SHADER_OUTPUT_DIR}/instance-cull.metallib")
     add_custom_command(OUTPUT "${metal_cull}"
@@ -823,7 +832,7 @@ if(NOVA_BUILD_EXAMPLES)
     endif()
 endif()
 if(BUILD_TESTING)
-    if((NOVA_ENABLE_VULKAN OR APPLE) AND NOVA_ENABLE_GLTF)
+    if((NOVA_ENABLE_VULKAN OR APPLE OR WIN32) AND NOVA_ENABLE_GLTF)
         add_executable(nova_indirect_draw_benchmark tests/indirect_draw.cpp)
         target_compile_definitions(nova_indirect_draw_benchmark PRIVATE $<TARGET_PROPERTY:nova_render,COMPILE_DEFINITIONS>)
         target_include_directories(nova_indirect_draw_benchmark PRIVATE render/src "${NOVA_STB_INCLUDE_DIR}" "${NOVA_GLM_INCLUDE_DIR}")

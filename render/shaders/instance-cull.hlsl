@@ -14,27 +14,38 @@ struct BatchBounds
 };
 struct DrawCommand
 {
+#ifdef NOVA_D3D12_INSTANCE_CULL
+    uint firstVertex, firstInstance, vertexCount, instanceCount, startVertex, startInstance;
+#else
     uint vertexCount, instanceCount, firstVertex, firstInstance;
+#endif
 };
 struct CullParameters
 {
     float4 planes[6];
     uint instanceCount, unused, dispatchWidth, pad;
 };
-#ifdef NOVA_METAL_INSTANCE_CULL
+#if defined(NOVA_D3D12_INSTANCE_CULL)
+ConstantBuffer<CullParameters> params : register(b0);
+#elif defined(NOVA_METAL_INSTANCE_CULL)
 [[vk::binding(4, 0)]] ConstantBuffer<CullParameters> params : register(b0);
 #else
 [[vk::push_constant]] CullParameters params;
 #endif
-#ifdef NOVA_VISIBLE_INSTANCE_INDICES
-[[vk::binding(0, 0)]] StructuredBuffer<InstanceRecord> instances : register(t2);
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> visibleInstances : register(u2);
+#ifdef NOVA_D3D12_INSTANCE_CULL
+#define CULL_BINDING(slot)
 #else
-[[vk::binding(0, 0)]] RWStructuredBuffer<InstanceRecord> instances : register(u0);
+#define CULL_BINDING(slot) [[vk::binding(slot, 0)]]
 #endif
-[[vk::binding(1, 0)]] StructuredBuffer<uint> instanceBatches : register(t0);
-[[vk::binding(2, 0)]] StructuredBuffer<BatchBounds> bounds : register(t1);
-[[vk::binding(3, 0)]] RWStructuredBuffer<DrawCommand> commands : register(u1);
+#ifdef NOVA_VISIBLE_INSTANCE_INDICES
+CULL_BINDING(0) StructuredBuffer<InstanceRecord> instances : register(t2);
+CULL_BINDING(4) RWStructuredBuffer<uint> visibleInstances : register(u2);
+#else
+CULL_BINDING(0) RWStructuredBuffer<InstanceRecord> instances : register(u0);
+#endif
+CULL_BINDING(1) StructuredBuffer<uint> instanceBatches : register(t0);
+CULL_BINDING(2) StructuredBuffer<BatchBounds> bounds : register(t1);
+CULL_BINDING(3) RWStructuredBuffer<DrawCommand> commands : register(u1);
 
 [numthreads(64, 1, 1)]
 void CullInstances(uint3 id : SV_DispatchThreadID)

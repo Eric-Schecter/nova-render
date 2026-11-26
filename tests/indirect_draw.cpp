@@ -56,7 +56,8 @@ int main(int argc, char** argv)
         bool             heavy = false;
         std::string_view api   = "vulkan";
         if (argc < 2)
-            throw std::invalid_argument("Usage: nova_indirect_draw_benchmark <output directory> [--heavy] [--metal]");
+            throw std::invalid_argument(
+              "Usage: nova_indirect_draw_benchmark <output directory> [--heavy] [--metal|--dx12]");
         for (int i = 2; i < argc; ++i)
         {
             const std::string_view option = argv[i];
@@ -64,6 +65,8 @@ int main(int argc, char** argv)
                 heavy = true;
             else if (option == "--metal")
                 api = "metal";
+            else if (option == "--dx12")
+                api = "dx12";
             else
                 throw std::invalid_argument("Unknown indirect draw benchmark option");
         }
@@ -71,9 +74,17 @@ int main(int argc, char** argv)
             throw std::runtime_error("SDL video initialization failed");
         surface = OpenTestWindow(api, 640, 360, "Nova indirect draw benchmark");
         render::RendererConfig config;
-        config.api              = api == "metal" ? render::GraphicsAPI::Metal : render::GraphicsAPI::Vulkan;
+        config.api              = api == "metal"  ? render::GraphicsAPI::Metal
+                                  : api == "dx12" ? render::GraphicsAPI::D3D12
+                                                  : render::GraphicsAPI::Vulkan;
         config.enableValidation = !std::getenv("NOVA_VULKAN_BENCH_NO_VALIDATION");
+        if (api == "dx12")
+            config.enableValidation = !std::getenv("NOVA_DX12_BENCH_NO_VALIDATION");
         std::unique_ptr<render::detail::Backend> backend;
+#ifdef _WIN32
+        if (config.api == render::GraphicsAPI::D3D12)
+            backend = render::detail::CreateD3D12Backend(surface, config);
+#endif
 #ifdef __APPLE__
         if (config.api == render::GraphicsAPI::Metal)
             backend = render::detail::CreateMetalBackend(surface, config);

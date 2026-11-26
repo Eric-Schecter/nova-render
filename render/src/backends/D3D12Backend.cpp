@@ -1,10 +1,12 @@
 #include "../Backend.hpp"
+#include "../InstanceCull.hpp"
 #include "../ShaderData.hpp"
 #include "../path/D3D12Debug.hpp"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <algorithm>
+#include <chrono>
 #include <climits>
 #include <cstdlib>
 #include <cstring>
@@ -165,7 +167,7 @@ namespace render::detail
                 UploadModel();
             else if (pendingIndexedMaterials)
                 UploadChangedIndexedTextures();
-            if (!swapchain || resized)
+            if (resized || (!swapchain && !drawBenchmark))
                 Recreate();
             if (model && !modelDepth)
                 ModelDepth();
@@ -241,15 +243,17 @@ namespace render::detail
             const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
             if (!sceneWidth || !sceneHeight)
                 return FrameResult::Skipped;
+            PrepareIndirect();
             const auto* path     = DrawPathFrame(sceneWidth, sceneHeight);
             const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
             if (gpuFrame)
                 BindRasterGPUOutput();
             else if (path)
                 UploadPathImage(*path);
+            SceneUniforms u{};
             if (model)
             {
-                auto u = MakeSceneUniforms(
+                u = MakeSceneUniforms(
                   *model,
                   GetViewCamera(),
                   float(sceneWidth) / sceneHeight,
@@ -266,17 +270,25 @@ namespace render::detail
                 std::memcpy(mapped, &u, sizeof(u));
                 modelUniform->Unmap(0, nullptr);
             }
-            const UINT index = swapchain->GetCurrentBackBufferIndex();
+            const UINT index   = drawBenchmark ? 0 : swapchain->GetCurrentBackBufferIndex();
+            const bool measure = drawBenchmark && !path;
+            if (measure && !drawQueries)
+                SetupDrawQueries();
+            using Clock = std::chrono::steady_clock;
+            const auto recordStart = measure ? Clock::now() : Clock::time_point{};
             checkHR(allocator->Reset(), "Reset allocator");
             checkHR(
               commands->Reset(allocator.Get(), model ? modelPipeline.Get() : pipeline.Get()), "Reset command list");
+            if (!path)
+                EncodeInstanceCull(commands.Get(), u, measure);
             D3D12_RESOURCE_BARRIER barrier{};
             barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             barrier.Transition.pResource   = targets[index].Get();
             barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
             barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
             barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_RENDER_TARGET;
-            commands->ResourceBarrier(1, &barrier);
+            if (!drawBenchmark)
+                commands->ResourceBarrier(1, &barrier);
             auto rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
             rtv.ptr += static_cast<SIZE_T>(index) * rtvStride;
             const auto clear = ClearColorForTarget(true);
@@ -297,7 +309,7 @@ namespace render::detail
                 commands->SetGraphicsRootShaderResourceView(1, modelVertices->GetGPUVirtualAddress());
                 commands->SetGraphicsRootShaderResourceView(3, modelSkin->GetGPUVirtualAddress());
                 commands->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
-                commands->SetGraphicsRootShaderResourceView(5, sceneInstanceBuffer->GetGPUVirtualAddress());
+                commands->SetGraphicsRootShaderResourceView(5, RasterInstanceAddress());
                 commands->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
                 const UINT zeroDrawOffsets[2]{};
                 commands->SetGraphicsRoot32BitConstants(8, 2, zeroDrawOffsets, 0);
@@ -317,7 +329,11 @@ namespace render::detail
             }
             if (!path && !indexedTextures.empty())
                 BindIndexedTextures(commands.Get());
-            if (!path && scene.active)
+            if (measure)
+                commands->EndQuery(drawQueries.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
+            if (!path && frameIndirect)
+                ExecuteSceneIndirect(commands.Get());
+            else if (!path && scene.active)
             {
                 for (const auto& draw : scene.draws)
                     if (draw.instanceCount)
@@ -329,6 +345,18 @@ namespace render::detail
             }
             else if (!path && (!model || !model->vertices.empty()))
                 commands->DrawInstanced(model ? static_cast<UINT>(model->vertices.size()) : 3, 1, 0, 0);
+            if (measure)
+            {
+                commands->EndQuery(drawQueries.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
+                const UINT first = frameCulled ? 0 : 2;
+                commands->ResolveQueryData(
+                  drawQueries.Get(),
+                  D3D12_QUERY_TYPE_TIMESTAMP,
+                  first,
+                  4 - first,
+                  drawTimes.Get(),
+                  first * sizeof(UINT64));
+            }
 #ifdef NOVA_HAS_UI
             if (panelEnabled)
             {
@@ -339,12 +367,18 @@ namespace render::detail
 #endif
             barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PRESENT;
-            commands->ResourceBarrier(1, &barrier);
+            if (!drawBenchmark)
+                commands->ResourceBarrier(1, &barrier);
             checkHR(commands->Close(), "Close commands");
             ID3D12CommandList* lists[]{commands.Get()};
+            const auto         submitStart = measure ? Clock::now() : Clock::time_point{};
             queue->ExecuteCommandLists(1, lists);
-            checkHR(swapchain->Present(1, 0), "Present");
+            const auto submitEnd = measure ? Clock::now() : Clock::time_point{};
+            if (!drawBenchmark)
+                checkHR(swapchain->Present(1, 0), "Present");
             WaitIdle(); // Keep one frame in flight and inspect debug messages before reporting success.
+            if (measure)
+                ReportDrawQueries(recordStart, submitStart, submitEnd);
             return FrameResult::Rendered;
         }
         void WaitIdle() override
@@ -388,6 +422,7 @@ namespace render::detail
         ComPtr<ID3D12PipelineState>       pipeline;
 
 #include "D3D12Model.inc"
+#include "D3D12InstanceCull.inc"
         ComPtr<ID3D12PipelineState> aaModel[2], aaSky[2], aaTrianglePipeline[2], aaMotion, aaSkyMotion, aaGBuffer,
           aaDeferred, aaOit, aaHybridShadow, aaCompactShadow, aaHybridReflection, aaHybridAO, aaDeferredHalf;
         ComPtr<ID3D12Resource>      aaPreviousUniform, aaPreviousPalette;
@@ -473,6 +508,9 @@ namespace render::detail
                     handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 }
             };
+            external.beforeScene = [this](void* command) {
+                EncodeInstanceCull(static_cast<ID3D12GraphicsCommandList*>(command), rasterAA.current);
+            };
             external.draw = [this](const AAPass& pass, void* command, void*) {
                 auto* cmd    = static_cast<ID3D12GraphicsCommandList*>(command);
                 int   sample = pass.multisampled ? 1 : 0;
@@ -519,7 +557,7 @@ namespace render::detail
                 cmd->SetGraphicsRootDescriptorTable(2, modelHeap->GetGPUDescriptorHandleForHeapStart());
                 cmd->SetGraphicsRootShaderResourceView(3, modelSkin->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(4, modelJoints->GetGPUVirtualAddress());
-                cmd->SetGraphicsRootShaderResourceView(5, sceneInstanceBuffer->GetGPUVirtualAddress());
+                cmd->SetGraphicsRootShaderResourceView(5, RasterInstanceAddress());
                 cmd->SetGraphicsRootConstantBufferView(6, aaPreviousUniform->GetGPUVirtualAddress());
                 cmd->SetGraphicsRootShaderResourceView(7, aaPreviousPalette->GetGPUVirtualAddress());
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -585,7 +623,9 @@ namespace render::detail
                     cmd->SetPipelineState(pipeline.Get());
                     if (indexed)
                         BindIndexedTextures(cmd);
-                    if (scene.active)
+                    if (frameIndirect)
+                        ExecuteSceneIndirect(cmd);
+                    else if (scene.active)
                     {
                         DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
                             const UINT offsets[]{draw.firstVertex, first};
@@ -628,7 +668,28 @@ namespace render::detail
             checkHR(commands->Close(), "Close resize commands");
             for (auto& target : targets)
                 target.Reset();
-            if (swapchain)
+            if (drawBenchmark)
+            {
+                D3D12_HEAP_PROPERTIES heap{};
+                heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+                D3D12_RESOURCE_DESC desc{};
+                desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+                desc.Format           = DXGI_FORMAT_R8G8B8A8_TYPELESS;
+                desc.Width            = width;
+                desc.Height           = height;
+                desc.DepthOrArraySize = desc.MipLevels = desc.SampleDesc.Count = 1;
+                desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+                checkHR(
+                  device->CreateCommittedResource(
+                    &heap,
+                    D3D12_HEAP_FLAG_NONE,
+                    &desc,
+                    D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    nullptr,
+                    IID_PPV_ARGS(&targets[0])),
+                  "Create benchmark target");
+            }
+            else if (swapchain)
             {
                 checkHR(
                   swapchain->ResizeBuffers(BufferCount, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, 0),
@@ -655,9 +716,10 @@ namespace render::detail
             D3D12_RENDER_TARGET_VIEW_DESC view{};
             view.Format        = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
             view.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-            for (UINT i = 0; i < BufferCount; ++i)
+            for (UINT i = 0; i < (drawBenchmark ? 1 : BufferCount); ++i)
             {
-                checkHR(swapchain->GetBuffer(i, IID_PPV_ARGS(&targets[i])), "Get back buffer");
+                if (!drawBenchmark)
+                    checkHR(swapchain->GetBuffer(i, IID_PPV_ARGS(&targets[i])), "Get back buffer");
                 device->CreateRenderTargetView(targets[i].Get(), &view, rtv);
                 rtv.ptr += rtvStride;
             }

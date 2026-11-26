@@ -551,6 +551,8 @@ namespace render::detail
                     std::memcpy(static_cast<char*>(mapped) + i * 256, passes[i].uniforms.data(), sizeof(AAUniforms));
                 uniforms->Unmap(0, nullptr);
                 Begin();
+                if (external.beforeScene)
+                    external.beforeScene(commands.Get());
                 for (int i : {AAHistoryA, AAHistoryB, AAPrevMotion, AADummy})
                     if (textures[i].resource && (passes.front().uniforms[3][0] < .5f || i == AADummy))
                     {
