@@ -170,6 +170,15 @@ namespace render::detail
             });
         }
 
+        enum DrawQuery : uint32_t
+        {
+            QueryFrameStart,
+            QueryFrameEnd,
+            QueryResetEnd,
+            QueryComputeEnd,
+            QueryDrawStart,
+            DrawQueryCount
+        };
 #include "VulkanInstanceCull.inc"
         using DrawClock = std::chrono::steady_clock;
         VkQueryPool drawQueries{};
@@ -200,7 +209,7 @@ namespace render::detail
                 return;
             VkQueryPoolCreateInfo info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
             info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-            info.queryCount = 2;
+            info.queryCount = DrawQueryCount;
             check(vkCreateQueryPool(device, &info, nullptr, &drawQueries), "Create draw timestamp queries");
         }
 
@@ -209,11 +218,14 @@ namespace render::detail
             if (!drawMetricsPending)
                 return;
             drawMetricsPending = false;
-            uint64_t timestamps[2]{};
-            check(vkGetQueryPoolResults(device, drawQueries, 0, 2, sizeof(timestamps), timestamps,
+            uint64_t timestamps[DrawQueryCount]{};
+            const uint32_t count = instanceCullActive ? DrawQueryCount : QueryFrameEnd + 1;
+            check(vkGetQueryPoolResults(device, drawQueries, 0, count, count * sizeof(uint64_t), timestamps,
                 sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT), "Read draw timestamps");
             const auto mask = drawTimestampBits == 64 ? UINT64_MAX : (uint64_t(1) << drawTimestampBits) - 1;
-            const auto elapsed = (timestamps[1] - timestamps[0]) & mask;
+            const auto interval = [&](DrawQuery start, DrawQuery end) {
+                return double((timestamps[end] - timestamps[start]) & mask) * drawTimestampPeriod / 1e6;
+            };
             size_t submitted = scene.instances.size();
             if (instanceCullActive)
             {
@@ -232,8 +244,19 @@ namespace render::detail
                       << " present_ms=" << drawTimes.present << " present_thread_ms=" << drawTimes.presentThread
                       << " fence_ms=" << drawTimes.fence << " acquire_ms=" << drawTimes.acquire
                       << " idle_ms=" << drawTimes.idle
-                      << " gpu_ms=" << double(elapsed) * drawTimestampPeriod / 1e6
-                      << " submitted=" << submitted << '\n';
+                      << " gpu_ms=" << interval(QueryFrameStart, QueryFrameEnd);
+            // Narrow pipeline stages can report out of order on some devices.
+            // Keep the whole-frame sample and omit unusable phase intervals.
+            const auto resetEnd = interval(QueryFrameStart, QueryResetEnd);
+            const auto computeEnd = interval(QueryFrameStart, QueryComputeEnd);
+            const auto drawStart = interval(QueryFrameStart, QueryDrawStart);
+            if (instanceCullActive && resetEnd <= computeEnd && computeEnd <= drawStart
+                && drawStart <= interval(QueryFrameStart, QueryFrameEnd))
+                std::cout << " gpu_reset_ms=" << resetEnd
+                          << " gpu_cull_ms=" << interval(QueryResetEnd, QueryComputeEnd)
+                          << " gpu_handoff_ms=" << interval(QueryComputeEnd, QueryDrawStart)
+                          << " gpu_draw_ms=" << interval(QueryDrawStart, QueryFrameEnd);
+            std::cout << " submitted=" << submitted << '\n';
         }
 
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
@@ -1513,11 +1536,13 @@ namespace render::detail
             check(vkBeginCommandBuffer(cmd, &begin), "Begin commands");
             if (measure)
             {
-                vkCmdResetQueryPool(cmd, drawQueries, 0, 2);
-                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, drawQueries, 0);
+                vkCmdResetQueryPool(cmd, drawQueries, 0, DrawQueryCount);
+                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, drawQueries, QueryFrameStart);
             }
             if (!path)
-                encodeInstanceCull(cmd, uniform);
+                encodeInstanceCull(cmd, uniform, measure);
+            if (measure && instanceCullActive)
+                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, drawQueries, QueryDrawStart);
             VkClearValue clear{};
             const auto   background =
               ClearColorForTarget(format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB);
@@ -1558,7 +1583,7 @@ namespace render::detail
 #endif
             vkCmdEndRenderPass(cmd);
             if (measure)
-                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, drawQueries, 1);
+                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, drawQueries, QueryFrameEnd);
             check(vkEndCommandBuffer(cmd), "End commands");
             if (measure)
             {

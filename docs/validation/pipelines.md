@@ -125,3 +125,26 @@ same workload. The memory reduction was reproducible and the end-to-end
 speedup was not. Keep the index variant opt-in for further comparison.
 All six stress captures and all 12 SimpleInstancing frustum-edge views
 matched between modes.
+
+### GPU cull and draw timestamps
+
+The draw metrics trace also includes GPU time for the indirect argument
+reset, cull dispatch, handoff and scene draw. The intervals come from
+Vulkan timestamps in the same forward command buffer. The cull interval
+includes the reset-to-compute dependency. The draw interval includes the
+render pass and its vertex and fragment work. It does not separately
+measure vertex shader time. The trace omits phase fields when the driver
+reports markers out of order.
+
+On the Apple M4, the 1,472-triangle, 90%-visible workload spent about
+0.04 ms in culling and 10.7–11.0 ms in drawing before shader reuse. The
+indices mode added 0.17–0.32 ms to the draw interval in the two runs.
+The 50%-visible workload changed direction between runs, so these
+measurements do not isolate the cost of the index fetch.
+
+The shared vertex shader now loads the original instance record once and
+reuses its transform, winding and skin palette data. The generated SPIR-V
+shows one instance-buffer access in that vertex entry point. In the
+90%-visible workload, the default record-copy path's drawing interval
+fell to about 10.40 ms in both repeats. All six captures matched before
+and after in both modes. Record copy remains the default cull output.

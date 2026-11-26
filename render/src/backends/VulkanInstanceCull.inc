@@ -172,12 +172,14 @@ void prepareInstanceCull()
     instanceCullBase  = base;
 }
 
-void encodeInstanceCull(VkCommandBuffer command, const SceneUniforms& uniforms)
+void encodeInstanceCull(VkCommandBuffer command, const SceneUniforms& uniforms, bool measure = false)
 {
     if (!instanceCullActive)
         return;
     VkBufferCopy copy{0, 0, cullLayout.size() * sizeof(VkDrawIndirectCommand)};
     vkCmdCopyBuffer(command, cullReset.buffer, cullCommands.buffer, 1, &copy);
+    if (measure)
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_TRANSFER_BIT, drawQueries, QueryResetEnd);
     VkMemoryBarrier resetBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     resetBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     resetBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
@@ -233,6 +235,8 @@ void encodeInstanceCull(VkCommandBuffer command, const SceneUniforms& uniforms)
       command, VK_PIPELINE_BIND_POINT_COMPUTE, instanceCullLayout, 0, 1, &instanceCullSet, 0, nullptr);
     vkCmdPushConstants(command, instanceCullLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
     vkCmdDispatch(command, columns, (groups + columns - 1) / columns, 1);
+    if (measure)
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, drawQueries, QueryComputeEnd);
 
     VkMemoryBarrier drawBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     drawBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;

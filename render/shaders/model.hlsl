@@ -417,21 +417,23 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     if (scene && irradiance[2].w < 0)
         instanceId = visibleInstances[instanceId];
 #endif
-    float  palette       = scene ? loadInstance(instanceId).normalMatrix._m03 : 1;
+    InstanceData instance = (InstanceData)0;
+    if (scene)
+        instance = loadInstance(instanceId);
+    float  palette       = scene ? instance.normalMatrix._m03 : 1;
     Vertex v             = skinVertex(id, uint(max(0, palette - 1)), palette > .5);
     uint   materialIndex = uint(max(1, v.position.w)) - 1;
     v.position.w         = 1;
-    if (lightDirection.w > .5 && lightDirection.w < 1.5)
+    if (scene)
     {
-        InstanceData instance = loadInstance(instanceId);
         materialIndex += uint(instance.uv.x);
         v.position   = mul(instance.world, v.position);
         v.normal.xyz = mul((float3x3)instance.normalMatrix, v.normal.xyz);
     }
     VertexOut o;
     o.winding = 1;
-    if (lightDirection.w > .5 && lightDirection.w < 1.5)
-        o.winding = determinant((float3x3)loadInstance(instanceId).world) < 0 ? -1 : 1;
+    if (scene)
+        o.winding = determinant((float3x3)instance.world) < 0 ? -1 : 1;
     o.instanceIndex   = materialIndex;
     o.position        = mul(viewProjection, v.position);
     if (v.uv1.z > .5)
@@ -442,7 +444,7 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             other = float4(skinVertex(rasterOtherEndpoint(id, v.uv1.zw), uint(max(0, palette - 1)),
                                      palette > .5).position.xyz, 1);
             if (scene)
-                other = mul(loadInstance(instanceId).world, other);
+                other = mul(instance.world, other);
         }
         o.position = expandRasterPrimitive(o.position, mul(viewProjection, other), v.uv1.zw);
         o.winding = 0;
