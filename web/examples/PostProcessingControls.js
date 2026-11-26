@@ -28,6 +28,7 @@ export function addPostProcessingControls({ view, control, controller, changed }
       ['reinhard', 'Reinhard'],
       ['aces', 'ACES fit'],
       ['agx', 'AgX'],
+      ['aces-filmic', 'ACES Filmic'],
     ],
   )
   control(

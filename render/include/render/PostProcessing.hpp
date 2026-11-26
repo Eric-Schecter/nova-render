@@ -7,7 +7,8 @@ namespace render
         Linear,
         Reinhard,
         ACES,
-        AgX
+        AgX,
+        ACESFilmic
     };
     struct PostProcessingSettings
     {

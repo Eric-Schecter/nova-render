@@ -63,6 +63,11 @@ int main(int argc, char** argv)
             throw std::runtime_error("Bloom did not affect image");
         if (diff(images[2], images[5]) < .1)
             throw std::runtime_error("AgX did not change the ACES reference");
+        post.toneMapping = render::ToneMapping::ACESFilmic;
+        view.SetPostProcessing(post);
+        const auto filmic = draw();
+        if (diff(filmic, images[2]) < .1 || diff(filmic, images[5]) < .1)
+            throw std::runtime_error("ACES Filmic did not apply its own curve");
         post.toneMapping = render::ToneMapping::Linear;
         post.exposureEV  = -4;
         post.bloom       = false;

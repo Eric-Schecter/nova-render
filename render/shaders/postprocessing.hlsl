@@ -24,6 +24,17 @@ float4 rgbL(float3 c)
 {
     return float4(c, dot(gammaRGB(c), float3(.299, .587, .114)));
 }
+// ACES RRT + ODT fit used by three.js ACESFilmicToneMapping.
+float3 acesFilmicToneMap(float3 c)
+{
+    const float3x3 inputMatrix = float3x3(
+        .59719, .35458, .04823, .07600, .90834, .01566, .02840, .13383, .83777);
+    const float3x3 outputMatrix = float3x3(
+        1.60475, -.53108, -.07367, -.10208, 1.10813, -.00605, -.00327, -.07276, 1.07602);
+    c = mul(inputMatrix, c / .6);
+    float3 fit = (c * (c + .0245786) - .000090537) / (c * (.983729 * c + .4329510) + .238081);
+    return saturate(mul(outputMatrix, fit));
+}
 // AgX default-look approximation in Rec.2020, following the three.js/Filament
 // transform and Benjamin Wrensch's contrast fit. Returns linear Rec.709 for presentation.
 float3 agxToneMap(float3 c)
@@ -281,6 +292,12 @@ float4 PSMain(Varying i)
         c += bloomTex.SampleLevel(LinearSampler, i.uv, 0).rgb * aa[12].w;
     float exposure = exp2(aa[11].z) * (aa[11].w > .5 ? exposureTex.Load(int3(0, 0, 0)).r : 1);
     c              = max(c, 0) * exposure;
+    if (aa[11].y > 3.5)
+    {
+        // Match the reference viewer's display contrast after the filmic transform.
+        c = (acesFilmicToneMap(c) - .5) * aa[13].y + .5;
+        return rgbL(saturate(lerp(luminance(c).xxx, c, aa[13].x)));
+    }
     c              = lerp(luminance(c).xxx, c, aa[13].x);
     c              = .18 * pow(max(c, 0) / .18, aa[13].y);
     if (aa[11].y < .5)

@@ -1,4 +1,4 @@
-const toneMappings = ['linear', 'reinhard', 'aces', 'agx']
+const toneMappings = ['linear', 'reinhard', 'aces', 'agx', 'aces-filmic']
 export const defaultPostProcessing = () => ({
   enabled: false,
   toneMapping: 'aces',
