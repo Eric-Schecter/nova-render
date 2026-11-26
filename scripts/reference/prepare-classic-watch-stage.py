@@ -55,7 +55,7 @@ def make_stage(path):
         "post": {
             "enabled": True, "toneMapping": "aces-filmic", "exposureEV": 0,
             "contrast": 1.1, "bloom": True, "bloomThreshold": 1.82,
-            "bloomKnee": .67, "bloomIntensity": .39,
+            "bloomKnee": .67, "bloomIntensity": .12,
         },
     }
     path.write_text(json.dumps(stage, indent=2) + "\n")
