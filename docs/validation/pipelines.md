@@ -29,15 +29,28 @@ Vulkan submits scene batches with multi-draw indirect when the device supports
 reused while batch ranges stay the same. Outline masks retain per-instance
 draws for selected IDs.
 
-With a Vulkan and glTF-enabled test build, run the same geometry and camera path in both modes:
+Enable GPU frustum culling with `NOVA_VULKAN_GPU_CULL=1`. The HLSL compute
+shader tests conservative instance bounds, compacts visible records within
+each batch and updates its indirect instance count. It applies to eligible
+static raster scenes. Animated scenes, transparency, TAA, outlines and
+debug views use the existing submission path. Point and line batches
+remain visible because their geometry expands in clip space.
+
+With a Vulkan and glTF-enabled test build, run the same in-memory geometry
+and camera path in all three modes:
 
 ```sh
 cmake --build build --target nova_indirect_draw_benchmark
-NOVA_VULKAN_DRAW_TRACE=1 NOVA_VULKAN_FORCE_DIRECT=1 build/nova_indirect_draw_benchmark build/validation/indirect-draw/direct
-NOVA_VULKAN_DRAW_TRACE=1 build/nova_indirect_draw_benchmark build/validation/indirect-draw/indirect
+export NOVA_VULKAN_DRAW_TRACE=1 NOVA_VULKAN_DRAW_METRICS=1
+NOVA_VULKAN_FORCE_DIRECT=1 build/nova_indirect_draw_benchmark build/validation/gpu-cull/direct
+build/nova_indirect_draw_benchmark build/validation/gpu-cull/indirect
+NOVA_VULKAN_GPU_CULL=1 build/nova_indirect_draw_benchmark build/validation/gpu-cull/culled
 ```
 
-The benchmark uses in-memory geometry, 16 or 256 batches and 10,000, 50,000
-or 125,000 instances. It records synchronized frame times after warm-up and
-writes the last frame for pixel comparison. The two modes submit the same
-instance ranges, with shadows disabled.
+The benchmark uses 16 or 256 batches and 10,000, 50,000 or 125,000 instances.
+After warm-up it measures CPU command recording plus queue submission, Vulkan
+GPU timestamps for the forward command buffer and submitted instance counts.
+The CPU timer starts after swapchain acquisition and excludes instance uploads
+and fence waits. GPU time includes the cull dispatch and draw commands. The
+benchmark captures the final view with FXAA in a separate untimed frame.
+Shadows are disabled throughout.

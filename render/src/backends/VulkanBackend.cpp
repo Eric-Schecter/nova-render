@@ -7,6 +7,7 @@
 #endif
 #include "../VulkanPresentation.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -56,6 +57,7 @@ namespace render::detail
 #endif
             initDevice();
             initCommands();
+            initDrawMetrics();
         }
         void Resize(uint32_t newWidth, uint32_t newHeight) override
         {
@@ -66,7 +68,11 @@ namespace render::detail
             resized = true;
         }
         FrameResult DrawFrame() override { return draw(); }
-        void        WaitIdle() override { check(vkDeviceWaitIdle(device), "Wait idle"); }
+        void WaitIdle() override
+        {
+            check(vkDeviceWaitIdle(device), "Wait idle");
+            reportDrawMetrics();
+        }
         uint32_t    ValidationErrorCount() const override { return validationErrors; }
 #ifdef NOVA_HAS_UI
         bool uiRenderer = false;
@@ -145,7 +151,8 @@ namespace render::detail
                 for (size_t first = 0; first < indirectDraws.size();)
                 {
                     const auto count = uint32_t(std::min<size_t>(indirectBatchLimit, indirectDraws.size() - first));
-                    vkCmdDrawIndirect(command, indirectDrawBuffer.buffer, first * sizeof(VkDrawIndirectCommand),
+                    vkCmdDrawIndirect(command, instanceCullActive ? cullCommands.buffer : indirectDrawBuffer.buffer,
+                                      first * sizeof(VkDrawIndirectCommand),
                                       count, sizeof(VkDrawIndirectCommand));
                     first += count;
                 }
@@ -154,6 +161,51 @@ namespace render::detail
             DrawRasterInstances(pass, [&](const SceneDraw& draw, uint32_t count, uint32_t first) {
                 vkCmdDraw(command, draw.vertexCount, count, draw.firstVertex, first);
             });
+        }
+
+#include "VulkanInstanceCull.inc"
+        using DrawClock = std::chrono::steady_clock;
+        VkQueryPool drawQueries{};
+        uint32_t drawTimestampBits = 0;
+        float drawTimestampPeriod = 0;
+        double drawSubmitMs = 0;
+        bool drawMetricsPending = false;
+
+        void initDrawMetrics()
+        {
+            if (!drawTimestampBits || !std::getenv("NOVA_VULKAN_DRAW_METRICS"))
+                return;
+            VkQueryPoolCreateInfo info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            info.queryCount = 2;
+            check(vkCreateQueryPool(device, &info, nullptr, &drawQueries), "Create draw timestamp queries");
+        }
+
+        void reportDrawMetrics()
+        {
+            if (!drawMetricsPending)
+                return;
+            drawMetricsPending = false;
+            uint64_t timestamps[2]{};
+            check(vkGetQueryPoolResults(device, drawQueries, 0, 2, sizeof(timestamps), timestamps,
+                sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT), "Read draw timestamps");
+            const auto mask = drawTimestampBits == 64 ? UINT64_MAX : (uint64_t(1) << drawTimestampBits) - 1;
+            const auto elapsed = (timestamps[1] - timestamps[0]) & mask;
+            size_t submitted = scene.instances.size();
+            if (instanceCullActive)
+            {
+                void* mapped = nullptr;
+                check(vkMapMemory(device, cullCommands.memory, 0, cullLayout.size() * sizeof(VkDrawIndirectCommand), 0, &mapped),
+                    "Read visible instance counts");
+                const auto* commands = static_cast<const VkDrawIndirectCommand*>(mapped);
+                submitted = 0;
+                for (size_t i = 0; i < cullLayout.size(); ++i)
+                    submitted += commands[i].instanceCount;
+                vkUnmapMemory(device, cullCommands.memory);
+            }
+            std::cout << "Vulkan draw metrics: cpu_ms=" << drawSubmitMs
+                      << " gpu_ms=" << double(elapsed) * drawTimestampPeriod / 1e6
+                      << " submitted=" << submitted << '\n';
         }
 
         ModelBuffer aaPreviousUniform, aaPreviousPalette;
@@ -588,6 +640,7 @@ namespace render::detail
                 // Update the shared descriptors before any pass binds the model set.
                 if (!aaTriangle)
                     PrepareRasterAAInputs();
+                encodeInstanceCull(reinterpret_cast<VkCommandBuffer>(command), rasterAA.current);
                 EncodeProbeUpdate(reinterpret_cast<VkCommandBuffer>(command));
             };
             external.draw = [this](const AAPass& pass, void* command, void* targetPass) {
@@ -823,6 +876,8 @@ namespace render::detail
                     {
                         physical    = candidate;
                         queueFamily = i;
+                        instanceCullSupported = (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
+                        drawTimestampBits = families[i].timestampValidBits;
                         break;
                     }
                 }
@@ -852,8 +907,18 @@ namespace render::detail
                 features.drawIndirectFirstInstance = VK_TRUE;
                 indirectBatchLimit = properties.limits.maxDrawIndirectCount;
             }
+            drawTimestampPeriod = properties.limits.timestampPeriod;
+            instanceCullStorageLimit = properties.limits.maxStorageBufferRange;
+            instanceCullDispatchLimit = properties.limits.maxComputeWorkGroupCount[0];
+            std::error_code cullShaderError;
+            instanceCullSupported = instanceCullSupported && indirectBatchLimit
+                && properties.limits.maxPerStageDescriptorStorageBuffers >= 4
+                && properties.limits.maxDescriptorSetStorageBuffers >= 4
+                && std::getenv("NOVA_VULKAN_GPU_CULL")
+                && (config.shaderDirectory.empty()
+                    || std::filesystem::is_regular_file(config.shaderDirectory / "instance-cull.comp.spv", cullShaderError));
             if (std::getenv("NOVA_VULKAN_DRAW_TRACE"))
-                std::cout << "Vulkan draw mode: " << (indirectBatchLimit ? "multi-draw indirect" : "direct") << '\n';
+                std::cout << "Vulkan draw mode: " << (instanceCullSupported ? "multi-draw indirect with GPU culling" : indirectBatchLimit ? "multi-draw indirect" : "direct") << '\n';
             if (!supported.independentBlend)
                 throw std::runtime_error("Vulkan requires independentBlend for material transparency");
             features.independentBlend = VK_TRUE;
@@ -1297,9 +1362,14 @@ namespace render::detail
                 std::memcpy(mapped, model->jointMatrices.data(), model->jointMatrices.size() * sizeof(JointMatrix));
                 vkUnmapMemory(device, modelJoints.memory);
             }
+            instanceCullActive = false;
             if (model)
             {
-                size_t bytes = std::max(size_t(192), RasterInstances().size() * sizeof(InstanceData));
+                if (mode == RenderMode::Raster)
+                    prepareIndirectDraws();
+                prepareInstanceCull();
+                const auto compactCount = instanceCullActive ? scene.instances.size() : 0;
+                const size_t bytes = std::max(size_t(192), (RasterInstances().size() + compactCount) * sizeof(InstanceData));
                 if (bytes > sceneInstanceBytes)
                 {
                     validateSceneStorage(bytes);
@@ -1335,17 +1405,16 @@ namespace render::detail
             const auto sceneWidth = rectangle.width, sceneHeight = rectangle.height;
             if (!sceneWidth || !sceneHeight)
                 return FrameResult::Skipped;
-            if (mode == RenderMode::Raster)
-                prepareIndirectDraws();
             const auto* path     = DrawPathFrame(sceneWidth, sceneHeight);
             const bool  gpuFrame = path && path->pixels.empty() && rasterAA.lastGPUFrame;
             if (gpuFrame)
                 BindRasterGPUOutput();
             else if (path)
                 UploadPathImage(*path);
+            SceneUniforms uniform{};
             if (model)
             {
-                auto uniform = MakeSceneUniforms(
+                uniform = MakeSceneUniforms(
                   *model,
                   GetViewCamera(),
                   float(sceneWidth) / sceneHeight,
@@ -1378,9 +1447,18 @@ namespace render::detail
             if (result != VK_SUBOPTIMAL_KHR)
                 check(result, "Acquire image");
             const bool suboptimal = result == VK_SUBOPTIMAL_KHR;
+            const bool measure = drawQueries && !path && scene.active;
+            const auto recordStart = measure ? DrawClock::now() : DrawClock::time_point{};
             check(vkResetCommandBuffer(cmd, 0), "Reset commands");
             VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
             check(vkBeginCommandBuffer(cmd, &begin), "Begin commands");
+            if (measure)
+            {
+                vkCmdResetQueryPool(cmd, drawQueries, 0, 2);
+                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, drawQueries, 0);
+            }
+            if (!path)
+                encodeInstanceCull(cmd, uniform);
             VkClearValue clear{};
             const auto   background =
               ClearColorForTarget(format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB);
@@ -1420,6 +1498,8 @@ namespace render::detail
                 ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 #endif
             vkCmdEndRenderPass(cmd);
+            if (measure)
+                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, drawQueries, 1);
             check(vkEndCommandBuffer(cmd), "End commands");
             VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
             VkSubmitInfo         submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -1432,6 +1512,9 @@ namespace render::detail
             submit.pSignalSemaphores    = &finished[image];
             check(vkResetFences(device, 1, &fence), "Reset fence");
             check(vkQueueSubmit(queue, 1, &submit, fence), "Submit");
+            drawMetricsPending = measure;
+            if (measure)
+                drawSubmitMs = std::chrono::duration<double, std::milli>(DrawClock::now() - recordStart).count();
             VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
             present.waitSemaphoreCount = 1;
             present.pWaitSemaphores    = &finished[image];
@@ -1499,6 +1582,9 @@ namespace render::detail
                 destroySwapchain();
                 destroyModel();
                 destroyModelBuffer(indirectDrawBuffer);
+                destroyInstanceCull();
+                if (drawQueries)
+                    vkDestroyQueryPool(device, drawQueries, nullptr);
                 if (fence)
                     vkDestroyFence(device, fence, nullptr);
                 if (acquired)
