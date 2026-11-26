@@ -93,7 +93,8 @@ Vertex skinVertex(uint id, uint paletteOffset = 0, bool animate = true)
         float3 co0 = cross(b, c), co1 = cross(c, a), co2 = cross(a, b);
         float  det = dot(a, co0);
         float3 n   = co0 * input.normal.x + co1 * input.normal.y + co2 * input.normal.z;
-        v.normal   = float4(abs(det) > 1e-8 ? normalize(n / det) : input.normal.xyz, 0);
+        // Only transform the normal direction. The fourth component stores material transmission.
+        v.normal.xyz = abs(det) > 1e-8 ? normalize(n / det) : input.normal.xyz;
     }
     return v;
 }

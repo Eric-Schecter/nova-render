@@ -41,6 +41,8 @@ int main(int argc, char** argv)
                         player.Select(clip);
                         player.Seek(time);
                         auto data = *player.Model();
+                        // ModelVertex::normal[3] supplies transmission to the material shader.
+                        data.vertices.front().normal[3] = .75f;
                         if (scaled)
                             for (auto& matrix : data.jointMatrices)
                             {
