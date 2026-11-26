@@ -402,6 +402,9 @@ uint rasterOtherEndpoint(uint id, float2 primitive)
     uint corner = uint(primitive.x) - 1;
     return id - corner + (corner == 1 || corner >= 4 ? 0 : 1);
 }
+#ifdef NOVA_VISIBLE_INSTANCE_INDICES
+[[vk::binding(35, 0)]] StructuredBuffer<uint> visibleInstances : register(t35);
+#endif
 VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
 #ifdef NOVA_D3D12
@@ -409,6 +412,11 @@ VertexOut VSMain(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     instanceId += drawOffsets.y;
 #endif
     bool   scene         = lightDirection.w > .5 && lightDirection.w < 1.5;
+#ifdef NOVA_VISIBLE_INSTANCE_INDICES
+    // A negative raster far-plane slot enables the Vulkan visibility list.
+    if (scene && irradiance[2].w < 0)
+        instanceId = visibleInstances[instanceId];
+#endif
     float  palette       = scene ? loadInstance(instanceId).normalMatrix._m03 : 1;
     Vertex v             = skinVertex(id, uint(max(0, palette - 1)), palette > .5);
     uint   materialIndex = uint(max(1, v.position.w)) - 1;

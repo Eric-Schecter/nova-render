@@ -99,3 +99,29 @@ from about 7.5–7.6 ms to 8.7–8.8 ms. The synchronized frame median stayed
 around 8.8–9.0 ms across both settings. Keep the driver default for
 normal runs. Asynchronous submission is useful here as a diagnostic for
 where the calling thread waits.
+
+### Visible instance indices
+
+With GPU culling enabled, also set `NOVA_VULKAN_CULL_INDICES=1` to try
+the index-list path. The compute shader writes one 32-bit index per
+visible instance. The model vertex shader uses that index to look up
+the original record. The draw command's instance count and batch ranges
+retain the same meaning as in record-copy mode. The extra list reserves
+16 KiB for the 4,096-instance heavy benchmark, compared to 768 KiB of
+compaction space in record-copy mode.
+
+Run the same `--heavy` benchmark with and without the index flag and
+reverse the order for a repeat. Keep the MoltenVK queue submission
+setting at its default. Check the trace for `GPU culling (indices)` or
+`GPU culling (records)`. The index path requires the additional storage
+binding and its two Vulkan shader variants. The record-copy path remains
+available for devices or shader directories that lack them.
+
+On the M4/MoltenVK repeat at 1,472 triangles and 50% visibility, copy and
+index modes submitted the same 2,048 instances. Queue submission was
+1.18 vs 0.98 ms, GPU time was 6.12 vs 6.31 ms, and synchronized frame
+time was 9.58 vs 9.34 ms. The first run gave 8.37 vs 9.68 ms for the
+same workload. The memory reduction was reproducible and the end-to-end
+speedup was not. Keep the index variant opt-in for further comparison.
+All six stress captures and all 12 SimpleInstancing frustum-edge views
+matched between modes.

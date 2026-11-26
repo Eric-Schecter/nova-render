@@ -22,7 +22,12 @@ struct CullParameters
     uint instanceCount, unused, dispatchWidth, pad;
 };
 [[vk::push_constant]] CullParameters params;
+#ifdef NOVA_VISIBLE_INSTANCE_INDICES
+[[vk::binding(0, 0)]] StructuredBuffer<InstanceRecord> instances : register(t2);
+[[vk::binding(4, 0)]] RWStructuredBuffer<uint> visibleInstances : register(u2);
+#else
 [[vk::binding(0, 0)]] RWStructuredBuffer<InstanceRecord> instances : register(u0);
+#endif
 [[vk::binding(1, 0)]] StructuredBuffer<uint> instanceBatches : register(t0);
 [[vk::binding(2, 0)]] StructuredBuffer<BatchBounds> bounds : register(t1);
 [[vk::binding(3, 0)]] RWStructuredBuffer<DrawCommand> commands : register(u1);
@@ -35,13 +40,22 @@ void CullInstances(uint3 id : SV_DispatchThreadID)
         return;
     uint batch = instanceBatches[index];
     BatchBounds box = bounds[batch];
+#ifndef NOVA_VISIBLE_INSTANCE_INDICES
     InstanceRecord instance = instances[index];
+#endif
     if (box.extent.w > 0)
     {
+#ifdef NOVA_VISIBLE_INSTANCE_INDICES
+        float3 a = instances[index].world[0].xyz;
+        float3 b = instances[index].world[1].xyz;
+        float3 c = instances[index].world[2].xyz;
+        float3 center = instances[index].world[3].xyz + a * box.center.x + b * box.center.y + c * box.center.z;
+#else
         float3 a = instance.world[0].xyz;
         float3 b = instance.world[1].xyz;
         float3 c = instance.world[2].xyz;
         float3 center = instance.world[3].xyz + a * box.center.x + b * box.center.y + c * box.center.z;
+#endif
         [unroll]
         for (uint i = 0; i < 6; ++i)
         {
@@ -56,5 +70,9 @@ void CullInstances(uint3 id : SV_DispatchThreadID)
     }
     uint slot;
     InterlockedAdd(commands[batch].instanceCount, 1, slot);
+#ifdef NOVA_VISIBLE_INSTANCE_INDICES
+    visibleInstances[commands[batch].firstInstance + slot] = index;
+#else
     instances[commands[batch].firstInstance + slot] = instance;
+#endif
 }

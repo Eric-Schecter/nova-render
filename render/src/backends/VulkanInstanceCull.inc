@@ -10,6 +10,7 @@ struct CullParameters
 static_assert(sizeof(CullBounds) == 32 && sizeof(CullParameters) == 112);
 
 bool                               instanceCullSupported = false, instanceCullActive = false;
+bool                               instanceCullIndexed       = false;
 VkDeviceSize                       instanceCullStorageLimit  = 0;
 uint32_t                           instanceCullDispatchLimit = 0, instanceCullBase = 0;
 VkDescriptorSetLayout              instanceCullSetLayout{};
@@ -17,22 +18,43 @@ VkDescriptorPool                   instanceCullPool{};
 VkDescriptorSet                    instanceCullSet{};
 VkPipelineLayout                   instanceCullLayout{};
 VkPipeline                         instanceCullPipeline{};
-ModelBuffer                        cullReset, cullCommands, cullBatches, cullBounds;
+ModelBuffer                        cullReset, cullCommands, cullBatches, cullBounds, cullVisible;
 std::weak_ptr<const ModelData>     instanceCullModel;
 std::vector<VkDrawIndirectCommand> cullLayout;
 
+void bindVisibleInstances()
+{
+    if (!instanceCullIndexed)
+        return;
+    const VkDescriptorBufferInfo info{cullVisible.buffer ? cullVisible.buffer : modelSkin.buffer, 0, VK_WHOLE_SIZE};
+    VkWriteDescriptorSet         write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet          = modelSet;
+    write.dstBinding      = 35;
+    write.descriptorCount = 1;
+    write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.pBufferInfo     = &info;
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+}
+
+void applyVisibleInstanceFlag(SceneUniforms& uniforms) const
+{
+    if (instanceCullIndexed && instanceCullActive)
+        uniforms.irradiance[2][3] = -1;
+}
+
 void createInstanceCullPipeline()
 {
-    VkDescriptorSetLayoutBinding bindings[4]{};
-    for (uint32_t i = 0; i < 4; ++i)
+    const uint32_t               bindingCount = instanceCullIndexed ? 5 : 4;
+    VkDescriptorSetLayoutBinding bindings[5]{};
+    for (uint32_t i = 0; i < bindingCount; ++i)
         bindings[i] = {i, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    setInfo.bindingCount = 4;
+    setInfo.bindingCount = bindingCount;
     setInfo.pBindings    = bindings;
     check(
       vkCreateDescriptorSetLayout(device, &setInfo, nullptr, &instanceCullSetLayout),
       "Create instance cull set layout");
-    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4};
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, bindingCount};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets       = 1;
     poolInfo.poolSizeCount = 1;
@@ -54,7 +76,7 @@ void createInstanceCullPipeline()
       vkCreatePipelineLayout(device, &layoutInfo, nullptr, &instanceCullLayout),
       "Create instance cull pipeline layout");
 
-    const auto                  module = shader("instance-cull.comp.spv");
+    const auto module = shader(instanceCullIndexed ? "instance-cull-indexed.comp.spv" : "instance-cull.comp.spv");
     VkComputePipelineCreateInfo create{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
     create.layout       = instanceCullLayout;
     create.stage        = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
@@ -68,17 +90,18 @@ void createInstanceCullPipeline()
 
 void prepareInstanceCull()
 {
-    instanceCullActive = instanceCullSupported && mode == RenderMode::Raster && scene.active && model
-                         && modelRaster.view == GBufferView::Final && model->skinInputs.empty()
-                         && !HasRasterTransparency(model.get()) && !HasSceneOutlines()
-                         && GetAntiAliasing().method != AAMethod::TAA && !scene.instances.empty()
-                         && scene.draws.size() >= 2
-                         && (VkDeviceSize(RasterInstances().size()) + scene.instances.size()) * sizeof(InstanceData)
-                              <= instanceCullStorageLimit;
+    instanceCullActive =
+      instanceCullSupported && mode == RenderMode::Raster && scene.active && model
+      && modelRaster.view == GBufferView::Final && model->skinInputs.empty() && !HasRasterTransparency(model.get())
+      && !HasSceneOutlines() && GetAntiAliasing().method != AAMethod::TAA && !scene.instances.empty()
+      && scene.draws.size() >= 2
+      && (VkDeviceSize(RasterInstances().size()) + (instanceCullIndexed ? 0 : scene.instances.size()))
+             * sizeof(InstanceData)
+           <= instanceCullStorageLimit;
     if (!instanceCullActive)
         return;
 
-    const auto base        = uint32_t(RasterInstances().size());
+    const auto base        = instanceCullIndexed ? 0 : uint32_t(RasterInstances().size());
     const auto sameCommand = [](const auto& a, const auto& b) {
         return a.vertexCount == b.vertexCount && a.instanceCount == b.instanceCount && a.firstVertex == b.firstVertex
                && a.firstInstance == b.firstInstance;
@@ -139,6 +162,11 @@ void prepareInstanceCull()
       nullptr);
     replace(cullBatches, batches.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, batches.data());
     replace(cullBounds, boxes.size() * sizeof(CullBounds), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, boxes.data());
+    if (instanceCullIndexed)
+    {
+        replace(cullVisible, scene.instances.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, nullptr);
+        bindVisibleInstances();
+    }
     cullLayout        = indirectDraws;
     instanceCullModel = model;
     instanceCullBase  = base;
@@ -169,9 +197,11 @@ void encodeInstanceCull(VkCommandBuffer command, const SceneUniforms& uniforms)
       {sceneInstanceBuffer.buffer, 0, VK_WHOLE_SIZE},
       {cullBatches.buffer, 0, VK_WHOLE_SIZE},
       {cullBounds.buffer, 0, VK_WHOLE_SIZE},
-      {cullCommands.buffer, 0, VK_WHOLE_SIZE}};
-    VkWriteDescriptorSet writes[4]{};
-    for (uint32_t i = 0; i < 4; ++i)
+      {cullCommands.buffer, 0, VK_WHOLE_SIZE},
+      {cullVisible.buffer, 0, VK_WHOLE_SIZE}};
+    const uint32_t       bindingCount = instanceCullIndexed ? 5 : 4;
+    VkWriteDescriptorSet writes[5]{};
+    for (uint32_t i = 0; i < bindingCount; ++i)
     {
         writes[i]                 = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         writes[i].dstSet          = instanceCullSet;
@@ -180,7 +210,7 @@ void encodeInstanceCull(VkCommandBuffer command, const SceneUniforms& uniforms)
         writes[i].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[i].pBufferInfo     = &buffers[i];
     }
-    vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+    vkUpdateDescriptorSets(device, bindingCount, writes, 0, nullptr);
 
     CullParameters params{};
     for (uint32_t axis = 0; axis < 4; ++axis)
@@ -227,6 +257,7 @@ void destroyInstanceCull()
     destroyModelBuffer(cullCommands);
     destroyModelBuffer(cullBatches);
     destroyModelBuffer(cullBounds);
+    destroyModelBuffer(cullVisible);
     if (instanceCullPipeline)
         vkDestroyPipeline(device, instanceCullPipeline, nullptr);
     if (instanceCullLayout)

@@ -18,6 +18,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 static void check(VkResult result, const char* operation)
@@ -243,7 +244,9 @@ namespace render::detail
         VkPipeline AAPipeline(const char* name, bool sky, uint32_t samples, VkRenderPass targetPass,
                               const char* fragmentOverride = nullptr)
         {
-            const auto vertex   = shader((std::string(name) + ".vert.spv").c_str()),
+            const std::string_view program = name;
+            const bool remap = instanceCullIndexed && (program == "model" || program == "model-gbuffer");
+            const auto vertex   = shader(remap ? "model-visible-indices.vert.spv" : (std::string(name) + ".vert.spv").c_str()),
                        fragment = shader(fragmentOverride ? fragmentOverride : (std::string(name) + ".frag.spv").c_str());
             VkPipelineShaderStageCreateInfo stages[2]{};
             for (int i = 0; i < 2; i++)
@@ -468,7 +471,8 @@ namespace render::detail
         }
         void PrepareRasterAAInputs()
         {
-            const auto& current  = rasterAA.current;
+            auto current = rasterAA.current;
+            applyVisibleInstanceFlag(current);
             const auto& previous = rasterAA.frames ? rasterAA.previous : current;
             const auto& palette  = rasterAA.frames ? rasterAA.previousJoints : model->jointMatrices;
             if (!aaPreviousUniform.buffer)
@@ -944,8 +948,16 @@ namespace render::detail
                 && std::getenv("NOVA_VULKAN_GPU_CULL")
                 && (config.shaderDirectory.empty()
                     || std::filesystem::is_regular_file(config.shaderDirectory / "instance-cull.comp.spv", cullShaderError));
+            instanceCullIndexed = instanceCullSupported && std::getenv("NOVA_VULKAN_CULL_INDICES")
+                && properties.limits.maxPerStageDescriptorStorageBuffers >= 6
+                && properties.limits.maxDescriptorSetStorageBuffers >= 9
+                && (config.shaderDirectory.empty()
+                    || (std::filesystem::is_regular_file(config.shaderDirectory / "instance-cull-indexed.comp.spv", cullShaderError)
+                        && std::filesystem::is_regular_file(config.shaderDirectory / "model-visible-indices.vert.spv", cullShaderError)));
             if (std::getenv("NOVA_VULKAN_DRAW_TRACE"))
-                std::cout << "Vulkan draw mode: " << (instanceCullSupported ? "multi-draw indirect with GPU culling" : indirectBatchLimit ? "multi-draw indirect" : "direct") << '\n';
+                std::cout << "Vulkan draw mode: "
+                          << (instanceCullSupported ? (instanceCullIndexed ? "GPU culling (indices)" : "GPU culling (records)")
+                                                    : indirectBatchLimit ? "multi-draw indirect" : "direct") << '\n';
             if (!supported.independentBlend)
                 throw std::runtime_error("Vulkan requires independentBlend for material transparency");
             features.independentBlend = VK_TRUE;
@@ -1212,7 +1224,7 @@ namespace render::detail
             VkShaderModule vert = VK_NULL_HANDLE, frag = VK_NULL_HANDLE;
             try
             {
-                vert = shader(model ? "model.vert.spv" : "triangle.vert.spv");
+                vert = shader(model ? (instanceCullIndexed ? "model-visible-indices.vert.spv" : "model.vert.spv") : "triangle.vert.spv");
                 frag = shader(model ? (bindlessSet ? "model-bindless-present.frag.spv" : "model.frag.spv")
                                     : "triangle.frag.spv");
                 VkPipelineShaderStageCreateInfo stages[2]{};
@@ -1410,7 +1422,7 @@ namespace render::detail
                 if (mode == RenderMode::Raster)
                     prepareIndirectDraws();
                 prepareInstanceCull();
-                const auto compactCount = instanceCullActive ? scene.instances.size() : 0;
+                const auto compactCount = instanceCullActive && !instanceCullIndexed ? scene.instances.size() : 0;
                 const size_t bytes = std::max(size_t(192), (RasterInstances().size() + compactCount) * sizeof(InstanceData));
                 if (bytes > sceneInstanceBytes)
                 {
@@ -1467,6 +1479,7 @@ namespace render::detail
                 uniform.skyParams[2]      = gpuFrame ? 2.f : path ? 1.0f : 0.0f;
                 uniform.lightDirection[3] = MaterialMode();
                 ApplyRasterSettings(uniform);
+                applyVisibleInstanceFlag(uniform);
                 void* mapped = nullptr;
                 check(vkMapMemory(device, modelUniform.memory, 0, sizeof(uniform), 0, &mapped), "Map scene uniforms");
                 std::memcpy(mapped, &uniform, sizeof(uniform));

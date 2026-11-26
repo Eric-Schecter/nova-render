@@ -65,8 +65,19 @@ if(NOVA_ENABLE_VULKAN)
         COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 -T cs_6_0 -E CullInstances
             -Fo "${cull_shader}" "${cull_source}"
         DEPENDS "${cull_source}" "${NOVA_DXC_EXECUTABLE}" VERBATIM)
-    list(APPEND SHADER_OUTPUTS "${cull_shader}")
-    add_custom_target(nova_instance_cull_shader DEPENDS "${cull_shader}")
+    set(indexed_cull_shader "${SHADER_OUTPUT_DIR}/instance-cull-indexed.comp.spv")
+    set(indexed_model_shader "${SHADER_OUTPUT_DIR}/model-visible-indices.vert.spv")
+    add_custom_command(OUTPUT "${indexed_cull_shader}" "${indexed_model_shader}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_OUTPUT_DIR}"
+        COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 -DNOVA_VISIBLE_INSTANCE_INDICES=1
+            -T cs_6_0 -E CullInstances -Fo "${indexed_cull_shader}" "${cull_source}"
+        COMMAND "${NOVA_DXC_EXECUTABLE}" -spirv -fspv-target-env=vulkan1.0 -fvk-invert-y -DNOVA_VISIBLE_INSTANCE_INDICES=1
+            -T vs_6_0 -E VSMain -Fo "${indexed_model_shader}" "${PROJECT_SOURCE_DIR}/render/shaders/model.hlsl"
+        DEPENDS "${cull_source}" "${NOVA_DXC_EXECUTABLE}" render/shaders/model.hlsl
+            render/shaders/material-sheen.hlsli render/shaders/material-iridescence.hlsli
+            render/shaders/material-anisotropy.hlsli VERBATIM)
+    list(APPEND SHADER_OUTPUTS "${cull_shader}" "${indexed_cull_shader}" "${indexed_model_shader}")
+    add_custom_target(nova_instance_cull_shader DEPENDS "${cull_shader}" "${indexed_cull_shader}" "${indexed_model_shader}")
     add_dependencies(triangle_shaders nova_instance_cull_shader)
 endif()
 set(embedded_shader_cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedShaders.cpp")
