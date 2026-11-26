@@ -54,3 +54,25 @@ The CPU timer starts after swapchain acquisition and excludes instance uploads
 and fence waits. GPU time includes the cull dispatch and draw commands. The
 benchmark captures the final view with FXAA in a separate untimed frame.
 Shadows are disabled throughout.
+
+### Heavier meshes and visibility sweep
+
+Append `--heavy` to the three benchmark invocations to run 4,096 instances
+across 64 batches with 352 or 1,472 triangles per instance. Visibility stays
+at approximately 10%, 50% or 90% along the same camera track. Each mode
+submits all 4,096 instances unless GPU culling is active. Expected culled
+counts are 409, 2,048 and 3,686.
+
+For frame-time comparisons, set `NOVA_VULKAN_BENCH_IMMEDIATE=1` and check
+that the trace reports `immediate`. This requests immediate presentation if
+the surface supports it. The regular renderer uses FIFO. Run the modes
+again in reverse order to check for drift. The Apple M4/MoltenVK timing
+runs used `NOVA_VULKAN_BENCH_NO_VALIDATION=1`.
+
+On the M4 test, the 1,472-triangle workloads with 10% or 50% visibility
+reduced synchronized median frame time by 24–32% versus direct drawing
+in the two runs. At 90% visibility the reduction was about 8–9%. The
+352-triangle workloads showed no consistent end-to-end improvement.
+CPU record-and-submit is wall time and can include driver wait. Read it
+alongside GPU timestamps and synchronized frame time. The final images
+matched across modes in every case.

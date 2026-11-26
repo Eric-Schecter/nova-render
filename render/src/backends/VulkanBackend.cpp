@@ -1055,6 +1055,18 @@ namespace render::detail
                     break;
                 }
             info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+            if (std::getenv("NOVA_VULKAN_BENCH_IMMEDIATE"))
+            {
+                uint32_t modeCount = 0;
+                check(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &modeCount, nullptr), "Count present modes");
+                std::vector<VkPresentModeKHR> modes(modeCount);
+                check(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &modeCount, modes.data()), "Read present modes");
+                if (std::find(modes.begin(), modes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != modes.end())
+                    info.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+                if (std::getenv("NOVA_VULKAN_DRAW_TRACE"))
+                    std::cout << "Vulkan benchmark present mode: "
+                              << (info.presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate" : "FIFO") << '\n';
+            }
             info.clipped     = VK_TRUE;
             check(vkCreateSwapchainKHR(device, &info, nullptr, &swapchain), "Create swapchain");
             check(vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr), "Count swapchain images");
