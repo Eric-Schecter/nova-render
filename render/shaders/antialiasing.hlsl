@@ -544,7 +544,7 @@ float4 reflectionTemporal(int2 lowPixel)
 
     // Use nearby samples from the same surface to limit isolated fireflies on rough materials.
     float3 neighbors = 0, upper = current.rgb;
-    float count = 0;
+    float count = 0, brightestNeighbor = 0;
     const int2 offsets[4] = {int2(-1, 0), int2(1, 0), int2(0, -1), int2(0, 1)};
     [unroll] for (int i = 0; i < 4; ++i)
     {
@@ -564,11 +564,20 @@ float4 reflectionTemporal(int2 lowPixel)
         if (dot(normal, reflectionNormal(tapNormal)) < .9)
             continue;
         neighbors += sampleValue.rgb;
+        brightestNeighbor = max(brightestNeighbor, reflectionLuma(sampleValue.rgb));
         upper = max(upper, sampleValue.rgb);
         count += 1;
     }
     if (count >= 2)
     {
+        // An isolated spike can occur on smooth surfaces too. Compare against the
+        // brightest compatible tap so a line shared by neighbors keeps its energy.
+        if (count >= 3)
+        {
+            float isolatedCeiling = max(.04, 3 * brightestNeighbor);
+            current.rgb *= min(1, isolatedCeiling / max(.0001, reflectionLuma(current.rgb)));
+            upper = max(current.rgb, min(upper, isolatedCeiling.xxx));
+        }
         float3 mean = neighbors / count;
         float ceiling = max(.025, 4 * reflectionLuma(mean));
         float suppression = smoothstep(.25, .65, roughness);
