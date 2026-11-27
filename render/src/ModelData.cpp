@@ -884,6 +884,20 @@ namespace render::detail
             Material slot;
             slot.name       = sourceMaterial.name;
             const auto& mat = sourceMaterial;
+            if (mat.extras.Has("novaTriplanar"))
+            {
+                const auto& value = mat.extras.Get("novaTriplanar");
+                if (!value.IsBool())
+                    throw std::runtime_error("novaTriplanar must be boolean");
+                slot.triplanar = value.Get<bool>();
+            }
+            if (mat.extras.Has("novaHybridReflectionStrength"))
+            {
+                const auto& value = mat.extras.Get("novaHybridReflectionStrength");
+                if (!value.IsNumber())
+                    throw std::runtime_error("novaHybridReflectionStrength must be numeric");
+                slot.hybridReflectionStrength = float(value.GetNumberAsDouble());
+            }
             const auto& pbr = mat.pbrMetallicRoughness;
             if (mat.alphaMode != "OPAQUE" && mat.alphaMode != "MASK" && mat.alphaMode != "BLEND")
                 throw std::runtime_error("Invalid glTF alpha mode");

@@ -34,6 +34,7 @@ export function validateMaterial(m) {
     alphaCutoff: m.alphaCutoff ?? 0.5,
     doubleSided: m.doubleSided ?? false,
     unlit: m.unlit ?? false,
+    triplanar: m.triplanar ?? false,
     emissiveTexCoord: m.emissiveTexCoord ?? 0,
     baseColorWrap: m.baseColorWrap ?? 0,
     thicknessFactor: m.thicknessFactor ?? 0,
@@ -142,6 +143,7 @@ export function validateMaterial(m) {
     range(out[key], max)
     out[key] = Math.fround(out[key])
   }
+  if (typeof out.triplanar !== 'boolean') throw Error('triplanar must be boolean')
   if (out.hybridReflectionStrength !== null) {
     range(out.hybridReflectionStrength, 1)
     out.hybridReflectionStrength = Math.fround(out.hybridReflectionStrength)
@@ -243,7 +245,7 @@ export function packMaterials(data) {
       (m.iridescenceTexture ? 16 : 0) | (m.iridescenceThicknessTexture ? 32 : 0) |
       ((m.iridescenceTexCoords?.[0] ?? 0) << 6) | ((m.iridescenceTexCoords?.[1] ?? 0) << 7) |
       (Math.round(((m.iridescenceBaseIor ?? 1.5) - 1) * 2047.5) << 8) |
-      (m.anisotropyTexture ? 1 << 20 : 0) | ((m.anisotropyTexCoord ?? 0) << 21)
+      (m.anisotropyTexture ? 1 << 20 : 0) | ((m.anisotropyTexCoord ?? 0) << 21) | (m.triplanar ? 1 << 22 : 0)
     record.set([m.iridescenceFactor ?? 0, m.iridescenceIor ?? 1.3,
       m.iridescenceThicknessMinimum ?? 100, m.iridescenceThicknessMaximum ?? 400], 28)
     if (m.independentUVTransform) {

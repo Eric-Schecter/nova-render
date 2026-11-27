@@ -252,7 +252,8 @@ namespace render::detail
               | (m.iridescenceTexture ? 16u : 0u) | (m.iridescenceThicknessTexture ? 32u : 0u)
               | (m.iridescenceTexCoords[0] << 6) | (m.iridescenceTexCoords[1] << 7)
               | (uint32_t(std::lround((m.iridescenceBaseIor - 1) * 2047.5f)) << 8)
-              | (m.anisotropyTexture ? 1u << 20 : 0u) | (m.anisotropyTexCoord << 21));
+              | (m.anisotropyTexture ? 1u << 20 : 0u) | (m.anisotropyTexCoord << 21)
+              | (m.triplanar ? 1u << 22 : 0u));
             record[28] = m.iridescenceFactor;
             record[29] = m.iridescenceIor;
             record[30] = m.iridescenceThicknessMinimum;

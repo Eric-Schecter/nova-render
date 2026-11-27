@@ -472,6 +472,29 @@ float2 independentTextureUV(InstanceData material, float2 uv, uint map, bool del
       dot(float3(material.normalMatrix[1][1], material.normalMatrix[2][1], material.normalMatrix[3][1]), mapped),
       dot(float3(material.normalMatrix[0][2], material.normalMatrix[1][2], material.normalMatrix[2][2]), mapped));
 }
+bool materialTriplanar(InstanceData material)
+{
+    return (uint(material.normalMatrix[0][1]) & (1u << 22)) != 0;
+}
+float2 triplanarUV(float3 position, int axis)
+{
+    return axis == 0 ? position.zy : axis == 1 ? position.xz : position.xy;
+}
+float3 triplanarWeights(float3 normal)
+{
+    float3 weight = abs(normal);
+    return weight / max(weight.x + weight.y + weight.z, 1e-6);
+}
+float3 triplanarNormalOffset(float3 encoded, int axis)
+{
+    float2 slope = (encoded.xy * 2 - 1) / max(.1, encoded.z * 2 - 1);
+    return axis == 0 ? float3(0, slope.y, slope.x) :
+           axis == 1 ? float3(slope.x, 0, slope.y) : float3(slope, 0);
+}
+float3 triplanarNormal(float3 normal, float3 offset, float scale)
+{
+    return normalize(normal + scale * (offset - normal * dot(normal, offset)));
+}
 float4 materialSheen(InstanceData material)
 {
 #if defined(NOVA_DISABLE_SHEEN)
@@ -868,23 +891,42 @@ SurfaceData sampleSurface(VertexOut input)
                 coatDX * materialRecord.uv.xy, coatDY * materialRecord.uv.xy).xyz * 2 - 1,
                 coatUV.scale, dp1, dp2, coatDX, coatDY);
     }
+    float4 mr;
+    // Derivatives are evaluated outside the per-material projection branch.
     float2 normalUV = independentTextureUV(materialRecord, input.uv, 1u);
     float2 normalUVScale = lightDirection.w > .5 ? materialRecord.uv.xy : 1;
     float2 normalAtlasUV = lightDirection.w > .5 ? frac(normalUV) * normalUVScale + materialRecord.uv.zw : normalUV;
     float2 duv1 = ddx(normalUV), duv2 = ddy(normalUV);
+    bool independentMR = (uint(materialRecord.normalMatrix[3][2]) & 2u) != 0;
+    float2 mrUV = independentMR
+      ? frac(independentTextureUV(materialRecord, input.uv, 2u)) * materialRecord.uv.xy + materialRecord.uv.zw : uv;
+    float2 mrDX = ddx(mrUV), mrDY = ddy(mrUV);
     float3 p2perp = cross(dp2, n), p1perp = cross(n, dp1);
     float3 t = p2perp * duv1.x + p1perp * duv2.x, b = p2perp * duv1.y + p1perp * duv2.y;
-    // Use gradients before wrapping to avoid selecting a coarse mip at tile seams.
-    float3 sampled = MODEL_MAP(normalTexture, 1).SampleGrad(MODEL_SAMPLER, normalAtlasUV,
-        duv1 * normalUVScale, duv2 * normalUVScale).xyz * 2 - 1;
-    float basis = max(dot(t, t), dot(b, b));
-    // Screen derivatives shrink as resolution increases, but normal strength must stay constant.
-    float3 perturbed = (t * sampled.x + b * sampled.y) * (matFactor.z * rsqrt(max(basis, 1e-20))) + n * sampled.z;
-    n = (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
-    bool independentMR = (uint(materialRecord.normalMatrix[3][2]) & 2u) != 0;
-    float2 mrUV = independentMR ? frac(independentTextureUV(materialRecord, input.uv, 2u)) *
-      materialRecord.uv.xy + materialRecord.uv.zw : uv;
-    float4 mr = MODEL_MAP(materialTexture, 2).Sample(MODEL_SAMPLER, mrUV);
+    bool triplanar = materialTriplanar(materialRecord);
+    if (triplanar)
+    {
+        float3 weights = triplanarWeights(n), offset = 0;
+        mr = 0;
+        [unroll] for (int axis = 0; axis < 3; ++axis)
+        {
+            float2 projected = frac(triplanarUV(input.worldPosition, axis)) * normalUVScale + materialRecord.uv.zw;
+            float2 dx = triplanarUV(dp1, axis) * normalUVScale, dy = triplanarUV(dp2, axis) * normalUVScale;
+            offset += weights[axis] * triplanarNormalOffset(
+              MODEL_MAP(normalTexture, 1).SampleGrad(MODEL_SAMPLER, projected, dx, dy).xyz, axis);
+            mr += weights[axis] * MODEL_MAP(materialTexture, 2).SampleGrad(MODEL_SAMPLER, projected, dx, dy);
+        }
+        n = triplanarNormal(n, offset, matFactor.z);
+    }
+    else
+    {
+        float3 sampled = MODEL_MAP(normalTexture, 1).SampleGrad(MODEL_SAMPLER, normalAtlasUV,
+            duv1 * normalUVScale, duv2 * normalUVScale).xyz * 2 - 1;
+        float basis = max(dot(t, t), dot(b, b));
+        float3 perturbed = (t * sampled.x + b * sampled.y) * (matFactor.z * rsqrt(max(basis, 1e-20))) + n * sampled.z;
+        n = (basis > 1e-20 && dot(perturbed, perturbed) > 1e-12) ? normalize(perturbed) : n;
+        mr = MODEL_MAP(materialTexture, 2).SampleGrad(MODEL_SAMPLER, mrUV, mrDX, mrDY);
+    }
     bool useMirrorRoughness = irradiance[1].w > .5 && irradiance[3].w > .5
                                && loadInstance(uint(irradiance[3].w) - 1).world._m13 > .5;
     float metallic = saturate(mr.b * matFactor.x);
@@ -906,7 +948,7 @@ SurfaceData sampleSurface(VertexOut input)
     uint materialFlags = uint(alphaInfo);
     result.volume = float4(materialRecord.world._m03, materialRecord.world._m13,
                           materialRecord.world._m23, materialRecord.world._m33 * input.dielectric.z);
-    if (independentMR && (materialFlags & 1536u))
+    if ((independentMR || triplanar) && (materialFlags & 1536u))
         mr.ra = MODEL_MAP(materialTexture, 2).SampleLevel(MODEL_SAMPLER, uv, 0).ra;
     if ((materialFlags & 512u) != 0)
         result.dielectric.x *= mr.a;
@@ -1857,7 +1899,8 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
     float2 normalAtlasUV = frac(independentTextureUV(mat, tex0, 1u)) * mat.uv.xy + mat.uv.zw;
     float  uvDet = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
     float3 hitTangent = 0, hitBitangent = 0;
-    if (abs(uvDet) > 1e-8)
+    bool triplanar = materialTriplanar(mat);
+    if (!triplanar && abs(uvDet) > 1e-8)
     {
         float3 edge1 = mul((float3x3)loadInstance(instance).world, localEdge1);
         float3 edge2 = mul((float3x3)loadInstance(instance).world, localEdge2);
@@ -1873,12 +1916,26 @@ float3 hybridHitRadiance(uint instance, uint hitTri, float2 bary, float3 positio
         if (dot(mapped, mapped) > 1e-12)
             hit.normal = normalize(mapped);
     }
-    hit.anisotropy = anisotropicFrame(materialAnisotropy(mat, uv, atlasUV1), hit.normal, hitTangent, hitBitangent);
     hit.base      = baseTexture.SampleLevel(textureSampler, wrapBaseUV(tex0, mat.emissive.w) * mat.uv.xy + mat.uv.zw, 0).rgb * mat.baseColor.rgb * triangleColor(tri, bary).rgb;
     if ((uint(mat.emissive.w) & 8u) != 0)
         return hit.base;
     float2 mrUV = frac(independentTextureUV(mat, tex0, 2u)) * mat.uv.xy + mat.uv.zw;
-    float4 mr = materialTexture.SampleLevel(textureSampler, mrUV, 0);
+    float4 mr = 0;
+    if (triplanar)
+    {
+        float3 weights = triplanarWeights(worldNormal), offset = 0;
+        [unroll] for (int axis = 0; axis < 3; ++axis)
+        {
+            float2 projected = frac(triplanarUV(position, axis)) * mat.uv.xy + mat.uv.zw;
+            offset += weights[axis] * triplanarNormalOffset(
+              normalTexture.SampleLevel(textureSampler, projected, 0).xyz, axis);
+            mr += weights[axis] * materialTexture.SampleLevel(textureSampler, projected, 0);
+        }
+        hit.normal = triplanarNormal(worldNormal, offset, mat.material.z);
+    }
+    else
+        mr = materialTexture.SampleLevel(textureSampler, mrUV, 0);
+    hit.anisotropy = anisotropicFrame(materialAnisotropy(mat, uv, atlasUV1), hit.normal, hitTangent, hitBitangent);
     hit.metallic  = saturate(mr.b * mat.material.x);
     hit.roughness = clamp(mr.g * mat.material.y, .04, 1);
     hit.ao        = lerp(1, occlusionTexture.SampleLevel(textureSampler, aoUV, 0).r, mat.material.w);

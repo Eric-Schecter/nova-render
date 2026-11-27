@@ -76,7 +76,9 @@ Forward, Deferred and Hybrid PBR use the GLB scalar `KHR_materials_transmission`
 
 `hybridReflectionStrength` optionally overrides the scene-wide reflection blend for an opaque or alpha-masked material slot in Hybrid. The value ranges from 0 (environment specular) to 1 (scene-traced specular). Omit it in C++ or use `null` on Web to inherit the scene-wide value.
 
-The Web GLB loader also reads `material.extras.novaHybridReflectionStrength`. This installs the override during scene creation, which avoids repacking the scene and reuploading its textures for an immediate material edit.
+The C++ and Web GLB loaders read `material.extras.novaHybridReflectionStrength` during scene creation.
+
+Set `triplanar` on a material slot or `material.extras.novaTriplanar` in a GLB to project the normal and metallic-roughness maps along the three world axes. Each texture repeats once per world unit. Forward and Deferred use raster gradients for mip selection, and Hybrid applies the same projection at ray hits. Base color, AO, and the other material maps keep their UV mapping. Standalone Ray mode uses UV mapping.
 
 ## Update behavior
 

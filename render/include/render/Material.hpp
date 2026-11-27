@@ -64,6 +64,7 @@ namespace render
         std::optional<Image> transmissionTexture, thicknessTexture;
         float thicknessFactor = 0, inverseAttenuationDistance = 0;
         std::array<float, 3> attenuationColor{1, 1, 1};
+        bool                    triplanar = false; // World-space projection of normal and metallic-roughness maps.
     };
     Image LoadMaterialImage(const std::filesystem::path& path);
 } // namespace render

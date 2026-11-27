@@ -659,6 +659,7 @@ export async function loadGLB(url, { pack = true, materialVariant } = {}) {
         baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
         metallic: pbr.metallicFactor ?? 1,
         roughness: pbr.roughnessFactor ?? 1,
+        triplanar: material.extras?.novaTriplanar,
         hybridReflectionStrength: material.extras?.novaHybridReflectionStrength,
         specularFactor: specular?.specularFactor,
         clearcoatFactor: coat?.clearcoatFactor,
