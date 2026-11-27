@@ -87,6 +87,15 @@ def main():
             ground.setdefault("extras", {})["novaHybridReflectionStrength"] = reflection_strength
         write_glb(args.output / f"engine-ssr-compressed-{name}.glb", scene, data)
 
+    # Use the shared Hybrid AO passes for contact shading under the HDRI.
+    ao = {
+        "ambientOcclusion": True,
+        "aoSamples": 16,
+        "halfResolutionAO": True,
+        "blueNoiseAO": True,
+    }
+    (args.output / "engine-hybrid-ao.json").write_text(json.dumps(ao, indent=2) + "\n")
+
 
 if __name__ == "__main__":
     main()
