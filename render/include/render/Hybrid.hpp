@@ -59,6 +59,7 @@ namespace render
         bool                             probeSharedRays              = false;
         bool                             halfResolutionShadows       = false;
         bool                             sparseShadowFallback        = false;
+        bool                             screenSpaceReflections      = false;
     };
     struct HybridCapabilities
     {

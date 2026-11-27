@@ -10,6 +10,7 @@ export const defaultHybrid = () => ({
   temporalReconstruction: false,
   historyWeight: 0.9,
   reflections: false,
+  screenSpaceReflections: false,
   diffuseBounce: false,
   probeGI: false,
   probeSkyLighting: false,
@@ -55,6 +56,7 @@ export function copyHybrid(value) {
           'temporalReconstruction',
           'historyWeight',
           'reflections',
+          'screenSpaceReflections',
           'diffuseBounce',
           'probeGI',
           'probeSkyLighting',
@@ -128,6 +130,7 @@ export function copyHybrid(value) {
     !Number.isFinite(s.reflectionStrength) ||
     s.reflectionStrength < 0 ||
     s.reflectionStrength > 1 ||
+    typeof s.screenSpaceReflections !== 'boolean' ||
     typeof s.halfResolutionReflections !== 'boolean' ||
     typeof s.reflectionDenoising !== 'boolean' ||
     typeof s.reflectionSVGF !== 'boolean' ||

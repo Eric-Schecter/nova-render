@@ -2581,6 +2581,88 @@ void upsampleRasterShadows(inout SurfaceData s, int2 pixel, float logDepth, floa
     s.visibility2 = visibility2 / total;
     s.visibility3 = visibility3 / total;
 }
+// Linear screen-space traversal of the model G-buffer. Trace only the
+// first visible surface and let the deferred blend retain IBL on misses.
+float4 modelScreenReflection(SurfaceData source, uint header)
+{
+    if (source.roughness >= .8)
+        return 0;
+    float3 view = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - source.position);
+    float3 ray = reflect(-view, source.normal);
+    float3 start = source.position + source.geometricNormal * .025;
+    float startZ = dot(start - eyeExposure.xyz, cameraForward.xyz);
+    float rayZ = dot(ray, cameraForward.xyz);
+    float distance = min(24, loadInstance(header).world._m01);
+    if (rayZ < -1e-5)
+        distance = min(distance, (startZ - .05) / -rayZ);
+    if (distance <= .05)
+        return 0;
+    float3 end = start + ray * distance;
+    float4 clip0 = mul(viewProjection, float4(start, 1));
+    float4 clip1 = mul(viewProjection, float4(end, 1));
+    float2 uv0 = clip0.xy / clip0.w * float2(.5, -.5) + .5;
+    float2 delta = (clip1.xy / clip1.w - clip0.xy / clip0.w) * float2(.5, -.5);
+    uint width, height;
+    gBase.GetDimensions(width, height);
+    float2 extent = float2(width, height) - 2;
+    float pixels = max(abs(delta.x * extent.x), abs(delta.y * extent.y));
+    float stepSize = 1.5 / max(pixels, 1);
+    float2 inverseW = rcp(float2(clip0.w, clip1.w));
+    float previous = -1;
+    [loop] for (uint i = 1; i <= 96; ++i)
+    {
+        float t = i * stepSize;
+        float2 uv = uv0 + t * delta;
+        if (t >= 1 || any(uv < 0) || any(uv >= 1))
+            break;
+        int3 pixel = int3(int2(uv * extent) + 1, 0);
+        float4 base = gBase.Load(pixel);
+        if (base.w <= 0)
+        {
+            previous = -1;
+            continue;
+        }
+        float4 pos = gPosition.Load(pixel);
+        float hitZ = exp2(pos.x + pos.y);
+        float rayDepth = lerp(startZ * inverseW.x, (startZ + rayZ * distance) * inverseW.y, t)
+                         / lerp(inverseW.x, inverseW.y, t);
+        float difference = rayDepth - hitZ;
+        float3 position = start + ray * (t * distance * inverseW.y / lerp(inverseW.x, inverseW.y, t));
+        float4 normals = gNormals.Load(pixel);
+        float3 geometric = octDecode(normals.zw);
+        if (previous < 0 && difference >= 0 && difference < .12
+            && length(position - source.position) > .08 && dot(geometric, ray) < -.02)
+        {
+            SurfaceData hit = (SurfaceData)0;
+            float4 emission = gEmission.Load(pixel), coat = gClearcoat.Load(pixel);
+            hit.position = position + cameraForward.xyz * (hitZ - rayDepth);
+            hit.base = base.rgb;
+            hit.roughness = base.w;
+            hit.metallic = emission.w;
+            hit.emissive = emission.rgb;
+            hit.ao = max(0, pos.z);
+            hit.normal = octDecode(normals.xy);
+            hit.geometricNormal = geometric;
+            hit.coatNormal = octDecode(coat.xy);
+            hit.clearcoat = coat.zw;
+            hit.specular = 1;
+            if (pos.w > .5 && irradiance[3].w > pos.w)
+                deferredMaterialLayers(hit, loadInstance(uint(irradiance[3].w - 1 - pos.w)), pixel);
+            float3 hitView = cameraUp.w < 0 ? -cameraForward.xyz : normalize(eyeExposure.xyz - hit.position);
+            float3 radiance = pos.z < 0 ? hit.base : surfaceRadiance(hit, 0, 0, hitView, false, true);
+            float nv = saturate(dot(source.normal, view));
+            float2 brdf = environmentBRDF(source.roughness, nv);
+            float3 f0 = lerp(dielectricF0(source.specular, source.film.w), source.base, source.metallic);
+            float f90 = lerp(source.specular.a, 1, source.metallic);
+            float border = min(min(uv.x, uv.y), min(1 - uv.x, 1 - uv.y));
+            float confidence = saturate(border / .08) * saturate((.8 - source.roughness) * 8);
+            return float4(radiance * (f0 * brdf.x + f90 * brdf.y), confidence);
+        }
+        previous = difference;
+    }
+    return 0;
+}
+
 float4 shadeDeferred(SkyOut input, bool gridVisible)
 {
     float3 backgroundDirection = environmentDirection(normalize(input.direction));
@@ -2657,8 +2739,17 @@ float4 shadeDeferred(SkyOut input, bool gridVisible)
         float3 reflection = 0;
         float rotation = hybridRotation(uint2(input.position.xy));
         bool reflections = loadInstance(header).world._m01 > 0;
-        bool traceCoat = reflections && loadInstance(header).world._m02 > .5;
-        if (reflections)
+        bool screenSpace = (uint(loadInstance(header).world._m33) & 8u) != 0;
+        bool traceCoat = reflections && !screenSpace && loadInstance(header).world._m02 > .5;
+        if (reflections && screenSpace)
+        {
+            float4 hit = modelScreenReflection(s, header);
+            reflection = hit.rgb;
+            reflectionMix = hit.a * (reflectionOverride >= 0 ? reflectionOverride : loadInstance(header).world._m21);
+            if (loadInstance(header).world._m30 > 2.5)
+                return float4(displayRadiance(reflection * hit.a), 1);
+        }
+        else if (reflections)
         {
 #if defined(NOVA_HALF_REFLECTIONS)
             if (!upsampleHybridReflection(pixel.xy, pos, s, traceCoat, reflection))

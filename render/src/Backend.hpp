@@ -440,7 +440,8 @@ namespace render::detail
             globals.world[14]    = hybrid.probeSkyLighting && hybrid.probeRoughReflections ? 1.f : 0.f;
             globals.world[15]    = float((hybrid.blueNoiseAO ? 1u : 0u)
                                           | (hybrid.blueNoiseShadows ? 2u : 0u)
-                                          | (hybrid.blueNoiseReflections ? 4u : 0u));
+                                          | (hybrid.blueNoiseReflections ? 4u : 0u)
+                                          | (hybrid.screenSpaceReflections ? 8u : 0u));
             rasterInstances.push_back(globals);
             if (scene.active)
             {

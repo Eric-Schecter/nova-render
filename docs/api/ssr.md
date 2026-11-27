@@ -41,3 +41,18 @@ Camera/time, six AA modes, post-processing and reset methods match the other lab
 MSAA resolves actual four-sample surfaces; SSAA traces at doubled internal dimensions then downsamples. Output is 1–2048; the example defaults to 75% scale with long side capped at 1024. Metrics include surfaces, hierarchy, tracing, AA, post and waits, plus native readback.
 
 This is an internal scene, not arbitrary GLB SSR. Only the first currently visible surface is available; environment fallback is not an accurate reflection of hidden/offscreen objects.
+
+## Model-scene comparison
+
+For opaque and masked model materials in Hybrid mode, opt into the linear
+G-buffer trace with `HybridSettings::screenSpaceReflections` in C++ or
+`screenSpaceReflections` in JavaScript. Enable `reflections`, and disable
+`halfResolutionReflections` and `reflectionDenoising` for the screen-space run.
+Keep the other scene settings fixed and switch back to BVH reflections for an
+A/B comparison. Model SSR blends confident hits into the existing environment
+reflection using the scene or material reflection weight.
+
+The model path uses a bounded full-resolution march through the first visible
+surface and shades that surface using the model G-buffer. The dedicated view
+above uses its own depth hierarchy and roughness filter. Model SSR currently
+handles the base specular lobe. Clearcoat keeps its environment reflection.
