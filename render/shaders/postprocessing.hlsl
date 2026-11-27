@@ -7,6 +7,7 @@ cbuffer Parameters : register(b0)
 Texture2D<float4> colorTex : register(t1);
 Texture2D<float4> bloomTex : register(t2);
 Texture2D<float4> exposureTex : register(t3);
+Texture2D<float4> modelCoverage : register(t4);
 SamplerState      LinearSampler : register(s9);
 SamplerState      PointSampler : register(s10);
 #ifndef AA_PASS
@@ -288,6 +289,18 @@ float4 PSMain(Varying i)
     return float4(aa[15].x > .5 ? lerp(old, target, 1 - exp(-aa[13].z * aa[13].w)) : target, 0, 0, 1);
 #else
     float3 c = colorTex.SampleLevel(LinearSampler, i.uv, 0).rgb;
+    int coverageScale = int(aa[15].z);
+    if (coverageScale > 0)
+    {
+        int2 first = int2(i.position.xy) * coverageScale + 1;
+        bool background = modelCoverage.Load(int3(first, 0)).w <= 0;
+        if (coverageScale == 2)
+            background = background && modelCoverage.Load(int3(first + int2(1, 0), 0)).w <= 0
+              && modelCoverage.Load(int3(first + int2(0, 1), 0)).w <= 0
+              && modelCoverage.Load(int3(first + int2(1, 1), 0)).w <= 0;
+        if (background)
+            return rgbL(aa[7].rgb);
+    }
     if (aa[12].x > .5)
         c += bloomTex.SampleLevel(LinearSampler, i.uv, 0).rgb * aa[12].w;
     float exposure = exp2(aa[11].z) * (aa[11].w > .5 ? exposureTex.Load(int3(0, 0, 0)).r : 1);

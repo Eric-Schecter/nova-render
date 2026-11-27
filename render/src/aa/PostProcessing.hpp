@@ -46,7 +46,9 @@ namespace render::detail
       uint32_t                      h,
       const PostProcessingSettings& s,
       PostProcessingState&          state,
-      const AAUniforms&             base)
+      const AAUniforms&             base,
+      int                           coverage = AADummy,
+      int                           coverageScale = 1)
     {
         if (!s.enabled)
             return {color, baseline};
@@ -100,14 +102,19 @@ namespace render::detail
             }
             bloom = input;
         }
-        auto compose = [&](int source, int target) {
+        auto compose = [&](int source, int target, bool useCoverage) {
             auto* p       = add(15, target, source);
             p->sources[1] = bloom;
             p->sources[2] = exposure;
+            if (useCoverage && coverage != AADummy)
+            {
+                p->sources[3] = coverage;
+                p->uniforms[15][2] = float(coverageScale);
+            }
         };
-        compose(color, AAPostColor);
+        compose(color, AAPostColor, true);
         if (baseline != AADummy)
-            compose(baseline, AAPostBaseline);
+            compose(baseline, AAPostBaseline, false);
         state.frames++;
         return {AAPostColor, baseline == AADummy ? AADummy : AAPostBaseline};
     }

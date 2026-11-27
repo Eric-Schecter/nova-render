@@ -441,7 +441,8 @@ namespace render::detail
             globals.world[15]    = float((hybrid.blueNoiseAO ? 1u : 0u)
                                           | (hybrid.blueNoiseShadows ? 2u : 0u)
                                           | (hybrid.blueNoiseReflections ? 4u : 0u)
-                                          | (hybrid.screenSpaceReflections ? 8u : 0u));
+                                          | (hybrid.screenSpaceReflections ? 8u : 0u)
+                                          | (hybrid.separateSpecularOcclusion ? 16u : 0u));
             rasterInstances.push_back(globals);
             if (scene.active)
             {
@@ -1026,7 +1027,8 @@ namespace render::detail
                   mode == RenderMode::Hybrid && hybrid.view != HybridView::Final,
                   hybrid,
                   lightCollectionActive ? lights.size() : 1,
-                  HasSceneOutlines() ? &sceneOutlines : nullptr);
+                  HasSceneOutlines() ? &sceneOutlines : nullptr,
+                  !(environment && environmentSettings.showBackground) && !viewportGrid.enabled);
                 rasterAA.previousJoints = model->jointMatrices;
                 return &image;
             }

@@ -13,12 +13,13 @@ export const defaultPostProcessing = () => ({
   bloomIntensity: 0.08,
   saturation: 1,
   contrast: 1,
+  toneMapBackground: true,
 })
 export function copyPostProcessing(value) {
   const s = { ...defaultPostProcessing(), ...value }
   if (
     !toneMappings.includes(s.toneMapping) ||
-    !['enabled', 'autoExposure', 'bloom'].every((k) => typeof s[k] === 'boolean')
+    !['enabled', 'autoExposure', 'bloom', 'toneMapBackground'].every((k) => typeof s[k] === 'boolean')
   )
     throw Error('Invalid post-processing settings')
   for (const [k, min, max] of [
@@ -53,7 +54,7 @@ export function postResourceSize(i, w, h) {
   if (i === 38 || i === 39) return [1, 1]
   return [w, h]
 }
-export function appendPostProcessing(passes, color, baseline, w, h, s, state, base) {
+export function appendPostProcessing(passes, color, baseline, w, h, s, state, base, coverage = 16, coverageScale = 1) {
   if (!s.enabled) return { color, baseline }
   const u = [...base],
     now = performance.now(),
@@ -106,13 +107,17 @@ export function appendPostProcessing(passes, color, baseline, w, h, s, state, ba
     }
     bloom = input
   }
-  const compose = (source, target) => {
+  const compose = (source, target, useCoverage) => {
     const p = add(15, target, source)
     p.sources[1] = bloom
     p.sources[2] = exposure
+    if (useCoverage && coverage !== 16) {
+      p.sources[3] = coverage
+      p.u[62] = coverageScale
+    }
   }
-  compose(color, 40)
-  if (baseline !== 16) compose(baseline, 41)
+  compose(color, 40, true)
+  if (baseline !== 16) compose(baseline, 41, false)
   state.frames++
   return { color: 40, baseline: baseline === 16 ? 16 : 41 }
 }

@@ -60,6 +60,7 @@ namespace render
         bool                             halfResolutionShadows       = false;
         bool                             sparseShadowFallback        = false;
         bool                             screenSpaceReflections      = false;
+        bool                             separateSpecularOcclusion    = false;
     };
     struct HybridCapabilities
     {

@@ -404,8 +404,16 @@ float4 hybridAOResolve(int2 pixel)
                 weighted += ao.x * w;
                 mass += w;
             }
-        if (mass > .001)
-            position.z *= saturate(weighted / mass);
+        float visibility = mass > .001 ? saturate(weighted / mass) : 1;
+        if (position.z >= 0 && aa[4].x > .5)
+        {
+            // Range starts at 2 so ordinary material occlusion and the negative unlit marker stay distinct.
+            uint material = uint(round(saturate(position.z) * 63));
+            uint ambient = uint(round(visibility * 127));
+            position.z = f16tof32(0x4000u + (material << 7u) + ambient);
+        }
+        else if (position.z >= 0)
+            position.z *= visibility;
         return position;
     }
 

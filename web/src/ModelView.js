@@ -480,7 +480,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
         (hybrid?.blueNoiseAO ? 1 : 0) |
         (hybrid?.blueNoiseShadows ? 2 : 0) |
         (hybrid?.blueNoiseReflections ? 4 : 0) |
-        (hybrid?.screenSpaceReflections ? 8 : 0)
+        (hybrid?.screenSpaceReflections ? 8 : 0) |
+        (hybrid?.separateSpecularOcclusion ? 16 : 0)
       record[16] = hybrid?.halfResolutionShadows && hybrid.view === 'final' ? 1 : 0
       if (viewportGrid?.enabled) {
         record.set(gridBackground.slice(0, 3).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4), 17)

@@ -20,5 +20,6 @@ namespace render
         bool        bloom          = true;
         float       bloomThreshold = 1, bloomKnee = .5f, bloomIntensity = .08f;
         float       saturation = 1, contrast = 1;
+        bool        toneMapBackground = true;
     };
 } // namespace render

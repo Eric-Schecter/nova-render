@@ -93,8 +93,15 @@ def main():
         "aoSamples": 16,
         "halfResolutionAO": True,
         "blueNoiseAO": True,
+        "separateSpecularOcclusion": True,
     }
     (args.output / "engine-hybrid-ao.json").write_text(json.dumps(ao, indent=2) + "\n")
+
+    display = {
+        "clearColor": [77 / 255, 175 / 255, 1, 1],
+        "post": {"toneMapBackground": False},
+    }
+    (args.output / "engine-display.json").write_text(json.dumps(display, indent=2) + "\n")
 
 
 if __name__ == "__main__":

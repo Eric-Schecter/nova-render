@@ -651,6 +651,7 @@ export async function createAntiAliasingView({
           composite.sources[2] = 85
           composite.sources[6] = 87
           composite.u[11] = 3
+          composite.u[16] = external.hybrid.separateSpecularOcclusion ? 1 : 0
         }
         const p = add(-5, sceneColor)
         if (halfReflections) p.sources[9] = resolvedReflection
@@ -730,6 +731,9 @@ export async function createAntiAliasingView({
     }
     const baselineSource =
       (!shadowScene && !hdrScene && !reflectionScene) || settings.split ? B : DUMMY
+    const modelCoverage = external?.raster?.pipeline === 'deferred' &&
+      external.solidBackground && !postSettings.toneMapBackground && !external.alphaBlend &&
+      !settings.split && !reconstruct && !taa ? 85 : DUMMY
     const post = appendPostProcessing(
       passes,
       filtered,
@@ -743,6 +747,8 @@ export async function createAntiAliasingView({
         : postSettings,
       postState,
       u,
+      modelCoverage,
+      effectiveMethod === 'ssaa' ? 2 : 1,
     )
     filtered = post.color
     if (effectiveMethod === 'fxaa') {

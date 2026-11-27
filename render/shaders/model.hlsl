@@ -746,6 +746,7 @@ struct SurfaceData
 {
     float3 position, normal, geometricNormal, base, emissive;
     float  metallic, roughness, ao;
+    float  specularOcclusionRelief;
     float  opacity, alphaInfo;
     float2 dielectric;
     float4 volume;
@@ -963,6 +964,7 @@ SurfaceData sampleSurface(VertexOut input)
     result.metallic                                                                   = metallic;
     result.roughness                                                                  = roughness;
     result.ao                                                                         = ao;
+    result.specularOcclusionRelief                                                    = 0;
     float2 emissionUV = (uint(alphaInfo) & 16u) ? frac(input.uv1) * materialRecord.uv.xy + materialRecord.uv.zw : uv;
     result.emissive = MODEL_MAP(emissiveTexture, 4).Sample(MODEL_SAMPLER, emissionUV).rgb * emissionFactor.rgb;
 #undef MODEL_MAP
@@ -1284,12 +1286,11 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         baseEnvironment = baseEnvironment * baseWeight + s.sheen.rgb * (energy * incident);
     }
     diffuseAmbient *= 1 - probeSkyCoverage;
-    if (tracedClearcoat)
-        color += (diffuseAmbient * coatTransmission
-                  + lerp(baseEnvironment * coatTransmission + coatEnvironment, raySpecular, reflectionMix)) * ao;
-    else
-        color += ((diffuseAmbient + lerp(baseEnvironment, raySpecular, reflectionMix)) * coatTransmission
-                  + coatEnvironment) * ao;
+    float specularAO = saturate(ao + s.specularOcclusionRelief);
+    float3 specular = tracedClearcoat
+      ? lerp(baseEnvironment * coatTransmission + coatEnvironment, raySpecular, reflectionMix)
+      : lerp(baseEnvironment, raySpecular, reflectionMix) * coatTransmission + coatEnvironment;
+    color += diffuseAmbient * coatTransmission * ao + specular * specularAO;
     color += s.emissive * coatTransmission;
     return color;
 }
@@ -2581,6 +2582,14 @@ void upsampleRasterShadows(inout SurfaceData s, int2 pixel, float logDepth, floa
     s.visibility2 = visibility2 / total;
     s.visibility3 = visibility3 / total;
 }
+float2 deferredOcclusion(float encoded)
+{
+    if (encoded < 2)
+        return float2(max(0, encoded), 1);
+    uint packed = f32tof16(encoded) - 0x4000u;
+    return float2((packed >> 7u) / 63.0, (packed & 127u) / 127.0);
+}
+
 // Linear screen-space traversal of the model G-buffer. Trace only the
 // first visible surface and let the deferred blend retain IBL on misses.
 float4 modelScreenReflection(SurfaceData source, uint header)
@@ -2640,7 +2649,8 @@ float4 modelScreenReflection(SurfaceData source, uint header)
             hit.roughness = base.w;
             hit.metallic = emission.w;
             hit.emissive = emission.rgb;
-            hit.ao = max(0, pos.z);
+            float2 hitAO = deferredOcclusion(pos.z);
+            hit.ao = hitAO.x * hitAO.y;
             hit.normal = octDecode(normals.xy);
             hit.geometricNormal = geometric;
             hit.coatNormal = octDecode(coat.xy);
@@ -2704,7 +2714,8 @@ float4 shadeDeferred(SkyOut input, bool gridVisible)
     if (irradiance[1].z > .5 && irradiance[3].w > .5)
         upsampleRasterShadows(s, pixel.xy, pos.x + pos.y, s.geometricNormal);
     s.position        = surfacePosition(input, pos.xy);
-    s.ao              = max(0, pos.z);
+    float2 occlusion  = deferredOcclusion(pos.z);
+    s.ao              = occlusion.x;
     s.alphaInfo       = pos.z < 0 ? 8 : 0;
     if (debug == 0 && s.alphaInfo > 0)
         return shadeSurface(s);
@@ -2727,9 +2738,20 @@ float4 shadeDeferred(SkyOut input, bool gridVisible)
     if (irradiance[1].w > .5)
     {
         // The independent AO pass has already multiplied material occlusion in the position attachment.
-        float ao = skyParams.z < -.5 ? 1 : hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
+        float ao = skyParams.z < -.5 ? occlusion.y
+          : hybridAO(s.position, s.geometricNormal, hybridRotation(uint2(input.position.xy)));
         if (irradiance[3].w > .5 && abs(loadInstance(uint(irradiance[3].w) - 1).world._m30 - 2) < .1)
             return float4(diagnosticLinear(ao.xxx), 1);
+        if (irradiance[3].w > .5
+            && (uint(loadInstance(uint(irradiance[3].w) - 1).world._m33) & 16u))
+        {
+            // Broad ambient visibility is appropriate for rough lobes. Smooth lobes
+            // retain baked material occlusion and the visibility of their traced rays.
+            float roughness = s.clearcoat.x > 0 ? min(s.roughness, s.clearcoat.y) : s.roughness;
+            float smoothMetal = smoothstep(.45, .9, s.metallic) * (1 - smoothstep(.06, .45, roughness));
+            float visibleLobe = smoothstep(.10, .50, ao);
+            s.specularOcclusionRelief = s.ao * (1 - ao) * smoothMetal * visibleLobe;
+        }
         s.ao *= ao;
     }
     if (irradiance[1].w > .5 && irradiance[3].w > .5)

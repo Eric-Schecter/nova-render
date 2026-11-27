@@ -311,6 +311,9 @@ class Renderer {
           get encoded() {
             return !owner.#model
           },
+          get solidBackground() {
+            return !(owner.#environment && owner.#environmentSettings.showBackground) && !owner.#hasViewportGrid()
+          },
           clear: () =>
             this.#clear.map((v, i) =>
               i === 3 || !this.#model ? v : v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,

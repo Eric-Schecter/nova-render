@@ -43,7 +43,8 @@ namespace render::detail
           bool                          hybridDebug      = false,
           const HybridSettings&         hybridSettings   = {},
           size_t                        shadowLightCount = 0,
-          const SceneOutlines*          outlines = nullptr)
+          const SceneOutlines*          outlines = nullptr,
+          bool                          solidBackground = true)
         {
             auto settings     = requestedSettings;
             auto postSettings = requestedPost;
@@ -342,6 +343,7 @@ namespace render::detail
                     composite->sources[2] = AAModelBase;
                     composite->sources[6] = AAModelPosition;
                     composite->uniforms[2][3] = 3;
+                    composite->uniforms[4][0] = hybridSettings.separateSpecularOcclusion ? 1.f : 0.f;
                 }
                 auto* p = add(-5, sceneColor);
                 if (halfReflections)
@@ -423,8 +425,12 @@ namespace render::detail
                     filtered              = AAColor;
                 }
             }
+            const int coverage = deferred && !postSettings.toneMapBackground && solidBackground
+                                 && !transparent && !settings.split && !reconstruct && !taa
+              ? AAModelBase : AADummy;
             const auto post = AppendPostProcessing(
-              passes, filtered, settings.split ? AABaseline : AADummy, w, h, postSettings, postState, u);
+              passes, filtered, settings.split ? AABaseline : AADummy, w, h, postSettings, postState, u,
+              coverage, settings.method == AAMethod::SSAA ? 2 : 1);
             filtered = post.color;
             if (settings.method == AAMethod::FXAA)
             {

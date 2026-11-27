@@ -61,3 +61,11 @@ Animated geometry, moving-instance motion vectors and hardware ray queries remai
 ### Local probe bounds
 
 When DDGI is enabled, set `HybridSettings::probeBounds` in C++ or `probeBounds` in JavaScript to place the probe grid in a world-space box. Specify finite, ordered minimum and maximum coordinates on all three axes. For example, the CarConcept showroom uses `{ minimum: [-2.65, -0.12, -3.25], maximum: [2.65, 1.95, 3.25] }`. Leave the option unset in C++ or use `null` in JavaScript to derive the box from scene geometry. Changing the box resets the probe cache.
+
+### Separate specular occlusion
+
+Set `separateSpecularOcclusion` to true to retain more indirect specular
+light on smooth metallic surfaces. Hybrid AO continues to attenuate indirect
+diffuse light. Rough surfaces and deeply occluded regions retain real-time
+occlusion, and both lobes retain baked material occlusion. The option is off
+by default and supports full- and half-resolution Hybrid AO on native and WebGPU.
