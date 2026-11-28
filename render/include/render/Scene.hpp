@@ -29,6 +29,9 @@ namespace render
         std::string          id;
         double               distance = 0;         // World-space distance, independent of direction magnitude.
         std::array<float, 3> position{}, normal{}; // World point and unit geometric normal (world winding).
+        uint32_t triangleIndex = 0; // Triangle in the asset's prepared vertex stream.
+        std::array<float, 3> barycentric{};
+        std::array<float, 2> uv{}; // Interpolated primary UV before sampler wrapping.
     };
 
     struct SceneVertex

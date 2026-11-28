@@ -52,6 +52,11 @@ try {
           if (hit) {
             require(hit.id === expected.id, 'ID mismatch')
             close(hit.distance, expected.distance)
+            if (expected.triangleIndex !== undefined) {
+              require(hit.triangleIndex === expected.triangleIndex, 'Triangle index mismatch')
+              hit.barycentric.forEach((v, i) => close(v, expected.barycentric[i]))
+              hit.uv.forEach((v, i) => close(v, expected.uv[i]))
+            }
             for (let j = 0; j < 3; j++) {
               close(hit.position[j], expected.position[j])
               close(hit.normal[j], expected.normal[j])

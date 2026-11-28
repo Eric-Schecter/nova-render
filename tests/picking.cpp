@@ -24,7 +24,8 @@ namespace
     {
         if (!h)
             return nullptr;
-        return Json{{"id", h->id}, {"distance", h->distance}, {"position", h->position}, {"normal", h->normal}};
+        return Json{{"id", h->id}, {"distance", h->distance}, {"position", h->position}, {"normal", h->normal}, {"triangleIndex", h->triangleIndex},
+                    {"barycentric", h->barycentric}, {"uv", h->uv}};
     }
 } // namespace
 int main(int argc, char** argv)
@@ -110,6 +111,17 @@ int main(int argc, char** argv)
             rejected = true;
         }
         require(rejected, "NaN accepted");
+        auto fabric = std::make_shared<render::SceneGeometry>();
+        fabric->vertices = {
+          {{0, 0, 0}, {0, 0, 1}, {0, 0}},
+          {{2, 0, 0}, {0, 0, 1}, {1, 0}},
+          {{0, 2, 0}, {0, 0, 1}, {0, 1}},
+        };
+        scene.Update({{"fabric", {}, true, {}, fabric}}, {{"cloth", "fabric"}});
+        const auto grab = scene.Pick({{.5f, 1.f, 2.f}, {0, 0, -1}});
+        require(grab && grab->triangleIndex == 0, "Fabric triangle missing");
+        require(grab->barycentric == std::array<float, 3>{.25f, .25f, .5f}, "Incorrect fabric barycentric weights");
+        require(grab->uv == std::array<float, 2>{.25f, .5f}, "Incorrect fabric UV");
         // Large BVH plus triangle-exact rejection inside bounding boxes.
         auto data = std::make_shared<render::detail::ModelData>();
         constexpr int triangleCount = 32768;

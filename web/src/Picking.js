@@ -199,8 +199,19 @@ export class PickMesh {
           !best ||
           distance < best.distance ||
           (distance === best.distance && triangle < best.triangle)
-        )
-          best = { distance, normal, triangle }
+        ) {
+          const w = 1 - u - v
+          const first = triangle * modelTriangleFloats + 8
+          const vertices = this.data.vertices
+          const uv = [0, 1].map((axis) =>
+            Math.fround(
+              w * vertices[first + axis] +
+                u * vertices[first + modelVertexFloats + axis] +
+                v * vertices[first + 2 * modelVertexFloats + axis],
+            ),
+          )
+          best = { distance, normal, triangle, barycentric: [w, u, v].map(Math.fround), uv }
+        }
       }
     }
     return best
@@ -267,7 +278,15 @@ export function pickScene(meshes, instances, ray, active = true) {
     normal = normal.map((v) => Math.fround(v / n))
     const position = origin.map((v, k) => Math.fround(v + unit[k] * hit.distance))
     if (!position.every(Number.isFinite)) continue
-    best = { id: instance.id, distance: hit.distance, position, normal }
+    best = {
+      id: instance.id,
+      distance: hit.distance,
+      position,
+      normal,
+      triangleIndex: hit.triangle,
+      barycentric: hit.barycentric,
+      uv: hit.uv,
+    }
   }
   return best
 }

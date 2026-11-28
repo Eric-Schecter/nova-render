@@ -11,6 +11,8 @@ namespace render::detail
         double     distance;
         PickVector normal;
         uint32_t   triangle;
+        std::array<float, 3> barycentric;
+        std::array<float, 2> uv;
     };
     // Immutable asset-local BVH. Geometry stays shared with the renderer's model data.
     class PickMesh

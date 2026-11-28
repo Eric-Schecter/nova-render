@@ -327,7 +327,14 @@ namespace render::detail
                 if (!std::isfinite(distance) || distance < 0 || distance > limit)
                     continue;
                 if (!best || distance < best->distance || (distance == best->distance && triangle < best->triangle))
-                    best = MeshHit{distance, n, triangle};
+                {
+                    const auto* vertices = data_->vertices.data() + size_t(triangle) * 3;
+                    const double w = 1 - u - v;
+                    std::array<float, 2> uv{};
+                    for (size_t axis = 0; axis < uv.size(); ++axis)
+                        uv[axis] = float(w * vertices[0].uv[axis] + u * vertices[1].uv[axis] + v * vertices[2].uv[axis]);
+                    best = MeshHit{distance, n, triangle, {float(w), float(u), float(v)}, uv};
+                }
             }
         }
         return best;

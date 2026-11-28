@@ -43,6 +43,9 @@ The query considers both sides of triangles and returns the nearest intersection
 ## Hit result
 
 - `id`: a copy of the matching instance ID.
+- `triangleIndex`: zero-based triangle index in the prepared asset stream. Its order is retained across pose updates with fixed topology.
+- `barycentric`: weights for the three vertices in triangle order.
+- `uv`: interpolated primary texture coordinate stored in the prepared geometry, before sampler wrapping.
 - `position`: the world-space hit point.
 - `normal`: a world-space unit **geometric** normal, computed from the transformed triangle winding. It is not interpolated, normal-mapped or automatically flipped toward the ray. A mirrored instance reverses winding and therefore reverses the normal. For a facing normal, negate it when its dot product with the incoming direction is positive.
 - `distance`: world-space distance from the ray origin; C++ stores it as `double`. Positions and normals use float32 components. Both source and normalized asset spaces are mapped through the same instance transforms as rendering.

@@ -463,7 +463,8 @@ namespace render::detail
             std::array<float, 3> position{float(p.x), float(p.y), float(p.z)};
             if (!std::all_of(position.begin(), position.end(), [](float f) { return std::isfinite(f); }))
                 continue;
-            best = SceneHit{instance.id, hit->distance, position, {float(n.x), float(n.y), float(n.z)}};
+            best = SceneHit{instance.id, hit->distance, position, {float(n.x), float(n.y), float(n.z)},
+                            hit->triangle, hit->barycentric, hit->uv};
         }
         return best;
     }
