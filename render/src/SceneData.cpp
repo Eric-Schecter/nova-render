@@ -604,6 +604,33 @@ namespace render::detail
             throw std::invalid_argument("Instance has no animation");
         return p->second.state;
     }
+    std::vector<JointPose> SceneData::JointPoses(const std::string& id) const
+    {
+        const auto player = players.find(id);
+        if (!active || player == players.end())
+            throw std::invalid_argument("Instance has no animation");
+        const auto instance = std::find_if(pickInstances.begin(), pickInstances.end(),
+                                          [&](const auto& item) { return item.id == id; });
+        const auto& animation = *meshes.at(player->second.assetId).data->animation;
+        size_t nodeOffset = 0;
+        std::set<int> joints;
+        for (const auto& skin : animation.skins)
+        {
+            nodeOffset += skin.joints.size();
+            joints.insert(skin.joints.begin(), skin.joints.end());
+        }
+        std::vector<JointPose> result;
+        result.reserve(joints.size());
+        const auto world = glm::make_mat4(instance->world.data());
+        for (const int node : joints)
+        {
+            JointPose pose{uint32_t(node), animation.nodes[node].name};
+            const auto matrix = world * glm::make_mat4(player->second.palette.at(nodeOffset + node).data());
+            std::copy_n(glm::value_ptr(matrix), 16, pose.world.begin());
+            result.push_back(std::move(pose));
+        }
+        return result;
+    }
     void SceneData::AppendAnimatedShadows(std::vector<InstanceData>& records, size_t shadowBase) const
     {
         size_t index = 0;

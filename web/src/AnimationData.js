@@ -55,6 +55,7 @@ export function readAnimation(json, bin) {
   }
   const nodes = json.nodes.map((n) => ({
     parent: -1,
+    name: n.name ?? '',
     translation: [...(n.translation || [0, 0, 0])],
     rotation: normalize(n.rotation || [0, 0, 0, 1]),
     scale: [...(n.scale || [1, 1, 1])],

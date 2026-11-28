@@ -13,6 +13,7 @@ namespace render::detail
     struct AnimationNode
     {
         int       parent = -1;
+        std::string name;
         glm::vec3 translation{0}, scale{1};
         glm::quat rotation{1, 0, 0, 0};
         glm::mat4 matrix{1};

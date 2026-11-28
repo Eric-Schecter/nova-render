@@ -137,6 +137,32 @@ int main(int argc, char** argv)
         scene.Update({{"fabric", {}, true, {}, fabric}}, {{"cloth", "fabric"}});
         require(scene.Pick({{3.5f, 1.f, 2.f}, {0, 0, -1}}).has_value(), "Fabric pose lost on transform update");
 
+        const auto fox = std::filesystem::path(argv[1]) / "Fox/Fox.glb";
+        render::SceneInstance original{"fox", "rig"};
+        auto shifted = original;
+        shifted.id = "shifted";
+        shifted.world[12] = 3;
+        scene.Update({{"rig", fox, true}}, {original, shifted});
+        const auto initial = scene.JointPoses("fox");
+        const auto offset = scene.JointPoses("shifted");
+        require(!initial.empty() && initial.size() == offset.size(), "Missing skinned joint poses");
+        for (size_t i = 0; i < initial.size(); ++i)
+        {
+            require(initial[i].nodeIndex == offset[i].nodeIndex, "Joint IDs differ between instances");
+            close(offset[i].world[12] - initial[i].world[12], 3);
+        }
+        auto state = scene.Animation("fox");
+        state.time = scene.Animations("rig")[state.clip].duration * .4f;
+        scene.SetAnimation("fox", state);
+        const auto sampled = scene.JointPoses("fox");
+        require(sampled.size() == initial.size(), "Joint list changed during sampling");
+        bool animated = false;
+        for (size_t i = 0; i < sampled.size(); ++i)
+        {
+            require(sampled[i].nodeIndex == initial[i].nodeIndex, "Joint IDs changed during sampling");
+            animated |= sampled[i].world != initial[i].world;
+        }
+        require(animated, "Joint snapshot did not follow animation sampling");
         // Large BVH plus triangle-exact rejection inside bounding boxes.
         auto data = std::make_shared<render::detail::ModelData>();
         constexpr int triangleCount = 32768;

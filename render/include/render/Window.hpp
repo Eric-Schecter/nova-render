@@ -55,6 +55,7 @@ namespace render
         void                       UpdateAnimation(float deltaSeconds);
         std::vector<AnimationClip> GetAnimations(const std::string& assetId) const;
         AnimationState             GetAnimationState(const std::string& instanceId) const;
+        std::vector<JointPose>       GetSceneJointPoses(const std::string& instanceId) const;
         void                       SetAnimationState(const std::string& instanceId, const AnimationState& state);
         void                       UpdateAnimations(float deltaSeconds);
         AnimationCapabilities      GetAnimationCapabilities() const;

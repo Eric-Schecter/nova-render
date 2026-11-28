@@ -811,6 +811,10 @@ class Renderer {
     if (instanceId !== undefined) return this.#sceneData.animation(instanceId)
     return this.#model?.animationState || { clip: 0, time: 0, speed: 1, playing: true, loop: true }
   }
+  getSceneJointPoses(instanceId) {
+    this.#check()
+    return this.#sceneData.jointPoses(instanceId)
+  }
   setAnimationState(value, state) {
     this.#check()
     if (typeof value === 'string') {

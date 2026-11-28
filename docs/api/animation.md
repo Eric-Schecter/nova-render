@@ -88,3 +88,18 @@ SetScene preserves state for unchanged instance ID + asset ID + asset path/URL, 
 `GetSceneInstanceBounds(id)` / `getSceneInstanceBounds(id)` returns the current world-space pose AABB, or no value for an absent instance. Animated `GetSceneAssetBounds` / `getSceneAssetBounds` conservatively unions the active poses in the selected asset space. PickScene uses the current pose and the existing include/exclude filters; it remains geometric rather than alpha-aware.
 
 `GetAnimationCapabilities()` / `getAnimationCapabilities()` reports skeletal, node TRS, GPU skinning, manual clock and posed picking/bounds. TRS animation works with LINEAR, STEP and CUBICSPLINE. Morph animation remains unsupported. Scene animation is Raster-only: Hybrid/ray modes are rejected atomically. Since 0.9.1, animated instances loaded with SetScene cast and receive scene shadows at their current pose (`dynamicShadows: true` in Raster). Set the instance castShadow flag to disable casting. Changed poses rebuild their CPU shadow BVHs and use the same HLSL traversal as static casters. Since 0.9.2, legacy single-model playback through LoadModel also casts and receives raster self-shadows when SetShadows enables them, or when an active scene light casts shadows.
+
+## Read the current joint poses
+
+After setting or advancing a scene instance's animation, call
+`GetSceneJointPoses(instanceId)` in C++ or `getSceneJointPoses(instanceId)` on Web.
+The synchronous result is a snapshot of the palette used for the current pose.
+Each entry contains `nodeIndex` (the glTF joint node index), `name`, and
+`world` (a column-major joint-to-world matrix). The matrix includes the
+instance transform and omits the inverse bind matrix. Translation is stored
+at indices 12 to 14.
+
+Joints shared by skins appear once, ordered by node index. Names can be empty
+or repeated. Node-only animations return an empty list and an unknown or
+unanimated instance raises an error. Call the API after sampling and before
+advancing again when driving physics attachments for the same tick.

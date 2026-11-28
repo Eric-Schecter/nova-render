@@ -28,6 +28,7 @@ namespace render::detail
         bool                             HasAnimations() const { return active && !players.empty(); }
         std::vector<AnimationClip>       Animations(const std::string& assetId) const;
         AnimationState                   Animation(const std::string& instanceId) const;
+        std::vector<JointPose>           JointPoses(const std::string& instanceId) const;
         void                             SetAnimation(const std::string& instanceId, const AnimationState&);
         void                             UpdateAnimations(float delta);
         void UpdateGeometry(const std::string& id, const SceneGeometryPose& pose,

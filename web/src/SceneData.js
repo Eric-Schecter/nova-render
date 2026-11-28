@@ -494,6 +494,19 @@ export class SceneData {
     if (!p) throw Error('Instance has no animation')
     return { ...p.state }
   }
+  jointPoses(id) {
+    const player = this.players.get(id)
+    if (!player) throw Error('Instance has no animation')
+    const instance = this.pickInstances.find((entry) => entry.id === id)
+    const animation = this.meshes.get(player.assetId).data.animation
+    const nodes = animation.skins.flatMap((skin) => skin.joints)
+    const nodeOffset = nodes.length
+    return [...new Set(nodes)].sort((a, b) => a - b).map((nodeIndex) => {
+      const first = (nodeOffset + nodeIndex) * 16
+      const world = multiply(instance.world, player.palette.subarray(first, first + 16)).map(Math.fround)
+      return { nodeIndex, name: animation.nodes[nodeIndex].name, world }
+    })
+  }
   setAnimation(id, value) {
     if (
       !value ||

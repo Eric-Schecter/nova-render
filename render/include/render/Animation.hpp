@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -16,6 +17,12 @@ namespace render
         bool        dynamicShadows = false, posedPicking = true, posedBounds = true, rayTracing = false, hybrid = false;
         float       minimumSpeed = .1f, maximumSpeed = 4.f;
         std::string reason;
+    };
+    struct JointPose
+    {
+        uint32_t nodeIndex = 0;                 // glTF joint node ID.
+        std::string name;
+        std::array<float, 16> world{};         // Column-major joint-to-world transform.
     };
     struct AnimationState
     {

@@ -79,6 +79,7 @@ namespace render::detail
         {
             const auto& n    = m.nodes[i];
             auto&       node = out->nodes[i];
+            node.name = n.name;
             if (n.mesh >= 0)
             {
                 const auto& mesh = m.meshes.at(n.mesh);

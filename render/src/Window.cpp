@@ -277,6 +277,10 @@ namespace render
     {
         return impl_->renderer->GetAnimations(id);
     }
+    std::vector<JointPose> Window::GetSceneJointPoses(const std::string& id) const
+    {
+        return impl_->renderer->GetSceneJointPoses(id);
+    }
     AnimationState Window::GetAnimationState(const std::string& id) const
     {
         return impl_->renderer->GetAnimationState(id);
