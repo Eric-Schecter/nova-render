@@ -122,6 +122,21 @@ int main(int argc, char** argv)
         require(grab && grab->triangleIndex == 0, "Fabric triangle missing");
         require(grab->barycentric == std::array<float, 3>{.25f, .25f, .5f}, "Incorrect fabric barycentric weights");
         require(grab->uv == std::array<float, 2>{.25f, .5f}, "Incorrect fabric UV");
+        const auto packedModel = scene.model;
+        render::SceneGeometryPose pose{{3, 0, 0, 5, 0, 0, 3, 2, 0}, {0, 0, 1, 0, 0, 1, 0, 0, 1}};
+        bool uploaded = false;
+        scene.UpdateGeometry("fabric", pose, [&](uint32_t first, const auto& vertices) {
+            uploaded = first == 0 && vertices.size() == 3 && vertices.front().position[0] == 2;
+        });
+        require(uploaded && scene.model == packedModel, "Fabric geometry update replaced packed resources");
+        const auto posed = scene.Pick({{3.5f, 1.f, 2.f}, {0, 0, -1}});
+        require(posed && posed->uv == grab->uv, "Fabric picking did not follow the pose");
+        require(!scene.Pick({{.5f, 1.f, 2.f}, {0, 0, -1}}), "Old fabric pose still picked");
+        const auto bounds = scene.AssetBounds("fabric");
+        require(bounds && bounds->minimum[0] == 3 && bounds->maximum[0] == 5, "Stale fabric bounds");
+        scene.Update({{"fabric", {}, true, {}, fabric}}, {{"cloth", "fabric"}});
+        require(scene.Pick({{3.5f, 1.f, 2.f}, {0, 0, -1}}).has_value(), "Fabric pose lost on transform update");
+
         // Large BVH plus triangle-exact rejection inside bounding boxes.
         auto data = std::make_shared<render::detail::ModelData>();
         constexpr int triangleCount = 32768;

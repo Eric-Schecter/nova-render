@@ -23,6 +23,18 @@ void LoadModel(std::shared_ptr<const ModelData> data) override
     Backend::LoadModel(std::move(data));
 }
 
+void UploadGeometryPose(uint32_t first, const std::vector<ModelVertex>& pose) override
+{
+    if ((gpuModel != model && !pendingIndexedMaterials) || !modelVertices)
+        return;
+    WaitIdle();
+    void* mapping = nullptr;
+    D3D12_RANGE read{0, 0};
+    checkHR(modelVertices->Map(0, &read, &mapping), "Map geometry pose");
+    std::memcpy(static_cast<ModelVertex*>(mapping) + first, pose.data(), pose.size() * sizeof(ModelVertex));
+    D3D12_RANGE written{size_t(first) * sizeof(ModelVertex), (size_t(first) + pose.size()) * sizeof(ModelVertex)};
+    modelVertices->Unmap(0, &written);
+}
 void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
 {
     if (!UsesIndexedMaterials() || (gpuModel != model && !pendingIndexedMaterials)

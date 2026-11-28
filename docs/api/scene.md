@@ -90,3 +90,18 @@ See [Materials](./materials) for multi-slot materials and runtime factor/texture
 Ray mode lazily builds a world-space triangle snapshot from shared assets and instances. Unchanged geometry reuses that snapshot and acceleration resources; light-only edits update parameters. Transform, cast-flag, asset and material updates invalidate the snapshot and reset accumulation. This first implementation rebuilds flattened geometry/acceleration data rather than using incremental TLAS updates. The expanded vertex budget is 128 MiB, in addition to device binding/memory limits; zero-scale instances contribute no geometry. Empty scenes render the configured background.
 
 `castShadow: false` excludes an instance from direct visibility tests but keeps it visible to camera and indirect transport rays. It is not a visibility or collision mask.
+
+## Fixed-topology geometry updates
+
+`UpdateSceneGeometry(assetId, pose)` in C++ and
+`await renderer.updateSceneGeometry(assetId, pose)` on Web update an active
+procedural asset in Raster mode. Supply flat `positions` and `normals` arrays
+with three components per vertex in the original triangle stream. Web also
+accepts `Float32Array`. Use the same source coordinates as the geometry
+submitted at creation. The original normalization remains fixed.
+
+The renderer updates the vertex buffer range and refreshes bounds and picking.
+The asset keeps its material slots, UVs, triangle order and instances. All
+instances of the asset share the new geometry. Temporal raster history resets
+on a pose update. Uploads on native backends currently wait for the in-flight
+frame before writing the buffer.

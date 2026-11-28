@@ -183,6 +183,20 @@ namespace render::detail
                      : 0;
         }
         void ResetHybridHistory() { rasterAA.Reset(); }
+        void UpdateSceneGeometry(const std::string& id, const SceneGeometryPose& pose)
+        {
+            if (mode != RenderMode::Raster)
+                throw std::invalid_argument("Geometry updates require Raster mode");
+            scene.UpdateGeometry(id, pose, [&](uint32_t first, const auto& vertices) {
+                UploadGeometryPose(first, vertices);
+            });
+            model = scene.model;
+            presentedImage.reset();
+            pathSession.Reset();
+            rasterAA.Reset();
+            RebuildRasterInstances();
+        }
+        virtual void UploadGeometryPose(uint32_t first, const std::vector<ModelVertex>& pose) = 0;
         void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
         {
             const auto previousMode = mode;

@@ -721,6 +721,15 @@ namespace render::detail
             Backend::LoadModel(std::move(data));
         }
 
+        void UploadGeometryPose(uint32_t first, const std::vector<ModelVertex>& pose) override
+        {
+            if ((gpuModel != model && !pendingIndexedMaterials) || !vertices)
+                return;
+            WaitIdle();
+            std::memcpy(static_cast<ModelVertex*>([vertices contents]) + first, pose.data(),
+                        pose.size() * sizeof(ModelVertex));
+        }
+
         void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
         {
             if (!UsesIndexedMaterials() || (gpuModel != model && !pendingIndexedMaterials)

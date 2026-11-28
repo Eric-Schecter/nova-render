@@ -400,6 +400,16 @@ void createBindlessModelDescriptors()
                   << std::count_if(bindlessPlan.sources.begin(), bindlessPlan.sources.end(),
                                    [](const auto& source) { return source.image != nullptr; }) << '\n';
 }
+void UploadGeometryPose(uint32_t first, const std::vector<ModelVertex>& pose) override
+{
+    if (!modelReady || !modelVertices.memory)
+        return;
+    WaitIdle();
+    void* mapping = nullptr;
+    check(vkMapMemory(device, modelVertices.memory, 0, VK_WHOLE_SIZE, 0, &mapping), "Map geometry pose");
+    std::memcpy(static_cast<ModelVertex*>(mapping) + first, pose.data(), pose.size() * sizeof(ModelVertex));
+    vkUnmapMemory(device, modelVertices.memory);
+}
 void UpdateMaterialModel(std::shared_ptr<const ModelData> data) override
 {
     // Indexed raster and OIT consume the same table. Masked visibility and

@@ -1053,6 +1053,10 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           })
         }
       },
+      uploadGeometryPose(first, pose) {
+        if (disposed) throw Error('Model has been disposed')
+        device.queue.writeBuffer(vertices, first * Float32Array.BYTES_PER_ELEMENT, pose)
+      },
       setInstances(bytes, draws, shadowRecords) {
         if (disposed) throw Error('Model has been disposed')
         probeBounds = undefined

@@ -311,6 +311,10 @@ namespace render
     {
         impl_->renderer->SetSceneOutlines(outlines);
     }
+    void Window::UpdateSceneGeometry(const std::string& assetId, const SceneGeometryPose& pose)
+    {
+        impl_->renderer->UpdateSceneGeometry(assetId, pose);
+    }
     void Window::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
     {
         impl_->renderer->SetScene(assets, instances);

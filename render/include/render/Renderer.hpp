@@ -92,6 +92,7 @@ namespace render
         // See Scene.hpp for coordinate spaces and matrix layout. DrawFrame submits the update.
         void SetSceneOutlines(const SceneOutlines& outlines);
         void SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances);
+        void UpdateSceneGeometry(const std::string& assetId, const SceneGeometryPose& pose);
         // Bounds in selected asset-local space; absent for unreferenced/inactive IDs.
         std::optional<Bounds> GetSceneAssetBounds(const std::string& assetId) const;
         // Synchronous CPU query of the last committed SetScene state; nullopt on miss.

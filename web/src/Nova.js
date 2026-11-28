@@ -516,6 +516,29 @@ class Renderer {
     this.#sceneOutlines = next
     this.#resetAA()
   }
+  updateSceneGeometry(assetId, pose) {
+    if (!pose || ![pose.positions, pose.normals].every(
+      (values) => values instanceof Float32Array ||
+        (Array.isArray(values) && values.every((v) => typeof v === 'number'))
+    )) throw Error('Geometry pose requires position and normal arrays')
+    const snapshot = {
+      positions: Float32Array.from(pose.positions),
+      normals: Float32Array.from(pose.normals),
+    }
+    return this.#enqueue(async () => {
+      this.#check()
+      if (!this.#sceneModel || this.#renderMode !== 'raster')
+        throw Error('Geometry updates require an active raster scene')
+      const next = this.#sceneData.fork()
+      const data = await next.updateGeometry(assetId, snapshot,
+        (first, packed) => this.#model.uploadGeometryPose(first, packed))
+      this.#model.setInstances(data.instances, data.draws, data.shadowRecords)
+      this.#model.setRaySource(() => next.rayModel())
+      this.#sceneData = next
+      this.#resetAA()
+      this.#continuePathTracing()
+    })
+  }
   /** Replace static raster instances. Assets: {id,url or geometry,sourceSpace?}; instances: {id,assetId,world?}. */
   setScene(assets, instances) {
     assets = assets.map((asset) => {

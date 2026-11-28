@@ -65,6 +65,62 @@ namespace render::detail
         next.Build(assets, input);
         *this = std::move(next);
     }
+    void SceneData::UpdateGeometry(
+      const std::string& id, const SceneGeometryPose& pose,
+      const std::function<void(uint32_t, const std::vector<ModelVertex>&)>& upload)
+    {
+        auto found = meshes.find(id);
+        const auto asset = std::find_if(assetsSnapshot.begin(), assetsSnapshot.end(),
+                                       [&](const auto& a) { return a.id == id; });
+        if (!active || found == meshes.end() || asset == assetsSnapshot.end() || !asset->geometry)
+            throw std::invalid_argument("Geometry update requires an active procedural asset");
+        const auto& old = found->second;
+        if (pose.positions.size() != size_t(old.count) * 3 || pose.normals.size() != pose.positions.size())
+            throw std::invalid_argument("Geometry pose must match the original vertex count");
+        auto data = std::make_shared<ModelData>(*old.data);
+        const auto& low = data->sourceMinimum;
+        const auto& high = data->sourceMaximum;
+        const float scale = std::max({high[0] - low[0], high[1] - low[1], high[2] - low[2]});
+        Bounds bounds;
+        bounds.minimum.fill(std::numeric_limits<float>::infinity());
+        bounds.maximum.fill(-std::numeric_limits<float>::infinity());
+        for (size_t i = 0; i < data->vertices.size(); ++i)
+        {
+            const auto* normal = pose.normals.data() + i * 3;
+            const float length = std::hypot(normal[0], normal[1], normal[2]);
+            if (!(length > 0) || !std::isfinite(length))
+                throw std::invalid_argument("Invalid geometry pose normal");
+            for (int k = 0; k < 3; ++k)
+            {
+                const float position = pose.positions[i * 3 + k];
+                const float local = float(((double(position) - low[k]) / scale
+                                  - (double(high[k]) - low[k]) / scale * .5) * 2);
+                if (!std::isfinite(local))
+                    throw std::invalid_argument("Invalid geometry pose position");
+                data->vertices[i].position[k] = local;
+                data->vertices[i].normal[k] = normal[k] / length;
+                bounds.minimum[k] = std::min(bounds.minimum[k], local);
+                bounds.maximum[k] = std::max(bounds.maximum[k], local);
+            }
+        }
+        auto packedVertices = data->vertices;
+        for (size_t i = 0; i < packedVertices.size(); ++i)
+            packedVertices[i].position[3] = model->vertices[old.first + i].position[3];
+
+        auto next = *this;
+        auto& target = next.meshes.at(id);
+        target.data = data;
+        target.poseBounds = bounds;
+        target.picking = std::make_shared<PickMesh>(data);
+        if (next.shadowAssets.erase(id))
+            next.Build(assetsSnapshot, inputSnapshot);
+        next.raySource.reset();
+        upload(old.first, packedVertices);
+        auto packed = std::const_pointer_cast<ModelData>(next.model);
+        std::copy(packedVertices.begin(), packedVertices.end(), packed->vertices.begin() + old.first);
+        *this = std::move(next);
+    }
+
     void SceneData::Build(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& input)
     {
         if (!active)
@@ -474,6 +530,24 @@ namespace render::detail
         auto found = meshes.find(id);
         if (found == meshes.end())
             return {};
+        if (found->second.poseBounds)
+        {
+            auto bounds = *found->second.poseBounds;
+            if (sourceSpaces.at(id))
+            {
+                const auto& data = *found->second.data;
+                const auto& low = data.sourceMinimum;
+                const auto& high = data.sourceMaximum;
+                const float scale = std::max({high[0] - low[0], high[1] - low[1], high[2] - low[2]}) * .5f;
+                for (int k = 0; k < 3; ++k)
+                {
+                    const double center = (double(low[k]) + high[k]) * .5;
+                    bounds.minimum[k] = float(bounds.minimum[k] * scale + center);
+                    bounds.maximum[k] = float(bounds.maximum[k] * scale + center);
+                }
+            }
+            return bounds;
+        }
         if (found->second.data->animation)
         {
             Bounds result;

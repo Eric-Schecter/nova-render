@@ -230,6 +230,10 @@ namespace render
     {
         impl_->backend->SetSceneOutlines(outlines);
     }
+    void Renderer::UpdateSceneGeometry(const std::string& assetId, const SceneGeometryPose& pose)
+    {
+        impl_->backend->UpdateSceneGeometry(assetId, pose);
+    }
     void Renderer::SetScene(const std::vector<SceneAsset>& assets, const std::vector<SceneInstance>& instances)
     {
         impl_->backend->SetScene(assets, instances);

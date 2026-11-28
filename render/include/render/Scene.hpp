@@ -48,6 +48,12 @@ namespace render
         std::vector<uint32_t> triangleMaterials;
     };
 
+    struct SceneGeometryPose
+    {
+        // One position and normal per original triangle-stream vertex, in source space.
+        std::vector<float> positions, normals;
+    };
+
     struct SceneAsset
     {
         std::string           id;

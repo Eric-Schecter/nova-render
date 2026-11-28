@@ -81,6 +81,14 @@ export class SceneData {
   assetBounds(id) {
     const m = this.meshes.get(id)
     if (!m) return null
+    if (m.poseBounds) {
+      const { minimum, maximum } = m.poseBounds
+      if (!this.sourceSpaces.get(id)) return { minimum: [...minimum], maximum: [...maximum] }
+      const low = m.data.sourceMinimum, high = m.data.sourceMaximum
+      const half = Math.max(...high.map((v, k) => v - low[k])) * .5
+      const toSource = (v, k) => v * half + (low[k] + high[k]) * .5
+      return { minimum: minimum.map(toSource), maximum: maximum.map(toSource) }
+    }
     if (m.data.animation) {
       const minimum = [Infinity, Infinity, Infinity],
         maximum = [-Infinity, -Infinity, -Infinity]
@@ -119,6 +127,49 @@ export class SceneData {
     const result = await next.build(assets, input)
     Object.assign(this, next)
     return result
+  }
+  async updateGeometry(id, pose, upload) {
+    const old = this.meshes.get(id)
+    if (!old?.geometry) throw Error('Geometry update requires an active procedural asset')
+    if (pose.positions.length !== old.count * 3 || pose.normals.length !== pose.positions.length)
+      throw Error('Geometry pose must match the original vertex count')
+    const data = { ...old.data, vertices: old.data.vertices.slice() }
+    const low = data.sourceMinimum, high = data.sourceMaximum
+    const scale = Math.max(...high.map((v, k) => v - low[k]))
+    const minimum = [Infinity, Infinity, Infinity], maximum = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i < old.count; ++i) {
+      const at = i * modelVertexFloats
+      const n = pose.normals.subarray(i * 3, i * 3 + 3)
+      const length = Math.fround(Math.hypot(...n))
+      if (!(length > 0) || !Number.isFinite(length)) throw Error('Invalid geometry pose normal')
+      for (let k = 0; k < 3; ++k) {
+        const position = pose.positions[i * 3 + k]
+        const local = Math.fround(((position - low[k]) / scale - (high[k] - low[k]) / scale * .5) * 2)
+        if (!Number.isFinite(local)) throw Error('Invalid geometry pose position')
+        data.vertices[at + k] = local
+        data.vertices[at + 4 + k] = n[k] / length
+        minimum[k] = Math.min(minimum[k], local)
+        maximum[k] = Math.max(maximum[k], local)
+      }
+    }
+    const first = old.first * modelVertexFloats
+    const packed = data.vertices.slice()
+    for (let i = 3; i < packed.length; i += modelVertexFloats)
+      packed[i] = this.model.vertices[first + i]
+    this.meshes = new Map(this.meshes)
+    this.meshes.set(id, { ...old, data, picking: old.picking.refit(data), poseBounds: { minimum, maximum } })
+    if (old.shadowNodes) {
+      this.shadowKey = ''
+      const assets = this.assetsSnapshot.map((asset) => ({
+        ...asset,
+        geometry: this.meshes.get(asset.id)?.geometry ?? asset.geometry,
+      }))
+      await this.build(assets, this.inputSnapshot)
+    }
+    upload(first, packed)
+    this.model.vertices.set(packed, first)
+    this.raySource = null
+    return this.shadowInstances()
   }
   async build(assets, input) {
     if (!Array.isArray(assets) || !Array.isArray(input))

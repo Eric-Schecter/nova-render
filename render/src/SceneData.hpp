@@ -3,6 +3,7 @@
 #include "ModelData.hpp"
 #include "Picking.hpp"
 #include "render/Scene.hpp"
+#include <functional>
 #include <map>
 #include <set>
 #include <tuple>
@@ -29,6 +30,8 @@ namespace render::detail
         AnimationState                   Animation(const std::string& instanceId) const;
         void                             SetAnimation(const std::string& instanceId, const AnimationState&);
         void                             UpdateAnimations(float delta);
+        void UpdateGeometry(const std::string& id, const SceneGeometryPose& pose,
+                            const std::function<void(uint32_t, const std::vector<ModelVertex>&)>& upload);
         bool                             active = false;
         std::shared_ptr<const ModelData> model;
         std::vector<InstanceData>        instances;
@@ -70,6 +73,7 @@ namespace render::detail
             uint32_t                         shadowFirst = 0, shadowNodes = 0;
             std::array<float, 4>             uv;
             std::shared_ptr<const PickMesh>  picking;
+            std::optional<Bounds> poseBounds;
         };
         using AssetKey = std::tuple<std::string, std::filesystem::path, std::optional<uint32_t>, std::shared_ptr<const SceneGeometry>>;
         std::vector<AssetKey> key;
