@@ -1,3 +1,4 @@
+import { packToonRecords } from './MaterialData.js'
 import { canUseHalfReflections } from './RasterPipeline.js'
 import { modelVertexFloats, modelTriangleFloats } from './ModelVertex.js'
 import { createHybridProbes, probeSceneBounds } from './HybridProbes.js'
@@ -450,6 +451,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
     }
     let viewportGrid, gridBackground
     let outlines = null, outlinedIds = null, outlineMarks = new Map()
+    const toonRecords = packToonRecords(data.materials)
     function writeGlobals() {
       const record = new Float32Array(48)
       record.set(
@@ -492,7 +494,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
 
       record[9] = hybrid?.reflectionDenoising && hybrid.reflectionHitReprojection ? 1 : 0
       record.set([...rasterFog.color, ['off', 'linear', 'exp2'].indexOf(rasterFog.mode)], 32)
-      record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, 0], 36)
+      record.set([rasterFog.nearDistance, rasterFog.farDistance, rasterFog.density, toonRecords.length / 48], 36)
       record.set(
         [
           shadowInstanceCount,
@@ -519,7 +521,7 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
       rasterGlobals = bytes.byteLength / 192
       const size = Math.max(
         192,
-        bytes.byteLength + 192 + shadowRecords.byteLength + encodedLights.byteLength,
+        bytes.byteLength + 192 + shadowRecords.byteLength + encodedLights.byteLength + toonRecords.byteLength,
       )
       if (size > device.limits.maxStorageBufferBindingSize)
         throw Error('Scene shadow resources exceed device storage buffer limit')
@@ -541,6 +543,8 @@ export async function createModelView(device, context, url, shaderURL, suppliedD
           bytes.byteLength + 192 + shadowRecords.byteLength,
           encodedLights,
         )
+      if (toonRecords.byteLength)
+        device.queue.writeBuffer(instanceBuffer, size - toonRecords.byteLength, toonRecords)
       sceneDraws = draws
       writeGlobals()
     }

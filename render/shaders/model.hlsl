@@ -617,8 +617,8 @@ float3 materialReflectance(float cosine, float3 base, float metallic, float4 spe
         return conductor;
     return lerp(filmDielectricReflectance(cosine, specular, film), conductor, metallic);
 }
-float3 directLight(
-  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance, float4 film = 0, float4 anisotropy = 0, float4 sheen = 0)
+float3 directLightLobes(
+  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance, float4 film, float4 anisotropy, float4 sheen, out float3 specularLight)
 {
     float3 halfVector = v + l;
     float3 h          = halfVector * rsqrt(max(dot(halfVector, halfVector), 1e-8));
@@ -639,7 +639,18 @@ float3 directLight(
         specularWeight = anisotropicD(h, n, anisotropy.xyz, alpha) *
                          anisotropicVisibility(v, l, n, anisotropy.xyz, alpha);
     }
-    return sheenLayer(sheen, n, v, l, diffuse + specularWeight * f) * radiance * nl;
+    float3 specularLobe = specularWeight * f;
+    float sheenWeight = 1 - max(sheen.r, max(sheen.g, sheen.b)) * sheenAlbedo(saturate(dot(n, v)), sheen.a);
+    specularLight = specularLobe * sheenWeight * radiance * nl;
+    return sheenLayer(sheen, n, v, l, diffuse + specularLobe) * radiance * nl;
+}
+float3 directLight(
+  float3 n, float3 v, float3 l, float3 base, float metallic, float roughness, float4 specular, float3 radiance,
+  float4 film = 0, float4 anisotropy = 0, float4 sheen = 0)
+{
+    float3 specularLight;
+    return directLightLobes(n, v, l, base, metallic, roughness, specular, radiance,
+                            film, anisotropy, sheen, specularLight);
 }
 // Analytic studio environment; no external HDR file is required by this example.
 float3 studio(float3 r, float roughness)
@@ -760,7 +771,7 @@ struct SurfaceData
     float2 clearcoat;
     float3 coatNormal;
     float4 visibility0, visibility1, visibility2, visibility3;
-    uint   useVisibility;
+    uint   useVisibility, toonIndex;
 };
 struct CoatUVs
 {
@@ -957,6 +968,7 @@ SurfaceData sampleSurface(VertexOut input)
         result.volume.w *= mr.r;
     result.alphaInfo                                                                  = alphaInfo;
     result.position                                                                   = input.worldPosition;
+    result.toonIndex = lightDirection.w > .5 ? input.instanceIndex + 1 : 0;
     result.normal                                                                     = n;
     result.anisotropy = anisotropicFrame(anisotropy, n, t, b);
     result.geometricNormal                                                            = normalize(input.normal);
@@ -982,12 +994,18 @@ float clearcoatTransmission(SurfaceData s, float3 v)
 {
     return 1 - s.clearcoat.x * fresnel(dot(s.coatNormal, v), 0.04, 1).x;
 }
-float3 surfaceDirectLight(SurfaceData s, float3 v, float3 l, float3 radiance, float transmission)
+float3 surfaceDirectLight(SurfaceData s, float3 v, float3 l, float3 radiance, float transmission,
+                          out float3 specular)
 {
-    float3 color = directLight(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular, radiance, s.film, s.anisotropy, s.sheen);
+    float3 color = directLightLobes(s.normal, v, l, s.base, s.metallic, s.roughness, s.specular,
+                                    radiance, s.film, s.anisotropy, s.sheen, specular);
     if (s.clearcoat.x > 0)
-        return color * transmission + s.clearcoat.x * directLight(
+    {
+        float3 coat = s.clearcoat.x * directLight(
           s.coatNormal, v, l, 0.04, 1, max(.06, s.clearcoat.y), 1, radiance);
+        specular = specular * transmission + coat;
+        return color * transmission + coat;
+    }
     return color;
 }
 float3 clearcoatEnvironment(SurfaceData s, float3 v)
@@ -1090,8 +1108,9 @@ float3 rectangleGGX(float3 n, float3 v, float3 l, float3 h, float roughness, flo
     return fresnel(saturate(dot(v, h)), f0, f90) * (a2 * visibility / (3.14159265 * d * d));
 }
 float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float coatTransmission,
-                           bool secondaryLighting, float resolvedVisibility)
+                           bool secondaryLighting, float resolvedVisibility, out float3 reflected)
 {
+    reflected = 0;
     float planeDistance = dot(s.position - light.material.xyz, light.emissive.xyz);
     if (planeDistance <= 0 || light.baseColor.w <= 0)
         return 0;
@@ -1155,7 +1174,41 @@ float3 rectangleDirectLight(InstanceData light, SurfaceData s, float3 v, float c
         coat *= s.clearcoat.x;
     }
     float sheenScale = 1 - max(s.sheen.r, max(s.sheen.g, s.sheen.b)) * sheenAlbedo(saturate(dot(s.normal, v)), s.sheen.a);
+    reflected = specular * sheenScale * coatTransmission + coat;
     return ((diffuse + specular) * sheenScale + sheen) * coatTransmission + coat;
+}
+
+InstanceData toonSettings(uint materialIndex)
+{
+    if (materialIndex == 0 || irradiance[3].w < .5)
+        return (InstanceData)0;
+    uint globalsIndex = uint(irradiance[3].w) - 1;
+    InstanceData globals = loadInstance(globalsIndex);
+    uint count = uint(globals.material.w);
+    uint slot = materialIndex - 1;
+    if (slot >= globalsIndex || globalsIndex - slot > count)
+        return (InstanceData)0;
+    return loadInstance(uint(globals.uv.z + globals.uv.y) + slot - (globalsIndex - count));
+}
+
+float3 toonRadiance(SurfaceData s, float3 v, InstanceData settings, float3 specular)
+{
+    float ndl = dot(s.geometricNormal, normalize(settings.baseColor.xyz));
+    float h = .5 * ndl + .5;
+    float litBand = smoothstep(settings.material.x, settings.material.y, h);
+    float rim = pow(1 - saturate(dot(s.normal, v)), 3) * settings.material.w;
+    float3 tint = lerp(settings.uv.xyz, settings.emissive.rgb, litBand);
+    float3 rimColor = float3(settings.world._m00, settings.world._m10, settings.world._m20);
+    if (settings.emissive.w == 1)
+    {
+        float strength = settings.material.z;
+        float warm = (h - .43) / .17;
+        tint += lerp(float3(.16, -.14, -.20) * strength, float3(.06, .01, -.02) * (.65 * strength), litBand);
+        tint += float3(.14, .032, .022) * exp(-warm * warm) * strength;
+        return s.base * tint + rimColor * rim * .22;
+    }
+    rim *= .24 + .16 * smoothstep(-.2, .5, ndl);
+    return s.base * tint + specular * (.55 + .65 * s.metallic) + rimColor * rim + s.emissive;
 }
 
 float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, float3 viewDirection,
@@ -1176,7 +1229,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
         header     = uint(irradiance[3].w) - 1;
         collection = loadInstance(header).uv.w > .5;
     }
-    float3 color = 0;
+    float3 color = 0, directSpecular = 0;
     float3 coatEnvironment = clearcoatEnvironment(s, v);
     float3 baseEnvironment, diffuseAmbient;
     if (collection)
@@ -1192,7 +1245,9 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
                 // direction-specific visibility of projected smooth highlights.
                 float visibility = !secondaryLighting && s.useVisibility && irradiance[5].w < 0
                   ? hybridVisibility(s, i) : -1;
-                color += rectangleDirectLight(source, s, v, coatTransmission, secondaryLighting, visibility);
+                float3 reflected;
+                color += rectangleDirectLight(source, s, v, coatTransmission, secondaryLighting, visibility, reflected);
+                directSpecular += reflected;
                 continue;
             }
             float3       l           = source.emissive.xyz;
@@ -1227,8 +1282,10 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
                 visibility = type == 0
                                ? sceneVisibility(s.position, s.geometricNormal, l, source.uv.w)
                                : localLightVisibility(s.position, s.geometricNormal, source.material.xyz, source.uv.w);
+            float3 reflected;
             color += surfaceDirectLight(
-              s, v, l, source.baseColor.rgb * source.baseColor.w * attenuation * visibility, coatTransmission);
+              s, v, l, source.baseColor.rgb * source.baseColor.w * attenuation * visibility, coatTransmission, reflected);
+            directSpecular += reflected;
         }
     }
     else if (!secondaryLighting || dot(n, lightDirection.xyz) > 0 ||
@@ -1243,7 +1300,7 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
               s.geometricNormal,
               lightDirection.xyz,
               irradiance[3].w > .5 ? loadInstance(uint(irradiance[3].w) - 1).emissive.z : 0)),
-          coatTransmission);
+          coatTransmission, directSpecular);
     float3 f0 = lerp(dielectricF0(s.specular, s.film.w), base, metallic);
     float  f90 = lerp(s.specular.a, 1, metallic);
     float  nv = saturate(dot(n, v));
@@ -1269,7 +1326,12 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
     else
     {
         if (!collection)
-            color += surfaceDirectLight(s, v, normalize(float3(1, 0.7, -1)), float3(1, 1.6, 2.7), coatTransmission);
+        {
+            float3 reflected;
+            color += surfaceDirectLight(s, v, normalize(float3(1, 0.7, -1)), float3(1, 1.6, 2.7),
+                                        coatTransmission, reflected);
+            directSpecular += reflected;
+        }
         diffuseAmbient = diffuse * (all(s.specular == 1) && !filmed && (s.film.w == 0 || s.film.w == 1.5) ? float3(1, 1, 1) : diffuseEnergy) * studio(n, 1) * 0.4;
         baseEnvironment = studio(anisotropicReflection, roughness) * f;
     }
@@ -1292,6 +1354,12 @@ float3 surfaceRadiance(SurfaceData s, float3 raySpecular, float reflectionMix, f
       : lerp(baseEnvironment, raySpecular, reflectionMix) * coatTransmission + coatEnvironment;
     color += diffuseAmbient * coatTransmission * ao + specular * specularAO;
     color += s.emissive * coatTransmission;
+    if (!secondaryLighting)
+    {
+        InstanceData toon = toonSettings(s.toonIndex);
+        if (toon.baseColor.w > 0)
+            color = lerp(color, toonRadiance(s, v, toon, directSpecular + specular * specularAO), toon.baseColor.w);
+    }
     return color;
 }
 float4 shadeSurface(SurfaceData s)
@@ -2733,6 +2801,7 @@ float4 shadeDeferred(SkyOut input, bool gridVisible)
     {
         InstanceData material = loadInstance(uint(irradiance[3].w - 1 - pos.w));
         deferredMaterialLayers(s, material, pixel);
+        s.toonIndex = uint(irradiance[3].w - pos.w);
         reflectionOverride = material.world._m32;
     }
     if (irradiance[1].w > .5)

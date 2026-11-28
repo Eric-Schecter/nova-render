@@ -12,7 +12,7 @@ import {
 export { modelRasterPipelines, gBufferViews } from './RasterPipeline.js'
 import { copyFog, copyShadows } from './Atmosphere.js'
 import { packMaterials, validateMaterial, materialCapabilities } from './MaterialData.js'
-export { loadMaterialImage } from './MaterialData.js'
+export { loadMaterialImage, toonPreset } from './MaterialData.js'
 import {
   cameraBasis,
   copyViewCamera,

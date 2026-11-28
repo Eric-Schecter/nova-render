@@ -506,6 +506,29 @@ namespace render::detail
                     ++count;
                 }
             rasterInstances[rasterGlobals].uv[1] = float(count);
+            if (model && std::any_of(model->materials.begin(), model->materials.end(), [](const auto& m) {
+                    return m.lighting != MaterialLighting::PBR;
+                }))
+            {
+                rasterInstances[rasterGlobals].material[3] = float(model->materials.size());
+                for (const auto& material : model->materials)
+                {
+                    InstanceData record{};
+                    const auto t = material.toon.value_or(material.lighting == MaterialLighting::ToonSkin
+                                                         ? ToonLighting::Skin() : ToonLighting{});
+                    std::copy(t.keyDirection.begin(), t.keyDirection.end(), record.baseColor);
+                    record.baseColor[3] = material.lighting == MaterialLighting::PBR ? 0.f : t.toonMix;
+                    record.material[0] = t.bandStart;
+                    record.material[1] = t.bandEnd;
+                    record.material[2] = t.skinSSS;
+                    record.material[3] = t.rimStrength;
+                    std::copy(t.litColor.begin(), t.litColor.end(), record.emissive);
+                    record.emissive[3] = float(material.lighting);
+                    std::copy(t.shadowColor.begin(), t.shadowColor.end(), record.uv);
+                    std::copy(t.rimColor.begin(), t.rimColor.end(), record.world);
+                    rasterInstances.push_back(record);
+                }
+            }
             ApplySceneOutlines();
         }
         SceneShadowSettings shadowSettings;

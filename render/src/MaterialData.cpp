@@ -9,6 +9,17 @@
 #include <stdexcept>
 namespace render
 {
+    ToonLighting ToonLighting::Skin()
+    {
+        ToonLighting preset;
+        preset.bandStart = .30f;
+        preset.bandEnd = .62f;
+        preset.litColor = {1, .99f, .98f};
+        preset.shadowColor = {.76f, .72f, .74f};
+        preset.rimColor = {1, .84f, .78f};
+        return preset;
+    }
+
     Image LoadMaterialImage(const std::filesystem::path& path)
     {
         int   w, h, c;
@@ -90,6 +101,27 @@ namespace render::detail
             if (!std::isfinite(x) || x < 0 || x > max)
                 throw std::invalid_argument("Invalid material factor");
         };
+        if (unsigned(m.lighting) > unsigned(MaterialLighting::ToonSurface))
+            throw std::invalid_argument("Invalid material lighting model");
+        if (m.toon)
+        {
+            const auto& t = *m.toon;
+            range(t.toonMix, 1);
+            range(t.skinSSS, 1);
+            range(t.rimStrength, 4);
+            range(t.bandStart, 1);
+            range(t.bandEnd, 1);
+            if (t.bandStart >= t.bandEnd)
+                throw std::invalid_argument("Invalid toon band");
+            for (const auto& color : {t.litColor, t.shadowColor, t.rimColor})
+                for (float x : color)
+                    range(x, 16);
+            for (float x : t.keyDirection)
+                if (!std::isfinite(x) || std::abs(x) > 1e10f)
+                    throw std::invalid_argument("Invalid toon key direction");
+            if (std::hypot(t.keyDirection[0], t.keyDirection[1], t.keyDirection[2]) < 1e-6f)
+                throw std::invalid_argument("Invalid toon key direction");
+        }
         if (m.baseColorWrap > 10 || (m.baseColorWrap & 3) == 3)
             throw std::invalid_argument("Invalid base-color texture wrapping");
         if (m.emissiveTexCoord > 1)

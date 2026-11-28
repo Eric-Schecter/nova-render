@@ -105,3 +105,26 @@ Forward and Deferred use OPAQUE/MASK depth writes and a separate weighted blende
 BLEND supports Off, FXAA, SMAA and SSAA. `blendMSAA`, `blendTAA` and `blendAASplit` are false; incompatible setters fail before replacing state. MASK supports the normal raster AA choices; Deferred MSAA remains unavailable. `transparency` is `weighted-blended-oit`.
 
 See [Alpha material validation](../examples/material-alpha).
+
+## Toon lighting
+
+Choose `MaterialLighting::ToonSkin` or `MaterialLighting::ToonSurface` in C++,
+or set a Web material's `lighting` to `'ToonSkin'` or `'ToonSurface'`.
+`PBR` is the default. Use the existing material getter and setter with an
+asset ID and slot. Enable PBR lighting for the scene. The same material API
+applies to procedural scene geometry.
+
+Leave `toon` empty to use the selected preset. In C++, start with
+`ToonLighting::Skin()` for skin or `ToonLighting{}` for surfaces.
+On Web, `toon` can specify a subset of the preset fields.
+
+- `toonMix` blends from PBR at 0 to toon at 1.
+- `keyDirection` points toward the key light in world space.
+- `bandStart` and `bandEnd` mark the smoothstep interval on the half-Lambert ramp.
+- `litColor`, `shadowColor`, and `rimColor` are linear RGB.
+- `rimStrength` controls the view-dependent rim and `skinSSS` controls the
+  warm skin terminator. `skinSSS` affects only `ToonSkin`.
+
+Toon lighting applies to rasterized surfaces, including the visible surface in
+Hybrid. Standalone path tracing and secondary Hybrid hits use PBR.
+See [the C++ and Web examples](https://github.com/Eric-Schecter/nova-render/tree/main/examples/toon).

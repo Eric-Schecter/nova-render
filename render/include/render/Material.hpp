@@ -13,6 +13,18 @@ namespace render
         Mask,
         Blend
     };
+    enum class MaterialLighting { PBR, ToonSkin, ToonSurface };
+
+    struct ToonLighting
+    {
+        float toonMix = 1, skinSSS = .85f, rimStrength = .65f;
+        std::array<float, 3> keyDirection{.45f, .62f, .72f};
+        float bandStart = .34f, bandEnd = .56f;
+        std::array<float, 3> litColor{1.02f, 1.01f, 1.03f};
+        std::array<float, 3> shadowColor{.50f, .56f, .78f};
+        std::array<float, 3> rimColor{.45f, .80f, 1};
+        static ToonLighting Skin();
+    };
     struct MaterialCapabilities
     {
         bool        opaque = true, mask = true, blend = true, doubleSided = true;
@@ -64,6 +76,8 @@ namespace render
         std::optional<Image> transmissionTexture, thicknessTexture;
         float thicknessFactor = 0, inverseAttenuationDistance = 0;
         std::array<float, 3> attenuationColor{1, 1, 1};
+        MaterialLighting lighting = MaterialLighting::PBR;
+        std::optional<ToonLighting> toon; // Empty uses the selected lighting preset.
         bool                    triplanar = false; // World-space projection of normal and metallic-roughness maps.
     };
     Image LoadMaterialImage(const std::filesystem::path& path);

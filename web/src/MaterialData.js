@@ -26,10 +26,65 @@ export async function loadMaterialImage(url) {
   return decodeMaterialImage(await response.blob())
 }
 
+export function toonPreset(lighting) {
+  const skin = lighting === 'ToonSkin'
+  return {
+    toonMix: 1, skinSSS: .85, rimStrength: .65, keyDirection: [.45, .62, .72],
+    bandStart: skin ? .30 : .34, bandEnd: skin ? .62 : .56,
+    litColor: skin ? [1, .99, .98] : [1.02, 1.01, 1.03],
+    shadowColor: skin ? [.76, .72, .74] : [.50, .56, .78],
+    rimColor: skin ? [1, .84, .78] : [.45, .80, 1],
+  }
+}
+
+const lightingModels = ['PBR', 'ToonSkin', 'ToonSurface']
+
+function validateToon(lighting, value) {
+  if (!lightingModels.includes(lighting)) throw Error('Invalid material lighting model')
+  if (value == null) return null
+  const preset = toonPreset(lighting)
+  if (typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).some((key) => !Object.hasOwn(preset, key)))
+    throw Error('Invalid toon parameters')
+  const t = { ...preset, ...value }
+  const range = (v, max) => Number.isFinite(v) && v >= 0 && v <= max
+  if (![t.toonMix, t.skinSSS, t.bandStart, t.bandEnd].every((v) => range(v, 1)) ||
+      !range(t.rimStrength, 4) || Math.fround(t.bandStart) >= Math.fround(t.bandEnd))
+    throw Error('Invalid toon band or intensity')
+  for (const key of ['litColor', 'shadowColor', 'rimColor', 'keyDirection']) {
+    if (!(Array.isArray(t[key]) || t[key] instanceof Float32Array) || t[key].length !== 3)
+      throw Error('Invalid toon vector')
+    t[key] = Array.from(t[key])
+  }
+  if (![...t.litColor, ...t.shadowColor, ...t.rimColor].every((v) => range(v, 16)) ||
+      !t.keyDirection.every((v) => Number.isFinite(v) && Math.abs(v) <= 1e10) ||
+      Math.hypot(...t.keyDirection) < 1e-6)
+    throw Error('Invalid toon color or key direction')
+  return t
+}
+
+export function packToonRecords(materials = []) {
+  if (!materials.some((m) => m.lighting && m.lighting !== 'PBR')) return new Float32Array(0)
+  const records = new Float32Array(materials.length * 48)
+  materials.forEach((m, i) => {
+    const mode = lightingModels.indexOf(m.lighting ?? 'PBR')
+    const t = m.toon ?? toonPreset(m.lighting)
+    const offset = i * 48
+    records.set(t.rimColor, offset)
+    records.set([...t.keyDirection, mode > 0 ? t.toonMix : 0], offset + 32)
+    records.set([t.bandStart, t.bandEnd, t.skinSSS, t.rimStrength], offset + 36)
+    records.set([...t.litColor, mode], offset + 40)
+    records.set(t.shadowColor, offset + 44)
+  })
+  return records
+}
+
 export function validateMaterial(m) {
   if (!m || typeof m !== 'object') throw Error('Invalid material')
   const out = {
     name: m.name ?? '',
+    lighting: m.lighting ?? 'PBR',
+    toon: validateToon(m.lighting ?? 'PBR', m.toon),
     alphaMode: m.alphaMode ?? 'OPAQUE',
     alphaCutoff: m.alphaCutoff ?? 0.5,
     doubleSided: m.doubleSided ?? false,
