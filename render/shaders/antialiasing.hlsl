@@ -570,14 +570,11 @@ float4 reflectionTemporal(int2 lowPixel)
     }
     if (count >= 2)
     {
-        // An isolated spike can occur on smooth surfaces too. Compare against the
-        // brightest compatible tap so a line shared by neighbors keeps its energy.
-        if (count >= 3)
-        {
-            float isolatedCeiling = max(.04, 3 * brightestNeighbor);
-            current.rgb *= min(1, isolatedCeiling / max(.0001, reflectionLuma(current.rgb)));
-            upper = max(current.rgb, min(upper, isolatedCeiling.xxx));
-        }
+        // Two compatible taps can identify a spike at a receiver edge.
+        // The brightest neighbor preserves highlights with spatial support.
+        float isolatedCeiling = max(.008, 2 * brightestNeighbor);
+        current.rgb *= min(1, isolatedCeiling / max(.0001, reflectionLuma(current.rgb)));
+        upper = max(current.rgb, min(upper, isolatedCeiling.xxx));
         float3 mean = neighbors / count;
         float ceiling = max(.025, 4 * reflectionLuma(mean));
         float suppression = smoothstep(.25, .65, roughness);
