@@ -103,3 +103,25 @@ Joints shared by skins appear once, ordered by node index. Names can be empty
 or repeated. Node-only animations return an empty list and an unknown or
 unanimated instance raises an error. Call the API after sampling and before
 advancing again when driving physics attachments for the same tick.
+
+## Share a skeleton across scene instances
+
+Set `SceneInstance::skinSource` in C++ or `skinSource` on a Web scene instance
+to the ID of the character instance. The wearable must be skinned. Its joint names
+must match unique joints on the character, and its inverse bind matrices must
+be authored for the corresponding rest pose.
+
+Sample or advance the character animation as usual. The wearable uses the
+character's current world-space joint poses and its own skin weights and inverse
+bind matrices. Replacing a wearable through the scene API preserves the animation
+time when the character instance and asset stay the same.
+
+```js
+await renderer.setScene(assets, [
+  { id: 'actor', assetId: 'character' },
+  { id: 'jacket', assetId: 'jacketModel', skinSource: 'actor' },
+])
+```
+
+A source must have its own skeleton and cannot itself bind to another instance.
+Omit the field (or use an empty string) to animate the instance independently.

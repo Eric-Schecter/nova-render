@@ -211,6 +211,7 @@ export class SceneData {
         !i.id ||
         ids.has(i.id) ||
         !paths.has(i.assetId) ||
+        (i.skinSource !== undefined && typeof i.skinSource !== 'string') ||
         (i.castShadow !== undefined && typeof i.castShadow !== 'boolean') ||
         !(Array.isArray(i.world) || i.world instanceof Float32Array) ||
         i.world.length !== 16 ||
@@ -352,6 +353,7 @@ export class SceneData {
       paletteCount += palette.length
       if (paletteCount * 4 > 64 * 1024 * 1024) throw Error('Scene animation palettes exceed 64 MiB')
     }
+    this.applySkinBindings(players, effective)
     const palette = new Float32Array(paletteCount)
     for (const p of players.values()) palette.set(p.palette, p.paletteOffset * 16)
     if (
@@ -507,6 +509,49 @@ export class SceneData {
       return { nodeIndex, name: animation.nodes[nodeIndex].name, world }
     })
   }
+  applySkinBindings(players, instances) {
+    const byId = new Map(instances.map((i) => [i.id, i]))
+    for (const target of instances) {
+      if (!target.skinSource) continue
+      const source = byId.get(target.skinSource)
+      const src = players.get(target.skinSource), dst = players.get(target.id)
+      if (!source || source === target || source.skinSource || !src || !dst)
+        throw Error('Skin binding requires two skinned instances and an independent source')
+      const a = this.meshes.get(src.assetId).data.animation
+      const b = this.meshes.get(dst.assetId).data.animation
+      if (!a.skins.length || !b.skins.length) throw Error('Skin binding requires skinned assets')
+      const normal = instanceNormal(target.world)
+      if (!normal[15]) throw Error('Skin binding requires an invertible target transform')
+      const offset = target.world.slice(12, 15)
+      const inverse = [normal[0], normal[4], normal[8], 0, normal[1], normal[5], normal[9], 0,
+        normal[2], normal[6], normal[10], 0, 0, 0, 0, 1]
+      for (let row = 0; row < 3; row++)
+        inverse[12 + row] = -offset.reduce((sum, v, col) => sum + v * inverse[col * 4 + row], 0)
+      const transform = multiply(inverse, source.world)
+      const names = new Map()
+      const sourceJoints = a.skins.flatMap((skin) => skin.joints)
+      const targetOffset = b.skins.reduce((sum, skin) => sum + skin.joints.length, 0)
+      for (const node of new Set(sourceJoints)) {
+        const name = a.nodes[node].name
+        if (name) names.set(name, names.has(name) ? -1 : node)
+      }
+      const palette = dst.palette.slice()
+      let slot = 0
+      for (const skin of b.skins) {
+        for (const [j, node] of skin.joints.entries()) {
+          const sourceNode = names.get(b.nodes[node].name)
+          if (sourceNode === undefined || sourceNode < 0)
+            throw Error('Skin binding joint name is absent or ambiguous')
+          const first = (sourceJoints.length + sourceNode) * 16
+          const global = multiply(transform, src.palette.subarray(first, first + 16))
+          palette.set(global, (targetOffset + node) * 16)
+          palette.set(multiply(global, skin.inverseBind[j]), slot++ * 16)
+        }
+      }
+      if (!palette.every(Number.isFinite)) throw Error('Skin binding transform exceeds float32')
+      players.set(target.id, { ...dst, palette, query: undefined, queryPick: undefined })
+    }
+  }
   setAnimation(id, value) {
     if (
       !value ||
@@ -533,8 +578,10 @@ export class SceneData {
     )
       throw Error('Invalid animation state')
     const palette = evaluateAnimation(this.meshes.get(p.assetId).data, state)
-    this.players = new Map(this.players)
-    this.players.set(id, { ...p, state, palette, query: undefined, queryPick: undefined })
+    const next = new Map(this.players)
+    next.set(id, { ...p, state, palette, query: undefined, queryPick: undefined })
+    this.applySkinBindings(next, this.pickInstances)
+    this.players = next
     this.shadowPoseRevision++
     this.commitPalettes()
   }
@@ -555,17 +602,18 @@ export class SceneData {
         }
         state.time = time
       }
-      const palette = evaluateAnimation(this.meshes.get(p.assetId).data, state),
-        changed = palette.some((v, i) => v !== p.palette[i])
-      if (changed) this.shadowPoseRevision++
-      next.set(id, {
-        ...p,
-        state,
-        palette,
-        query: changed ? undefined : p.query,
-        queryPick: changed ? undefined : p.queryPick,
-      })
+      next.set(id, { ...p, state, palette: evaluateAnimation(this.meshes.get(p.assetId).data, state) })
     }
+    this.applySkinBindings(next, this.pickInstances)
+    let poseChanged = false
+    for (const [id, p] of next) {
+      const previous = this.players.get(id)
+      const changed = p.palette.some((v, i) => v !== previous.palette[i])
+      p.query = changed ? undefined : previous.query
+      p.queryPick = changed ? undefined : previous.queryPick
+      poseChanged ||= changed
+    }
+    if (poseChanged) this.shadowPoseRevision++
     this.players = next
     this.commitPalettes()
   }

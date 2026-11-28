@@ -163,6 +163,41 @@ int main(int argc, char** argv)
             animated |= sampled[i].world != initial[i].world;
         }
         require(animated, "Joint snapshot did not follow animation sampling");
+        shifted.assetId = "wearable";
+        shifted.skinSource = "fox";
+        scene.Update({{"rig", fox, true}, {"wearable", fox, false}}, {original, shifted});
+        auto checkSharedPose = [&] {
+            const auto actor = scene.JointPoses("fox");
+            const auto clothes = scene.JointPoses("shifted");
+            require(actor.size() == clothes.size(), "Wearable joint count changed");
+            for (size_t i = 0; i < actor.size(); ++i)
+                for (size_t j = 0; j < 16; ++j)
+                    require(std::abs(clothes[i].world[j] - actor[i].world[j]) < 1e-4f,
+                            "Wearable world joint diverged");
+        };
+        checkSharedPose();
+        require(scene.Animation("fox").time == state.time, "Binding reset the source pose");
+        state.playing = true;
+        scene.SetAnimation("fox", state);
+        scene.UpdateAnimations(.03f);
+        checkSharedPose();
+        const auto timeBeforeSwap = scene.Animation("fox").time;
+        shifted.assetId = "replacement";
+        scene.Update({{"rig", fox, true}, {"replacement", fox, true}}, {original, shifted});
+        checkSharedPose();
+        require(scene.Animation("fox").time == timeBeforeSwap, "Changing outfits reset animation");
+        shifted.skinSource = "shifted";
+        rejected = false;
+        try
+        {
+            scene.Update({{"rig", fox, true}, {"replacement", fox, true}}, {original, shifted});
+        }
+        catch (const std::invalid_argument&)
+        {
+            rejected = true;
+        }
+        require(rejected, "Self binding was accepted");
+        checkSharedPose();
         // Large BVH plus triangle-exact rejection inside bounding boxes.
         auto data = std::make_shared<render::detail::ModelData>();
         constexpr int triangleCount = 32768;

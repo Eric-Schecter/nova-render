@@ -283,12 +283,19 @@ namespace render::detail
               && previous->second.path == player.path)
                 player = previous->second;
             player.paletteOffset = uint32_t(paletteCount);
-            player.palette       = EvaluateAnimation(*mesh.data->animation, player.state);
+            auto palette = EvaluateAnimation(*mesh.data->animation, player.state);
+            if (palette != player.palette)
+            {
+                player.query.reset();
+                player.queryPick.reset();
+            }
+            player.palette = std::move(palette);
             paletteCount += player.palette.size();
             if (paletteCount * 64ull > 64ull * 1024 * 1024)
                 throw std::runtime_error("Scene animation palettes exceed 64 MiB");
             nextPlayers.emplace(i.id, std::move(player));
         }
+        ApplySkinBindings(nextPlayers, effective);
         std::vector<InstanceData> gpu;
         std::vector<SceneDraw>    groups;
         drawInstanceIds.clear();
@@ -663,6 +670,70 @@ namespace render::detail
                 }
             }
     }
+    void SceneData::ApplySkinBindings(std::map<std::string, Player>& pose,
+                                      const std::vector<SceneInstance>& input) const
+    {
+        for (const auto& target : input)
+        {
+            if (target.skinSource.empty())
+                continue;
+            const auto source = std::find_if(input.begin(), input.end(),
+                               [&](const auto& i) { return i.id == target.skinSource; });
+            auto dst = pose.find(target.id), src = pose.find(target.skinSource);
+            if (source == input.end() || source->id == target.id || !source->skinSource.empty()
+                || src == pose.end() || dst == pose.end())
+                throw std::invalid_argument("Skin binding requires two skinned instances and an independent source");
+            const auto& a = *meshes.at(src->second.assetId).data->animation;
+            const auto& b = *meshes.at(dst->second.assetId).data->animation;
+            if (a.skins.empty() || b.skins.empty())
+                throw std::invalid_argument("Skin binding requires skinned assets");
+            const auto targetWorld = glm::make_mat4(target.world.data());
+            if (std::abs(glm::determinant(glm::mat3(targetWorld))) <= 1e-12f)
+                throw std::invalid_argument("Skin binding requires an invertible target transform");
+            const auto transform = glm::inverse(targetWorld) * glm::make_mat4(source->world.data());
+            std::map<std::string, int> byName;
+            size_t sourceOffset = 0, targetOffset = 0, slot = 0;
+            for (const auto& skin : a.skins)
+            {
+                sourceOffset += skin.joints.size();
+                for (int node : skin.joints)
+                {
+                    const auto& name = a.nodes[node].name;
+                    if (name.empty())
+                        continue;
+                    auto [it, added] = byName.emplace(name, node);
+                    if (!added && it->second != node)
+                        it->second = -1;
+                }
+            }
+            for (const auto& skin : b.skins)
+                targetOffset += skin.joints.size();
+            auto palette = dst->second.palette;
+            for (const auto& skin : b.skins)
+                for (size_t j = 0; j < skin.joints.size(); ++j)
+                {
+                    const int node = skin.joints[j];
+                    const auto found = byName.find(b.nodes[node].name);
+                    if (found == byName.end() || found->second < 0)
+                        throw std::invalid_argument("Skin binding joint name is absent or ambiguous");
+                    const auto global = transform * glm::make_mat4(src->second.palette.at(sourceOffset + found->second).data());
+                    const auto matrix = global * skin.inverseBind[j];
+                    std::copy_n(glm::value_ptr(global), 16, palette.at(targetOffset + node).begin());
+                    std::copy_n(glm::value_ptr(matrix), 16, palette.at(slot++).begin());
+                }
+            if (std::any_of(palette.begin(), palette.end(), [](const auto& matrix) {
+                return std::any_of(matrix.begin(), matrix.end(), [](float v) { return !std::isfinite(v); });
+            }))
+                throw std::invalid_argument("Skin binding transform exceeds float32");
+            if (palette != dst->second.palette)
+            {
+                dst->second.palette = std::move(palette);
+                dst->second.query.reset();
+                dst->second.queryPick.reset();
+            }
+        }
+    }
+
     void SceneData::CommitPalettes()
     {
         auto packed = std::const_pointer_cast<ModelData>(model);
@@ -684,10 +755,14 @@ namespace render::detail
         const auto& data      = *meshes.at(found->second.assetId).data->animation;
         auto        next      = ValidateAnimationState(data.clips, state);
         auto        palette   = EvaluateAnimation(data, next);
-        found->second.state   = next;
-        found->second.palette = std::move(palette);
-        found->second.query.reset();
-        found->second.queryPick.reset();
+        auto playersNext = players;
+        auto& player = playersNext.at(id);
+        player.state = next;
+        player.palette = std::move(palette);
+        player.query.reset();
+        player.queryPick.reset();
+        ApplySkinBindings(playersNext, pickInstances);
+        players = std::move(playersNext);
         CommitPalettes();
     }
     void SceneData::UpdateAnimations(float delta)
@@ -701,13 +776,22 @@ namespace render::detail
         {
             const auto& data = *meshes.at(p.assetId).data->animation;
             p.state          = AdvanceAnimation(data.clips, p.state, delta);
-            auto palette     = EvaluateAnimation(data, p.state);
-            if (palette != p.palette)
+            p.palette        = EvaluateAnimation(data, p.state);
+        }
+        ApplySkinBindings(next, pickInstances);
+        for (auto& [id, p] : next)
+        {
+            const auto& previous = players.at(id);
+            if (p.palette == previous.palette)
+            {
+                p.query = previous.query;
+                p.queryPick = previous.queryPick;
+            }
+            else
             {
                 p.query.reset();
                 p.queryPick.reset();
             }
-            p.palette = std::move(palette);
         }
         players = std::move(next);
         CommitPalettes();

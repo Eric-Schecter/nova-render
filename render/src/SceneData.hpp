@@ -61,6 +61,7 @@ namespace render::detail
             mutable std::shared_ptr<PickMesh>        queryPick;
         };
         std::map<std::string, Player>    players;
+        void ApplySkinBindings(std::map<std::string, Player>&, const std::vector<SceneInstance>&) const;
         void                             CommitPalettes();
         std::shared_ptr<const ModelData> PoseGeometry(const std::string&) const;
 

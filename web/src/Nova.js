@@ -539,7 +539,7 @@ class Renderer {
       this.#continuePathTracing()
     })
   }
-  /** Replace static raster instances. Assets: {id,url or geometry,sourceSpace?}; instances: {id,assetId,world?}. */
+  /** Replace static raster instances. Assets: {id,url or geometry,sourceSpace?}; instances: {id,assetId,world?,skinSource?}. */
   setScene(assets, instances) {
     assets = assets.map((asset) => {
       if (!asset?.geometry || typeof asset.geometry !== 'object') return structuredClone(asset)
